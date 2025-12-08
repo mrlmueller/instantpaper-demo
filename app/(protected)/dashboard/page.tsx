@@ -2,10 +2,7 @@ import { requireAuth } from '@/app/lib/auth/server-auth';
 import { createOrUpdateUser } from '@/app/actions/user';
 import { getUserQuellen } from '@/app/actions/quellen';
 import { getUserKapitels } from '@/app/actions/kapitels';
-import { CreateKapitelDialog } from '@/app/components/kapitels/CreateKapitelDialog';
-import { KapitelList } from '@/app/components/kapitels/KapitelList';
-import { CreateQuelleDialog } from '@/app/components/quellen/CreateQuelleDialog';
-import { QuellenList } from '@/app/components/quellen/QuellenList';
+import { DashboardPanels } from '@/app/components/dashboard/DashboardPanels';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,26 +23,9 @@ export default async function DashboardPage() {
             Organisiere Kapiteln und Quellen und verarbeite sie mit denselben Anweisungen.
           </p>
         </div>
-        <div className="flex gap-3">
-          <CreateKapitelDialog quellen={quellen} />
-        </div>
       </div>
 
-      <KapitelList kapitels={kapitels} quellen={quellen} />
-
-      <div className="mt-10 border-t pt-8 space-y-4">
-        <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-2xl font-semibold">Quellen verwalten</h2>
-            <p className="text-sm text-muted-foreground">
-              Lege Quellen an und ordne sie Kapiteln zu.
-            </p>
-          </div>
-          <CreateQuelleDialog />
-        </div>
-
-        <QuellenList initialQuellen={quellen} />
-      </div>
+      <DashboardPanels kapitels={kapitels} quellen={quellen} />
     </div>
   );
 }

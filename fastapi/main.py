@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, BackgroundTasks, status
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -89,10 +89,11 @@ async def test_auth(user_id: str = Depends(verify_firebase_token)):
     }
 
 
-@app.post("/api/process", response_model=ProcessQuelleResponse)
+@app.post("/api/process", status_code=status.HTTP_202_ACCEPTED)
 async def process_quelle(
     request: ProcessQuelleRequest,
-    user_id: str = Depends(verify_firebase_token)
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
 ):
     """
     Process a Quelle with OpenAI
@@ -109,27 +110,24 @@ async def process_quelle(
     """
     logger.info(f"Processing Quelle {request.quelle_id} for user {user_id} (Kapitel {request.kapitel_id}, run {request.run_id})")
 
-    # Process Quelle
-    result = await quelle_service.process_single_quelle(
-        user_id=user_id,
-        quelle_id=request.quelle_id,
-        kapitel_id=request.kapitel_id,
-        run_id=request.run_id,
-        user_input=request.user_input,
-        model=request.model
+    # Process Quelle in the background to return immediately
+    background_tasks.add_task(
+        quelle_service.process_single_quelle,
+        user_id,
+        request.quelle_id,
+        request.kapitel_id,
+        request.run_id,
+        request.user_input,
+        request.model,
     )
 
-    # Return response
-    return ProcessQuelleResponse(
-        result_id=result['result_id'],
-        quelle_id=request.quelle_id,
-        kapitel_id=request.kapitel_id,
-        run_id=request.run_id,
-        result_content=result['content'],
-        model_used=result['model'],
-        tokens_used=result['tokens'],
-        created_at=datetime.utcnow().isoformat() + "Z"
-    )
+    return {
+        "status": "queued",
+        "quelle_id": request.quelle_id,
+        "kapitel_id": request.kapitel_id,
+        "run_id": request.run_id,
+        "queued_at": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 if __name__ == "__main__":

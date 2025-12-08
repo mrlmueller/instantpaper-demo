@@ -66,29 +66,46 @@ User Instructions:
             logger.debug(f"Prompt length: {len(prompt)} characters")
 
             # Call OpenAI API
-            response = await self.client.chat.completions.create(
+            response = await self.client.responses.create(
                 model=model,
-                messages=[
+                input=[
                     {
                         "role": "system",
                         "content": "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
-                                   "Provide clear, accurate, and well-structured responses."
+                                   "Think step-by-step to ensure correctness, but return only the final answer unless formatting is requested."
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
-                ]
+                ],
+                reasoning={"effort": "high"},
+                max_output_tokens=None  # allow model to decide; adjust if you want a hard cap
             )
 
-            result_content = response.choices[0].message.content
-            tokens_used = response.usage.total_tokens
+            # Extract text output safely
+            result_text = None
+            if hasattr(response, "output_text") and response.output_text is not None:
+                result_text = response.output_text
+            elif hasattr(response, "output") and response.output:
+                # Fallback: navigate output -> content -> text
+                try:
+                    result_text = response.output[0].content[0].text
+                except Exception:
+                    pass
+
+            if not result_text:
+                raise ValueError("No text output returned from OpenAI response")
+
+            input_tokens = getattr(getattr(response, "usage", None), "input_tokens", 0) or 0
+            output_tokens = getattr(getattr(response, "usage", None), "output_tokens", 0) or 0
+            tokens_used = input_tokens + output_tokens
             model_used = response.model
 
             logger.info(f"OpenAI processing complete. Tokens used: {tokens_used}")
 
             return {
-                "content": result_content,
+                "content": result_text,
                 "tokens": tokens_used,
                 "model": model_used
             }

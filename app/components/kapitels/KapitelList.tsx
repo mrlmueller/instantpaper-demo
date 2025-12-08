@@ -13,7 +13,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, Clock } from 'lucide-react';
+import { Sparkles, Clock, Loader2 } from 'lucide-react';
+import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { firestoreClient } from '@/app/lib/firebase/firestoreClient';
+import { useAuth } from '@/app/components/providers/AuthProvider';
 
 interface KapitelListProps {
   kapitels: Kapitel[];
@@ -21,9 +24,12 @@ interface KapitelListProps {
 }
 
 export function KapitelList({ kapitels, quellen }: KapitelListProps) {
+  const { user } = useAuth();
   const [selectedRuns, setSelectedRuns] = useState<Record<string, string | undefined>>({});
+  const [kapitelState, setKapitelState] = useState<Kapitel[]>(kapitels);
 
   useEffect(() => {
+    setKapitelState(kapitels);
     const defaults: Record<string, string | undefined> = {};
     kapitels.forEach((kapitel) => {
       if (kapitel.runs && kapitel.runs.length > 0) {
@@ -33,7 +39,114 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
     setSelectedRuns(defaults);
   }, [kapitels]);
 
-  if (kapitels.length === 0) {
+  // ensure a selected run exists when runs change
+  useEffect(() => {
+    const nextSelected = { ...selectedRuns };
+    let changed = false;
+    kapitelState.forEach((kapitel) => {
+      if (kapitel.runs && kapitel.runs.length > 0) {
+        const current = nextSelected[kapitel.id];
+        if (!current || !kapitel.runs.some((r) => r.id === current)) {
+          nextSelected[kapitel.id] = kapitel.runs[0].id;
+          changed = true;
+        }
+      }
+    });
+    if (changed) {
+      setSelectedRuns(nextSelected);
+    }
+  }, [kapitelState]);
+
+  // Live subscribe to runs and results for each Kapitel
+  useEffect(() => {
+    if (!user?.uid || kapitelState.length === 0) return;
+    const unsubscribes: Array<() => void> = [];
+
+    kapitelState.forEach((kapitel) => {
+      const runsRef = collection(
+        firestoreClient,
+        'users',
+        user.uid,
+        'kapitels',
+        kapitel.id,
+        'runs'
+      );
+      const runsUnsub = onSnapshot(
+        query(runsRef, orderBy('index', 'desc'), limit(5)),
+        (snapshot) => {
+          const runs: KapitelRun[] = snapshot.docs.map((runDoc) => {
+            const data: any = runDoc.data();
+            return {
+              id: runDoc.id,
+              index: data.index || 0,
+              instruction: data.instruction || '',
+              model: data.model || '',
+              createdAt:
+                data.createdAt?.toDate?.()?.toISOString() ||
+                data.created_at?.toDate?.()?.toISOString() ||
+                new Date().toISOString(),
+              results: [],
+            };
+          });
+
+          // update run list immediately
+          setKapitelState((prev) =>
+            prev.map((k) => (k.id === kapitel.id ? { ...k, runs } : k))
+          );
+
+          // subscribe to results for each run
+          runs.forEach((run) => {
+            const resultsRef = collection(
+              firestoreClient,
+              'users',
+              user.uid,
+              'kapitels',
+              kapitel.id,
+              'runs',
+              run.id,
+              'results'
+            );
+            const resUnsub = onSnapshot(resultsRef, (resSnap) => {
+              const results = resSnap.docs.map((resDoc) => {
+                const resData: any = resDoc.data();
+                return {
+                  quelleId: resDoc.id,
+                  resultContent:
+                    resData.result_content ??
+                    resData.resultContent ??
+                    resData.content ??
+                    '',
+                  modelUsed: resData.model_used ?? resData.modelUsed ?? '',
+                  tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
+                  createdAt:
+                    resData.created_at?.toDate?.()?.toISOString() ||
+                    resData.createdAt?.toDate?.()?.toISOString() ||
+                    new Date().toISOString(),
+                };
+              });
+
+              setKapitelState((prev) =>
+                prev.map((k) => {
+                  if (k.id !== kapitel.id) return k;
+                  const updatedRuns =
+                    k.runs?.map((r) => (r.id === run.id ? { ...r, results } : r)) || [];
+                  return { ...k, runs: updatedRuns };
+                })
+              );
+            });
+            unsubscribes.push(resUnsub);
+          });
+        }
+      );
+      unsubscribes.push(runsUnsub);
+    });
+
+    return () => {
+      unsubscribes.forEach((u) => u());
+    };
+  }, [user?.uid, kapitelState.map((k) => k.id).join('|')]);
+
+  if (kapitelState.length === 0) {
     return (
       <div className="text-center py-12 rounded-lg border bg-white">
         <Sparkles className="mx-auto h-10 w-10 text-gray-400" />
@@ -45,7 +158,7 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
 
   return (
     <div className="space-y-6">
-      {kapitels.map((kapitel) => {
+      {kapitelState.map((kapitel) => {
         const assignedQuellen = quellen.filter((q) => kapitel.quelleIds?.includes(q.id));
 
         const currentRun: KapitelRun | undefined =
@@ -53,7 +166,10 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
           kapitel.runs?.[0];
 
         return (
-          <div key={kapitel.id} className="border rounded-xl bg-white p-6 shadow-sm">
+          <div
+            key={kapitel.id}
+            className="border rounded-xl bg-gradient-to-b from-white via-white to-gray-50 p-6 shadow-sm ring-1 ring-gray-100"
+          >
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <div className="flex items-center gap-3">
@@ -138,9 +254,16 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                             <Badge variant="outline">Quelle</Badge>
                           </div>
                           <div className="mt-2 rounded-md bg-muted p-3 max-h-64 overflow-y-auto">
-                            <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
-                              {result?.resultContent || result?.result_content || 'Noch kein Ergebnis'}
-                            </pre>
+                            {result?.resultContent || result?.result_content ? (
+                              <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
+                                {result?.resultContent || result?.result_content}
+                              </pre>
+                            ) : (
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Ergebnis wird verarbeitet...
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

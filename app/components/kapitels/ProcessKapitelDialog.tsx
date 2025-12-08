@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Kapitel } from '@/app/actions/kapitels';
 import type { Quelle } from '@/app/actions/quellen';
 import { createKapitelRun } from '@/app/actions/kapitels';
@@ -25,6 +25,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { Sparkles, Loader2 } from 'lucide-react';
 import Cookies from 'js-cookie';
+import { useAuth } from '@/app/components/providers/AuthProvider';
+import { firestoreClient } from '@/app/lib/firebase/firestoreClient';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 type AIModel = 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.1';
 
@@ -36,11 +39,13 @@ interface ProcessKapitelDialogProps {
 type ResultState = Record<string, { content?: string; error?: string }>;
 
 export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogProps) {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [instruction, setInstruction] = useState('');
   const [model, setModel] = useState<AIModel>('gpt-5.1');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<ResultState>({});
+  const [runId, setRunId] = useState<string | null>(null);
 
   const handleProcess = async () => {
     if (quellen.length === 0) {
@@ -69,7 +74,16 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
         throw new Error(runResult.error || 'Run konnte nicht erstellt werden.');
       }
 
-      const runId = runResult.runId;
+      const currentRunId = runResult.runId;
+      setRunId(currentRunId);
+
+      // initialize pending states
+      const initial: ResultState = {};
+      quellen.forEach((q) => {
+        initial[q.id] = { content: undefined, error: undefined };
+      });
+      setResults(initial);
+
       const queue = [...quellen];
       const concurrency = Math.min(3, queue.length);
 
@@ -88,7 +102,7 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
               body: JSON.stringify({
                 quelle_id: nextQuelle.id,
                 kapitel_id: kapitel.id,
-                run_id: runId,
+                run_id: currentRunId,
                 user_input: instruction.trim(),
                 model,
               }),
@@ -99,11 +113,7 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
               throw new Error(error.detail || 'Fehler beim Verarbeiten');
             }
 
-            const data = await response.json();
-            setResults((prev) => ({
-              ...prev,
-              [nextQuelle.id]: { content: data.result_content },
-            }));
+            // queued successfully
           } catch (err: any) {
             setResults((prev) => ({
               ...prev,
@@ -116,9 +126,11 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
 
       await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
-      toast.success(`Kapitel "${kapitel.title}" verarbeitet`, {
-        description: `Run ${runResult.index} abgeschlossen`,
+      toast.info(`Kapitel "${kapitel.title}" in Warteschlange`, {
+        description: 'Die Verarbeitung läuft. Dies kann einige Minuten dauern.',
       });
+      setOpen(false);
+
     } catch (error: any) {
       console.error('Kapitel-Verarbeitung fehlgeschlagen:', error);
       toast.error('Verarbeitung fehlgeschlagen', {
@@ -134,9 +146,46 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
     setOpen(false);
     setResults({});
     setInstruction('');
+    setRunId(null);
   };
 
-  const runFinished = Object.keys(results).length === quellen.length && quellen.length > 0;
+  const runFinished =
+    runId !== null &&
+    quellen.length > 0 &&
+    quellen.every((q) => results[q.id]?.content || results[q.id]?.error);
+
+  // Listen for Firestore result updates when a run is active
+  useEffect(() => {
+    if (!user?.uid || !runId || !open) return;
+    const resultsRef = collection(
+      firestoreClient,
+      'users',
+      user.uid,
+      'kapitels',
+      kapitel.id,
+      'runs',
+      runId,
+      'results'
+    );
+
+    const unsub = onSnapshot(resultsRef, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        const data: any = change.doc.data();
+        setResults((prev) => ({
+          ...prev,
+          [change.doc.id]: {
+            content:
+              data.result_content ??
+              data.resultContent ??
+              data.content ??
+              JSON.stringify(data),
+          },
+        }));
+      });
+    });
+
+    return () => unsub();
+  }, [user?.uid, runId, kapitel.id, open]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -172,7 +221,9 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
                   </div>
                   <div className="rounded-lg bg-muted p-3">
                     <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed max-h-96 overflow-y-auto">
-                      {results[quelle.id]?.content || results[quelle.id]?.error || 'Noch kein Ergebnis'}
+                      {results[quelle.id]?.content ||
+                        results[quelle.id]?.error ||
+                        'Noch kein Ergebnis'}
                     </pre>
                   </div>
                 </div>

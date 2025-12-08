@@ -11,6 +11,17 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { Trash2, BookOpen } from 'lucide-react';
 
@@ -18,12 +29,9 @@ export function QuellenList({ initialQuellen }: { initialQuellen: Quelle[] }) {
   const [quellen, setQuellen] = useState(initialQuellen);
   const [selectedQuelle, setSelectedQuelle] = useState<Quelle | null>(null);
   const [loading, setLoading] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Diese Quelle wirklich löschen?')) {
-      return;
-    }
-
     setLoading(true);
     const result = await deleteQuelle(id);
 
@@ -79,7 +87,7 @@ export function QuellenList({ initialQuellen }: { initialQuellen: Quelle[] }) {
                 size="sm"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleDelete(quelle.id);
+                  setPendingDeleteId(quelle.id);
                 }}
                 disabled={loading}
                 className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -106,6 +114,37 @@ export function QuellenList({ initialQuellen }: { initialQuellen: Quelle[] }) {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={!!pendingDeleteId}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Soll diese Quelle gelöscht werden?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Diese Aktion kann nicht rückgängig gemacht werden.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingDeleteId(null)}>
+              Abbrechen
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingDeleteId) {
+                  handleDelete(pendingDeleteId);
+                }
+                setPendingDeleteId(null);
+              }}
+            >
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
