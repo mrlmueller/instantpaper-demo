@@ -1,6 +1,7 @@
 from openai import AsyncOpenAI
 from utils.config import config
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -54,28 +55,28 @@ class OpenAIService:
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
-            # Combine Quelle content and user instructions
-            prompt = f"""Quelle Content:
-{quelle_content}
+            # Combine Quelle content and user instructions (no explicit labels)
+            prompt = f"""{quelle_content}
 
-User Instructions:
 {user_input}"""
 
             logger.info(f"Processing Quelle with {model}")
             logger.debug(f"Prompt length: {len(prompt)} characters")
 
             # Call OpenAI API
+            system_message = (
+                "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+                "Think step-by-step to ensure correctness. "
+                f"If the Quelle does NOT contain any useful information for the request, respond with the single token '{NO_CONTENT_SENTINEL}' only. "
+                "Otherwise, return only the final answer without any extra commentary."
+            )
+
             response = await self.client.responses.create(
                 model=model,
                 input=[
                     {
                         "role": "system",
-                        "content": (
-                            "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
-                            "Think step-by-step to ensure correctness. "
-                            f"If the Quelle does NOT contain any useful information for the request, respond with the single token '{NO_CONTENT_SENTINEL}' only. "
-                            "Otherwise, return only the final answer without any extra commentary."
-                        ),
+                        "content": system_message,
                     },
                     {"role": "user", "content": prompt},
                 ],
