@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from services.firebase_service import firebase_service
 from services.openai_service import openai_service
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -38,24 +39,49 @@ def calculate_cost(
         - Non-cached input = input_tokens - cached_input_tokens
         - Reasoning tokens are charged at the output token rate
     """
-    # Find the pricing for this model (case-insensitive exact match)
-    model_lower = model.lower()
-    pricing = None
+    def _resolve_pricing(model_name: str):
+        """
+        Return pricing tuple and matched key for potentially versioned model names.
+
+        The OpenAI API returns release-stamped model names (e.g., gpt-5.1-2025-11-13).
+        We normalize those back to their base product name so we don't undercharge
+        when a date suffix appears.
+        """
+        model_lower = (model_name or "").lower()
+        normalized_pricing = {key.lower(): (key, price) for key, price in MODEL_PRICING.items()}
+
+        # 1) Exact match
+        if model_lower in normalized_pricing:
+            matched_key, pricing = normalized_pricing[model_lower]
+            return matched_key, pricing, "exact"
+
+        # 2) Strip release-date suffixes (e.g., gpt-5.1-2025-11-13 -> gpt-5.1)
+        date_stripped = re.sub(r"-20\d{2}-\d{2}-\d{2}$", "", model_lower)
+        if date_stripped in normalized_pricing:
+            matched_key, pricing = normalized_pricing[date_stripped]
+            return matched_key, pricing, "date_suffix"
+
+        # 3) Prefix match for other versioned variants (e.g., gpt-5.1-xyz)
+        for key_lower, (original_key, pricing) in normalized_pricing.items():
+            if model_lower.startswith(f"{key_lower}-"):
+                return original_key, pricing, "prefix"
+
+        # 4) Fallback to default pricing
+        return "gpt-5-mini", MODEL_PRICING["gpt-5-mini"], "fallback"
 
     logger.info(f"Matching model '{model}' against pricing dictionary")
 
-    for model_key, (input_price, cached_input_price, output_price) in MODEL_PRICING.items():
-        if model_key.lower() == model_lower:
-            pricing = (input_price, cached_input_price, output_price)
-            logger.info(
-                f"Matched pricing key: '{model_key}' -> "
-                f"${input_price}/M input, ${cached_input_price}/M cached, ${output_price}/M output"
-            )
-            break
+    matched_key, pricing, match_type = _resolve_pricing(model)
 
-    if not pricing:
+    if match_type == "fallback":
         logger.warning(f"Unknown model '{model}', using default pricing (gpt-5-mini)")
-        pricing = MODEL_PRICING["gpt-5-mini"]
+    else:
+        normalized_note = "" if matched_key.lower() == model.lower() else f" (normalized from '{model}')"
+        input_price, cached_input_price, output_price = pricing
+        logger.info(
+            f"Matched pricing key: '{matched_key}'{normalized_note} -> "
+            f"${input_price}/M input, ${cached_input_price}/M cached, ${output_price}/M output"
+        )
 
     input_price, cached_input_price, output_price = pricing
 
@@ -72,9 +98,9 @@ def calculate_cost(
 
     logger.info(
         f"Cost calculation for {model}: "
-        f"Non-cached input ${non_cached_input_cost:.6f} ({non_cached_input_tokens:,} × ${input_price}/M) + "
-        f"Cached input ${cached_input_cost:.6f} ({cached_input_tokens:,} × ${cached_input_price}/M) + "
-        f"Output ${output_cost:.6f} ({output_tokens:,} + {reasoning_tokens:,} reasoning × ${output_price}/M) = "
+        f"Non-cached input ${non_cached_input_cost:.6f} ({non_cached_input_tokens:,} x ${input_price}/M) + "
+        f"Cached input ${cached_input_cost:.6f} ({cached_input_tokens:,} x ${cached_input_price}/M) + "
+        f"Output ${output_cost:.6f} ({output_tokens:,} + {reasoning_tokens:,} reasoning x ${output_price}/M) = "
         f"${total_cost:.6f}"
     )
 
@@ -160,6 +186,7 @@ class QuelleService:
                 run_id=run_id,
                 user_input=user_input,
                 result_content=openai_result['content'],
+                has_content=openai_result.get('has_content', True),
                 model_used=openai_result['model'],
                 tokens_used=openai_result['tokens'],
                 input_tokens=openai_result['input_tokens'],
@@ -174,6 +201,7 @@ class QuelleService:
             return {
                 "result_id": result_id,
                 "content": openai_result['content'],
+                "has_content": openai_result.get('has_content', True),
                 "model": openai_result['model'],
                 "tokens": openai_result['tokens'],
                 "input_tokens": openai_result['input_tokens'],

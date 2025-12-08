@@ -37,6 +37,8 @@ export type KapitelRun = {
   model: string;
   createdAt: string;
   results: KapitelRunResult[];
+  promptTemplateId?: string;
+  promptPayload?: Record<string, any>;
 };
 
 export type Kapitel = {
@@ -111,7 +113,12 @@ export async function deleteKapitel(kapitelId: string) {
   }
 }
 
-export async function createKapitelRun(kapitelId: string, instruction: string, model: string) {
+export async function createKapitelRun(
+  kapitelId: string,
+  instruction: string,
+  model: string,
+  options?: { promptTemplateId?: string; promptPayload?: Record<string, any> }
+) {
   try {
     const user = await requireAuth();
     const db = await getFirestoreForUser();
@@ -128,6 +135,8 @@ export async function createKapitelRun(kapitelId: string, instruction: string, m
       model,
       index: nextIndex,
       createdAt: serverTimestamp(),
+      promptTemplateId: options?.promptTemplateId,
+      promptPayload: options?.promptPayload,
     });
 
     revalidatePath('/dashboard');
@@ -185,6 +194,8 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
         index: runData.index || 0,
         instruction: runData.instruction || '',
         model: runData.model || '',
+        promptTemplateId: runData.promptTemplateId,
+        promptPayload: runData.promptPayload,
         createdAt: runData.createdAt?.toDate?.()?.toISOString()
           || runData.created_at?.toDate?.()?.toISOString()
           || new Date().toISOString(),

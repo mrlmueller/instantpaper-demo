@@ -41,19 +41,25 @@ type ResultState = Record<string, { content?: string; error?: string }>;
 export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogProps) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [instruction, setInstruction] = useState('');
   const [model, setModel] = useState<AIModel>('gpt-5.1');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<ResultState>({});
   const [runId, setRunId] = useState<string | null>(null);
+  const [heading, setHeading] = useState('');
+  const [topic, setTopic] = useState('');
+
+  const buildPrompt = (h: string, t: string) => {
+    return `### Aufgabe:
+Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz ist, schreibe keine Einleitung oder Schlussfolgerung/Zusammenfassung. Der Absatz hat die Überschrift „${h}“ und soll genauer das Thema „${t}“ behandeln. Beziehe dich beim Schreiben des Absatzes nur auf die oben gegebenen Informationen und nutze nichts aus deinem eigenen Wissen. Fokussiere dich außerdem genau auf das Thema, das ich vorgegeben habe, da andere Informationen hierzu bereits behandelt worden sind oder noch behandelt werden; kurzum, schreibe wirklich nur über das vorgegebene Thema. Wichtig ist, dass Informationen, die aus dem obigen Text übernommen werden, so umgeschrieben werden sollen, dass der obige Text nicht mehr zu erkennen ist – das Ergebnis also einzigartig ist. Der Text soll so lang sein, wie er sein muss, um alle relevanten Informationen zu integrieren; ziehe ihn nicht unnötig in die Länge, aber lasse auch nichts Relevantes weg. Sollte der Text keine sinnvollen Informationen zu dem gegebenen Thema enthalten, kannst du mir das sagen und den Text dann nicht schreiben; gib mir dann eine kurze Erklärung, warum der Text nicht zum Thema gepasst hat. Integriere außerdem die Quellen (mit Seitenzahlen, wenn diese gegeben wurden) aus dem oberen Text an den richtigen Stellen. Der gegebene Text hat sicherlich mehr Informationen zu manchen Themen und weniger zu anderen. Fokussiere dich auf die Themen, zu denen du wirklich konkrete und tiefe Einblicke geben kannst. Dieser Text ist nur einer von 10, die ich zu diesem Thema habe. Das bedeutet, wenn du eine Dimension nur wenig oder gar nicht behandelst, habe ich dennoch viele Informationen zu dieser in einem anderen Text. Genauer ausgedrückt, schreibst du gerade einen von 10 Texten, die später das Kapitel ergeben werden. Das bedeutet auch, dass du dich wirklich auf das Wichtigste beschränken kannst und nicht unnötiges schreiben musst. Schreibe keine Zusammenfassung oder Schlussfolgerung am Ende. Nur reine Informationen. Formuliere den Text ohne dass du ; verwendest, außer zwischen zwei Quellen.`;
+  };
 
   const handleProcess = async () => {
     if (quellen.length === 0) {
       toast.error('Bitte zuerst Quellen diesem Kapitel zuordnen.');
       return;
     }
-    if (!instruction.trim()) {
-      toast.error('Bitte Anweisungen eingeben.');
+    if (!heading.trim() || !topic.trim()) {
+      toast.error('Bitte Kapitel Überschrift und Kapitel Thema ausfüllen.');
       return;
     }
 
@@ -69,7 +75,15 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
         return;
       }
 
-      const runResult = await createKapitelRun(kapitel.id, instruction.trim(), model);
+      const prompt = buildPrompt(heading.trim(), topic.trim());
+
+      const runResult = await createKapitelRun(kapitel.id, prompt, model, {
+        promptTemplateId: 'wissenschaftlicher_absatz_v1',
+        promptPayload: {
+          heading: heading.trim(),
+          topic: topic.trim(),
+        },
+      });
       if (!runResult.success || !runResult.runId) {
         throw new Error(runResult.error || 'Run konnte nicht erstellt werden.');
       }
@@ -103,7 +117,7 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
                 quelle_id: nextQuelle.id,
                 kapitel_id: kapitel.id,
                 run_id: currentRunId,
-                user_input: instruction.trim(),
+                user_input: prompt,
                 model,
               }),
             });
@@ -130,7 +144,6 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
         description: 'Die Verarbeitung läuft. Dies kann einige Minuten dauern.',
       });
       setOpen(false);
-
     } catch (error: any) {
       console.error('Kapitel-Verarbeitung fehlgeschlagen:', error);
       toast.error('Verarbeitung fehlgeschlagen', {
@@ -145,8 +158,9 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
     if (loading) return;
     setOpen(false);
     setResults({});
-    setInstruction('');
     setRunId(null);
+    setHeading('');
+    setTopic('');
   };
 
   const runFinished =
@@ -261,20 +275,45 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="instructions">Anweisungen</Label>
-              <Textarea
-                id="instructions"
-                placeholder="Welche Anweisungen sollen für alle Quellen gelten?"
-                value={instruction}
-                onChange={(e) => setInstruction(e.target.value)}
-                rows={10}
-                className="resize-y"
-                disabled={loading}
-              />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{instruction.length} Zeichen</span>
-                <span>{quellen.length} Quellen werden verarbeitet</span>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="heading">Kapitel Überschrift</Label>
+                <Textarea
+                  id="heading"
+                  placeholder="Kapitel Überschrift"
+                  value={heading}
+                  onChange={(e) => setHeading(e.target.value)}
+                  rows={2}
+                  className="resize-none"
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="topic">Kapitel Thema</Label>
+                <Textarea
+                  id="topic"
+                  placeholder="Kapitel Thema"
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  rows={2}
+                  className="resize-none"
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Finaler Prompt (Vorschau)</Label>
+                <Textarea
+                  value={buildPrompt(heading || 'Kapitel Überschrift', topic || 'Kapitel Thema')}
+                  readOnly
+                  rows={10}
+                  className="resize-y bg-muted"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>
+                    {buildPrompt(heading || 'Kapitel Überschrift', topic || 'Kapitel Thema').length} Zeichen
+                  </span>
+                  <span>{quellen.length} Quellen werden verarbeitet</span>
+                </div>
               </div>
             </div>
           </div>
@@ -300,7 +339,7 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
               </Button>
               <Button
                 onClick={handleProcess}
-                disabled={loading || !instruction.trim() || quellen.length === 0}
+                disabled={loading || !heading.trim() || !topic.trim() || quellen.length === 0}
               >
                 {loading ? (
                   <>

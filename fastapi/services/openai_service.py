@@ -4,6 +4,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+NO_CONTENT_SENTINEL = "NO_CONTENT"
+
 
 class OpenAIService:
     """Service for OpenAI API operations"""
@@ -68,8 +70,12 @@ User Instructions:
                 input=[
                     {
                         "role": "system",
-                        "content": "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
-                        "Think step-by-step to ensure correctness, but return only the final answer unless formatting is requested.",
+                        "content": (
+                            "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+                            "Think step-by-step to ensure correctness. "
+                            f"If the Quelle does NOT contain any useful information for the request, respond with the single token '{NO_CONTENT_SENTINEL}' only. "
+                            "Otherwise, return only the final answer without any extra commentary."
+                        ),
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -90,6 +96,13 @@ User Instructions:
 
             if not result_text:
                 raise ValueError("No text output returned from OpenAI response")
+
+            # Detect sentinel for no-content cases
+            stripped = result_text.strip()
+            has_content = stripped != NO_CONTENT_SENTINEL
+            if not has_content:
+                logger.info("Model returned NO_CONTENT sentinel (no useful information detected)")
+                result_text = "ChatGPT sagt da sind keine infos in dem Text die Brauchbar sind"
 
             # Extract token usage from response
             usage = getattr(response, "usage", None)
@@ -125,11 +138,12 @@ User Instructions:
                 f"OpenAI processing complete. "
                 f"Input: {input_tokens} (cached: {cached_input_tokens}), "
                 f"Output: {output_tokens}, Reasoning: {reasoning_tokens}, "
-                f"Total: {tokens_used} tokens"
+                f"Total: {tokens_used} tokens, Has content: {has_content}"
             )
 
             return {
                 "content": result_text,
+                "has_content": has_content,
                 "tokens": tokens_used,
                 "input_tokens": input_tokens,
                 "cached_input_tokens": cached_input_tokens,
