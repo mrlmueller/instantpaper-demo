@@ -3,6 +3,7 @@ import { createOrUpdateUser } from '@/app/actions/user';
 import { getUserPapers } from '@/app/actions/papers';
 import { CreatePaperDialog } from '@/app/components/papers/CreatePaperDialog';
 import { PapersList } from '@/app/components/papers/PapersList';
+import { ProcessPapersDialog } from '@/app/components/papers/ProcessPapersDialog';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,10 @@ export default async function DashboardPage() {
             Manage and organize your long-form content
           </p>
         </div>
-        <CreatePaperDialog />
+        <div className="flex gap-3">
+          <ProcessPapersDialog papers={papers} />
+          <CreatePaperDialog />
+        </div>
       </div>
 
       <PapersList initialPapers={papers} />

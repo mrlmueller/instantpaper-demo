@@ -37,6 +37,15 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && isOwner(userId);
     }
 
+    // Results subcollection - AI processing results for each user
+    match /users/{userId}/results/{resultId} {
+      // Users can read their own results
+      allow read: if isAuthenticated() && isOwner(userId);
+
+      // FastAPI backend can create results (verified via token)
+      allow create: if isAuthenticated() && isOwner(userId);
+    }
+
     // Default deny all
     match /{document=**} {
       allow read, write: if false;
