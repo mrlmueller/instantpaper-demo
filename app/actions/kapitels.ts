@@ -20,6 +20,7 @@ import { revalidatePath } from 'next/cache';
 export type KapitelRunResult = {
   quelleId: string;
   resultContent: string;
+  hasContent?: boolean;
   modelUsed: string;
   tokensUsed: number;
   inputTokens: number;
@@ -176,6 +177,7 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
         return {
           quelleId: resDoc.id,
           resultContent: resData.result_content ?? resData.resultContent ?? '',
+          hasContent: resData.has_content ?? resData.hasContent ?? true,
           modelUsed: resData.model_used ?? resData.modelUsed ?? '',
           tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
           inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,

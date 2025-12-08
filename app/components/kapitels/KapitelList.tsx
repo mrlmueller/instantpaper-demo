@@ -116,6 +116,7 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                     resData.resultContent ??
                     resData.content ??
                     '',
+                  hasContent: resData.has_content ?? resData.hasContent ?? true,
                   modelUsed: resData.model_used ?? resData.modelUsed ?? '',
                   tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
                   inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
@@ -264,11 +265,20 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {assignedQuellen.map((quelle) => {
                       const result = currentRun.results?.find((r) => r.quelleId === quelle.id);
+                      const isNoContent = result?.hasContent === false;
                       return (
                         <div key={quelle.id} className="border rounded-lg p-4 bg-white">
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <h4 className="font-semibold text-sm">{quelle.title}</h4>
                             <div className="flex items-center gap-1">
+                              {isNoContent && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[11px] text-amber-700 border-amber-200 bg-amber-50"
+                                >
+                                  Keine verwertbaren Infos
+                                </Badge>
+                              )}
                               {result?.cost !== undefined && result.cost > 0 && (
                                 <Badge variant="secondary" className="font-mono text-xs">
                                   ${result.cost.toFixed(4)}
@@ -297,7 +307,11 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                           )}
                           <div className="mt-2 rounded-md bg-muted p-3 max-h-64 overflow-y-auto">
                             {result?.resultContent || result?.result_content ? (
-                              <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
+                              <pre
+                                className={`whitespace-pre-wrap text-sm leading-relaxed font-sans ${
+                                  isNoContent ? 'text-muted-foreground italic' : ''
+                                }`}
+                              >
                                 {result?.resultContent || result?.result_content}
                               </pre>
                             ) : (
