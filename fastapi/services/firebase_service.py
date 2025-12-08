@@ -124,7 +124,10 @@ class FirebaseService:
         user_input: str,
         result_content: str,
         model_used: str,
-        tokens_used: int
+        tokens_used: int,
+        input_tokens: int,
+        output_tokens: int,
+        cost: float
     ) -> str:
         """
         Save AI processing result to Firestore under a Kapitel run
@@ -137,7 +140,10 @@ class FirebaseService:
             user_input: User's instructions
             result_content: AI-generated content
             model_used: OpenAI model used
-            tokens_used: Number of tokens consumed
+            tokens_used: Total number of tokens consumed
+            input_tokens: Number of input tokens consumed
+            output_tokens: Number of output tokens consumed
+            cost: Cost in USD for this processing
 
         Returns:
             str: Result document ID
@@ -164,11 +170,14 @@ class FirebaseService:
                 'result_content': result_content,
                 'model_used': model_used,
                 'tokens_used': tokens_used,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'cost': cost,
                 'created_at': SERVER_TIMESTAMP
             }
 
             result_ref.set(result_data)
-            logger.info(f"Saved result for quelle {quelle_id} in kapitel {kapitel_id} run {run_id} for user {user_id}")
+            logger.info(f"Saved result for quelle {quelle_id} in kapitel {kapitel_id} run {run_id} for user {user_id} (cost: ${cost:.6f})")
 
             return result_ref.id
 

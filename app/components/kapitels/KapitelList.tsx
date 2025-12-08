@@ -118,6 +118,9 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                     '',
                   modelUsed: resData.model_used ?? resData.modelUsed ?? '',
                   tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
+                  inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
+                  outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
+                  cost: resData.cost ?? 0,
                   createdAt:
                     resData.created_at?.toDate?.()?.toISOString() ||
                     resData.createdAt?.toDate?.()?.toISOString() ||
@@ -237,9 +240,21 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
               {currentRun ? (
                 <div className="space-y-4">
                   <div className="rounded-lg border p-4 bg-muted/50">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Clock className="h-4 w-4" />
-                      Run {currentRun.index} · {new Date(currentRun.createdAt).toLocaleString()} · Modell {currentRun.model}
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Clock className="h-4 w-4" />
+                        Run {currentRun.index} · {new Date(currentRun.createdAt).toLocaleString()} · Modell {currentRun.model}
+                      </div>
+                      {currentRun.results && currentRun.results.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="font-mono">
+                            Total: ${(currentRun.results.reduce((sum, r) => sum + (r.cost || 0), 0)).toFixed(4)}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {currentRun.results.reduce((sum, r) => sum + (r.tokensUsed || 0), 0).toLocaleString()} tokens
+                          </Badge>
+                        </div>
+                      )}
                     </div>
                     <p className="mt-2 text-sm whitespace-pre-wrap">{currentRun.instruction}</p>
                   </div>
@@ -249,10 +264,26 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                       const result = currentRun.results?.find((r) => r.quelleId === quelle.id);
                       return (
                         <div key={quelle.id} className="border rounded-lg p-4 bg-white">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
                             <h4 className="font-semibold text-sm">{quelle.title}</h4>
-                            <Badge variant="outline">Quelle</Badge>
+                            <div className="flex items-center gap-1">
+                              {result?.cost !== undefined && result.cost > 0 && (
+                                <Badge variant="secondary" className="font-mono text-xs">
+                                  ${result.cost.toFixed(4)}
+                                </Badge>
+                              )}
+                              <Badge variant="outline">Quelle</Badge>
+                            </div>
                           </div>
+                          {result?.tokensUsed !== undefined && result.tokensUsed > 0 && (
+                            <div className="mt-1 flex gap-2 text-xs text-muted-foreground">
+                              <span>In: {result.inputTokens?.toLocaleString() ?? 0}</span>
+                              <span>·</span>
+                              <span>Out: {result.outputTokens?.toLocaleString() ?? 0}</span>
+                              <span>·</span>
+                              <span>Total: {result.tokensUsed.toLocaleString()}</span>
+                            </div>
+                          )}
                           <div className="mt-2 rounded-md bg-muted p-3 max-h-64 overflow-y-auto">
                             {result?.resultContent || result?.result_content ? (
                               <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">

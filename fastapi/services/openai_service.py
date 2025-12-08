@@ -102,11 +102,13 @@ User Instructions:
             tokens_used = input_tokens + output_tokens
             model_used = response.model
 
-            logger.info(f"OpenAI processing complete. Tokens used: {tokens_used}")
+            logger.info(f"OpenAI processing complete. Input tokens: {input_tokens}, Output tokens: {output_tokens}, Total: {tokens_used}")
 
             return {
                 "content": result_text,
                 "tokens": tokens_used,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
                 "model": model_used
             }
 

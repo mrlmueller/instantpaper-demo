@@ -5,6 +5,50 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Pricing per million tokens (input, output)
+MODEL_PRICING = {
+    "gpt-4o": (1.25, 10.00),           # 5.1
+    "gpt-4o-mini": (0.25, 2.00),       # 5-mini
+    "gpt-4o-nano": (0.05, 0.40),       # 5-nano
+}
+
+
+def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """
+    Calculate cost in USD based on model and token usage
+
+    Args:
+        model: Model name (e.g., "gpt-4o", "gpt-4o-mini", "gpt-4o-nano")
+        input_tokens: Number of input tokens used
+        output_tokens: Number of output tokens used
+
+    Returns:
+        float: Total cost in USD
+    """
+    # Find the pricing for this model (case-insensitive partial match)
+    model_lower = model.lower()
+    pricing = None
+
+    for model_key, (input_price, output_price) in MODEL_PRICING.items():
+        if model_key.lower() in model_lower:
+            pricing = (input_price, output_price)
+            break
+
+    if not pricing:
+        logger.warning(f"Unknown model '{model}', using default pricing (gpt-4o-mini)")
+        pricing = MODEL_PRICING["gpt-4o-mini"]
+
+    input_price, output_price = pricing
+
+    # Calculate cost (prices are per million tokens)
+    input_cost = (input_tokens / 1_000_000) * input_price
+    output_cost = (output_tokens / 1_000_000) * output_price
+    total_cost = input_cost + output_cost
+
+    logger.info(f"Cost calculation for {model}: Input ${input_cost:.6f} + Output ${output_cost:.6f} = ${total_cost:.6f}")
+
+    return total_cost
+
 
 class QuelleService:
     """Service for Quelle processing operations"""
@@ -67,8 +111,15 @@ class QuelleService:
                 model
             )
 
+            # Step 2.5: Calculate cost
+            cost = calculate_cost(
+                model=openai_result['model'],
+                input_tokens=openai_result['input_tokens'],
+                output_tokens=openai_result['output_tokens']
+            )
+
             # Step 3: Save result to Firestore under the Kapitel run
-            logger.info(f"Saving result for Quelle {quelle_id} in Kapitel {kapitel_id} run {run_id}")
+            logger.info(f"Saving result for Quelle {quelle_id} in Kapitel {kapitel_id} run {run_id} (cost: ${cost:.6f})")
             result_id = await self.firebase.save_result(
                 user_id=user_id,
                 quelle_id=quelle_id,
@@ -77,16 +128,22 @@ class QuelleService:
                 user_input=user_input,
                 result_content=openai_result['content'],
                 model_used=openai_result['model'],
-                tokens_used=openai_result['tokens']
+                tokens_used=openai_result['tokens'],
+                input_tokens=openai_result['input_tokens'],
+                output_tokens=openai_result['output_tokens'],
+                cost=cost
             )
 
-            logger.info(f"Quelle processing complete. Result ID: {result_id}")
+            logger.info(f"Quelle processing complete. Result ID: {result_id}, Cost: ${cost:.6f}")
 
             return {
                 "result_id": result_id,
                 "content": openai_result['content'],
                 "model": openai_result['model'],
-                "tokens": openai_result['tokens']
+                "tokens": openai_result['tokens'],
+                "input_tokens": openai_result['input_tokens'],
+                "output_tokens": openai_result['output_tokens'],
+                "cost": cost
             }
 
         except HTTPException:
