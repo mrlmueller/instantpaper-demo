@@ -4,9 +4,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from utils.config import config
 from middleware.auth import verify_firebase_token
-from models.request import ProcessPaperRequest
-from models.response import ProcessPaperResponse
-from services.paper_service import paper_service
+from models.request import ProcessQuelleRequest
+from models.response import ProcessQuelleResponse
+from services.quelle_service import quelle_service
 import logging
 
 # Configure logging
@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="InstantPaper API",
     version="1.0.0",
-    description="FastAPI backend for processing papers with OpenAI",
+    description="FastAPI backend for processing Quellen with OpenAI",
     lifespan=lifespan
 )
 
@@ -89,38 +89,42 @@ async def test_auth(user_id: str = Depends(verify_firebase_token)):
     }
 
 
-@app.post("/api/process", response_model=ProcessPaperResponse)
-async def process_paper(
-    request: ProcessPaperRequest,
+@app.post("/api/process", response_model=ProcessQuelleResponse)
+async def process_quelle(
+    request: ProcessQuelleRequest,
     user_id: str = Depends(verify_firebase_token)
 ):
     """
-    Process a paper with OpenAI
+    Process a Quelle with OpenAI
 
     Requires Authorization header with Firebase ID token.
-    Fetches the paper, processes it with OpenAI, and saves the result.
+    Fetches the Quelle, processes it with OpenAI, and saves the result.
 
     Args:
-        request: ProcessPaperRequest containing paper_id, user_input, and model
+        request: ProcessQuelleRequest containing quelle_id, user_input, model, kapitel_id, and run_id
         user_id: Extracted from verified Firebase token (dependency)
 
     Returns:
-        ProcessPaperResponse with result details
+        ProcessQuelleResponse with result details
     """
-    logger.info(f"Processing paper {request.paper_id} for user {user_id}")
+    logger.info(f"Processing Quelle {request.quelle_id} for user {user_id} (Kapitel {request.kapitel_id}, run {request.run_id})")
 
-    # Process paper
-    result = await paper_service.process_single_paper(
+    # Process Quelle
+    result = await quelle_service.process_single_quelle(
         user_id=user_id,
-        paper_id=request.paper_id,
+        quelle_id=request.quelle_id,
+        kapitel_id=request.kapitel_id,
+        run_id=request.run_id,
         user_input=request.user_input,
         model=request.model
     )
 
     # Return response
-    return ProcessPaperResponse(
+    return ProcessQuelleResponse(
         result_id=result['result_id'],
-        paper_id=request.paper_id,
+        quelle_id=request.quelle_id,
+        kapitel_id=request.kapitel_id,
+        run_id=request.run_id,
         result_content=result['content'],
         model_used=result['model'],
         tokens_used=result['tokens'],

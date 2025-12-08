@@ -10,14 +10,13 @@ import {
   getDoc,
   getDocs,
   query,
-  where,
   orderBy,
   serverTimestamp,
 } from 'firebase/firestore';
 import { requireAuth } from '@/app/lib/auth/server-auth';
 import { revalidatePath } from 'next/cache';
 
-export type Paper = {
+export type Quelle = {
   id: string;
   title: string;
   content: string;
@@ -25,14 +24,13 @@ export type Paper = {
   updatedAt?: string; // ISO string
 };
 
-export async function createPaper(title: string, content: string) {
+export async function createQuelle(title: string, content: string) {
   try {
     const user = await requireAuth();
     const db = await getFirestoreForUser();
 
-    // Papers are now a subcollection under users/{userId}/papers
-    const papersRef = collection(db, 'users', user.uid, 'papers');
-    const docRef = await addDoc(papersRef, {
+    const quellenRef = collection(db, 'users', user.uid, 'quellen');
+    const docRef = await addDoc(quellenRef, {
       title,
       content,
       createdAt: serverTimestamp(),
@@ -42,25 +40,23 @@ export async function createPaper(title: string, content: string) {
     revalidatePath('/dashboard');
     return { success: true, id: docRef.id };
   } catch (error: any) {
-    console.error('Error creating paper:', error);
+    console.error('Error creating Quelle:', error);
     return { success: false, error: error.message };
   }
 }
 
-export async function updatePaper(paperId: string, title: string, content: string) {
+export async function updateQuelle(quelleId: string, title: string, content: string) {
   try {
     const user = await requireAuth();
     const db = await getFirestoreForUser();
 
-    const paperRef = doc(db, 'users', user.uid, 'papers', paperId);
-
-    // Check if paper exists
-    const paperDoc = await getDoc(paperRef);
-    if (!paperDoc.exists()) {
-      throw new Error('Paper not found');
+    const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
+    const quelleDoc = await getDoc(quelleRef);
+    if (!quelleDoc.exists()) {
+      throw new Error('Quelle not found');
     }
 
-    await updateDoc(paperRef, {
+    await updateDoc(quelleRef, {
       title,
       content,
       updatedAt: serverTimestamp(),
@@ -69,77 +65,74 @@ export async function updatePaper(paperId: string, title: string, content: strin
     revalidatePath('/dashboard');
     return { success: true };
   } catch (error: any) {
-    console.error('Error updating paper:', error);
+    console.error('Error updating Quelle:', error);
     return { success: false, error: error.message };
   }
 }
 
-export async function deletePaper(paperId: string) {
+export async function deleteQuelle(quelleId: string) {
   try {
     const user = await requireAuth();
     const db = await getFirestoreForUser();
 
-    const paperRef = doc(db, 'users', user.uid, 'papers', paperId);
-
-    // Check if paper exists
-    const paperDoc = await getDoc(paperRef);
-    if (!paperDoc.exists()) {
-      throw new Error('Paper not found');
+    const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
+    const quelleDoc = await getDoc(quelleRef);
+    if (!quelleDoc.exists()) {
+      throw new Error('Quelle not found');
     }
 
-    await deleteDoc(paperRef);
+    await deleteDoc(quelleRef);
 
     revalidatePath('/dashboard');
     return { success: true };
   } catch (error: any) {
-    console.error('Error deleting paper:', error);
+    console.error('Error deleting Quelle:', error);
     return { success: false, error: error.message };
   }
 }
 
-export async function getPaper(paperId: string): Promise<Paper | null> {
+export async function getQuelle(quelleId: string): Promise<Quelle | null> {
   try {
     const user = await requireAuth();
     const db = await getFirestoreForUser();
 
-    const paperRef = doc(db, 'users', user.uid, 'papers', paperId);
-    const paperDoc = await getDoc(paperRef);
+    const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
+    const quelleDoc = await getDoc(quelleRef);
 
-    if (!paperDoc.exists()) {
+    if (!quelleDoc.exists()) {
       return null;
     }
 
-    const data = paperDoc.data();
+    const data = quelleDoc.data();
 
     return {
-      id: paperDoc.id,
+      id: quelleDoc.id,
       title: data.title,
       content: data.content,
       createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
     };
   } catch (error: any) {
-    console.error('Error getting paper:', error);
+    console.error('Error getting Quelle:', error);
     return null;
   }
 }
 
-export async function getUserPapers(): Promise<Paper[]> {
+export async function getUserQuellen(): Promise<Quelle[]> {
   try {
     const user = await requireAuth();
     const db = await getFirestoreForUser();
 
-    // Query the subcollection under the user document
-    const papersRef = collection(db, 'users', user.uid, 'papers');
-    const q = query(papersRef, orderBy('createdAt', 'desc'));
+    const quellenRef = collection(db, 'users', user.uid, 'quellen');
+    const q = query(quellenRef, orderBy('createdAt', 'desc'));
 
     const querySnapshot = await getDocs(q);
-    const papers: Paper[] = [];
+    const quellen: Quelle[] = [];
 
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      papers.push({
-        id: doc.id,
+    querySnapshot.forEach((d) => {
+      const data = d.data();
+      quellen.push({
+        id: d.id,
         title: data.title,
         content: data.content,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
@@ -147,9 +140,9 @@ export async function getUserPapers(): Promise<Paper[]> {
       });
     });
 
-    return papers;
+    return quellen;
   } catch (error: any) {
-    console.error('Error getting user papers:', error);
+    console.error('Error getting user Quellen:', error);
     return [];
   }
 }

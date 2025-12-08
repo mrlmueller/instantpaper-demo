@@ -11,39 +11,52 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
-    function isDocumentOwner() {
-      return request.auth.uid == resource.data.userId;
-    }
-
     // User documents - users can only access their own data
     match /users/{userId} {
       allow read, write: if isAuthenticated() && isOwner(userId);
     }
 
-    // Papers subcollection - under each user document
-    match /users/{userId}/papers/{paperId} {
-      // Users can only access their own papers subcollection
+    // Quellen subcollection - under each user document
+    match /users/{userId}/quellen/{quelleId} {
       allow read: if isAuthenticated() && isOwner(userId);
 
-      // Users can create papers in their own subcollection
+      // Create Quelle
       allow create: if isAuthenticated()
         && isOwner(userId)
         && request.resource.data.keys().hasAll(['title', 'content', 'createdAt']);
 
-      // Users can update their own papers
-      allow update: if isAuthenticated() && isOwner(userId);
-
-      // Users can delete their own papers
-      allow delete: if isAuthenticated() && isOwner(userId);
+      // Update/delete Quelle
+      allow update, delete: if isAuthenticated() && isOwner(userId);
     }
 
-    // Results subcollection - AI processing results for each user
-    match /users/{userId}/results/{resultId} {
-      // Users can read their own results
+    // Kapitels subcollection
+    match /users/{userId}/kapitels/{kapitelId} {
       allow read: if isAuthenticated() && isOwner(userId);
 
-      // FastAPI backend can create results (verified via token)
-      allow create: if isAuthenticated() && isOwner(userId);
+      // Create Kapitel with title + quelleIds + createdAt
+      allow create: if isAuthenticated()
+        && isOwner(userId)
+        && request.resource.data.keys().hasAll(['title', 'quelleIds', 'createdAt']);
+
+      allow update, delete: if isAuthenticated() && isOwner(userId);
+
+      // Runs under each Kapitel
+      match /runs/{runId} {
+        allow read: if isAuthenticated() && isOwner(userId);
+
+        // Create run with required fields
+        allow create: if isAuthenticated()
+          && isOwner(userId)
+          && request.resource.data.keys().hasAll(['instruction', 'model', 'index', 'createdAt']);
+
+        allow update, delete: if isAuthenticated() && isOwner(userId);
+
+        // Results under each run
+        match /results/{resultId} {
+          allow read: if isAuthenticated() && isOwner(userId);
+          allow create: if isAuthenticated() && isOwner(userId);
+        }
+      }
     }
 
     // Default deny all

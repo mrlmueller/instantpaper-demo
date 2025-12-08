@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { createPaper } from '@/app/actions/papers';
+import { createQuelle } from '@/app/actions/quellen';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { Plus } from 'lucide-react';
 
-export function CreatePaperDialog() {
+export function CreateQuelleDialog() {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -27,27 +27,26 @@ export function CreatePaperDialog() {
     e.preventDefault();
 
     if (!title.trim()) {
-      toast.error('Title is required');
+      toast.error('Titel ist erforderlich');
       return;
     }
 
     if (!content.trim()) {
-      toast.error('Content is required');
+      toast.error('Inhalt ist erforderlich');
       return;
     }
 
     setLoading(true);
-    const result = await createPaper(title.trim(), content.trim());
+    const result = await createQuelle(title.trim(), content.trim());
 
     if (result.success) {
-      toast.success('Paper created successfully!');
+      toast.success('Quelle wurde erstellt');
       setTitle('');
       setContent('');
       setOpen(false);
-      // Refresh the page to show the new paper
       window.location.reload();
     } else {
-      toast.error('Failed to create paper', {
+      toast.error('Quelle konnte nicht erstellt werden', {
         description: result.error,
       });
     }
@@ -59,26 +58,26 @@ export function CreatePaperDialog() {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)} size="lg">
+      <Button onClick={() => setOpen(true)} size="lg" variant="outline">
         <Plus className="mr-2 h-5 w-5" />
-        New Paper
+        Neue Quelle
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create New Paper</DialogTitle>
+            <DialogTitle>Neue Quelle anlegen</DialogTitle>
             <DialogDescription>
-              Write your paper below. Perfect for long-form content (2000-3000 words).
+              Lege eine Quelle an, die später Kapiteln zugeordnet werden kann.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="title">Title</Label>
+              <Label htmlFor="title">Titel</Label>
               <Input
                 id="title"
-                placeholder="Enter paper title..."
+                placeholder="Titel der Quelle"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 disabled={loading}
@@ -88,27 +87,20 @@ export function CreatePaperDialog() {
 
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label htmlFor="content">Content</Label>
+                <Label htmlFor="content">Inhalt</Label>
                 <span className="text-sm text-gray-500">
-                  {wordCount} words · {charCount} characters
+                  {wordCount} Wörter · {charCount} Zeichen
                 </span>
               </div>
               <Textarea
                 id="content"
-                placeholder="Start writing your paper here...
-
-Perfect for long-form content. Write as much as you need - this field supports 2000-3000 words easily.
-
-Tips:
-- Take your time writing
-- Use paragraphs to organize your thoughts
-- This textarea will automatically expand as you type"
+                placeholder="Füge den Quellentext hier ein..."
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 disabled={loading}
                 required
-                rows={20}
-                className="resize-y min-h-[400px] font-mono text-sm"
+                rows={14}
+                className="resize-y min-h-[320px] font-mono text-sm"
               />
             </div>
 
@@ -119,10 +111,10 @@ Tips:
                 onClick={() => setOpen(false)}
                 disabled={loading}
               >
-                Cancel
+                Abbrechen
               </Button>
               <Button type="submit" disabled={loading}>
-                {loading ? 'Creating...' : 'Create Paper'}
+                {loading ? 'Erstellen...' : 'Quelle erstellen'}
               </Button>
             </DialogFooter>
           </form>

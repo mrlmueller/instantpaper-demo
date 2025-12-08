@@ -47,22 +47,22 @@ class OpenAIService:
         self._ensure_initialized()
         return self._client
 
-    async def process_paper(
+    async def process_quelle(
         self,
-        paper_content: str,
+        quelle_content: str,
         user_input: str,
         model: str
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
-            # Combine paper content and user instructions
-            prompt = f"""Paper Content:
-{paper_content}
+            # Combine Quelle content and user instructions
+            prompt = f"""Quelle Content:
+{quelle_content}
 
 User Instructions:
 {user_input}"""
 
-            logger.info(f"Processing paper with {model}")
+            logger.info(f"Processing Quelle with {model}")
             logger.debug(f"Prompt length: {len(prompt)} characters")
 
             # Call OpenAI API

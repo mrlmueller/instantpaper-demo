@@ -89,47 +89,51 @@ class FirebaseService:
             logger.error(f"Token verification failed: {str(e)}")
             raise
 
-    async def get_paper(self, user_id: str, paper_id: str) -> Optional[dict]:
+    async def get_quelle(self, user_id: str, quelle_id: str) -> Optional[dict]:
         """
-        Fetch a paper from Firestore
+        Fetch a Quelle from Firestore
 
         Args:
-            user_id: User ID (owner of the paper)
-            paper_id: Paper document ID
+            user_id: User ID (owner of the Quelle)
+            quelle_id: Quelle document ID
 
         Returns:
-            dict: Paper data if found, None otherwise
+            dict: Quelle data if found, None otherwise
         """
         try:
             doc_ref = self.db.collection('users').document(user_id) \
-                            .collection('papers').document(paper_id)
+                            .collection('quellen').document(quelle_id)
             doc = doc_ref.get()
 
             if doc.exists:
                 return doc.to_dict()
             else:
-                logger.warning(f"Paper {paper_id} not found for user {user_id}")
+                logger.warning(f"Quelle {quelle_id} not found for user {user_id}")
                 return None
 
         except Exception as e:
-            logger.error(f"Error fetching paper: {str(e)}")
+            logger.error(f"Error fetching Quelle: {str(e)}")
             raise
 
     async def save_result(
         self,
         user_id: str,
-        paper_id: str,
+        quelle_id: str,
+        kapitel_id: str,
+        run_id: str,
         user_input: str,
         result_content: str,
         model_used: str,
         tokens_used: int
     ) -> str:
         """
-        Save AI processing result to Firestore
+        Save AI processing result to Firestore under a Kapitel run
 
         Args:
             user_id: User ID
-            paper_id: Source paper ID
+            quelle_id: Source Quelle ID
+            kapitel_id: Kapitel ID that initiated the run
+            run_id: Run ID for grouping this result
             user_input: User's instructions
             result_content: AI-generated content
             model_used: OpenAI model used
@@ -139,12 +143,23 @@ class FirebaseService:
             str: Result document ID
         """
         try:
-            # Create result document
-            result_ref = self.db.collection('users').document(user_id) \
-                                .collection('results').document()
+            if not kapitel_id or not run_id:
+                raise ValueError("kapitel_id and run_id are required to save results")
+
+            # Create result document in nested runs collection
+            result_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('results')
+                .document(quelle_id)
+            )
 
             result_data = {
-                'paper_id': paper_id,
+                'quelle_id': quelle_id,
                 'user_input': user_input,
                 'result_content': result_content,
                 'model_used': model_used,
@@ -153,7 +168,7 @@ class FirebaseService:
             }
 
             result_ref.set(result_data)
-            logger.info(f"Saved result {result_ref.id} for user {user_id}")
+            logger.info(f"Saved result for quelle {quelle_id} in kapitel {kapitel_id} run {run_id} for user {user_id}")
 
             return result_ref.id
 

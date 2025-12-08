@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "InstantPaper",
-  description: "Your instant paper management system",
+  description: "Manage Quellen und Kapiteln mit gemeinsamer Verarbeitung",
 };
 
 export default function RootLayout({
