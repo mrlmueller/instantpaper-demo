@@ -126,7 +126,9 @@ class FirebaseService:
         model_used: str,
         tokens_used: int,
         input_tokens: int,
+        cached_input_tokens: int,
         output_tokens: int,
+        reasoning_tokens: int,
         cost: float
     ) -> str:
         """
@@ -142,7 +144,9 @@ class FirebaseService:
             model_used: OpenAI model used
             tokens_used: Total number of tokens consumed
             input_tokens: Number of input tokens consumed
-            output_tokens: Number of output tokens consumed
+            cached_input_tokens: Number of cached input tokens (charged at 10% rate)
+            output_tokens: Number of output tokens consumed (visible)
+            reasoning_tokens: Number of reasoning tokens consumed (internal chain-of-thought)
             cost: Cost in USD for this processing
 
         Returns:
@@ -171,13 +175,18 @@ class FirebaseService:
                 'model_used': model_used,
                 'tokens_used': tokens_used,
                 'input_tokens': input_tokens,
+                'cached_input_tokens': cached_input_tokens,
                 'output_tokens': output_tokens,
+                'reasoning_tokens': reasoning_tokens,
                 'cost': cost,
                 'created_at': SERVER_TIMESTAMP
             }
 
             result_ref.set(result_data)
-            logger.info(f"Saved result for quelle {quelle_id} in kapitel {kapitel_id} run {run_id} for user {user_id} (cost: ${cost:.6f})")
+            logger.info(
+                f"Saved result for quelle {quelle_id} in kapitel {kapitel_id} run {run_id} for user {user_id} "
+                f"(cost: ${cost:.6f}, cached: {cached_input_tokens}, reasoning: {reasoning_tokens})"
+            )
 
             return result_ref.id
 

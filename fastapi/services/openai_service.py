@@ -27,7 +27,7 @@ class OpenAIService:
         if not self._initialized:
             try:
                 # Check if API key is configured
-                if not config.OPENAI_API_KEY or config.OPENAI_API_KEY == '':
+                if not config.OPENAI_API_KEY or config.OPENAI_API_KEY == "":
                     raise ValueError(
                         "OpenAI API key not configured. Please add your OpenAI API key to the .env file. "
                         "Get it from: https://platform.openai.com/api-keys"
@@ -48,10 +48,7 @@ class OpenAIService:
         return self._client
 
     async def process_quelle(
-        self,
-        quelle_content: str,
-        user_input: str,
-        model: str
+        self, quelle_content: str, user_input: str, model: str
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
@@ -72,15 +69,12 @@ User Instructions:
                     {
                         "role": "system",
                         "content": "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
-                                   "Think step-by-step to ensure correctness, but return only the final answer unless formatting is requested."
+                        "Think step-by-step to ensure correctness, but return only the final answer unless formatting is requested.",
                     },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
+                    {"role": "user", "content": prompt},
                 ],
                 reasoning={"effort": "high"},
-                max_output_tokens=None  # allow model to decide; adjust if you want a hard cap
+                max_output_tokens=None,  # allow model to decide; adjust if you want a hard cap
             )
 
             # Extract text output safely
@@ -97,19 +91,51 @@ User Instructions:
             if not result_text:
                 raise ValueError("No text output returned from OpenAI response")
 
-            input_tokens = getattr(getattr(response, "usage", None), "input_tokens", 0) or 0
-            output_tokens = getattr(getattr(response, "usage", None), "output_tokens", 0) or 0
-            tokens_used = input_tokens + output_tokens
+            # Extract token usage from response
+            usage = getattr(response, "usage", None)
+            input_tokens = (
+                getattr(usage, "input_tokens", None)
+                or getattr(usage, "prompt_tokens", 0)
+                or 0
+            )
+            output_tokens = (
+                getattr(usage, "output_tokens", None)
+                or getattr(usage, "completion_tokens", 0)
+                or 0
+            )
+
+            # Extract cached input tokens (charged at lower rate)
+            cached_input_tokens = 0
+            input_details = getattr(usage, "input_tokens_details", None)
+            if input_details:
+                cached_input_tokens = getattr(input_details, "cached_tokens", 0) or 0
+
+            # Extract reasoning tokens (for reasoning models like o1, o1-mini, etc.)
+            reasoning_tokens = 0
+            completion_details = getattr(usage, "completion_tokens_details", None)
+            if completion_details:
+                reasoning_tokens = (
+                    getattr(completion_details, "reasoning_tokens", 0) or 0
+                )
+
+            tokens_used = input_tokens + output_tokens + reasoning_tokens
             model_used = response.model
 
-            logger.info(f"OpenAI processing complete. Input tokens: {input_tokens}, Output tokens: {output_tokens}, Total: {tokens_used}")
+            logger.info(
+                f"OpenAI processing complete. "
+                f"Input: {input_tokens} (cached: {cached_input_tokens}), "
+                f"Output: {output_tokens}, Reasoning: {reasoning_tokens}, "
+                f"Total: {tokens_used} tokens"
+            )
 
             return {
                 "content": result_text,
                 "tokens": tokens_used,
                 "input_tokens": input_tokens,
+                "cached_input_tokens": cached_input_tokens,
                 "output_tokens": output_tokens,
-                "model": model_used
+                "reasoning_tokens": reasoning_tokens,
+                "model": model_used,
             }
 
         except Exception as e:

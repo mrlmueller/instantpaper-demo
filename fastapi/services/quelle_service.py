@@ -5,47 +5,78 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Pricing per million tokens (input, output)
+# Pricing per million tokens (input, cached_input, output)
 MODEL_PRICING = {
-    "gpt-4o": (1.25, 10.00),           # 5.1
-    "gpt-4o-mini": (0.25, 2.00),       # 5-mini
-    "gpt-4o-nano": (0.05, 0.40),       # 5-nano
+    "gpt-5.1": (1.25, 0.125, 10.00),      # Most expensive model
+    "gpt-5-mini": (0.25, 0.025, 2.00),    # Mid-tier model
+    "gpt-5-nano": (0.05, 0.005, 0.40),    # Most economical model
 }
 
 
-def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+def calculate_cost(
+    model: str,
+    input_tokens: int,
+    cached_input_tokens: int,
+    output_tokens: int,
+    reasoning_tokens: int = 0
+) -> float:
     """
     Calculate cost in USD based on model and token usage
 
     Args:
-        model: Model name (e.g., "gpt-4o", "gpt-4o-mini", "gpt-4o-nano")
-        input_tokens: Number of input tokens used
-        output_tokens: Number of output tokens used
+        model: Model name (e.g., "gpt-5.1", "gpt-5-mini", "gpt-5-nano")
+        input_tokens: Total number of input tokens used
+        cached_input_tokens: Number of input tokens from cache (charged at 10% rate)
+        output_tokens: Number of output tokens used (visible output)
+        reasoning_tokens: Number of reasoning tokens used (internal chain-of-thought)
 
     Returns:
         float: Total cost in USD
+
+    Note:
+        - Cached input tokens are charged at 10% of regular input rate
+        - Non-cached input = input_tokens - cached_input_tokens
+        - Reasoning tokens are charged at the output token rate
     """
-    # Find the pricing for this model (case-insensitive partial match)
+    # Find the pricing for this model (case-insensitive exact match)
     model_lower = model.lower()
     pricing = None
 
-    for model_key, (input_price, output_price) in MODEL_PRICING.items():
-        if model_key.lower() in model_lower:
-            pricing = (input_price, output_price)
+    logger.info(f"Matching model '{model}' against pricing dictionary")
+
+    for model_key, (input_price, cached_input_price, output_price) in MODEL_PRICING.items():
+        if model_key.lower() == model_lower:
+            pricing = (input_price, cached_input_price, output_price)
+            logger.info(
+                f"Matched pricing key: '{model_key}' -> "
+                f"${input_price}/M input, ${cached_input_price}/M cached, ${output_price}/M output"
+            )
             break
 
     if not pricing:
-        logger.warning(f"Unknown model '{model}', using default pricing (gpt-4o-mini)")
-        pricing = MODEL_PRICING["gpt-4o-mini"]
+        logger.warning(f"Unknown model '{model}', using default pricing (gpt-5-mini)")
+        pricing = MODEL_PRICING["gpt-5-mini"]
 
-    input_price, output_price = pricing
+    input_price, cached_input_price, output_price = pricing
+
+    # Calculate non-cached input tokens (regular rate)
+    non_cached_input_tokens = input_tokens - cached_input_tokens
 
     # Calculate cost (prices are per million tokens)
-    input_cost = (input_tokens / 1_000_000) * input_price
-    output_cost = (output_tokens / 1_000_000) * output_price
-    total_cost = input_cost + output_cost
+    non_cached_input_cost = (non_cached_input_tokens / 1_000_000) * input_price
+    cached_input_cost = (cached_input_tokens / 1_000_000) * cached_input_price
+    total_output_tokens = output_tokens + reasoning_tokens
+    output_cost = (total_output_tokens / 1_000_000) * output_price
 
-    logger.info(f"Cost calculation for {model}: Input ${input_cost:.6f} + Output ${output_cost:.6f} = ${total_cost:.6f}")
+    total_cost = non_cached_input_cost + cached_input_cost + output_cost
+
+    logger.info(
+        f"Cost calculation for {model}: "
+        f"Non-cached input ${non_cached_input_cost:.6f} ({non_cached_input_tokens:,} × ${input_price}/M) + "
+        f"Cached input ${cached_input_cost:.6f} ({cached_input_tokens:,} × ${cached_input_price}/M) + "
+        f"Output ${output_cost:.6f} ({output_tokens:,} + {reasoning_tokens:,} reasoning × ${output_price}/M) = "
+        f"${total_cost:.6f}"
+    )
 
     return total_cost
 
@@ -111,11 +142,13 @@ class QuelleService:
                 model
             )
 
-            # Step 2.5: Calculate cost
+            # Step 2.5: Calculate cost (including cached input and reasoning tokens)
             cost = calculate_cost(
                 model=openai_result['model'],
                 input_tokens=openai_result['input_tokens'],
-                output_tokens=openai_result['output_tokens']
+                cached_input_tokens=openai_result.get('cached_input_tokens', 0),
+                output_tokens=openai_result['output_tokens'],
+                reasoning_tokens=openai_result.get('reasoning_tokens', 0)
             )
 
             # Step 3: Save result to Firestore under the Kapitel run
@@ -130,7 +163,9 @@ class QuelleService:
                 model_used=openai_result['model'],
                 tokens_used=openai_result['tokens'],
                 input_tokens=openai_result['input_tokens'],
+                cached_input_tokens=openai_result.get('cached_input_tokens', 0),
                 output_tokens=openai_result['output_tokens'],
+                reasoning_tokens=openai_result.get('reasoning_tokens', 0),
                 cost=cost
             )
 
@@ -142,7 +177,9 @@ class QuelleService:
                 "model": openai_result['model'],
                 "tokens": openai_result['tokens'],
                 "input_tokens": openai_result['input_tokens'],
+                "cached_input_tokens": openai_result.get('cached_input_tokens', 0),
                 "output_tokens": openai_result['output_tokens'],
+                "reasoning_tokens": openai_result.get('reasoning_tokens', 0),
                 "cost": cost
             }
 

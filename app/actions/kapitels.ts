@@ -23,7 +23,9 @@ export type KapitelRunResult = {
   modelUsed: string;
   tokensUsed: number;
   inputTokens: number;
+  cachedInputTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   cost: number;
   createdAt: string;
 };
@@ -168,7 +170,9 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
           modelUsed: resData.model_used ?? resData.modelUsed ?? '',
           tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
           inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
+          cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
           outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
+          reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
           cost: resData.cost ?? 0,
           createdAt: resData.created_at?.toDate?.()?.toISOString()
             || resData.createdAt?.toDate?.()?.toISOString()

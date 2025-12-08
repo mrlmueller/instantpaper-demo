@@ -119,7 +119,9 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                   modelUsed: resData.model_used ?? resData.modelUsed ?? '',
                   tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
                   inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
+                  cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
                   outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
+                  reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
                   cost: resData.cost ?? 0,
                   createdAt:
                     resData.created_at?.toDate?.()?.toISOString() ||
@@ -276,10 +278,19 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                             </div>
                           </div>
                           {result?.tokensUsed !== undefined && result.tokensUsed > 0 && (
-                            <div className="mt-1 flex gap-2 text-xs text-muted-foreground">
+                            <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
                               <span>In: {result.inputTokens?.toLocaleString() ?? 0}</span>
+                              {result.cachedInputTokens > 0 && (
+                                <span className="text-green-600 font-medium">(cached: {result.cachedInputTokens.toLocaleString()})</span>
+                              )}
                               <span>·</span>
                               <span>Out: {result.outputTokens?.toLocaleString() ?? 0}</span>
+                              {result.reasoningTokens > 0 && (
+                                <>
+                                  <span>·</span>
+                                  <span className="text-amber-600 font-medium">Reasoning: {result.reasoningTokens.toLocaleString()}</span>
+                                </>
+                              )}
                               <span>·</span>
                               <span>Total: {result.tokensUsed.toLocaleString()}</span>
                             </div>
