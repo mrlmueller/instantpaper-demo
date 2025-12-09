@@ -199,7 +199,8 @@ export function QuellenPanel({
                 value={newQuelleText}
                 onChange={(e) => setNewQuelleText(e.target.value)}
                 placeholder="Füge hier den relevanten Textabschnitt aus deiner Quelle ein..."
-                className="mt-2 min-h-[300px] font-mono text-sm"
+                className="mt-2 h-64 font-mono text-sm resize-none"
+                style={{ maxHeight: '300px', overflowY: 'auto' }}
               />
               <div className="mt-2 text-xs text-muted-foreground">
                 {newQuelleText.split(/\s+/).filter(Boolean).length} Wörter
