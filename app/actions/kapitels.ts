@@ -356,7 +356,12 @@ export async function createKapitelRun(
   kapitelId: string,
   instruction: string,
   model: string,
-  options?: { promptTemplateId?: string; promptPayload?: Record<string, any>; autoCombine?: boolean }
+  options?: {
+    promptTemplateId?: string;
+    promptPayload?: Record<string, any>;
+    autoCombine?: boolean;
+    grundlegendeInformationen?: string;
+  }
 ) {
   try {
     const user = await requireAuth();
@@ -377,6 +382,7 @@ export async function createKapitelRun(
       promptTemplateId: options?.promptTemplateId,
       promptPayload: options?.promptPayload,
       autoCombine: options?.autoCombine ?? false,
+      grundlegendeInformationen: options?.grundlegendeInformationen || null,
     });
 
     revalidatePath('/dashboard');

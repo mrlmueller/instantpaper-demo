@@ -161,12 +161,17 @@ class QuelleService:
                     detail=f"Quelle {quelle_id} not found or you don't have access to it"
                 )
 
+            # Step 1.5: Fetch run to get grundlegendeInformationen
+            run = await self.firebase.get_run(user_id, kapitel_id, run_id)
+            grundlegende_informationen = run.get('grundlegendeInformationen') if run else None
+
             # Step 2: Process with OpenAI
             logger.info(f"Processing Quelle {quelle_id} with OpenAI model {model}")
             openai_result = await self.openai.process_quelle(
                 quelle['content'],
                 user_input,
-                model
+                model,
+                grundlegende_informationen
             )
 
             # Step 2.5: Calculate cost (including cached input and reasoning tokens)

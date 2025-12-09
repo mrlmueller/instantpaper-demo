@@ -50,12 +50,24 @@ class OpenAIService:
         return self._client
 
     async def process_quelle(
-        self, quelle_content: str, user_input: str, model: str
+        self,
+        quelle_content: str,
+        user_input: str,
+        model: str,
+        grundlegende_informationen: str = None
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
-            # Combine Quelle content and user instructions (no explicit labels)
-            prompt = f"""{quelle_content}
+            # Build prompt with optional grundlegende informationen
+            if grundlegende_informationen and grundlegende_informationen.strip():
+                prompt = f"""{quelle_content}
+
+### Grundlegende Informationen
+{grundlegende_informationen}
+
+{user_input}"""
+            else:
+                prompt = f"""{quelle_content}
 
 {user_input}"""
 

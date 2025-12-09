@@ -49,6 +49,8 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
   const [heading, setHeading] = useState('');
   const [topic, setTopic] = useState('');
   const [autoCombine, setAutoCombine] = useState(false);
+  const [enableGrundlegendeInfo, setEnableGrundlegendeInfo] = useState(false);
+  const [grundlegendeInformationen, setGrundlegendeInformationen] = useState('');
 
   const buildPrompt = (h: string, t: string) => {
     return `### Aufgabe:
@@ -86,6 +88,7 @@ Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz i
           topic: topic.trim(),
         },
         autoCombine,
+        grundlegendeInformationen: enableGrundlegendeInfo ? grundlegendeInformationen.trim() : undefined,
       });
       if (!runResult.success || !runResult.runId) {
         throw new Error(runResult.error || 'Run konnte nicht erstellt werden.');
@@ -165,6 +168,8 @@ Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz i
     setHeading('');
     setTopic('');
     setAutoCombine(false);
+    setEnableGrundlegendeInfo(false);
+    setGrundlegendeInformationen('');
   };
 
   const runFinished =
@@ -325,6 +330,36 @@ Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz i
                   <p className="text-xs text-muted-foreground ml-6">
                     Automatisches Kombinieren erfordert mindestens 2 Quellen
                   </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="enable-grundlegende-info"
+                    checked={enableGrundlegendeInfo}
+                    onCheckedChange={(checked) => setEnableGrundlegendeInfo(checked === true)}
+                    disabled={loading}
+                  />
+                  <Label
+                    htmlFor="enable-grundlegende-info"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Grundlegende Informationen hinzufügen
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground ml-6">
+                  Extra Kontext der sich durch den ganzen Text ziehen soll, also Definitionen von nicht eindeutigen Begriffen, etc.
+                </p>
+                {enableGrundlegendeInfo && (
+                  <Textarea
+                    id="grundlegende-informationen"
+                    placeholder="Z.B.: Definition von Begriffen, wichtige Kontextinformationen..."
+                    value={grundlegendeInformationen}
+                    onChange={(e) => setGrundlegendeInformationen(e.target.value)}
+                    rows={4}
+                    className="resize-none"
+                    disabled={loading}
+                  />
                 )}
               </div>
               <div className="space-y-2">
