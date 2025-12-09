@@ -35,9 +35,9 @@ const mockUserStats = {
     { projektName: "Seminararbeit", cost: 120 },
   ],
   modelUsage: [
-    { model: "gpt-4o-mini", count: 18 },
-    { model: "gpt-4o", count: 4 },
-    { model: "o1-mini", count: 1 },
+    { model: "gpt-5-nano", count: 18 },
+    { model: "gpt-5-mini", count: 4 },
+    { model: "gpt-5.1", count: 1 },
   ],
   memberSince: new Date("2024-01-15"),
 }

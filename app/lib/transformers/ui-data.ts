@@ -125,6 +125,7 @@ export function transformRunToUI(
 
   return {
     id: fbRun.id,
+    index: fbRun.index,
     kapitelId,
     timestamp: new Date(fbRun.createdAt),
     status,

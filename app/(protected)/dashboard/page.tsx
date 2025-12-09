@@ -12,7 +12,8 @@ export default async function DashboardPage() {
   await createOrUpdateUser();
 
   const quellen = await getUserQuellen();
-  const kapitels = await getUserKapitels(true, 5);
+  // Fetch more runs so the run dropdown can show historical entries
+  const kapitels = await getUserKapitels(true, 50);
 
   return <Dashboard initialKapitels={kapitels} initialQuellen={quellen} />;
 }

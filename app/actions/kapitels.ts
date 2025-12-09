@@ -60,6 +60,9 @@ export type KapitelRun = {
   promptTemplateId?: string;
   promptPayload?: Record<string, any>;
   autoCombine?: boolean;
+  ueberschrift?: string;
+  thema?: string;
+  grundlegendeInformationen?: string | null;
 };
 
 export type Kapitel = {
@@ -513,6 +516,9 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
         index: runData.index || 0,
         instruction: runData.instruction || '',
         model: runData.model || '',
+        ueberschrift: runData.ueberschrift || runData.heading || '',
+        thema: runData.thema || runData.instruction || '',
+        grundlegendeInformationen: runData.grundlegendeInformationen || null,
         promptTemplateId: runData.promptTemplateId,
         promptPayload: runData.promptPayload,
         autoCombine: runData.autoCombine ?? false,

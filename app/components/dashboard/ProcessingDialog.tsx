@@ -28,7 +28,7 @@ interface ProcessingDialogProps {
 
 export function ProcessingDialog({ open, onOpenChange, kapitelTitle, quellenCount, onProcess }: ProcessingDialogProps) {
   const [settings, setSettings] = useState<ProcessingSettings>({
-    model: "gpt-4o-mini",
+    model: "gpt-5-nano",
     ueberschrift: kapitelTitle,
     thema: "",
     grundlegendeInfos: "",
@@ -42,7 +42,7 @@ export function ProcessingDialog({ open, onOpenChange, kapitelTitle, quellenCoun
   const handleOpenChange = (open: boolean) => {
     if (open) {
       setSettings({
-        model: "gpt-4o-mini",
+        model: "gpt-5-nano",
         ueberschrift: kapitelTitle,
         thema: "",
         grundlegendeInfos: "",
@@ -76,7 +76,7 @@ export function ProcessingDialog({ open, onOpenChange, kapitelTitle, quellenCoun
             <div className="grid gap-4 pl-6">
               <div>
                 <Label htmlFor="ueberschrift" className="text-sm">
-                  Überschrift
+                  Ueberschrift
                 </Label>
                 <Input
                   id="ueberschrift"
@@ -109,7 +109,7 @@ export function ProcessingDialog({ open, onOpenChange, kapitelTitle, quellenCoun
                   id="grundlegende-infos"
                   value={settings.grundlegendeInfos}
                   onChange={(e) => setSettings({ ...settings, grundlegendeInfos: e.target.value })}
-                  placeholder="Hintergrundinformationen, Kontext oder zusätzliche Details, die bei der Verarbeitung berücksichtigt werden sollen..."
+                  placeholder="Hintergrundinformationen, Kontext oder zusaetzliche Details, die bei der Verarbeitung beruecksichtigt werden sollen..."
                   className="mt-1.5 min-h-[70px] resize-none"
                 />
               </div>
@@ -136,22 +136,22 @@ export function ProcessingDialog({ open, onOpenChange, kapitelTitle, quellenCoun
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="gpt-4o-mini">
+                    <SelectItem value="gpt-5-nano">
                       <div className="flex items-center justify-between w-full gap-4">
-                        <span>GPT-4o-mini</span>
+                        <span>GPT-5 nano</span>
                         <span className="text-xs text-muted-foreground">Empfohlen</span>
                       </div>
                     </SelectItem>
-                    <SelectItem value="gpt-4o">
+                    <SelectItem value="gpt-5-mini">
                       <div className="flex items-center justify-between w-full gap-4">
-                        <span>GPT-4o</span>
-                        <span className="text-xs text-muted-foreground">Beste Qualität</span>
+                        <span>GPT-5 mini</span>
+                        <span className="text-xs text-muted-foreground">Beste Qualitaet</span>
                       </div>
                     </SelectItem>
-                    <SelectItem value="o1-mini">
+                    <SelectItem value="gpt-5.1">
                       <div className="flex items-center justify-between w-full gap-4">
-                        <span>o1-mini</span>
-                        <span className="text-xs text-muted-foreground">Reasoning</span>
+                        <span>GPT-5.1</span>
+                        <span className="text-xs text-muted-foreground">Beste Qualitaet</span>
                       </div>
                     </SelectItem>
                   </SelectContent>
@@ -165,7 +165,7 @@ export function ProcessingDialog({ open, onOpenChange, kapitelTitle, quellenCoun
                     <Label htmlFor="direct-combine" className="text-sm font-medium cursor-pointer">
                       Direkt kombinieren
                     </Label>
-                    <p className="text-xs text-muted-foreground mt-0.5">Erstellt sofort einen zusammenhängenden Text</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Erstellt sofort einen zusammenhaengenden Text</p>
                   </div>
                 </div>
                 <Switch

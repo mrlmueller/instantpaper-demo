@@ -36,6 +36,7 @@ export interface QuellenErgebnis {
 
 export interface Run {
   id: string;
+  index?: number;
   kapitelId: string;
   timestamp: Date;
   status: "success" | "error" | "running";
@@ -49,7 +50,7 @@ export interface Run {
 }
 
 export interface ProcessingSettings {
-  model: "gpt-4o-mini" | "gpt-4o" | "o1-mini"; // Real model names (not mock)
+  model: "gpt-5-nano" | "gpt-5-mini" | "gpt-5.1"; // Real model names (not mock)
   ueberschrift: string; // Heading
   thema: string; // Topic/instruction
   grundlegendeInfos: string; // Basic/contextual information

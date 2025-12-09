@@ -137,7 +137,7 @@ export function KapitelWorkspace({
                   <SelectContent>
                     {runs.map((run, index) => (
                       <SelectItem key={run.id} value={run.id}>
-                        Run {runs.length - index} - {run.timestamp.toLocaleDateString("de-DE")}
+                        {`Run ${run.index ?? runs.length - index}`} - {run.timestamp.toLocaleDateString("de-DE")}
                       </SelectItem>
                     ))}
                   </SelectContent>
