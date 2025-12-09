@@ -24,3 +24,18 @@ class ProcessQuelleRequest(BaseModel):
                 "model": "gpt-5.1"
             }
         }
+
+
+class CombineRunRequest(BaseModel):
+    """Request model for combining multiple Quelle results in a run"""
+
+    kapitel_id: str = Field(..., description="Kapitel ID for the run")
+    run_id: str = Field(..., description="Run ID to combine results for")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "kapitel_id": "kap456",
+                "run_id": "run789",
+            }
+        }

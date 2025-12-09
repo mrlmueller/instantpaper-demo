@@ -196,6 +196,119 @@ class FirebaseService:
             logger.error(f"Error saving result: {str(e)}")
             raise
 
+    async def get_run(self, user_id: str, kapitel_id: str, run_id: str) -> Optional[dict]:
+        """Fetch a run document for a given Kapitel."""
+        try:
+            run_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+            )
+            doc = run_ref.get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Error fetching run {run_id}: {str(e)}")
+            raise
+
+    async def get_run_results(self, user_id: str, kapitel_id: str, run_id: str) -> list:
+        """Fetch all results for a run."""
+        try:
+            results_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('results')
+            )
+            snapshot = results_ref.get()
+            return [
+                {'id': doc.id, **doc.to_dict()}
+                for doc in snapshot
+            ]
+        except Exception as e:
+            logger.error(f"Error fetching results for run {run_id}: {str(e)}")
+            raise
+
+    async def get_combined_result(self, user_id: str, kapitel_id: str, run_id: str) -> Optional[dict]:
+        """Fetch combined result if it exists."""
+        try:
+            combined_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('combined')
+                .document('combined')
+            )
+            doc = combined_ref.get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Error fetching combined result for run {run_id}: {str(e)}")
+            raise
+
+    async def save_combined_result(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        combined_content: str,
+        source_quelle_ids: list,
+        heading: str,
+        topic: str,
+        model_used: str,
+        tokens_used: int,
+        input_tokens: int,
+        cached_input_tokens: int,
+        output_tokens: int,
+        reasoning_tokens: int,
+        cost: float
+    ) -> str:
+        """
+        Save combined result under a run (separate collection next to results).
+        """
+        try:
+            combined_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('combined')
+                .document('combined')
+            )
+
+            combined_data = {
+                'combined_content': combined_content,
+                'source_quelle_ids': source_quelle_ids,
+                'heading': heading,
+                'topic': topic,
+                'model_used': model_used,
+                'tokens_used': tokens_used,
+                'input_tokens': input_tokens,
+                'cached_input_tokens': cached_input_tokens,
+                'output_tokens': output_tokens,
+                'reasoning_tokens': reasoning_tokens,
+                'cost': cost,
+                'created_at': SERVER_TIMESTAMP
+            }
+
+            combined_ref.set(combined_data)
+            logger.info(
+                f"Saved combined result for kapitel {kapitel_id} run {run_id} (cost: ${cost:.6f})"
+            )
+            return combined_ref.id
+        except Exception as e:
+            logger.error(f"Error saving combined result: {str(e)}")
+            raise
+
 
 # Create singleton instance
 firebase_service = FirebaseService()

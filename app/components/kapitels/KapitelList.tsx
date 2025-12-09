@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { Kapitel, KapitelRun } from '@/app/actions/kapitels';
+import type { Kapitel, KapitelRun, CombinedResult } from '@/app/actions/kapitels';
 import type { Quelle } from '@/app/actions/quellen';
 import { ProcessKapitelDialog } from './ProcessKapitelDialog';
 import { ManageKapitelQuellenDialog } from './ManageKapitelQuellenDialog';
@@ -12,11 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Sparkles, Clock, Loader2 } from 'lucide-react';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { firestoreClient } from '@/app/lib/firebase/firestoreClient';
 import { useAuth } from '@/app/components/providers/AuthProvider';
+import Cookies from 'js-cookie';
+import { toast } from 'sonner';
 
 interface KapitelListProps {
   kapitels: Kapitel[];
@@ -27,6 +30,49 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
   const { user } = useAuth();
   const [selectedRuns, setSelectedRuns] = useState<Record<string, string | undefined>>({});
   const [kapitelState, setKapitelState] = useState<Kapitel[]>(kapitels);
+  const [combining, setCombining] = useState<Record<string, boolean>>({});
+
+  const handleCombine = async (kapitelId: string, runId: string) => {
+    const token = Cookies.get('__session');
+    if (!token) {
+      toast.error('Authentifizierung erforderlich', {
+        description: 'Bitte erneut anmelden.',
+      });
+      return;
+    }
+
+    setCombining((prev) => ({ ...prev, [runId]: true }));
+
+    try {
+      const response = await fetch('http://localhost:8000/api/combine-run', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Fehler beim Kombinieren');
+      }
+
+      toast.info('Kombination gestartet', {
+        description: 'Die Texte werden zusammengeführt.',
+      });
+    } catch (err: any) {
+      toast.error('Kombination fehlgeschlagen', {
+        description: err.message || 'Unbekannter Fehler',
+      });
+      console.error('Combine error', err);
+    } finally {
+      setCombining((prev) => ({ ...prev, [runId]: false }));
+    }
+  };
 
   useEffect(() => {
     setKapitelState(kapitels);
@@ -141,6 +187,52 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
               );
             });
             unsubscribes.push(resUnsub);
+
+            const combinedRef = collection(
+              firestoreClient,
+              'users',
+              user.uid,
+              'kapitels',
+              kapitel.id,
+              'runs',
+              run.id,
+              'combined'
+            );
+            const combinedUnsub = onSnapshot(combinedRef, (combinedSnap) => {
+              let combined: CombinedResult | null = null;
+              if (!combinedSnap.empty) {
+                const doc = combinedSnap.docs[0];
+                const data: any = doc.data();
+                combined = {
+                  id: doc.id,
+                  combinedContent: data.combined_content ?? data.combinedContent ?? '',
+                  sourceQuelleIds: data.source_quelle_ids ?? data.sourceQuelleIds ?? [],
+                  heading: data.heading ?? '',
+                  topic: data.topic ?? '',
+                  modelUsed: data.model_used ?? data.modelUsed ?? '',
+                  tokensUsed: data.tokens_used ?? data.tokensUsed ?? 0,
+                  inputTokens: data.input_tokens ?? data.inputTokens ?? 0,
+                  cachedInputTokens: data.cached_input_tokens ?? data.cachedInputTokens ?? 0,
+                  outputTokens: data.output_tokens ?? data.outputTokens ?? 0,
+                  reasoningTokens: data.reasoning_tokens ?? data.reasoningTokens ?? 0,
+                  cost: data.cost ?? 0,
+                  createdAt:
+                    data.created_at?.toDate?.()?.toISOString() ||
+                    data.createdAt?.toDate?.()?.toISOString() ||
+                    new Date().toISOString(),
+                };
+              }
+
+              setKapitelState((prev) =>
+                prev.map((k) => {
+                  if (k.id !== kapitel.id) return k;
+                  const updatedRuns =
+                    k.runs?.map((r) => (r.id === run.id ? { ...r, combined } : r)) || [];
+                  return { ...k, runs: updatedRuns };
+                })
+              );
+            });
+            unsubscribes.push(combinedUnsub);
           });
         }
       );
@@ -170,6 +262,16 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
         const currentRun: KapitelRun | undefined =
           kapitel.runs?.find((r) => r.id === selectedRuns[kapitel.id]) ||
           kapitel.runs?.[0];
+        const hasContentCount =
+          currentRun?.results?.filter((r) => r.hasContent !== false && !!r.resultContent)?.length ??
+          0;
+        const runCost =
+          (currentRun?.results?.reduce((sum, r) => sum + (r.cost || 0), 0) || 0) +
+          (currentRun?.combined?.cost || 0);
+        const runTokens =
+          (currentRun?.results?.reduce((sum, r) => sum + (r.tokensUsed || 0), 0) || 0) +
+          (currentRun?.combined?.tokensUsed || 0);
+        const canCombine = !!currentRun && !currentRun.combined && hasContentCount >= 2;
 
         return (
           <div
@@ -248,16 +350,21 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                         <Clock className="h-4 w-4" />
                         Run {currentRun.index} · {new Date(currentRun.createdAt).toLocaleString()} · Modell {currentRun.model}
                       </div>
-                      {currentRun.results && currentRun.results.length > 0 && (
+                      {(currentRun.results && currentRun.results.length > 0) || currentRun.combined ? (
                         <div className="flex items-center gap-2">
                           <Badge variant="secondary" className="font-mono">
-                            Total: ${(currentRun.results.reduce((sum, r) => sum + (r.cost || 0), 0)).toFixed(4)}
+                            Total: ${runCost.toFixed(4)}
                           </Badge>
                           <Badge variant="outline" className="text-xs">
-                            {currentRun.results.reduce((sum, r) => sum + (r.tokensUsed || 0), 0).toLocaleString()} tokens
+                            {runTokens.toLocaleString()} tokens
                           </Badge>
+                          {currentRun.combined && (
+                            <Badge variant="outline" className="text-xs text-amber-700 border-amber-200 bg-amber-50">
+                              Kombiniert
+                            </Badge>
+                          )}
                         </div>
-                      )}
+                      ) : null}
                     </div>
                     <p className="mt-2 text-sm whitespace-pre-wrap">{currentRun.instruction}</p>
                   </div>
@@ -325,6 +432,54 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                       );
                     })}
                   </div>
+
+                  {canCombine && (
+                    <div className="pt-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={combining[currentRun.id]}
+                        onClick={() => handleCombine(kapitel.id, currentRun.id)}
+                        className="gap-2"
+                      >
+                        {combining[currentRun.id] ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-4 w-4" />
+                        )}
+                        Texte kombinieren
+                      </Button>
+                    </div>
+                  )}
+
+                  {currentRun.combined && (
+                    <div className="mt-4 border rounded-lg p-4 bg-white">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-semibold">Kombiniertes Ergebnis</span>
+                          <span className="text-xs text-muted-foreground">
+                            Modell {currentRun.combined.modelUsed} ú {new Date(currentRun.combined.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="font-mono">
+                            ${currentRun.combined.cost.toFixed(4)}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {currentRun.combined.tokensUsed.toLocaleString()} tokens
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {currentRun.combined.sourceQuelleIds.length} Quellen
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="mt-2 rounded-md bg-muted p-3 max-h-96 overflow-y-auto">
+                        <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
+                          {currentRun.combined.combinedContent}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-sm text-muted-foreground">

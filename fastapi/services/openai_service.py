@@ -1,7 +1,6 @@
 from openai import AsyncOpenAI
 from utils.config import config
 import logging
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +156,99 @@ class OpenAIService:
             logger.error(f"OpenAI API error: {str(e)}")
             raise
 
+
+    async def combine_texts(
+        self,
+        texts: list[str],
+        heading: str,
+        topic: str,
+        model: str,
+    ) -> dict:
+        """
+        Combine multiple texts into one consolidated text.
+        """
+        try:
+            combined_texts = "\n\n".join(
+                [f"### Text {i+1}:\n{texts[i]}" for i in range(len(texts))]
+            )
+
+            prompt = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+
+            logger.info(f"Combining {len(texts)} texts with model {model}")
+
+            response = await self.client.responses.create(
+                model=model,
+                input=[
+                    {
+                        "role": "system",
+                        "content": "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                reasoning={"effort": "high"},
+                max_output_tokens=None,
+            )
+
+            result_text = None
+            if hasattr(response, "output_text") and response.output_text is not None:
+                result_text = response.output_text
+            elif hasattr(response, "output") and response.output:
+                try:
+                    result_text = response.output[0].content[0].text
+                except Exception:
+                    pass
+
+            if not result_text:
+                raise ValueError("No text output returned from OpenAI response")
+
+            usage = getattr(response, "usage", None)
+            input_tokens = (
+                getattr(usage, "input_tokens", None)
+                or getattr(usage, "prompt_tokens", 0)
+                or 0
+            )
+            output_tokens = (
+                getattr(usage, "output_tokens", None)
+                or getattr(usage, "completion_tokens", 0)
+                or 0
+            )
+
+            cached_input_tokens = 0
+            input_details = getattr(usage, "input_tokens_details", None)
+            if input_details:
+                cached_input_tokens = getattr(input_details, "cached_tokens", 0) or 0
+
+            reasoning_tokens = 0
+            completion_details = getattr(usage, "completion_tokens_details", None)
+            if completion_details:
+                reasoning_tokens = (
+                    getattr(completion_details, "reasoning_tokens", 0) or 0
+                )
+
+            tokens_used = input_tokens + output_tokens + reasoning_tokens
+            model_used = response.model
+
+            logger.info(
+                f"OpenAI combination complete. "
+                f"Input: {input_tokens} (cached: {cached_input_tokens}), "
+                f"Output: {output_tokens}, Reasoning: {reasoning_tokens}, "
+                f"Total: {tokens_used} tokens"
+            )
+
+            return {
+                "content": result_text,
+                "has_content": True,
+                "tokens": tokens_used,
+                "input_tokens": input_tokens,
+                "cached_input_tokens": cached_input_tokens,
+                "output_tokens": output_tokens,
+                "reasoning_tokens": reasoning_tokens,
+                "model": model_used,
+            }
+
+        except Exception as e:
+            logger.error(f"OpenAI combine error: {str(e)}")
+            raise
 
 # Create singleton instance
 openai_service = OpenAIService()

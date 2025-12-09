@@ -31,6 +31,22 @@ export type KapitelRunResult = {
   createdAt: string;
 };
 
+export type CombinedResult = {
+  id: string;
+  combinedContent: string;
+  sourceQuelleIds: string[];
+  heading: string;
+  topic: string;
+  modelUsed: string;
+  tokensUsed: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cost: number;
+  createdAt: string;
+};
+
 export type KapitelRun = {
   id: string;
   index: number;
@@ -38,6 +54,7 @@ export type KapitelRun = {
   model: string;
   createdAt: string;
   results: KapitelRunResult[];
+  combined?: CombinedResult | null;
   promptTemplateId?: string;
   promptPayload?: Record<string, any>;
 };
@@ -191,6 +208,42 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
         };
       });
 
+      // fetch combined (single doc named 'combined' if it exists)
+      const combinedRef = collection(
+        db,
+        'users',
+        user.uid,
+        'kapitels',
+        kapitelId,
+        'runs',
+        runDoc.id,
+        'combined'
+      );
+      const combinedSnapshot = await getDocs(combinedRef);
+      let combined: CombinedResult | null = null;
+      if (!combinedSnapshot.empty) {
+        const doc = combinedSnapshot.docs[0];
+        const c = doc.data();
+        combined = {
+          id: doc.id,
+          combinedContent: c.combined_content ?? c.combinedContent ?? '',
+          sourceQuelleIds: c.source_quelle_ids ?? c.sourceQuelleIds ?? [],
+          heading: c.heading ?? '',
+          topic: c.topic ?? '',
+          modelUsed: c.model_used ?? c.modelUsed ?? '',
+          tokensUsed: c.tokens_used ?? c.tokensUsed ?? 0,
+          inputTokens: c.input_tokens ?? c.inputTokens ?? 0,
+          cachedInputTokens: c.cached_input_tokens ?? c.cachedInputTokens ?? 0,
+          outputTokens: c.output_tokens ?? c.outputTokens ?? 0,
+          reasoningTokens: c.reasoning_tokens ?? c.reasoningTokens ?? 0,
+          cost: c.cost ?? 0,
+          createdAt:
+            c.created_at?.toDate?.()?.toISOString() ||
+            c.createdAt?.toDate?.()?.toISOString() ||
+            new Date().toISOString(),
+        };
+      }
+
       runs.push({
         id: runDoc.id,
         index: runData.index || 0,
@@ -202,6 +255,7 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
           || runData.created_at?.toDate?.()?.toISOString()
           || new Date().toISOString(),
         results,
+        combined,
       });
     }
 

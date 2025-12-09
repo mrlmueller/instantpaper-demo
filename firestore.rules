@@ -56,6 +56,13 @@ service cloud.firestore {
           allow read: if isAuthenticated() && isOwner(userId);
           allow create: if isAuthenticated() && isOwner(userId);
         }
+
+        // Combined results under each run
+        match /combined/{combinedId} {
+          allow read: if isAuthenticated() && isOwner(userId);
+          allow create: if isAuthenticated() && isOwner(userId);
+          allow update, delete: if isAuthenticated() && isOwner(userId);
+        }
       }
     }
 

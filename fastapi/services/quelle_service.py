@@ -221,6 +221,107 @@ class QuelleService:
                 detail=f"Failed to process Quelle: {str(e)}"
             )
 
+    async def combine_run_results(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str
+    ) -> dict:
+        """
+        Combine multiple Quelle results for a run into a single text.
+        """
+        try:
+            run = await self.firebase.get_run(user_id, kapitel_id, run_id)
+            if not run:
+                raise HTTPException(status_code=404, detail="Run not found")
+
+            existing_combined = await self.firebase.get_combined_result(user_id, kapitel_id, run_id)
+            if existing_combined:
+                raise HTTPException(status_code=400, detail="Combined result already exists for this run.")
+
+            prompt_payload = run.get("promptPayload") or run.get("prompt_payload") or {}
+            heading = prompt_payload.get("heading", "").strip() or "Zusammenfassung"
+            topic = prompt_payload.get("topic", "").strip() or "Thema"
+            model = run.get("model") or "gpt-5.1"
+
+            results = await self.firebase.get_run_results(user_id, kapitel_id, run_id)
+            eligible = []
+            for res in results:
+                if not res.get("has_content", True):
+                    continue
+                content = (
+                    res.get("result_content")
+                    or res.get("resultContent")
+                    or res.get("content")
+                )
+                if content:
+                    eligible.append({"id": res["id"], "content": content})
+
+            if len(eligible) < 2:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Not enough eligible texts to combine (need at least 2 with content)."
+                )
+
+            source_quelle_ids = [res["id"] for res in eligible]
+            texts = [res["content"] for res in eligible]
+
+            openai_result = await self.openai.combine_texts(texts, heading, topic, model)
+
+            cost = calculate_cost(
+                model=openai_result['model'],
+                input_tokens=openai_result['input_tokens'],
+                cached_input_tokens=openai_result.get('cached_input_tokens', 0),
+                output_tokens=openai_result['output_tokens'],
+                reasoning_tokens=openai_result.get('reasoning_tokens', 0)
+            )
+
+            combined_id = await self.firebase.save_combined_result(
+                user_id=user_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                combined_content=openai_result['content'],
+                source_quelle_ids=source_quelle_ids,
+                heading=heading,
+                topic=topic,
+                model_used=openai_result['model'],
+                tokens_used=openai_result['tokens'],
+                input_tokens=openai_result['input_tokens'],
+                cached_input_tokens=openai_result.get('cached_input_tokens', 0),
+                output_tokens=openai_result['output_tokens'],
+                reasoning_tokens=openai_result.get('reasoning_tokens', 0),
+                cost=cost
+            )
+
+            logger.info(
+                f"Combined result saved (id: {combined_id}) for run {run_id} in kapitel {kapitel_id} "
+                f"(cost: ${cost:.6f}, sources: {len(source_quelle_ids)})"
+            )
+
+            return {
+                "combined_id": combined_id,
+                "content": openai_result['content'],
+                "model": openai_result['model'],
+                "tokens": openai_result['tokens'],
+                "input_tokens": openai_result['input_tokens'],
+                "cached_input_tokens": openai_result.get('cached_input_tokens', 0),
+                "output_tokens": openai_result['output_tokens'],
+                "reasoning_tokens": openai_result.get('reasoning_tokens', 0),
+                "cost": cost,
+                "source_quelle_ids": source_quelle_ids,
+                "heading": heading,
+                "topic": topic,
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error combining run results: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to combine run results: {str(e)}"
+            )
+
 
 # Create singleton instance
 quelle_service = QuelleService()
