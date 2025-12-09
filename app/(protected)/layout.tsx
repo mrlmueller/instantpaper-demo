@@ -1,5 +1,3 @@
-import { Navbar } from '@/app/components/auth/Navbar';
-
 export default function ProtectedLayout({
   children,
 }: {
@@ -7,8 +5,7 @@ export default function ProtectedLayout({
 }) {
   return (
     <div className="min-h-screen">
-      <Navbar />
-      <main>{children}</main>
+      <main className="h-screen">{children}</main>
     </div>
   );
 }

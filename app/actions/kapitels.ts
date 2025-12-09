@@ -65,6 +65,7 @@ export type KapitelRun = {
 export type Kapitel = {
   id: string;
   title: string;
+  nummer?: string; // e.g., "1", "1.1", "1.1.1" - hierarchical chapter number
   createdAt: string;
   quelleIds: string[];
   runs?: KapitelRun[];
@@ -169,7 +170,8 @@ async function getNextOrderForParent(
 export async function createKapitel(
   title: string,
   quelleIds: string[],
-  parentId?: string | null
+  parentId?: string | null,
+  nummer?: string
 ) {
   try {
     const user = await requireAuth();
@@ -200,6 +202,7 @@ export async function createKapitel(
     const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
     const docRef = await addDoc(kapitelsRef, {
       title,
+      nummer: nummer || '1', // Default to '1' if not provided
       quelleIds,
       parentId: parentId || null,
       order,
@@ -302,6 +305,35 @@ export async function updateKapitelParent(
   }
 }
 
+export async function updateKapitelTitle(
+  kapitelId: string,
+  title: string,
+  nummer: string
+) {
+  try {
+    const user = await requireAuth();
+    const db = await getFirestoreForUser();
+
+    const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
+    const kapitelDoc = await getDoc(kapitelRef);
+    if (!kapitelDoc.exists()) {
+      throw new Error('Kapitel not found');
+    }
+
+    await updateDoc(kapitelRef, {
+      title,
+      nummer,
+      updatedAt: serverTimestamp(),
+    });
+
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error updating Kapitel title:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 export async function deleteKapitel(
   kapitelId: string,
   deleteStrategy: 'promote' | 'cascade' = 'promote'
@@ -361,6 +393,8 @@ export async function createKapitelRun(
     promptPayload?: Record<string, any>;
     autoCombine?: boolean;
     grundlegendeInformationen?: string;
+    ueberschrift?: string; // Heading for the chapter
+    thema?: string; // Topic/theme (can be same as instruction or separate)
   }
 ) {
   try {
@@ -383,6 +417,8 @@ export async function createKapitelRun(
       promptPayload: options?.promptPayload,
       autoCombine: options?.autoCombine ?? false,
       grundlegendeInformationen: options?.grundlegendeInformationen || null,
+      ueberschrift: options?.ueberschrift || null,
+      thema: options?.thema || null,
     });
 
     revalidatePath('/dashboard');
@@ -510,6 +546,7 @@ export async function getUserKapitels(withRuns = true, runLimit = 5): Promise<Ka
       const kapitel: Kapitel = {
         id: kapitelDoc.id,
         title: data.title,
+        nummer: data.nummer || '1', // Default to '1' for existing kapitels without nummer
         quelleIds: data.quelleIds || [],
         createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
         parentId: data.parentId || null,
