@@ -11,9 +11,28 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
+    function hasProjekt(userId, projektId) {
+      return projektId != null && exists(/databases/$(database)/documents/users/$(userId)/projects/$(projektId));
+    }
+
     // User documents - users can only access their own data
     match /users/{userId} {
       allow read, write: if isAuthenticated() && isOwner(userId);
+    }
+
+    // Projects collection per user
+    match /users/{userId}/projects/{projektId} {
+      // Read any project owned by the user
+      allow read: if isAuthenticated() && isOwner(userId);
+
+      // Create requires ownership + required fields
+      allow create: if isAuthenticated()
+        && isOwner(userId)
+        && request.resource.data.keys().hasAll(['name', 'ownerId', 'createdAt'])
+        && request.resource.data.ownerId == userId;
+
+      // Updates/deletes limited to owner
+      allow update, delete: if isAuthenticated() && isOwner(userId);
     }
 
     // Quellen subcollection - under each user document
@@ -23,22 +42,24 @@ service cloud.firestore {
       // Create Quelle
       allow create: if isAuthenticated()
         && isOwner(userId)
-        && request.resource.data.keys().hasAll(['title', 'content', 'createdAt']);
+        && request.resource.data.keys().hasAll(['title', 'content', 'projektId', 'createdAt']);
 
       // Update/delete Quelle
-      allow update, delete: if isAuthenticated() && isOwner(userId);
+      allow update, delete: if isAuthenticated()
+        && isOwner(userId);
     }
 
     // Kapitels subcollection
     match /users/{userId}/kapitels/{kapitelId} {
       allow read: if isAuthenticated() && isOwner(userId);
 
-      // Create Kapitel with title + quelleIds + createdAt
+      // Create Kapitel with title + quelleIds + createdAt + projektId
       allow create: if isAuthenticated()
         && isOwner(userId)
-        && request.resource.data.keys().hasAll(['title', 'quelleIds', 'createdAt']);
+        && request.resource.data.keys().hasAll(['title', 'quelleIds', 'projektId', 'createdAt']);
 
-      allow update, delete: if isAuthenticated() && isOwner(userId);
+      allow update, delete: if isAuthenticated()
+        && isOwner(userId);
 
       // Runs under each Kapitel
       match /runs/{runId} {
@@ -47,7 +68,7 @@ service cloud.firestore {
         // Create run with required fields
         allow create: if isAuthenticated()
           && isOwner(userId)
-          && request.resource.data.keys().hasAll(['instruction', 'model', 'index', 'createdAt']);
+          && request.resource.data.keys().hasAll(['instruction', 'model', 'index', 'projektId', 'createdAt']);
 
         allow update, delete: if isAuthenticated() && isOwner(userId);
 

@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import { AlertTriangle } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -9,22 +9,30 @@ import {
   DialogTitle,
   DialogFooter,
   DialogDescription,
-} from "@/components/ui/dialog"
+} from "@/components/ui/dialog";
 
 interface DeleteConfirmDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  type: "quelle" | "kapitel"
-  name: string
-  onConfirm: () => void
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  type: "quelle" | "kapitel" | "projekt";
+  name: string;
+  onConfirm: () => void;
 }
 
-export function DeleteConfirmDialog({ open, onOpenChange, type, name, onConfirm }: DeleteConfirmDialogProps) {
-  const typeLabel = type === "quelle" ? "Quelle" : "Kapitel"
+export function DeleteConfirmDialog({
+  open,
+  onOpenChange,
+  type,
+  name,
+  onConfirm,
+}: DeleteConfirmDialogProps) {
+  const typeLabel = type === "quelle" ? "Quelle" : type === "kapitel" ? "Kapitel" : "Projekt";
   const warning =
     type === "quelle"
       ? "Diese Quelle wird aus allen Kapiteln entfernt, in denen sie zugewiesen ist."
-      : "Alle Runs und generierten Texte für dieses Kapitel werden ebenfalls gelöscht."
+      : type === "kapitel"
+        ? "Alle Runs und generierten Texte für dieses Kapitel werden ebenfalls gelöscht."
+        : "Alle Kapiteln, Quellen und Runs in diesem Projekt werden ebenfalls gelöscht.";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -48,5 +56,5 @@ export function DeleteConfirmDialog({ open, onOpenChange, type, name, onConfirm 
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

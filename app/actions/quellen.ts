@@ -11,6 +11,7 @@ import {
   getDocs,
   query,
   orderBy,
+  where,
   serverTimestamp,
 } from 'firebase/firestore';
 import { requireAuth } from '@/app/lib/auth/server-auth';
@@ -20,11 +21,12 @@ export type Quelle = {
   id: string;
   title: string;
   content: string;
+  projektId: string;
   createdAt: string; // ISO string
   updatedAt?: string; // ISO string
 };
 
-export async function createQuelle(title: string, content: string) {
+export async function createQuelle(title: string, content: string, projektId: string) {
   try {
     const user = await requireAuth();
     const db = await getFirestoreForUser();
@@ -33,6 +35,7 @@ export async function createQuelle(title: string, content: string) {
     const docRef = await addDoc(quellenRef, {
       title,
       content,
+      projektId,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -109,6 +112,7 @@ export async function getQuelle(quelleId: string): Promise<Quelle | null> {
       id: quelleDoc.id,
       title: data.title,
       content: data.content,
+      projektId: data.projektId || 'default',
       createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
     };
@@ -118,13 +122,13 @@ export async function getQuelle(quelleId: string): Promise<Quelle | null> {
   }
 }
 
-export async function getUserQuellen(): Promise<Quelle[]> {
+export async function getUserQuellen(projektId: string): Promise<Quelle[]> {
   try {
     const user = await requireAuth();
     const db = await getFirestoreForUser();
 
     const quellenRef = collection(db, 'users', user.uid, 'quellen');
-    const q = query(quellenRef, orderBy('createdAt', 'desc'));
+    const q = query(quellenRef, where('projektId', '==', projektId), orderBy('createdAt', 'desc'));
 
     const querySnapshot = await getDocs(q);
     const quellen: Quelle[] = [];
@@ -135,6 +139,7 @@ export async function getUserQuellen(): Promise<Quelle[]> {
         id: d.id,
         title: data.title,
         content: data.content,
+        projektId: data.projektId || 'default',
         createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
         updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
       });

@@ -12,6 +12,7 @@ import {
   query,
   orderBy,
   limit,
+  where,
   serverTimestamp,
   type Firestore,
   type DocumentReference,
@@ -68,6 +69,7 @@ export type KapitelRun = {
 export type Kapitel = {
   id: string;
   title: string;
+  projektId: string;
   nummer?: string; // e.g., "1", "1.1", "1.1.1" - hierarchical chapter number
   createdAt: string;
   quelleIds: string[];
@@ -173,8 +175,9 @@ async function getNextOrderForParent(
 export async function createKapitel(
   title: string,
   quelleIds: string[],
-  parentId?: string | null,
-  nummer?: string
+  parentId: string | null,
+  nummer: string,
+  projektId: string
 ) {
   try {
     const user = await requireAuth();
@@ -205,6 +208,7 @@ export async function createKapitel(
     const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
     const docRef = await addDoc(kapitelsRef, {
       title,
+      projektId,
       nummer: nummer || '1', // Default to '1' if not provided
       quelleIds,
       parentId: parentId || null,
@@ -404,6 +408,13 @@ export async function createKapitelRun(
     const user = await requireAuth();
     const db = await getFirestoreForUser();
 
+    const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
+    const kapitelDoc = await getDoc(kapitelRef);
+    if (!kapitelDoc.exists()) {
+      return { success: false, error: 'Kapitel not found' };
+    }
+    const projektId = kapitelDoc.data()?.projektId || 'default';
+
     const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
 
     // Determine next run index
@@ -414,6 +425,7 @@ export async function createKapitelRun(
     const runDoc = await addDoc(runsRef, {
       instruction,
       model,
+      projektId,
       index: nextIndex,
       createdAt: serverTimestamp(),
       promptTemplateId: options?.promptTemplateId,
@@ -537,13 +549,15 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
   }
 }
 
-export async function getUserKapitels(withRuns = true, runLimit = 5): Promise<Kapitel[]> {
+export async function getUserKapitels(projektId: string, withRuns = true, runLimit = 5): Promise<Kapitel[]> {
   try {
     const user = await requireAuth();
     const db = await getFirestoreForUser();
 
     const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
-    const snapshot = await getDocs(query(kapitelsRef, orderBy('createdAt', 'desc')));
+    const snapshot = await getDocs(
+      query(kapitelsRef, where('projektId', '==', projektId), orderBy('createdAt', 'desc'))
+    );
 
     const kapitels: Kapitel[] = [];
 
@@ -552,6 +566,7 @@ export async function getUserKapitels(withRuns = true, runLimit = 5): Promise<Ka
       const kapitel: Kapitel = {
         id: kapitelDoc.id,
         title: data.title,
+        projektId: data.projektId || 'default',
         nummer: data.nummer || '1', // Default to '1' for existing kapitels without nummer
         quelleIds: data.quelleIds || [],
         createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),

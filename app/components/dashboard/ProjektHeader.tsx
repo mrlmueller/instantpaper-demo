@@ -22,9 +22,12 @@ import type { Projekt } from "@/app/types/ui"
 interface ProjektHeaderProps {
   projekt: Projekt
   projekte: Projekt[]
+  onSwitchProjekt: (id: string) => void
+  onCreateProjekt: (name: string) => void
+  onDeleteProjekt: (id: string, name: string) => void
 }
 
-export function ProjektHeader({ projekt, projekte }: ProjektHeaderProps) {
+export function ProjektHeader({ projekt, projekte, onSwitchProjekt, onCreateProjekt, onDeleteProjekt }: ProjektHeaderProps) {
   const { user } = useAuth()
   const [newProjektDialogOpen, setNewProjektDialogOpen] = useState(false)
   const [switchDialogOpen, setSwitchDialogOpen] = useState(false)
@@ -40,22 +43,6 @@ export function ProjektHeader({ projekt, projekte }: ProjektHeaderProps) {
       console.error("Sign out error:", error)
       toast.error("Fehler beim Abmelden")
     }
-  }
-
-  // Disabled multi-project features - show "coming soon" toast
-  const handleSwitchProjekt = () => {
-    toast.info("Multi-Projekt Feature", {
-      description: "Kommt bald! Derzeit wird ein Standard-Projekt verwendet.",
-    })
-    setSwitchDialogOpen(false)
-  }
-
-  const handleCreateProjekt = () => {
-    toast.info("Multi-Projekt Feature", {
-      description: "Kommt bald! Derzeit wird ein Standard-Projekt verwendet.",
-    })
-    setNewProjektDialogOpen(false)
-    setNewProjektName("")
   }
 
   const initials = userName
@@ -148,7 +135,14 @@ export function ProjektHeader({ projekt, projekte }: ProjektHeaderProps) {
             <Button variant="outline" onClick={() => setNewProjektDialogOpen(false)}>
               Abbrechen
             </Button>
-            <Button onClick={handleCreateProjekt} disabled={!newProjektName.trim()}>
+            <Button
+              onClick={() => {
+                onCreateProjekt(newProjektName.trim())
+                setNewProjektDialogOpen(false)
+                setNewProjektName("")
+              }}
+              disabled={!newProjektName.trim()}
+            >
               Erstellen
             </Button>
           </DialogFooter>
@@ -163,18 +157,35 @@ export function ProjektHeader({ projekt, projekte }: ProjektHeaderProps) {
           </DialogHeader>
           <div className="py-4 space-y-2">
             {projekte.map((p) => (
-              <button
+              <div
                 key={p.id}
-                onClick={handleSwitchProjekt}
-                className={`w-full text-left px-4 py-3 rounded-md transition-colors ${
-                  p.id === projekt.id ? "bg-primary/10 border border-primary/30" : "hover:bg-muted"
+                className={`w-full px-4 py-3 rounded-md border transition-colors ${
+                  p.id === projekt.id ? "bg-primary/10 border-primary/30" : "hover:bg-muted"
                 }`}
               >
-                <div className="font-medium text-sm">{p.name}</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Erstellt: {p.createdAt.toLocaleDateString("de-DE")}
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    className="text-left flex-1"
+                    onClick={() => {
+                      onSwitchProjekt(p.id)
+                      setSwitchDialogOpen(false)
+                    }}
+                  >
+                    <div className="font-medium text-sm">{p.name}</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Erstellt: {p.createdAt.toLocaleDateString("de-DE")}
+                    </div>
+                  </button>
+                  {projekte.length > 1 && (
+                    <button
+                      className="text-xs text-destructive underline"
+                      onClick={() => onDeleteProjekt(p.id, p.name)}
+                    >
+                      Löschen
+                    </button>
+                  )}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         </DialogContent>

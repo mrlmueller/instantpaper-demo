@@ -24,6 +24,7 @@ import {
 import {
   createQuelle,
   deleteQuelle as deleteQuelleAction,
+  getUserQuellen,
   type Quelle as FirebaseQuelle,
 } from '@/app/actions/quellen';
 import {
@@ -32,9 +33,11 @@ import {
   deleteKapitel as deleteKapitelAction,
   updateKapitelTitle,
   createKapitelRun,
+  getUserKapitels,
   type KapitelRun as FirebaseKapitelRun,
   type Kapitel as FirebaseKapitel,
 } from '@/app/actions/kapitels';
+import { createProject, deleteProject, type Project as FirebaseProject } from '@/app/actions/projects';
 
 // Firebase real-time
 import { useAuth } from '@/app/components/providers/AuthProvider';
@@ -59,20 +62,29 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:80
 interface DashboardProps {
   initialKapitels: FirebaseKapitel[];
   initialQuellen: FirebaseQuelle[];
+  initialProjekt: FirebaseProject;
+  initialProjekte: FirebaseProject[];
 }
 
-export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
+export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, initialProjekte }: DashboardProps) {
   const { user } = useAuth();
   // Start with skeleton to avoid empty flash before data appears
   const [isLoading, setIsLoading] = useState(true);
   const [isQuellenLoading, setIsQuellenLoading] = useState(false);
 
-  // Project state (single project for now)
-  const [projekt] = useState<Projekt>({
-    id: '1',
-    name: 'Meine Arbeit',
-    createdAt: new Date(),
+  const initialProjektList = initialProjekte.length ? initialProjekte : [initialProjekt];
+  const [projekt, setProjekt] = useState<Projekt>({
+    id: initialProjekt.id,
+    name: initialProjekt.name,
+    createdAt: new Date(initialProjekt.createdAt),
   });
+  const [projekte, setProjekte] = useState<Projekt[]>(
+    initialProjektList.map((p) => ({
+      id: p.id,
+      name: p.name,
+      createdAt: new Date(p.createdAt),
+    }))
+  );
 
   // Transform initial data
   const [quellen, setQuellen] = useState<Quelle[]>(
@@ -101,10 +113,23 @@ export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
   } | null>(null);
   const [processingDialogOpen, setProcessingDialogOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{
-    type: 'quelle' | 'kapitel';
+    type: 'quelle' | 'kapitel' | 'projekt';
     id: string;
     name: string;
   } | null>(null);
+
+  const loadProjektData = useCallback(async (projektId: string) => {
+    const [fbQuellen, fbKapitels] = await Promise.all([
+      getUserQuellen(projektId),
+      getUserKapitels(projektId, true, 50),
+    ]);
+    setQuellen(fbQuellen.map((q) => transformQuelleToUI(q, projektId)));
+    setKapiteln(fbKapitels.map((k) => transformKapitelToUI(k, projektId)));
+    const firstKapitelId = fbKapitels[0]?.id || '';
+    setActiveKapitelId(firstKapitelId);
+    setFbRuns(fbKapitels.find((k) => k.id === firstKapitelId)?.runs || []);
+    setSelectedRunId(null);
+  }, []);
 
   const persistKapitelQuellenClient = useCallback(async (kapitelId: string, quelleIds: string[]) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
@@ -122,6 +147,7 @@ export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
     const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
     const docRef = await addDoc(kapitelsRef, {
       title,
+      projektId: projekt.id,
       nummer,
       quelleIds: [],
       parentId,
@@ -129,7 +155,7 @@ export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
       createdAt: serverTimestamp(),
     });
     return docRef.id;
-  }, [user?.uid]);
+  }, [user?.uid, projekt.id]);
 
   const updateKapitelTitleClient = useCallback(async (kapitelId: string, title: string, nummer: string) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
@@ -361,9 +387,80 @@ export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
   }, [fbRuns, quellen, activeKapitelId, activeKapitel?.assignedQuellenIds, selectedRunId]);
 
   // Handlers
+  const handleSwitchProjekt = useCallback(
+    async (projektId: string, fallbackProjekt?: Projekt) => {
+      if (projektId === projekt.id) return;
+      try {
+        setIsLoading(true);
+        await loadProjektData(projektId);
+        const next = projekte.find((p) => p.id === projektId) || fallbackProjekt;
+        if (next) {
+          setProjekt(next);
+        } else {
+          // minimal fallback if not found
+          setProjekt({ id: projektId, name: 'Projekt', createdAt: new Date() });
+        }
+      } catch (error: any) {
+        console.error('Projekt wechseln fehlgeschlagen:', error);
+        toast.error('Projekt konnte nicht geladen werden', { description: error.message });
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loadProjektData, projekt.id, projekte]
+  );
+
+  const handleCreateProjekt = useCallback(
+    async (name: string) => {
+      try {
+        const result = await createProject(name);
+        if (!result.success || !result.id) {
+          throw new Error(result.error || 'Projekt konnte nicht erstellt werden.');
+        }
+        const newProjekt: Projekt = {
+          id: result.id,
+          name,
+          createdAt: new Date(),
+        };
+        setProjekte((prev) => [newProjekt, ...prev]);
+        // Switch immediately using the newly created project
+        setProjekt(newProjekt);
+        await loadProjektData(result.id);
+        toast.success('Projekt erstellt', { description: `"${name}" wurde erstellt.` });
+      } catch (error: any) {
+        console.error('Projekt erstellen fehlgeschlagen:', error);
+        toast.error('Projekt konnte nicht erstellt werden', { description: error.message });
+      }
+    },
+    [loadProjektData]
+  );
+
+  const handleDeleteProjekt = useCallback(
+    async (projektId: string) => {
+      if (projekte.length <= 1) {
+        toast.error('Projekt löschen nicht möglich', { description: 'Mindestens ein Projekt muss bestehen.' });
+        return;
+      }
+      try {
+        await deleteProject(projektId);
+        const remaining = projekte.filter((p) => p.id !== projektId);
+        setProjekte(remaining);
+        if (projekt.id === projektId && remaining.length > 0) {
+          setProjekt(remaining[0]);
+          await loadProjektData(remaining[0].id);
+        }
+        toast.success('Projekt gelöscht');
+      } catch (error: any) {
+        console.error('Projekt löschen fehlgeschlagen:', error);
+        toast.error('Projekt konnte nicht gelöscht werden', { description: error.message });
+      }
+    },
+    [loadProjektData, projekt.id, projekte]
+  );
+
   const handleAddQuelle = useCallback(
     async (name: string, text: string) => {
-      const result = await createQuelle(name, text);
+      const result = await createQuelle(name, text, projekt.id);
       if (result.success) {
         toast.success('Quelle hinzugefügt', {
           description: `"${name}" wurde erfolgreich erstellt.`,
@@ -488,7 +585,7 @@ export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
       });
     } catch (clientErr) {
       // Fallback to server action
-      const result = await createKapitel(title, [], null, nummer);
+      const result = await createKapitel(title, [], null, nummer, projekt.id);
       if (result.success && result.id) {
         setKapiteln((prev) =>
           prev.map((k) => (k.id === tempId ? { ...k, id: result.id! } : k))
@@ -767,7 +864,13 @@ export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Left Navigator */}
       <div className="w-64 border-r border-border bg-sidebar flex flex-col">
-        <ProjektHeader projekt={projekt} projekte={[projekt]} />
+        <ProjektHeader
+          projekt={projekt}
+          projekte={projekte}
+          onSwitchProjekt={handleSwitchProjekt}
+          onCreateProjekt={handleCreateProjekt}
+          onDeleteProjekt={(id, name) => setDeleteConfirm({ type: 'projekt', id, name })}
+        />
         <KapitelNavigator
           kapiteln={kapiteln}
           activeKapitelId={activeKapitelId}
@@ -842,6 +945,8 @@ export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
             handleDeleteQuelle(deleteConfirm.id);
           } else if (deleteConfirm?.type === 'kapitel') {
             handleDeleteKapitel(deleteConfirm.id);
+          } else if (deleteConfirm?.type === 'projekt') {
+            handleDeleteProjekt(deleteConfirm.id);
           }
         }}
       />
