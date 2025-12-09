@@ -3,6 +3,7 @@ import { createOrUpdateUser } from '@/app/actions/user';
 import { getUserQuellen } from '@/app/actions/quellen';
 import { getUserKapitels } from '@/app/actions/kapitels';
 import { Dashboard } from '@/app/components/dashboard/Dashboard';
+import { DashboardSkeleton } from '@/app/components/dashboard/DashboardSkeleton';
 
 export const dynamic = 'force-dynamic';
 

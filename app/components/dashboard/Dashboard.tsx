@@ -63,7 +63,8 @@ interface DashboardProps {
 
 export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
   const { user } = useAuth();
-  const [isLoading, setIsLoading] = useState(false);
+  // Start with skeleton to avoid empty flash before data appears
+  const [isLoading, setIsLoading] = useState(true);
   const [isQuellenLoading, setIsQuellenLoading] = useState(false);
 
   // Project state (single project for now)
@@ -301,6 +302,11 @@ export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
       runLevelUnsubs.forEach((u) => u());
     };
   }, [user?.uid, activeKapitelId]);
+
+  // hide initial skeleton once first client render completes
+  useEffect(() => {
+    setIsLoading(false);
+  }, []);
 
   // Transform Firestore run data to UI runs, keep selection and Kapitel status in sync
   useEffect(() => {
