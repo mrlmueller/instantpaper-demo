@@ -84,6 +84,13 @@ service cloud.firestore {
           allow create: if isAuthenticated() && isOwner(userId);
           allow update, delete: if isAuthenticated() && isOwner(userId);
         }
+
+        // Intermediate groups under each run
+        match /intermediate_groups/{groupId} {
+          allow read: if isAuthenticated() && isOwner(userId);
+          allow create: if isAuthenticated() && isOwner(userId);
+          allow update, delete: if isAuthenticated() && isOwner(userId);
+        }
       }
     }
 

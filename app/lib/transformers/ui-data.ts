@@ -7,12 +7,14 @@ import type {
   KapitelRun as FirebaseKapitelRun,
   KapitelRunResult as FirebaseKapitelRunResult,
   CombinedResult as FirebaseCombinedResult,
+  IntermediateGroupResult as FirebaseIntermediateGroupResult,
 } from '@/app/actions/kapitels';
 import type {
   Quelle as UIQuelle,
   Kapitel as UIKapitel,
   Run as UIRun,
   QuellenErgebnis as UIQuellenErgebnis,
+  IntermediateGroup as UIIntermediateGroup,
 } from '@/app/types/ui';
 
 /**
@@ -97,6 +99,30 @@ export function transformResultToUI(
 }
 
 /**
+ * Transform Firebase IntermediateGroupResult to UI IntermediateGroup
+ */
+export function transformIntermediateGroupToUI(
+  fbGroup: FirebaseIntermediateGroupResult
+): UIIntermediateGroup {
+  // Convert cost from dollars to cents (EUR)
+  const costInCents = Math.round((fbGroup.cost || 0) * 100);
+
+  return {
+    id: fbGroup.id,
+    groupNumber: fbGroup.groupNumber,
+    combinedContent: fbGroup.combinedContent,
+    sourceQuelleIds: fbGroup.sourceQuelleIds,
+    sourceCount: fbGroup.sourceQuelleIds.length,
+    heading: fbGroup.heading,
+    topic: fbGroup.topic,
+    modelUsed: fbGroup.modelUsed,
+    tokensUsed: fbGroup.tokensUsed,
+    cost: costInCents,
+    createdAt: new Date(fbGroup.createdAt),
+  };
+}
+
+/**
  * Transform Firebase KapitelRun to UI Run
  */
 export function transformRunToUI(
@@ -109,6 +135,11 @@ export function transformRunToUI(
     const quelleName = quellenMap.get(result.quelleId) || "";
     return transformResultToUI(result, quelleName);
   });
+
+  // Transform intermediate groups if they exist
+  const intermediateGroups: UIIntermediateGroup[] | undefined = fbRun.intermediateGroups
+    ? fbRun.intermediateGroups.map(transformIntermediateGroupToUI)
+    : undefined;
 
   // Calculate total costs in cents
   const quellenCost = quellenErgebnisse.reduce((sum, r) => sum + r.cost, 0);
@@ -136,6 +167,7 @@ export function transformRunToUI(
     quellenErgebnisse,
     quellenCost,
     combinedCost,
+    intermediateGroups,
   };
 }
 

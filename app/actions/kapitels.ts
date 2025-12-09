@@ -50,6 +50,23 @@ export type CombinedResult = {
   createdAt: string;
 };
 
+export type IntermediateGroupResult = {
+  id: string;
+  groupNumber: number;
+  combinedContent: string;
+  sourceQuelleIds: string[];
+  heading: string;
+  topic: string;
+  modelUsed: string;
+  tokensUsed: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cost: number;
+  createdAt: string;
+};
+
 export type KapitelRun = {
   id: string;
   index: number;
@@ -58,6 +75,7 @@ export type KapitelRun = {
   createdAt: string;
   results: KapitelRunResult[];
   combined?: CombinedResult | null;
+  intermediateGroups?: IntermediateGroupResult[];
   promptTemplateId?: string;
   promptPayload?: Record<string, any>;
   autoCombine?: boolean;
@@ -523,6 +541,47 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
         };
       }
 
+      // Fetch intermediate groups
+      const intermediateGroupsRef = collection(
+        db,
+        'users',
+        user.uid,
+        'kapitels',
+        kapitelId,
+        'runs',
+        runDoc.id,
+        'intermediate_groups'
+      );
+      const intermediateGroupsSnapshot = await getDocs(intermediateGroupsRef);
+      const intermediateGroups: IntermediateGroupResult[] = [];
+
+      if (!intermediateGroupsSnapshot.empty) {
+        for (const groupDoc of intermediateGroupsSnapshot.docs) {
+          const g = groupDoc.data();
+          intermediateGroups.push({
+            id: groupDoc.id,
+            groupNumber: g.group_number ?? 0,
+            combinedContent: g.combined_content ?? g.combinedContent ?? '',
+            sourceQuelleIds: g.source_quelle_ids ?? g.sourceQuelleIds ?? [],
+            heading: g.heading ?? '',
+            topic: g.topic ?? '',
+            modelUsed: g.model_used ?? g.modelUsed ?? '',
+            tokensUsed: g.tokens_used ?? g.tokensUsed ?? 0,
+            inputTokens: g.input_tokens ?? g.inputTokens ?? 0,
+            cachedInputTokens: g.cached_input_tokens ?? g.cachedInputTokens ?? 0,
+            outputTokens: g.output_tokens ?? g.outputTokens ?? 0,
+            reasoningTokens: g.reasoning_tokens ?? g.reasoningTokens ?? 0,
+            cost: g.cost ?? 0,
+            createdAt:
+              g.created_at?.toDate?.()?.toISOString() ||
+              g.createdAt?.toDate?.()?.toISOString() ||
+              new Date().toISOString(),
+          });
+        }
+        // Sort by group number
+        intermediateGroups.sort((a, b) => a.groupNumber - b.groupNumber);
+      }
+
       runs.push({
         id: runDoc.id,
         index: runData.index || 0,
@@ -539,6 +598,7 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
           || new Date().toISOString(),
         results,
         combined,
+        intermediateGroups: intermediateGroups.length > 0 ? intermediateGroups : undefined,
       });
     }
 

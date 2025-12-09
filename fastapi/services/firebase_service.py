@@ -309,6 +309,101 @@ class FirebaseService:
             logger.error(f"Error saving combined result: {str(e)}")
             raise
 
+    async def save_intermediate_group_result(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        group_number: int,
+        combined_content: str,
+        source_quelle_ids: list,
+        heading: str,
+        topic: str,
+        model_used: str,
+        tokens_used: int,
+        input_tokens: int,
+        cached_input_tokens: int,
+        output_tokens: int,
+        reasoning_tokens: int,
+        cost: float
+    ) -> str:
+        """
+        Save intermediate group combination result.
+        Document ID will be group_{group_number}.
+        """
+        try:
+            group_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('intermediate_groups')
+                .document(f'group_{group_number}')
+            )
+
+            group_data = {
+                'group_number': group_number,
+                'combined_content': combined_content,
+                'source_quelle_ids': source_quelle_ids,
+                'heading': heading,
+                'topic': topic,
+                'model_used': model_used,
+                'tokens_used': tokens_used,
+                'input_tokens': input_tokens,
+                'cached_input_tokens': cached_input_tokens,
+                'output_tokens': output_tokens,
+                'reasoning_tokens': reasoning_tokens,
+                'cost': cost,
+                'created_at': SERVER_TIMESTAMP
+            }
+
+            group_ref.set(group_data)
+            logger.info(
+                f"Saved intermediate group {group_number} for kapitel {kapitel_id} run {run_id} "
+                f"(sources: {len(source_quelle_ids)}, cost: ${cost:.6f})"
+            )
+            return group_ref.id
+        except Exception as e:
+            logger.error(f"Error saving intermediate group result: {str(e)}")
+            raise
+
+    async def get_intermediate_groups(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str
+    ) -> list:
+        """
+        Fetch all intermediate group results for a run, ordered by group_number.
+        Returns list of dicts with group data.
+        """
+        try:
+            groups_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('intermediate_groups')
+            )
+
+            docs = groups_ref.stream()
+            groups = []
+            for doc in docs:
+                data = doc.to_dict()
+                data['id'] = doc.id
+                groups.append(data)
+
+            # Sort by group_number
+            groups.sort(key=lambda x: x.get('group_number', 0))
+            return groups
+        except Exception as e:
+            logger.error(f"Error fetching intermediate groups: {str(e)}")
+            raise
+
     async def get_kapitel(self, user_id: str, kapitel_id: str) -> Optional[dict]:
         """Fetch a Kapitel document."""
         try:

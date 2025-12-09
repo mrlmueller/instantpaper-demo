@@ -34,6 +34,20 @@ export interface QuellenErgebnis {
   cost: number; // Cost in cents (EUR) - Firebase stores in dollars (USD)
 }
 
+export interface IntermediateGroup {
+  id: string;
+  groupNumber: number;
+  combinedContent: string;
+  sourceQuelleIds: string[];
+  sourceCount: number; // Convenience field = sourceQuelleIds.length
+  heading: string;
+  topic: string;
+  modelUsed: string;
+  tokensUsed: number;
+  cost: number; // Cost in cents (EUR)
+  createdAt: Date;
+}
+
 export interface Run {
   id: string;
   index?: number;
@@ -47,6 +61,7 @@ export interface Run {
   quellenErgebnisse: QuellenErgebnis[];
   quellenCost: number; // Cost for per-source processing in cents
   combinedCost: number; // Cost for combining in cents
+  intermediateGroups?: IntermediateGroup[]; // Optional array of intermediate groups
 }
 
 export interface ProcessingSettings {

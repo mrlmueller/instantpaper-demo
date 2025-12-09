@@ -2,6 +2,7 @@
 
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible"
 import {
   Play,
   FileText,
@@ -48,6 +49,7 @@ export function KapitelWorkspace({
 }: KapitelWorkspaceProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [themaExpanded, setThemaExpanded] = useState(false)
+  const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] = useState(false)
 
   const hasContent = selectedRun?.combinedText && selectedRun.combinedText.length > 0
   const hasQuellenErgebnisse = selectedRun?.quellenErgebnisse && selectedRun.quellenErgebnisse.length > 0
@@ -196,7 +198,94 @@ export function KapitelWorkspace({
               )}
             </div>
           </Card>
-        ) : hasQuellenErgebnisse ? (
+        ) : null}
+
+        {/* Intermediate Groups - Collapsible section */}
+        {hasContent && selectedRun?.intermediateGroups && selectedRun.intermediateGroups.length > 0 && (
+          <Card className="mb-8 bg-card border-border shadow-sm">
+            <Collapsible
+              open={intermediateGroupsExpanded}
+              onOpenChange={setIntermediateGroupsExpanded}
+            >
+              <div className="p-6">
+                <CollapsibleTrigger asChild>
+                  <button className="flex items-center justify-between w-full group">
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-5 w-5 text-muted-foreground" />
+                      <h3 className="text-base font-medium text-foreground">
+                        Zwischenergebnisse
+                      </h3>
+                      <span className="text-sm text-muted-foreground">
+                        ({selectedRun.intermediateGroups.length} Gruppen)
+                      </span>
+                    </div>
+                    {intermediateGroupsExpanded ? (
+                      <ChevronUp className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    )}
+                  </button>
+                </CollapsibleTrigger>
+
+                <CollapsibleContent>
+                  <div className="mt-4 space-y-3">
+                    {selectedRun.intermediateGroups.map((group) => (
+                      <Card
+                        key={group.id}
+                        className="bg-muted/20 border-border/50"
+                      >
+                        <div className="p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm font-semibold text-foreground">
+                                Gruppe {group.groupNumber}
+                              </h4>
+                              <span className="text-xs text-muted-foreground">
+                                {group.sourceQuelleIds.length} Quellen
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={() => handleCopy(group.combinedContent, `group-${group.id}`)}
+                              >
+                                {copiedId === `group-${group.id}` ? (
+                                  <Check className="h-3.5 w-3.5 text-primary" />
+                                ) : (
+                                  <Copy className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={() =>
+                                  onOpenTextViewer({
+                                    title: `${kapitel.nummer} ${kapitel.title} - Gruppe ${group.groupNumber}`,
+                                    text: group.combinedContent,
+                                  })
+                                }
+                              >
+                                <Maximize2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="text-sm text-foreground/80 leading-relaxed line-clamp-3">
+                            {group.combinedContent}
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
+          </Card>
+        )}
+
+        {hasQuellenErgebnisse && !hasContent ? (
           <Card className="mb-8 bg-accent/30 border-border border-dashed">
             <div className="p-8 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">

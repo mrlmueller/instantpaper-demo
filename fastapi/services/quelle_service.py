@@ -108,6 +108,42 @@ def calculate_cost(
     return total_cost
 
 
+def calculate_groups(num_items: int, min_group_size: int = 4, max_group_size: int = 5) -> list[list[int]]:
+    """
+    Optimally distribute items into groups of 4-5 each.
+
+    Args:
+        num_items: Total number of items to group
+        min_group_size: Minimum items per group (default: 4)
+        max_group_size: Maximum items per group (default: 5)
+
+    Returns:
+        List of lists, where each inner list contains indices for that group
+
+    Examples:
+        7 items -> [[0,1,2,3], [4,5,6]]  (groups of 4,3)
+        15 items -> [[0,1,2,3,4], [5,6,7,8,9], [10,11,12,13,14]]  (3 groups of 5)
+        20 items -> [[0,1,2,3,4], [5,6,7,8,9], [10,11,12,13,14], [15,16,17,18,19]]  (4 groups of 5)
+    """
+    if num_items <= max_group_size:
+        return [list(range(num_items))]
+
+    # Aim for groups of max_group_size, adjust for even distribution
+    num_groups = (num_items + max_group_size - 1) // max_group_size  # ceil(num_items / max_group_size)
+    base_size = num_items // num_groups
+    remainder = num_items % num_groups
+
+    groups = []
+    idx = 0
+    for i in range(num_groups):
+        # Distribute remainder items to first groups
+        size = base_size + (1 if i < remainder else 0)
+        groups.append(list(range(idx, idx + size)))
+        idx += size
+
+    return groups
+
+
 class QuelleService:
     """Service for Quelle processing operations"""
 
@@ -334,6 +370,15 @@ class QuelleService:
                     detail="Not enough eligible texts to combine (need at least 2 with content)."
                 )
 
+            # DECISION POINT: Single-level vs Hierarchical combining
+            if len(eligible) > 5:
+                # Hierarchical combining for large sets
+                logger.info(f"Using hierarchical combining for {len(eligible)} sources")
+                return await self._hierarchical_combine(
+                    user_id, kapitel_id, run_id, eligible, heading, topic, model
+                )
+
+            # Single-level combining (existing logic for ≤5 sources)
             source_quelle_ids = [res["id"] for res in eligible]
             texts = [res["content"] for res in eligible]
 
@@ -392,6 +437,146 @@ class QuelleService:
                 status_code=500,
                 detail=f"Failed to combine run results: {str(e)}"
             )
+
+    async def _hierarchical_combine(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        eligible: list,
+        heading: str,
+        topic: str,
+        model: str
+    ) -> dict:
+        """
+        Perform hierarchical combining:
+        1. Split into groups of 4-5
+        2. Combine each group (store intermediate results)
+        3. Combine all intermediates into final result
+
+        Returns same structure as combine_run_results()
+        """
+        logger.info(f"Starting hierarchical combine for {len(eligible)} sources")
+
+        # Calculate grouping
+        groups = calculate_groups(len(eligible))
+        logger.info(f"Created {len(groups)} groups: {[len(g) for g in groups]}")
+
+        # STEP 1: Combine each group
+        intermediate_results = []
+        total_intermediate_cost = 0.0
+
+        for group_idx, group_indices in enumerate(groups):
+            group_number = group_idx + 1
+            group_items = [eligible[i] for i in group_indices]
+            group_texts = [item["content"] for item in group_items]
+            group_quelle_ids = [item["id"] for item in group_items]
+
+            logger.info(f"Combining group {group_number} with {len(group_texts)} sources")
+
+            # Call OpenAI to combine this group
+            openai_result = await self.openai.combine_texts(
+                group_texts, heading, topic, model
+            )
+
+            # Calculate cost
+            cost = calculate_cost(
+                model=openai_result['model'],
+                input_tokens=openai_result['input_tokens'],
+                cached_input_tokens=openai_result.get('cached_input_tokens', 0),
+                output_tokens=openai_result['output_tokens'],
+                reasoning_tokens=openai_result.get('reasoning_tokens', 0)
+            )
+            total_intermediate_cost += cost
+
+            # Save intermediate result to database
+            group_id = await self.firebase.save_intermediate_group_result(
+                user_id=user_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                group_number=group_number,
+                combined_content=openai_result['content'],
+                source_quelle_ids=group_quelle_ids,
+                heading=heading,
+                topic=topic,
+                model_used=openai_result['model'],
+                tokens_used=openai_result['tokens'],
+                input_tokens=openai_result['input_tokens'],
+                cached_input_tokens=openai_result.get('cached_input_tokens', 0),
+                output_tokens=openai_result['output_tokens'],
+                reasoning_tokens=openai_result.get('reasoning_tokens', 0),
+                cost=cost
+            )
+
+            logger.info(f"Group {group_number} combined and saved (id: {group_id}, cost: ${cost:.6f})")
+
+            intermediate_results.append({
+                'group_id': group_id,
+                'content': openai_result['content']
+            })
+
+        # STEP 2: Combine all intermediate results into final text
+        logger.info(f"Combining {len(intermediate_results)} intermediate results into final text")
+
+        intermediate_texts = [r['content'] for r in intermediate_results]
+
+        final_openai_result = await self.openai.combine_texts(
+            intermediate_texts, heading, topic, model
+        )
+
+        final_cost = calculate_cost(
+            model=final_openai_result['model'],
+            input_tokens=final_openai_result['input_tokens'],
+            cached_input_tokens=final_openai_result.get('cached_input_tokens', 0),
+            output_tokens=final_openai_result['output_tokens'],
+            reasoning_tokens=final_openai_result.get('reasoning_tokens', 0)
+        )
+
+        # STEP 3: Save final combined result (same as before)
+        all_source_quelle_ids = [item['id'] for item in eligible]
+
+        combined_id = await self.firebase.save_combined_result(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            combined_content=final_openai_result['content'],
+            source_quelle_ids=all_source_quelle_ids,
+            heading=heading,
+            topic=topic,
+            model_used=final_openai_result['model'],
+            tokens_used=final_openai_result['tokens'],
+            input_tokens=final_openai_result['input_tokens'],
+            cached_input_tokens=final_openai_result.get('cached_input_tokens', 0),
+            output_tokens=final_openai_result['output_tokens'],
+            reasoning_tokens=final_openai_result.get('reasoning_tokens', 0),
+            cost=final_cost
+        )
+
+        total_cost = total_intermediate_cost + final_cost
+
+        logger.info(
+            f"Hierarchical combine complete: "
+            f"{len(groups)} groups -> final (total cost: ${total_cost:.6f}, "
+            f"intermediate: ${total_intermediate_cost:.6f}, final: ${final_cost:.6f})"
+        )
+
+        return {
+            "combined_id": combined_id,
+            "content": final_openai_result['content'],
+            "model": final_openai_result['model'],
+            "tokens": final_openai_result['tokens'],
+            "input_tokens": final_openai_result['input_tokens'],
+            "cached_input_tokens": final_openai_result.get('cached_input_tokens', 0),
+            "output_tokens": final_openai_result['output_tokens'],
+            "reasoning_tokens": final_openai_result.get('reasoning_tokens', 0),
+            "cost": total_cost,  # Return total cost (intermediate + final)
+            "source_quelle_ids": all_source_quelle_ids,
+            "heading": heading,
+            "topic": topic,
+            "intermediate_groups_count": len(groups),
+            "intermediate_cost": total_intermediate_cost,
+            "final_cost": final_cost,
+        }
 
 
 # Create singleton instance
