@@ -46,6 +46,9 @@ import {
   query,
   orderBy,
   type Unsubscribe,
+  doc,
+  updateDoc,
+  serverTimestamp,
 } from 'firebase/firestore';
 import Cookies from 'js-cookie';
 
@@ -99,6 +102,19 @@ export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
     id: string;
     name: string;
   } | null>(null);
+
+  const persistKapitelQuellenClient = useCallback(
+    async (kapitelId: string, quelleIds: string[]) => {
+      if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
+      const db = getFirestore(firebaseApp);
+      const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
+      await updateDoc(kapitelRef, {
+        quelleIds,
+        updatedAt: serverTimestamp(),
+      });
+    },
+    [user?.uid]
+  );
 
   // When the active Kapitel changes, seed runs from initial data while real-time listeners attach
   useEffect(() => {
@@ -354,18 +370,28 @@ export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
       const kapitel = kapiteln.find((k) => k.id === activeKapitelId);
       if (!kapitel) return;
 
-      const newQuelleIds = [...kapitel.assignedQuellenIds, quelleId];
-      const result = await updateKapitelQuellen(activeKapitelId, newQuelleIds);
+      const prevQuelleIds = kapitel.assignedQuellenIds;
+      const newQuelleIds = [...prevQuelleIds, quelleId];
 
-      if (result.success) {
-        setKapiteln((prev) =>
-          prev.map((k) => (k.id === activeKapitelId ? { ...k, assignedQuellenIds: newQuelleIds } : k))
-        );
-      } else {
-        toast.error('Fehler', { description: result.error });
+      // Optimistic update for snappier UI
+      setKapiteln((prev) =>
+        prev.map((k) => (k.id === activeKapitelId ? { ...k, assignedQuellenIds: newQuelleIds } : k))
+      );
+
+      try {
+        await persistKapitelQuellenClient(activeKapitelId, newQuelleIds);
+      } catch (clientErr) {
+        // Fallback to server action
+        const result = await updateKapitelQuellen(activeKapitelId, newQuelleIds);
+        if (!result.success) {
+          setKapiteln((prev) =>
+            prev.map((k) => (k.id === activeKapitelId ? { ...k, assignedQuellenIds: prevQuelleIds } : k))
+          );
+          toast.error('Fehler', { description: result.error });
+        }
       }
     },
-    [activeKapitelId, kapiteln]
+    [activeKapitelId, kapiteln, persistKapitelQuellenClient]
   );
 
   const handleUnassignQuelle = useCallback(
@@ -374,18 +400,27 @@ export function Dashboard({ initialKapitels, initialQuellen }: DashboardProps) {
       const kapitel = kapiteln.find((k) => k.id === activeKapitelId);
       if (!kapitel) return;
 
-      const newQuelleIds = kapitel.assignedQuellenIds.filter((id) => id !== quelleId);
-      const result = await updateKapitelQuellen(activeKapitelId, newQuelleIds);
+      const prevQuelleIds = kapitel.assignedQuellenIds;
+      const newQuelleIds = prevQuelleIds.filter((id) => id !== quelleId);
 
-      if (result.success) {
-        setKapiteln((prev) =>
-          prev.map((k) => (k.id === activeKapitelId ? { ...k, assignedQuellenIds: newQuelleIds } : k))
-        );
-      } else {
-        toast.error('Fehler', { description: result.error });
+      // Optimistic update for snappier UI
+      setKapiteln((prev) =>
+        prev.map((k) => (k.id === activeKapitelId ? { ...k, assignedQuellenIds: newQuelleIds } : k))
+      );
+
+      try {
+        await persistKapitelQuellenClient(activeKapitelId, newQuelleIds);
+      } catch (clientErr) {
+        const result = await updateKapitelQuellen(activeKapitelId, newQuelleIds);
+        if (!result.success) {
+          setKapiteln((prev) =>
+            prev.map((k) => (k.id === activeKapitelId ? { ...k, assignedQuellenIds: prevQuelleIds } : k))
+          );
+          toast.error('Fehler', { description: result.error });
+        }
       }
     },
-    [activeKapitelId, kapiteln]
+    [activeKapitelId, kapiteln, persistKapitelQuellenClient]
   );
 
   const handleAddKapitel = useCallback(async (title: string, nummer: string) => {
