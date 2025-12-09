@@ -13,6 +13,8 @@ import {
   orderBy,
   limit,
   serverTimestamp,
+  type Firestore,
+  type DocumentReference,
 } from 'firebase/firestore';
 import { requireAuth } from '@/app/lib/auth/server-auth';
 import { revalidatePath } from 'next/cache';
@@ -66,17 +68,141 @@ export type Kapitel = {
   createdAt: string;
   quelleIds: string[];
   runs?: KapitelRun[];
+  parentId?: string | null;
+  order?: number;
 };
 
-export async function createKapitel(title: string, quelleIds: string[]) {
+// Helper function to check for circular references in parent chain
+async function checkCircularReference(
+  db: Firestore,
+  userId: string,
+  kapitelId: string,
+  targetParentId: string | null
+): Promise<boolean> {
+  if (!targetParentId) return false;
+
+  let currentId: string | null = targetParentId;
+  const visited = new Set<string>([kapitelId]);
+
+  while (currentId) {
+    if (visited.has(currentId)) {
+      return true; // Circular reference detected
+    }
+    visited.add(currentId);
+
+    const parentRef: DocumentReference = doc(db, 'users', userId, 'kapitels', currentId);
+    const parentDoc = await getDoc(parentRef);
+
+    if (!parentDoc.exists()) {
+      break;
+    }
+
+    currentId = parentDoc.data()?.parentId || null;
+  }
+
+  return false;
+}
+
+// Helper function to calculate depth of a Kapitel in the hierarchy
+async function getKapitelDepth(
+  db: Firestore,
+  userId: string,
+  kapitelId: string | null
+): Promise<number> {
+  if (!kapitelId) return 0;
+
+  let depth = 0;
+  let currentId: string | null = kapitelId;
+
+  while (currentId && depth < 10) { // Safety limit
+    const kapitelRef: DocumentReference = doc(db, 'users', userId, 'kapitels', currentId);
+    const kapitelDoc = await getDoc(kapitelRef);
+
+    if (!kapitelDoc.exists()) {
+      break;
+    }
+
+    currentId = kapitelDoc.data()?.parentId || null;
+    if (currentId) depth++;
+  }
+
+  return depth;
+}
+
+// Helper function to get next order value for siblings
+async function getNextOrderForParent(
+  db: Firestore,
+  userId: string,
+  parentId: string | null
+): Promise<number> {
+  const kapitelsRef = collection(db, 'users', userId, 'kapitels');
+  let q;
+
+  if (parentId === null) {
+    // Root level kapitels (no parent)
+    q = query(kapitelsRef, orderBy('order', 'desc'), limit(1));
+  } else {
+    // Child kapitels with specific parent
+    q = query(kapitelsRef, orderBy('order', 'desc'), limit(1));
+  }
+
+  const snapshot = await getDocs(q);
+
+  if (snapshot.empty) {
+    return 0;
+  }
+
+  // Filter by parentId in memory (Firestore doesn't support complex queries on optional fields)
+  const siblings = snapshot.docs.filter(doc => {
+    const data = doc.data();
+    return (data.parentId || null) === parentId;
+  });
+
+  if (siblings.length === 0) {
+    return 0;
+  }
+
+  const maxOrder = Math.max(...siblings.map(doc => doc.data().order || 0));
+  return maxOrder + 1;
+}
+
+export async function createKapitel(
+  title: string,
+  quelleIds: string[],
+  parentId?: string | null
+) {
   try {
     const user = await requireAuth();
     const db = await getFirestoreForUser();
+
+    // Validate parentId if provided
+    if (parentId) {
+      const parentRef = doc(db, 'users', user.uid, 'kapitels', parentId);
+      const parentDoc = await getDoc(parentRef);
+
+      if (!parentDoc.exists()) {
+        return { success: false, error: 'Parent Kapitel not found' };
+      }
+
+      // Check depth - enforce maximum of 5 levels
+      const parentDepth = await getKapitelDepth(db, user.uid, parentId);
+      if (parentDepth >= 4) {
+        return {
+          success: false,
+          error: 'Maximum nesting depth (5 levels) would be exceeded',
+        };
+      }
+    }
+
+    // Get next order value for siblings
+    const order = await getNextOrderForParent(db, user.uid, parentId || null);
 
     const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
     const docRef = await addDoc(kapitelsRef, {
       title,
       quelleIds,
+      parentId: parentId || null,
+      order,
       createdAt: serverTimestamp(),
     });
 
@@ -112,7 +238,74 @@ export async function updateKapitelQuellen(kapitelId: string, quelleIds: string[
   }
 }
 
-export async function deleteKapitel(kapitelId: string) {
+export async function updateKapitelParent(
+  kapitelId: string,
+  newParentId: string | null
+) {
+  try {
+    const user = await requireAuth();
+    const db = await getFirestoreForUser();
+
+    const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
+    const kapitelDoc = await getDoc(kapitelRef);
+    if (!kapitelDoc.exists()) {
+      return { success: false, error: 'Kapitel not found' };
+    }
+
+    // Check for circular reference
+    if (newParentId) {
+      const hasCircular = await checkCircularReference(
+        db,
+        user.uid,
+        kapitelId,
+        newParentId
+      );
+
+      if (hasCircular) {
+        return {
+          success: false,
+          error: 'Cannot set parent: would create circular reference',
+        };
+      }
+
+      // Validate new parent exists
+      const parentRef = doc(db, 'users', user.uid, 'kapitels', newParentId);
+      const parentDoc = await getDoc(parentRef);
+      if (!parentDoc.exists()) {
+        return { success: false, error: 'Parent Kapitel not found' };
+      }
+
+      // Check depth
+      const parentDepth = await getKapitelDepth(db, user.uid, newParentId);
+      if (parentDepth >= 4) {
+        return {
+          success: false,
+          error: 'Maximum nesting depth (5 levels) would be exceeded',
+        };
+      }
+    }
+
+    // Get next order for new parent's children
+    const order = await getNextOrderForParent(db, user.uid, newParentId);
+
+    await updateDoc(kapitelRef, {
+      parentId: newParentId,
+      order,
+      updatedAt: serverTimestamp(),
+    });
+
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error updating Kapitel parent:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function deleteKapitel(
+  kapitelId: string,
+  deleteStrategy: 'promote' | 'cascade' = 'promote'
+) {
   try {
     const user = await requireAuth();
     const db = await getFirestoreForUser();
@@ -123,6 +316,33 @@ export async function deleteKapitel(kapitelId: string) {
       throw new Error('Kapitel not found');
     }
 
+    const kapitelData = kapitelDoc.data();
+    const parentId = kapitelData.parentId || null;
+
+    // Find all children of this Kapitel
+    const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
+    const childrenSnapshot = await getDocs(kapitelsRef);
+    const children = childrenSnapshot.docs
+      .filter((doc) => doc.data().parentId === kapitelId)
+      .map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    if (deleteStrategy === 'cascade') {
+      // Recursively delete all descendants
+      for (const child of children) {
+        await deleteKapitel(child.id, 'cascade');
+      }
+    } else {
+      // Promote children to parent's level
+      for (const child of children) {
+        const childRef = doc(db, 'users', user.uid, 'kapitels', child.id);
+        await updateDoc(childRef, {
+          parentId: parentId,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+
+    // Delete the Kapitel itself
     await deleteDoc(kapitelRef);
     revalidatePath('/dashboard');
     return { success: true };
@@ -286,6 +506,8 @@ export async function getUserKapitels(withRuns = true, runLimit = 5): Promise<Ka
         title: data.title,
         quelleIds: data.quelleIds || [],
         createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+        parentId: data.parentId || null,
+        order: data.order ?? 0,
       };
 
       if (withRuns) {

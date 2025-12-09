@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { Kapitel } from '@/app/actions/kapitels';
 import type { Quelle } from '@/app/actions/quellen';
-import { KapitelList } from '@/app/components/kapitels/KapitelList';
+import { DashboardWithSidebar } from './DashboardWithSidebar';
 import { QuellenList } from '@/app/components/quellen/QuellenList';
 import { CreateKapitelDialog } from '@/app/components/kapitels/CreateKapitelDialog';
 import { CreateQuelleDialog } from '@/app/components/quellen/CreateQuelleDialog';
@@ -47,7 +47,7 @@ export function DashboardPanels({ kapitels, quellen }: DashboardPanelsProps) {
       </div>
 
       {activeTab === 'kapitel' ? (
-        <KapitelList kapitels={kapitels} quellen={quellen} />
+        <DashboardWithSidebar kapitels={kapitels} quellen={quellen} />
       ) : (
         <div className="space-y-4">
           <div>

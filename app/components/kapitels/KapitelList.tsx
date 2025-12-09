@@ -24,9 +24,10 @@ import { toast } from 'sonner';
 interface KapitelListProps {
   kapitels: Kapitel[];
   quellen: Quelle[];
+  setKapitelRef?: (kapitelId: string, element: HTMLElement | null) => void;
 }
 
-export function KapitelList({ kapitels, quellen }: KapitelListProps) {
+export function KapitelList({ kapitels, quellen, setKapitelRef }: KapitelListProps) {
   const { user } = useAuth();
   const [selectedRuns, setSelectedRuns] = useState<Record<string, string | undefined>>({});
   const [kapitelState, setKapitelState] = useState<Kapitel[]>(kapitels);
@@ -287,6 +288,8 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
         return (
           <div
             key={kapitel.id}
+            ref={(el) => setKapitelRef?.(kapitel.id, el)}
+            data-kapitel-id={kapitel.id}
             className="border rounded-xl bg-gradient-to-b from-white via-white to-gray-50 p-6 shadow-sm ring-1 ring-gray-100"
           >
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -424,13 +427,13 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                             </div>
                           )}
                           <div className="mt-2 rounded-md bg-muted p-3 max-h-64 overflow-y-auto">
-                            {result?.resultContent || result?.result_content ? (
+                            {result?.resultContent ? (
                               <pre
                                 className={`whitespace-pre-wrap text-sm leading-relaxed font-sans ${
                                   isNoContent ? 'text-muted-foreground italic' : ''
                                 }`}
                               >
-                                {result?.resultContent || result?.result_content}
+                                {result?.resultContent}
                               </pre>
                             ) : (
                               <div className="flex items-center gap-2 text-sm text-muted-foreground">
