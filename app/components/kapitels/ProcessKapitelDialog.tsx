@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Sparkles, Loader2 } from 'lucide-react';
 import Cookies from 'js-cookie';
@@ -47,6 +48,7 @@ export function ProcessKapitelDialog({ kapitel, quellen }: ProcessKapitelDialogP
   const [runId, setRunId] = useState<string | null>(null);
   const [heading, setHeading] = useState('');
   const [topic, setTopic] = useState('');
+  const [autoCombine, setAutoCombine] = useState(false);
 
   const buildPrompt = (h: string, t: string) => {
     return `### Aufgabe:
@@ -83,6 +85,7 @@ Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz i
           heading: heading.trim(),
           topic: topic.trim(),
         },
+        autoCombine,
       });
       if (!runResult.success || !runResult.runId) {
         throw new Error(runResult.error || 'Run konnte nicht erstellt werden.');
@@ -161,6 +164,7 @@ Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz i
     setRunId(null);
     setHeading('');
     setTopic('');
+    setAutoCombine(false);
   };
 
   const runFinished =
@@ -299,6 +303,29 @@ Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz i
                   className="resize-none"
                   disabled={loading}
                 />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="auto-combine"
+                    checked={autoCombine}
+                    onCheckedChange={(checked) => setAutoCombine(checked === true)}
+                    disabled={loading || quellen.length <= 1}
+                  />
+                  <Label
+                    htmlFor="auto-combine"
+                    className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${
+                      quellen.length <= 1 ? 'text-muted-foreground' : ''
+                    }`}
+                  >
+                    Texte automatisch kombinieren nach Verarbeitung
+                  </Label>
+                </div>
+                {quellen.length <= 1 && (
+                  <p className="text-xs text-muted-foreground ml-6">
+                    Automatisches Kombinieren erfordert mindestens 2 Quellen
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Finaler Prompt (Vorschau)</Label>

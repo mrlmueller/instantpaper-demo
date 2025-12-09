@@ -265,6 +265,10 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
         const hasContentCount =
           currentRun?.results?.filter((r) => r.hasContent !== false && !!r.resultContent)?.length ??
           0;
+        const allQuellenProcessed = assignedQuellen.every((quelle) => {
+          const result = currentRun?.results?.find((r) => r.quelleId === quelle.id);
+          return result && (result.resultContent || result.hasContent === false);
+        });
         const runCost =
           (currentRun?.results?.reduce((sum, r) => sum + (r.cost || 0), 0) || 0) +
           (currentRun?.combined?.cost || 0);
@@ -272,6 +276,13 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
           (currentRun?.results?.reduce((sum, r) => sum + (r.tokensUsed || 0), 0) || 0) +
           (currentRun?.combined?.tokensUsed || 0);
         const canCombine = !!currentRun && !currentRun.combined && hasContentCount >= 2;
+        // Check if combining is in progress (manual or auto)
+        // Auto-combine is in progress if: autoCombine enabled, all processed, enough content, but no result yet
+        const isAutoCombining = currentRun?.autoCombine &&
+          !currentRun.combined &&
+          allQuellenProcessed &&
+          hasContentCount >= 2;
+        const isCombining = currentRun && (combining[currentRun.id] || isAutoCombining);
 
         return (
           <div
@@ -433,12 +444,26 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                     })}
                   </div>
 
+                  {currentRun?.autoCombine &&
+                   !currentRun.combined &&
+                   allQuellenProcessed &&
+                   hasContentCount === 1 && (
+                    <div className="pt-2">
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <p className="text-sm text-amber-800">
+                          <strong>Automatisches Kombinieren übersprungen:</strong> Nur ein Text enthält verwertbare Informationen.
+                          Mindestens 2 Texte mit Inhalt sind erforderlich.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {canCombine && (
                     <div className="pt-2">
                       <Button
                         size="sm"
                         variant="secondary"
-                        disabled={combining[currentRun.id]}
+                        disabled={combining[currentRun.id] || isAutoCombining}
                         onClick={() => handleCombine(kapitel.id, currentRun.id)}
                         className="gap-2"
                       >
@@ -452,32 +477,53 @@ export function KapitelList({ kapitels, quellen }: KapitelListProps) {
                     </div>
                   )}
 
-                  {currentRun.combined && (
+                  {(currentRun.combined || isCombining) && (
                     <div className="mt-4 border rounded-lg p-4 bg-white">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-semibold">Kombiniertes Ergebnis</span>
-                          <span className="text-xs text-muted-foreground">
-                            Modell {currentRun.combined.modelUsed} ú {new Date(currentRun.combined.createdAt).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary" className="font-mono">
-                            ${currentRun.combined.cost.toFixed(4)}
-                          </Badge>
-                          <Badge variant="outline" className="text-xs">
-                            {currentRun.combined.tokensUsed.toLocaleString()} tokens
-                          </Badge>
-                          <Badge variant="outline" className="text-xs">
-                            {currentRun.combined.sourceQuelleIds.length} Quellen
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="mt-2 rounded-md bg-muted p-3 max-h-96 overflow-y-auto">
-                        <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
-                          {currentRun.combined.combinedContent}
-                        </pre>
-                      </div>
+                      {currentRun.combined ? (
+                        <>
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex flex-col">
+                              <span className="text-sm font-semibold">Kombiniertes Ergebnis</span>
+                              <span className="text-xs text-muted-foreground">
+                                Modell {currentRun.combined.modelUsed} ú {new Date(currentRun.combined.createdAt).toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="secondary" className="font-mono">
+                                ${currentRun.combined.cost.toFixed(4)}
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                {currentRun.combined.tokensUsed.toLocaleString()} tokens
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                {currentRun.combined.sourceQuelleIds.length} Quellen
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="mt-2 rounded-md bg-muted p-3 max-h-96 overflow-y-auto">
+                            <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
+                              {currentRun.combined.combinedContent}
+                            </pre>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex flex-col">
+                              <span className="text-sm font-semibold">Kombiniertes Ergebnis</span>
+                              <span className="text-xs text-muted-foreground">
+                                Texte werden kombiniert...
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-2 rounded-md bg-muted p-3">
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Kombiniertes Ergebnis wird verarbeitet...
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

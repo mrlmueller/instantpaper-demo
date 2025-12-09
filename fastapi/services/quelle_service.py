@@ -3,6 +3,7 @@ from services.firebase_service import firebase_service
 from services.openai_service import openai_service
 import logging
 import re
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +199,9 @@ class QuelleService:
 
             logger.info(f"Quelle processing complete. Result ID: {result_id}, Cost: ${cost:.6f}")
 
+            # Check if we should trigger auto-combine
+            await self._check_and_trigger_auto_combine(user_id, kapitel_id, run_id)
+
             return {
                 "result_id": result_id,
                 "content": openai_result['content'],
@@ -220,6 +224,68 @@ class QuelleService:
                 status_code=500,
                 detail=f"Failed to process Quelle: {str(e)}"
             )
+
+    async def _check_and_trigger_auto_combine(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str
+    ):
+        """
+        Check if all Quellen are processed and trigger auto-combine if enabled.
+        This is called after each Quelle finishes processing.
+        """
+        try:
+            # Get the run to check if auto-combine is enabled
+            run = await self.firebase.get_run(user_id, kapitel_id, run_id)
+            if not run:
+                logger.warning(f"Run {run_id} not found, skipping auto-combine check")
+                return
+
+            auto_combine = run.get('autoCombine', False)
+            if not auto_combine:
+                logger.debug(f"Auto-combine not enabled for run {run_id}")
+                return
+
+            # Check if a combined result already exists
+            existing_combined = await self.firebase.get_combined_result(user_id, kapitel_id, run_id)
+            if existing_combined:
+                logger.info(f"Combined result already exists for run {run_id}, skipping")
+                return
+
+            # Check if all Quellen are processed
+            all_processed, content_count = await self.firebase.check_all_quellen_processed(
+                user_id, kapitel_id, run_id
+            )
+
+            if not all_processed:
+                logger.info(f"Not all Quellen processed yet for run {run_id}, skipping auto-combine")
+                return
+
+            if content_count < 2:
+                logger.info(
+                    f"Auto-combine skipped for run {run_id}: only {content_count} text(s) with content "
+                    "(need at least 2)"
+                )
+                return
+
+            # All conditions met - trigger auto-combine after delay
+            logger.info(
+                f"All Quellen processed for run {run_id} with {content_count} texts having content. "
+                "Triggering auto-combine after 2.5 second delay..."
+            )
+
+            # Wait 2.5 seconds before combining
+            await asyncio.sleep(2.5)
+
+            # Trigger combine
+            logger.info(f"Starting auto-combine for run {run_id}")
+            await self.combine_run_results(user_id, kapitel_id, run_id)
+            logger.info(f"Auto-combine completed successfully for run {run_id}")
+
+        except Exception as e:
+            # Log the error but don't fail the Quelle processing
+            logger.error(f"Error in auto-combine check for run {run_id}: {str(e)}")
 
     async def combine_run_results(
         self,

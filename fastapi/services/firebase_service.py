@@ -309,6 +309,72 @@ class FirebaseService:
             logger.error(f"Error saving combined result: {str(e)}")
             raise
 
+    async def get_kapitel(self, user_id: str, kapitel_id: str) -> Optional[dict]:
+        """Fetch a Kapitel document."""
+        try:
+            kapitel_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+            )
+            doc = kapitel_ref.get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Error fetching kapitel {kapitel_id}: {str(e)}")
+            raise
+
+    async def check_all_quellen_processed(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str
+    ) -> tuple[bool, int]:
+        """
+        Check if all Quellen in a Kapitel have been processed for a specific run.
+
+        Returns:
+            tuple: (all_processed: bool, content_count: int)
+                - all_processed: True if all Quellen have results
+                - content_count: Number of results with usable content
+        """
+        try:
+            # Get the Kapitel to know which Quellen should be processed
+            kapitel = await self.get_kapitel(user_id, kapitel_id)
+            if not kapitel:
+                logger.warning(f"Kapitel {kapitel_id} not found")
+                return False, 0
+
+            quelle_ids = kapitel.get('quelleIds', [])
+            if not quelle_ids:
+                logger.warning(f"No Quellen assigned to Kapitel {kapitel_id}")
+                return False, 0
+
+            # Get all results for this run
+            results = await self.get_run_results(user_id, kapitel_id, run_id)
+            result_ids = {r['id'] for r in results}
+
+            # Check if all Quellen have results
+            all_processed = all(quelle_id in result_ids for quelle_id in quelle_ids)
+
+            # Count results with usable content
+            content_count = sum(
+                1 for r in results
+                if r.get('has_content', True) and r.get('result_content')
+            )
+
+            logger.info(
+                f"Kapitel {kapitel_id} run {run_id}: "
+                f"{len(result_ids)}/{len(quelle_ids)} processed, "
+                f"{content_count} with content"
+            )
+
+            return all_processed, content_count
+
+        except Exception as e:
+            logger.error(f"Error checking if all Quellen processed: {str(e)}")
+            raise
+
 
 # Create singleton instance
 firebase_service = FirebaseService()

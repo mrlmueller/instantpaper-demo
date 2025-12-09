@@ -57,6 +57,7 @@ export type KapitelRun = {
   combined?: CombinedResult | null;
   promptTemplateId?: string;
   promptPayload?: Record<string, any>;
+  autoCombine?: boolean;
 };
 
 export type Kapitel = {
@@ -135,7 +136,7 @@ export async function createKapitelRun(
   kapitelId: string,
   instruction: string,
   model: string,
-  options?: { promptTemplateId?: string; promptPayload?: Record<string, any> }
+  options?: { promptTemplateId?: string; promptPayload?: Record<string, any>; autoCombine?: boolean }
 ) {
   try {
     const user = await requireAuth();
@@ -155,6 +156,7 @@ export async function createKapitelRun(
       createdAt: serverTimestamp(),
       promptTemplateId: options?.promptTemplateId,
       promptPayload: options?.promptPayload,
+      autoCombine: options?.autoCombine ?? false,
     });
 
     revalidatePath('/dashboard');
@@ -251,6 +253,7 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
         model: runData.model || '',
         promptTemplateId: runData.promptTemplateId,
         promptPayload: runData.promptPayload,
+        autoCombine: runData.autoCombine ?? false,
         createdAt: runData.createdAt?.toDate?.()?.toISOString()
           || runData.created_at?.toDate?.()?.toISOString()
           || new Date().toISOString(),
