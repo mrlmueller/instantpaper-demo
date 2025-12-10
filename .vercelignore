@@ -1,0 +1,5 @@
+fastapi/
+fastapi/**
+*.log
+github-deployer-key.json
+
