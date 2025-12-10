@@ -26,7 +26,8 @@ class Config:
 
     # Server
     PORT: int = int(os.getenv("PORT", "8000"))
-    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+    # Strip whitespace/newlines to avoid CORS origin mismatches
+    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").strip()
 
     # Development
     DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"
