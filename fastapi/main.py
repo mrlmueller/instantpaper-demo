@@ -110,16 +110,25 @@ async def process_quelle(
     """
     logger.info(f"Processing Quelle {request.quelle_id} for user {user_id} (Kapitel {request.kapitel_id}, run {request.run_id})")
 
+    async def _run_process_single_quelle() -> None:
+        try:
+            await quelle_service.process_single_quelle(
+                user_id,
+                request.quelle_id,
+                request.kapitel_id,
+                request.run_id,
+                request.user_input,
+                request.model,
+            )
+        except Exception as e:
+            logger.error(
+                f"Background processing failed for Quelle {request.quelle_id} "
+                f"(Kapitel {request.kapitel_id}, run {request.run_id}, user {user_id}): {e}",
+                exc_info=True,
+            )
+
     # Process Quelle in the background to return immediately
-    background_tasks.add_task(
-        quelle_service.process_single_quelle,
-        user_id,
-        request.quelle_id,
-        request.kapitel_id,
-        request.run_id,
-        request.user_input,
-        request.model,
-    )
+    background_tasks.add_task(_run_process_single_quelle)
 
     return {
         "status": "queued",
@@ -143,12 +152,21 @@ async def combine_run(
     """
     logger.info(f"Combining run {request.run_id} for user {user_id} (Kapitel {request.kapitel_id})")
 
-    background_tasks.add_task(
-        quelle_service.combine_run_results,
-        user_id,
-        request.kapitel_id,
-        request.run_id,
-    )
+    async def _run_combine_run_results() -> None:
+        try:
+            await quelle_service.combine_run_results(
+                user_id,
+                request.kapitel_id,
+                request.run_id,
+            )
+        except Exception as e:
+            logger.error(
+                f"Background combine failed for run {request.run_id} "
+                f"(Kapitel {request.kapitel_id}, user {user_id}): {e}",
+                exc_info=True,
+            )
+
+    background_tasks.add_task(_run_combine_run_results)
 
     return {
         "status": "queued",
