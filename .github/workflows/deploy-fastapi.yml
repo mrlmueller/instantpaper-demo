@@ -1,0 +1,36 @@
+name: Deploy FastAPI to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: europe-west3
+  CLOUD_RUN_SERVICE: instantpaper-api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          export_default_credentials: true
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$CLOUD_RUN_SERVICE" \
+            --region "$GCP_REGION" \
+            --source "./fastapi" \
+            --allow-unauthenticated \
+            --service-account "instantpaper-api-runtime@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
+            --set-secrets "FIREBASE_PROJECT_ID=FIREBASE_PROJECT_ID:latest,FIREBASE_CLIENT_EMAIL=FIREBASE_CLIENT_EMAIL:latest,FIREBASE_PRIVATE_KEY=FIREBASE_PRIVATE_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest"
+
