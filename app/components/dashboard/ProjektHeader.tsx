@@ -128,7 +128,13 @@ export function ProjektHeader({ projekt, projekte, onSwitchProjekt, onCreateProj
               onChange={(e) => setNewProjektName(e.target.value)}
               placeholder="z.B. Masterarbeit: Digitalisierung im Mittelstand"
               className="mt-2"
-              onKeyDown={(e) => e.key === "Enter" && handleCreateProjekt()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newProjektName.trim()) {
+                  onCreateProjekt(newProjektName.trim())
+                  setNewProjektDialogOpen(false)
+                  setNewProjektName("")
+                }
+              }}
             />
           </div>
           <DialogFooter>
