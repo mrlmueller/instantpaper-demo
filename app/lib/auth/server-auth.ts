@@ -1,4 +1,5 @@
 import { getAuthenticatedAppForUser } from '@/app/lib/firebase/serverApp';
+import { redirect } from 'next/navigation';
 
 export type AuthUser = {
   uid: string;
@@ -28,8 +29,7 @@ export async function getAuthUser(): Promise<AuthUser | null> {
 // Use in Server Components - throws if not authenticated
 export async function requireAuth(): Promise<AuthUser> {
   const user = await getAuthUser();
-  if (!user) {
-    throw new Error('Unauthorized');
-  }
-  return user;
+  if (user) return user;
+
+  redirect('/login?reason=unauthenticated');
 }

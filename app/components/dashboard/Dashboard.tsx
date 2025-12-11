@@ -1,15 +1,18 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { KapitelNavigator } from './KapitelNavigator';
 import { KapitelWorkspace } from './KapitelWorkspace';
 import { ProjektHeader } from './ProjektHeader';
 import { QuellenPanel } from './QuellenPanel';
 import { TextViewerModal } from './TextViewerModal';
 import { ProcessingDialog } from './ProcessingDialog';
+import { ShortenDialog } from './ShortenDialog';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import { QuellenPanelSkeleton } from './QuellenPanelSkeleton';
+import { KapitelWorkspaceSkeleton } from './KapitelWorkspaceSkeleton';
 import { toast } from 'sonner';
 
 import type { Quelle, Kapitel, Run, ProcessingSettings, Projekt } from '@/app/types/ui';
@@ -33,6 +36,8 @@ import {
   deleteKapitel as deleteKapitelAction,
   updateKapitelTitle,
   createKapitelRun,
+  createShortenRun,
+  getKapitelRuns,
   getUserKapitels,
   type KapitelRun as FirebaseKapitelRun,
   type Kapitel as FirebaseKapitel,
@@ -48,6 +53,7 @@ import {
   onSnapshot,
   query,
   orderBy,
+  limit,
   type Unsubscribe,
   doc,
   updateDoc,
@@ -58,15 +64,26 @@ import {
 import Cookies from 'js-cookie';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+const RUN_HISTORY_LIMIT = 10;
+const MAX_RUN_HISTORY_LIMIT = 200;
 
 interface DashboardProps {
   initialKapitels: FirebaseKapitel[];
   initialQuellen: FirebaseQuelle[];
   initialProjekt: FirebaseProject;
   initialProjekte: FirebaseProject[];
+  initialRuns?: FirebaseKapitelRun[];
 }
 
-export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, initialProjekte }: DashboardProps) {
+export function Dashboard({
+  initialKapitels,
+  initialQuellen,
+  initialProjekt,
+  initialProjekte,
+  initialRuns = [],
+}: DashboardProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   // Start with skeleton to avoid empty flash before data appears
   const [isLoading, setIsLoading] = useState(true);
@@ -100,11 +117,56 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
   const activeKapitel = kapiteln.find((k) => k.id === activeKapitelId);
 
   const initialRunsForActive =
-    initialKapitels.find((k) => k.id === initialActiveKapitelId)?.runs || [];
+    initialRuns.length > 0
+      ? initialRuns
+      : initialKapitels.find((k) => k.id === initialActiveKapitelId)?.runs || [];
   const [fbRuns, setFbRuns] = useState<FirebaseKapitelRun[]>(initialRunsForActive);
+  const keepInitialRunsRef = useRef(initialRunsForActive.length > 0);
+  const [runListLimit, setRunListLimit] = useState<number>(RUN_HISTORY_LIMIT);
+  const [allRunsLoaded, setAllRunsLoaded] = useState(false);
+  const [isKapitelLoading, setIsKapitelLoading] = useState(initialRunsForActive.length === 0);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const selectedRun = runs.find((r) => r.id === selectedRunId);
+  const hasShownNoticeRef = useRef(false);
+
+  const handleAuthFailure = useCallback(() => {
+    toast.error('Sitzung erforderlich', {
+      description: 'Bitte melde dich erneut an.',
+      id: 'auth-required',
+    });
+    router.replace('/login?reason=unauthenticated');
+  }, [router]);
+
+  const notifyServerDown = useCallback(
+    (toastId = 'fastapi-down') => {
+      toast.error('Server nicht erreichbar', {
+        description:
+          'Der FastAPI-Server antwortet aktuell nicht. Das ist ein Server-Problem – du kannst nichts tun außer es später erneut zu versuchen.',
+        id: toastId,
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (hasShownNoticeRef.current) return;
+    const notice = searchParams.get('notice');
+    if (!notice) return;
+    hasShownNoticeRef.current = true;
+
+    if (notice === 'already-authenticated') {
+      toast.info('Bereits angemeldet', {
+        description: 'Du bist bereits eingeloggt.',
+      });
+      router.replace('/dashboard');
+    }
+  }, [router, searchParams]);
+
+  const handleSelectRun = useCallback((id: string) => {
+    setIsKapitelLoading(true);
+    setSelectedRunId(id);
+  }, []);
 
   const [showQuellenPanel, setShowQuellenPanel] = useState(false);
   const [textViewerContent, setTextViewerContent] = useState<{
@@ -112,6 +174,7 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
     text: string;
   } | null>(null);
   const [processingDialogOpen, setProcessingDialogOpen] = useState(false);
+  const [shortenDialogOpen, setShortenDialogOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     type: 'quelle' | 'kapitel' | 'projekt';
     id: string;
@@ -119,16 +182,28 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
   } | null>(null);
 
   const loadProjektData = useCallback(async (projektId: string) => {
+    setIsKapitelLoading(true);
+    setRunListLimit(RUN_HISTORY_LIMIT);
+    setAllRunsLoaded(false);
     const [fbQuellen, fbKapitels] = await Promise.all([
       getUserQuellen(projektId),
-      getUserKapitels(projektId, true, 50),
+      getUserKapitels(projektId, false, RUN_HISTORY_LIMIT),
     ]);
     setQuellen(fbQuellen.map((q) => transformQuelleToUI(q, projektId)));
     setKapiteln(fbKapitels.map((k) => transformKapitelToUI(k, projektId)));
     const firstKapitelId = fbKapitels[0]?.id || '';
     setActiveKapitelId(firstKapitelId);
-    setFbRuns(fbKapitels.find((k) => k.id === firstKapitelId)?.runs || []);
     setSelectedRunId(null);
+    setFbRuns([]);
+
+    if (firstKapitelId) {
+      const runs = await getKapitelRuns(firstKapitelId, RUN_HISTORY_LIMIT);
+      setFbRuns(runs);
+      keepInitialRunsRef.current = runs.length > 0;
+      setIsKapitelLoading(runs.length === 0);
+    } else {
+      setIsKapitelLoading(false);
+    }
   }, []);
 
   const persistKapitelQuellenClient = useCallback(async (kapitelId: string, quelleIds: string[]) => {
@@ -181,13 +256,25 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
       setFbRuns([]);
       setRuns([]);
       setSelectedRunId(null);
+      setIsKapitelLoading(false);
       return;
     }
 
-    const initialKapitel = initialKapitels.find((k) => k.id === activeKapitelId);
-    setFbRuns(initialKapitel?.runs || []);
+    setIsKapitelLoading(true);
     setSelectedRunId(null);
-  }, [activeKapitelId, initialKapitels]);
+    setRunListLimit(RUN_HISTORY_LIMIT);
+    setAllRunsLoaded(false);
+
+    if (keepInitialRunsRef.current) {
+      // Preserve the initially provided runs once; subsequent Kapitel switches clear state
+      setIsKapitelLoading(false);
+      keepInitialRunsRef.current = false;
+      return;
+    }
+
+    setFbRuns([]);
+    setRuns([]);
+  }, [activeKapitelId]);
 
   // Real-time updates for runs, results, and combined content of the active Kapitel
   useEffect(() => {
@@ -200,17 +287,11 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
 
     const db = getFirestore(firebaseApp);
     const runsRef = collection(db, 'users', user.uid, 'kapitels', activeKapitelId, 'runs');
-    const q = query(runsRef, orderBy('index', 'desc'));
-
-    let runLevelUnsubs: Unsubscribe[] = [];
+    const q = query(runsRef, orderBy('index', 'desc'), limit(runListLimit));
 
     const unsubscribeRuns = onSnapshot(
       q,
       (snapshot) => {
-        // Reset existing run-level listeners to avoid duplicates when the run list changes
-        runLevelUnsubs.forEach((u) => u());
-        runLevelUnsubs = [];
-
         setFbRuns((prev) => {
           const prevMap = new Map(prev.map((run) => [run.id, run]));
           const baseRuns: FirebaseKapitelRun[] = snapshot.docs.map((doc) => {
@@ -230,6 +311,7 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
               autoCombine: data.autoCombine ?? false,
               results: existing?.results || [],
               combined: existing?.combined || null,
+              shortened: existing?.shortened || null,
               ueberschrift: data.ueberschrift || existing?.ueberschrift || '',
               thema: data.thema || data.instruction || existing?.thema || '',
             } as FirebaseKapitelRun;
@@ -237,97 +319,311 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
           return baseRuns;
         });
 
-        // Subscribe to result/combined updates for each run
-        snapshot.docs.forEach((runDoc) => {
-          const resultsRef = collection(
-            db,
-            'users',
-            user.uid,
-            'kapitels',
-            activeKapitelId,
-            'runs',
-            runDoc.id,
-            'results'
-          );
-          const resultsUnsub = onSnapshot(resultsRef, (resSnapshot) => {
-            const results = resSnapshot.docs.map((resDoc) => {
-              const resData: any = resDoc.data();
-              return {
-                quelleId: resDoc.id,
-                resultContent: resData.result_content ?? resData.resultContent ?? '',
-                hasContent: resData.has_content ?? resData.hasContent ?? true,
-                modelUsed: resData.model_used ?? resData.modelUsed ?? '',
-                tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
-                inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
-                cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
-                outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
-                reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
-                cost: resData.cost ?? 0,
-                createdAt:
-                  resData.created_at?.toDate?.()?.toISOString() ||
-                  resData.createdAt?.toDate?.()?.toISOString() ||
-                  new Date().toISOString(),
-              };
-            });
+        if (!snapshot.empty && !selectedRunId) {
+          handleSelectRun(snapshot.docs[0].id);
+        }
 
-            setFbRuns((prev) =>
-              prev.map((run) => (run.id === runDoc.id ? { ...run, results } : run))
-            );
-          });
-          runLevelUnsubs.push(resultsUnsub);
-
-          const combinedRef = collection(
-            db,
-            'users',
-            user.uid,
-            'kapitels',
-            activeKapitelId,
-            'runs',
-            runDoc.id,
-            'combined'
-          );
-          const combinedUnsub = onSnapshot(combinedRef, (combinedSnap) => {
-            let combined: any = null;
-            if (!combinedSnap.empty) {
-              const doc = combinedSnap.docs[0];
-              const data: any = doc.data();
-              combined = {
-                id: doc.id,
-                combinedContent: data.combined_content ?? data.combinedContent ?? '',
-                sourceQuelleIds: data.source_quelle_ids ?? data.sourceQuelleIds ?? [],
-                heading: data.heading ?? '',
-                topic: data.topic ?? '',
-                modelUsed: data.model_used ?? data.modelUsed ?? '',
-                tokensUsed: data.tokens_used ?? data.tokensUsed ?? 0,
-                inputTokens: data.input_tokens ?? data.inputTokens ?? 0,
-                cachedInputTokens: data.cached_input_tokens ?? data.cachedInputTokens ?? 0,
-                outputTokens: data.output_tokens ?? data.outputTokens ?? 0,
-                reasoningTokens: data.reasoning_tokens ?? data.reasoningTokens ?? 0,
-                cost: data.cost ?? 0,
-                createdAt:
-                  data.created_at?.toDate?.()?.toISOString() ||
-                  data.createdAt?.toDate?.()?.toISOString() ||
-                  new Date().toISOString(),
-              };
-            }
-
-            setFbRuns((prev) =>
-              prev.map((run) => (run.id === runDoc.id ? { ...run, combined } : run))
-            );
-          });
-          runLevelUnsubs.push(combinedUnsub);
-        });
+        if (snapshot.empty) {
+          setIsKapitelLoading(false);
+        }
       },
       (error) => {
         console.error('Error listening to runs:', error);
+        setIsKapitelLoading(false);
       }
     );
 
     return () => {
       unsubscribeRuns();
-      runLevelUnsubs.forEach((u) => u());
     };
-  }, [user?.uid, activeKapitelId]);
+  }, [user?.uid, activeKapitelId, runListLimit, selectedRunId, handleSelectRun]);
+
+  // Load data (combined/shortened/results) only for the selected run
+  useEffect(() => {
+    if (!user?.uid || !activeKapitelId || !selectedRunId) {
+      return;
+    }
+
+    const db = getFirestore(firebaseApp);
+
+    const combinedRef = collection(
+      db,
+      'users',
+      user.uid,
+      'kapitels',
+      activeKapitelId,
+      'runs',
+      selectedRunId,
+      'combined'
+    );
+    const shortenedRef = collection(
+      db,
+      'users',
+      user.uid,
+      'kapitels',
+      activeKapitelId,
+      'runs',
+      selectedRunId,
+      'shortened'
+    );
+    const resultsRef = collection(
+      db,
+      'users',
+      user.uid,
+      'kapitels',
+      activeKapitelId,
+      'runs',
+      selectedRunId,
+      'results'
+    );
+
+    setIsKapitelLoading(true);
+    let hasData = false;
+    let settledOnce = false;
+
+    const updateRunPartial = (partial: Partial<FirebaseKapitelRun>) => {
+      setFbRuns((prev) =>
+        prev.map((run) => (run.id === selectedRunId ? { ...run, ...partial } : run))
+      );
+    };
+    const finishIfNeeded = () => {
+      if (!settledOnce) {
+        settledOnce = true;
+        setIsKapitelLoading(false);
+      }
+    };
+
+    const combinedUnsub = onSnapshot(combinedRef, (combinedSnap) => {
+      let combined: any = null;
+      if (!combinedSnap.empty) {
+        const doc = combinedSnap.docs[0];
+        const data: any = doc.data();
+        combined = {
+          id: doc.id,
+          combinedContent: data.combined_content ?? data.combinedContent ?? '',
+          sourceQuelleIds: data.source_quelle_ids ?? data.sourceQuelleIds ?? [],
+          heading: data.heading ?? '',
+          topic: data.topic ?? '',
+          modelUsed: data.model_used ?? data.modelUsed ?? '',
+          tokensUsed: data.tokens_used ?? data.tokensUsed ?? 0,
+          inputTokens: data.input_tokens ?? data.inputTokens ?? 0,
+          cachedInputTokens: data.cached_input_tokens ?? data.cachedInputTokens ?? 0,
+          outputTokens: data.output_tokens ?? data.outputTokens ?? 0,
+          reasoningTokens: data.reasoning_tokens ?? data.reasoningTokens ?? 0,
+          cost: data.cost ?? 0,
+          createdAt:
+            data.created_at?.toDate?.()?.toISOString() ||
+            data.createdAt?.toDate?.()?.toISOString() ||
+            new Date().toISOString(),
+        };
+      }
+      updateRunPartial({ combined });
+      hasData = hasData || !!combined;
+      if (hasData) finishIfNeeded();
+    });
+
+    const shortenedUnsub = onSnapshot(shortenedRef, (shortenedSnap) => {
+      let shortened: any = null;
+      if (!shortenedSnap.empty) {
+        const doc = shortenedSnap.docs[0];
+        const data: any = doc.data();
+        shortened = {
+          id: doc.id,
+          shortenedContent: data.shortened_content ?? data.shortenedContent ?? '',
+          explanation: data.explanation ? {
+            lengthDecision: data.explanation.length_decision ?? '',
+            omittedTopics: data.explanation.omitted_topics ?? [],
+            preservedFocus: data.explanation.preserved_focus ?? [],
+            compressionNotes: data.explanation.compression_notes ?? '',
+          } : undefined,
+          originalLength: data.original_length ?? data.originalLength ?? 0,
+          shortenedLength: data.shortened_length ?? data.shortenedLength ?? 0,
+          usedKapitelIds: data.used_kapitel_ids ?? data.usedKapitelIds ?? [],
+          model: data.model ?? '',
+          cost: data.cost ?? 0,
+          tokensUsed: data.tokens_used ?? data.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
+          createdAt:
+            data.created_at?.toDate?.()?.toISOString() ||
+            data.createdAt?.toDate?.()?.toISOString() ||
+            new Date().toISOString(),
+        };
+      }
+      updateRunPartial({ shortened });
+      hasData = hasData || !!shortened;
+      if (hasData) finishIfNeeded();
+    });
+
+    const resultsUnsub = onSnapshot(resultsRef, (resSnapshot) => {
+      const results = resSnapshot.docs.map((resDoc) => {
+        const resData: any = resDoc.data();
+        return {
+          quelleId: resDoc.id,
+          resultContent: resData.result_content ?? resData.resultContent ?? '',
+          hasContent: resData.has_content ?? resData.hasContent ?? true,
+          modelUsed: resData.model_used ?? resData.modelUsed ?? '',
+          tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
+          inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
+          cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
+          outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
+          reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
+          cost: resData.cost ?? 0,
+          createdAt:
+            resData.created_at?.toDate?.()?.toISOString() ||
+            resData.createdAt?.toDate?.()?.toISOString() ||
+            new Date().toISOString(),
+        };
+      });
+
+      updateRunPartial({ results });
+      hasData = hasData || results.length > 0;
+      if (hasData) finishIfNeeded();
+      if (!hasData && resSnapshot.empty) {
+        finishIfNeeded();
+      }
+    });
+
+    return () => {
+      combinedUnsub();
+      shortenedUnsub();
+      resultsUnsub();
+    };
+  }, [user?.uid, activeKapitelId, selectedRunId]);
+
+  // Live status per Kapitel (latest run only, minimal data)
+  useEffect(() => {
+    if (!user?.uid || kapiteln.length === 0) return;
+
+    const db = getFirestore(firebaseApp);
+    const runUnsubs: Unsubscribe[] = [];
+    const combinedUnsubs: Map<string, Unsubscribe> = new Map();
+    const kapitelIds = kapiteln.map((k) => k.id);
+
+    const updateKapitelStatus = (
+      kapitelId: string,
+      status: 'nicht-verarbeitet' | 'in-bearbeitung' | 'fertig'
+    ) => {
+      setKapiteln((prev) =>
+        prev.map((k) => {
+          if (k.id !== kapitelId) return k;
+          if (k.status === status) return k;
+          return { ...k, status };
+        })
+      );
+    };
+
+    kapitelIds.forEach((kapitelId) => {
+      const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
+      const q = query(runsRef, orderBy('index', 'desc'), limit(1));
+
+      const runUnsub = onSnapshot(q, (runSnap) => {
+        const existing = combinedUnsubs.get(kapitelId);
+        if (existing) {
+          existing();
+          combinedUnsubs.delete(kapitelId);
+        }
+
+        if (runSnap.empty) {
+          updateKapitelStatus(kapitelId, 'nicht-verarbeitet');
+          return;
+        }
+
+        const latestRunId = runSnap.docs[0].id;
+        updateKapitelStatus(kapitelId, 'in-bearbeitung');
+
+        const combinedRef = collection(
+          db,
+          'users',
+          user.uid,
+          'kapitels',
+          kapitelId,
+          'runs',
+          latestRunId,
+          'combined'
+        );
+        const combinedUnsub = onSnapshot(combinedRef, (combinedSnap) => {
+          if (!combinedSnap.empty) {
+            updateKapitelStatus(kapitelId, 'fertig');
+          } else {
+            updateKapitelStatus(kapitelId, 'in-bearbeitung');
+          }
+        });
+
+        combinedUnsubs.set(kapitelId, combinedUnsub);
+      });
+
+      runUnsubs.push(runUnsub);
+    });
+
+    return () => {
+      runUnsubs.forEach((u) => u());
+      combinedUnsubs.forEach((u) => u());
+    };
+  }, [user?.uid, kapiteln.map((k) => k.id).join(',')]);
+
+  // Live status per Kapitel (latest run only, minimal data)
+  useEffect(() => {
+    if (!user?.uid || kapiteln.length === 0) return;
+
+    const db = getFirestore(firebaseApp);
+    const runUnsubs: Unsubscribe[] = [];
+    const combinedUnsubs: Map<string, Unsubscribe> = new Map();
+    const kapitelIds = kapiteln.map((k) => k.id);
+
+    const updateKapitelStatus = (
+      kapitelId: string,
+      status: 'nicht-verarbeitet' | 'in-bearbeitung' | 'fertig'
+    ) => {
+      setKapiteln((prev) => prev.map((k) => (k.id === kapitelId ? { ...k, status } : k)));
+    };
+
+    kapitelIds.forEach((kapitelId) => {
+      const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
+      const q = query(runsRef, orderBy('index', 'desc'), limit(1));
+
+      const runUnsub = onSnapshot(q, (runSnap) => {
+        const existing = combinedUnsubs.get(kapitelId);
+        if (existing) {
+          existing();
+          combinedUnsubs.delete(kapitelId);
+        }
+
+        if (runSnap.empty) {
+          updateKapitelStatus(kapitelId, 'nicht-verarbeitet');
+          return;
+        }
+
+        const latestRunId = runSnap.docs[0].id;
+        updateKapitelStatus(kapitelId, 'in-bearbeitung');
+
+        const combinedRef = collection(
+          db,
+          'users',
+          user.uid,
+          'kapitels',
+          kapitelId,
+          'runs',
+          latestRunId,
+          'combined'
+        );
+        const combinedUnsub = onSnapshot(combinedRef, (combinedSnap) => {
+          if (!combinedSnap.empty) {
+            updateKapitelStatus(kapitelId, 'fertig');
+          } else {
+            updateKapitelStatus(kapitelId, 'in-bearbeitung');
+          }
+        });
+
+        combinedUnsubs.set(kapitelId, combinedUnsub);
+      });
+
+      runUnsubs.push(runUnsub);
+    });
+
+    return () => {
+      runUnsubs.forEach((u) => u());
+      combinedUnsubs.forEach((u) => u());
+    };
+  }, [user?.uid, kapiteln.map((k) => k.id).join(',')]);
 
   // hide initial skeleton once first client render completes
   useEffect(() => {
@@ -376,15 +672,10 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
     if (uiRuns.length === 0) {
       setSelectedRunId(null);
     } else if (!selectedRunId || !uiRuns.some((run) => run.id === selectedRunId)) {
-      setSelectedRunId(uiRuns[0].id);
+      handleSelectRun(uiRuns[0].id);
     }
 
-    // update status for the active Kapitel based on its latest run
-    const nextStatus = deriveKapitelStatus(fbRuns);
-    setKapiteln((prev) =>
-      prev.map((k) => (k.id === activeKapitelId ? { ...k, status: nextStatus } : k))
-    );
-  }, [fbRuns, quellen, activeKapitelId, activeKapitel?.assignedQuellenIds, selectedRunId]);
+  }, [fbRuns, quellen, activeKapitelId, activeKapitel?.assignedQuellenIds, selectedRunId, handleSelectRun]);
 
   // Handlers
   const handleSwitchProjekt = useCallback(
@@ -672,9 +963,7 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
 
       const token = Cookies.get('__session');
       if (!token) {
-        toast.error('Authentifizierung erforderlich', {
-          description: 'Bitte melde dich erneut an.',
-        });
+        handleAuthFailure();
         return;
       }
 
@@ -726,15 +1015,18 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
             ...prev,
           ];
         });
-        setSelectedRunId(result.runId);
+        handleSelectRun(result.runId);
         setProcessingDialogOpen(false);
 
         // Queue processing for all assigned Quellen (mirrors previous implementation)
         const queue = [...assignedQuellen];
         const concurrency = Math.min(3, queue.length || 1);
 
+        let authFailed = false;
+        let serverUnavailable = false;
+
         const worker = async () => {
-          while (queue.length > 0) {
+          while (queue.length > 0 && !authFailed && !serverUnavailable) {
             const nextQuelle = queue.shift();
             if (!nextQuelle) return;
             try {
@@ -754,11 +1046,45 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
               });
 
               if (!response.ok) {
-                const error = await response.json().catch(() => ({}));
-                throw new Error(error.detail || 'Fehler beim Verarbeiten');
+                if (response.status === 401) {
+                  authFailed = true;
+                  queue.length = 0;
+                  toast.error('Verarbeitung abgebrochen', {
+                    description: 'Bitte melde dich erneut an.',
+                    id: 'processing',
+                  });
+                  handleAuthFailure();
+                  return;
+                }
+
+                const errorBody = await response.json().catch(() => ({}));
+                const error: any = new Error(errorBody.detail || 'Fehler beim Verarbeiten');
+                error.status = response.status;
+                throw error;
               }
             } catch (err: any) {
-              console.error(`Error processing Quelle ${nextQuelle.id}:`, err);
+              if (authFailed || serverUnavailable) return;
+
+              const status = err?.status;
+              if (status === 401) {
+                authFailed = true;
+                queue.length = 0;
+                toast.error('Verarbeitung abgebrochen', {
+                  description: 'Bitte melde dich erneut an.',
+                  id: 'processing',
+                });
+                handleAuthFailure();
+                return;
+              }
+
+              if (err instanceof TypeError || (typeof status === 'number' && status >= 500)) {
+                serverUnavailable = true;
+                queue.length = 0;
+                notifyServerDown('processing');
+                return;
+              }
+
+              console.error(`Error processing Quelle ${nextQuelle?.id}:`, err);
               toast.error('Fehler bei einer Quelle', {
                 description: err.message || 'Unbekannter Fehler beim Verarbeiten der Quelle',
               });
@@ -767,6 +1093,10 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
         };
 
         await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+        if (authFailed || serverUnavailable) {
+          return;
+        }
 
         toast.success('Run erstellt', {
           description: 'Die Verarbeitung wurde gestartet...',
@@ -780,7 +1110,7 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
         });
       }
     },
-    [activeKapitelId, activeKapitel, quellen]
+    [activeKapitelId, activeKapitel, handleAuthFailure, handleSelectRun, notifyServerDown, quellen]
   );
 
   const handleCombineTexts = useCallback(async () => {
@@ -800,9 +1130,7 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
 
     const token = Cookies.get('__session');
     if (!token) {
-      toast.error('Authentifizierung erforderlich', {
-        description: 'Bitte melde dich erneut an.',
-      });
+      handleAuthFailure();
       return;
     }
 
@@ -825,8 +1153,24 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          toast.error('Kombination abgebrochen', {
+            description: 'Bitte melde dich erneut an.',
+            id: 'combine',
+          });
+          handleAuthFailure();
+          return;
+        }
+
+        if (response.status >= 500) {
+          notifyServerDown('combine');
+          return;
+        }
+
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.detail || 'Fehler beim Kombinieren');
+        const err: any = new Error(error.detail || 'Fehler beim Kombinieren');
+        err.status = response.status;
+        throw err;
       }
 
       toast.success('Kombination gestartet', {
@@ -834,13 +1178,103 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
         id: 'combine',
       });
     } catch (err: any) {
+      if (err instanceof TypeError) {
+        notifyServerDown('combine');
+        return;
+      }
+
+      if (err?.status === 401) {
+        handleAuthFailure();
+        return;
+      }
+
       console.error('Fehler beim Kombinieren:', err);
       toast.error('Combine fehlgeschlagen', {
         description: err.message || 'Unbekannter Fehler beim Kombinieren',
         id: 'combine',
       });
     }
-  }, [activeKapitelId, selectedRun]);
+  }, [activeKapitelId, handleAuthFailure, notifyServerDown, selectedRun]);
+
+  const handleShorten = useCallback(
+    async (contextKapitelIds: string[], model: string) => {
+      if (!activeKapitel || !selectedRun) return;
+
+      if (contextKapitelIds.length === 0) {
+        toast.error('Keine Kontextkapitel ausgewählt', {
+          description: 'Wähle mindestens ein Kapitel als Kontext aus.',
+        });
+        return;
+      }
+
+      toast.loading('Text wird gekürzt', {
+        description: 'Der Text wird mit Hilfe der ausgewählten Kapitel gekürzt...',
+        id: 'shortening',
+      });
+
+      try {
+        const result = await createShortenRun(
+          activeKapitelId,
+          selectedRun.id,
+          contextKapitelIds,
+          model as 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.1'
+        );
+
+        if (!result?.success) {
+          const message = result?.error || 'Kürzung konnte nicht gestartet werden.';
+          const lower = message.toLowerCase();
+
+          if (lower.includes('sitzung')) {
+            toast.error('Kürzung abgebrochen', {
+              description: message,
+              id: 'shortening',
+            });
+            handleAuthFailure();
+            return;
+          }
+
+          if (lower.includes('fastapi-server')) {
+            notifyServerDown('shortening');
+            return;
+          }
+
+          toast.error('Kürzung fehlgeschlagen', {
+            description: message,
+            id: 'shortening',
+          });
+          return;
+        }
+
+        toast.success('Kürzung gestartet', {
+          description: 'Der Text wird nun gekürzt und entdupliziert.',
+          id: 'shortening',
+        });
+      } catch (err: any) {
+        console.error('Fehler beim Kürzen:', err);
+        const message = err?.message || 'Unbekannter Fehler beim Kürzen';
+
+        if (message.toLowerCase().includes('sitzung')) {
+          toast.error('Kürzung abgebrochen', {
+            description: message,
+            id: 'shortening',
+          });
+          handleAuthFailure();
+          return;
+        }
+
+        if (message.toLowerCase().includes('fastapi-server')) {
+          notifyServerDown('shortening');
+          return;
+        }
+
+        toast.error('Kürzung fehlgeschlagen', {
+          description: message,
+          id: 'shortening',
+        });
+      }
+    },
+    [activeKapitelId, activeKapitel, handleAuthFailure, notifyServerDown, selectedRun]
+  );
 
   const handleToggleQuellenPanel = useCallback(() => {
     if (!showQuellenPanel) {
@@ -885,17 +1319,28 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
       <div className="flex-1 overflow-hidden flex">
         <div className="flex-1 overflow-hidden">
           {activeKapitel ? (
-            <KapitelWorkspace
-              kapitel={activeKapitel}
-              assignedQuellen={assignedQuellen}
-              runs={runs}
-              selectedRun={selectedRun}
-              onSelectRun={setSelectedRunId}
-              onOpenTextViewer={setTextViewerContent}
-              onOpenProcessing={() => setProcessingDialogOpen(true)}
-              onCombineTexts={handleCombineTexts}
-              onToggleQuellenPanel={handleToggleQuellenPanel}
-            />
+            isKapitelLoading ? (
+              <KapitelWorkspaceSkeleton />
+            ) : (
+              <KapitelWorkspace
+                kapitel={activeKapitel}
+                assignedQuellen={assignedQuellen}
+                runs={runs}
+                selectedRun={selectedRun}
+                allKapitels={kapiteln}
+                onLoadAllRuns={() => {
+                  setRunListLimit(MAX_RUN_HISTORY_LIMIT);
+                  setAllRunsLoaded(true);
+                }}
+                allRunsLoaded={allRunsLoaded}
+                onSelectRun={handleSelectRun}
+                onOpenTextViewer={setTextViewerContent}
+                onOpenProcessing={() => setProcessingDialogOpen(true)}
+                onCombineTexts={handleCombineTexts}
+                onToggleQuellenPanel={handleToggleQuellenPanel}
+                onOpenShorten={() => setShortenDialogOpen(true)}
+              />
+            )
           ) : (
             <div className="h-full flex items-center justify-center">
               <div className="text-center">
@@ -935,6 +1380,17 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
         />
       )}
 
+      {activeKapitel && selectedRun && (
+        <ShortenDialog
+          open={shortenDialogOpen}
+          onOpenChange={setShortenDialogOpen}
+          kapitel={activeKapitel}
+          selectedRun={selectedRun}
+          allKapitels={kapiteln}
+          onShorten={handleShorten}
+        />
+      )}
+
       <DeleteConfirmDialog
         open={deleteConfirm !== null}
         onOpenChange={(open) => !open && setDeleteConfirm(null)}
@@ -965,13 +1421,4 @@ Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz i
   return `${prompt}${grundInfo}`;
 }
 
-function deriveKapitelStatus(
-  runs: FirebaseKapitelRun[]
-): 'nicht-verarbeitet' | 'in-bearbeitung' | 'fertig' {
-  if (!runs || runs.length === 0) return 'nicht-verarbeitet';
-  const latestRun = runs[0];
-  if (latestRun.combined && latestRun.combined.combinedContent) {
-    return 'fertig';
-  }
-  return 'in-bearbeitung';
-}
+// Status is now maintained via lightweight live listeners per Kapitel

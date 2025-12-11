@@ -23,6 +23,7 @@ export interface Kapitel {
   order: number;
   projektId: string;
   assignedQuellenIds: string[]; // Maps to Firebase 'quelleIds'
+  parentId?: string | null;
 }
 
 export interface QuellenErgebnis {
@@ -62,6 +63,16 @@ export interface Run {
   quellenCost: number; // Cost for per-source processing in cents
   combinedCost: number; // Cost for combining in cents
   intermediateGroups?: IntermediateGroup[]; // Optional array of intermediate groups
+  shortenedText?: string | null; // Shortened and deduplicated text
+  shortenedCost?: number; // Cost for shortening in cents
+  shortenedOriginalLength?: number; // Original word count before shortening
+  shortenedLength?: number; // Word count after shortening
+  explanation?: {
+    lengthDecision: string;
+    omittedTopics: string[];
+    preservedFocus: string[];
+    compressionNotes: string;
+  };
 }
 
 export interface ProcessingSettings {

@@ -1,6 +1,7 @@
 'use server';
 
 import { getFirestoreForUser } from '@/app/lib/firebase/serverApp';
+import type { AuthUser } from '@/app/lib/auth/server-auth';
 import {
   collection,
   addDoc,
@@ -13,6 +14,7 @@ import {
   orderBy,
   where,
   serverTimestamp,
+  type Firestore,
 } from 'firebase/firestore';
 import { requireAuth } from '@/app/lib/auth/server-auth';
 import { revalidatePath } from 'next/cache';
@@ -26,10 +28,20 @@ export type Quelle = {
   updatedAt?: string; // ISO string
 };
 
-export async function createQuelle(title: string, content: string, projektId: string) {
+type ActionContext = {
+  user?: AuthUser;
+  db?: Firestore;
+};
+
+async function getContext(ctx?: ActionContext) {
+  const user = ctx?.user ?? (await requireAuth());
+  const db = ctx?.db ?? (await getFirestoreForUser());
+  return { user, db };
+}
+
+export async function createQuelle(title: string, content: string, projektId: string, ctx?: ActionContext) {
   try {
-    const user = await requireAuth();
-    const db = await getFirestoreForUser();
+    const { user, db } = await getContext(ctx);
 
     const quellenRef = collection(db, 'users', user.uid, 'quellen');
     const docRef = await addDoc(quellenRef, {
@@ -48,10 +60,9 @@ export async function createQuelle(title: string, content: string, projektId: st
   }
 }
 
-export async function updateQuelle(quelleId: string, title: string, content: string) {
+export async function updateQuelle(quelleId: string, title: string, content: string, ctx?: ActionContext) {
   try {
-    const user = await requireAuth();
-    const db = await getFirestoreForUser();
+    const { user, db } = await getContext(ctx);
 
     const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
     const quelleDoc = await getDoc(quelleRef);
@@ -73,10 +84,9 @@ export async function updateQuelle(quelleId: string, title: string, content: str
   }
 }
 
-export async function deleteQuelle(quelleId: string) {
+export async function deleteQuelle(quelleId: string, ctx?: ActionContext) {
   try {
-    const user = await requireAuth();
-    const db = await getFirestoreForUser();
+    const { user, db } = await getContext(ctx);
 
     const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
     const quelleDoc = await getDoc(quelleRef);
@@ -94,10 +104,9 @@ export async function deleteQuelle(quelleId: string) {
   }
 }
 
-export async function getQuelle(quelleId: string): Promise<Quelle | null> {
+export async function getQuelle(quelleId: string, ctx?: ActionContext): Promise<Quelle | null> {
   try {
-    const user = await requireAuth();
-    const db = await getFirestoreForUser();
+    const { user, db } = await getContext(ctx);
 
     const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
     const quelleDoc = await getDoc(quelleRef);
@@ -122,10 +131,9 @@ export async function getQuelle(quelleId: string): Promise<Quelle | null> {
   }
 }
 
-export async function getUserQuellen(projektId: string): Promise<Quelle[]> {
+export async function getUserQuellen(projektId: string, ctx?: ActionContext): Promise<Quelle[]> {
   try {
-    const user = await requireAuth();
-    const db = await getFirestoreForUser();
+    const { user, db } = await getContext(ctx);
 
     const quellenRef = collection(db, 'users', user.uid, 'quellen');
     const q = query(quellenRef, where('projektId', '==', projektId), orderBy('createdAt', 'desc'));

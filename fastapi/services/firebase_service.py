@@ -470,6 +470,180 @@ class FirebaseService:
             logger.error(f"Error checking if all Quellen processed: {str(e)}")
             raise
 
+    async def get_shortened_result(self, user_id: str, kapitel_id: str, run_id: str) -> Optional[dict]:
+        """Fetch shortened result if it exists."""
+        try:
+            shortened_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('shortened')
+                .document('shortened')
+            )
+            doc = shortened_ref.get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Error fetching shortened result for run {run_id}: {str(e)}")
+            raise
+
+    async def save_shortened_result(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        shortened_data: dict
+    ) -> str:
+        """
+        Save shortened result under a run.
+
+        Args:
+            shortened_data: Dict with shortenedContent, originalLength, shortenedLength,
+                          usedKapitelIds, model, cost, tokensUsed, createdAt
+        """
+        try:
+            shortened_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('shortened')
+                .document('shortened')
+            )
+
+            shortened_ref.set(shortened_data)
+            logger.info(
+                f"Saved shortened result for kapitel {kapitel_id} run {run_id} "
+                f"(cost: ${shortened_data.get('cost', 0)/100:.4f})"
+            )
+            return shortened_ref.id
+        except Exception as e:
+            logger.error(f"Error saving shortened result: {str(e)}")
+            raise
+
+    async def get_summary_result(
+        self,
+        user_id: str,
+        target_kapitel_id: str,
+        target_run_id: str,
+        source_kapitel_id: str
+    ) -> Optional[dict]:
+        """Fetch a summary result for a specific source Kapitel."""
+        try:
+            summary_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(target_kapitel_id)
+                .collection('runs')
+                .document(target_run_id)
+                .collection('summaries')
+                .document(source_kapitel_id)
+            )
+            doc = summary_ref.get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(
+                f"Error fetching summary for source Kapitel {source_kapitel_id}: {str(e)}"
+            )
+            raise
+
+    async def save_summary_result(
+        self,
+        user_id: str,
+        target_kapitel_id: str,
+        target_run_id: str,
+        source_kapitel_id: str,
+        summary_data: dict
+    ) -> str:
+        """
+        Save a summary result.
+
+        Args:
+            summary_data: Dict with summaryContent, sourceKapitelId, sourceRunId,
+                        sourceType, originalLength, summaryLength, model, cost,
+                        tokensUsed, createdAt
+        """
+        try:
+            summary_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(target_kapitel_id)
+                .collection('runs')
+                .document(target_run_id)
+                .collection('summaries')
+                .document(source_kapitel_id)
+            )
+
+            summary_ref.set(summary_data)
+            logger.info(
+                f"Saved summary for source Kapitel {source_kapitel_id} "
+                f"in target Kapitel {target_kapitel_id} run {target_run_id}"
+            )
+            return summary_ref.id
+        except Exception as e:
+            logger.error(f"Error saving summary result: {str(e)}")
+            raise
+
+    async def get_kapitel_metadata(self, user_id: str, kapitel_id: str) -> Optional[dict]:
+        """
+        Get Kapitel metadata (id, nummer, title) for building Gliederung.
+
+        Returns:
+            dict: {'id': str, 'nummer': str, 'title': str} or None
+        """
+        try:
+            kapitel = await self.get_kapitel(user_id, kapitel_id)
+            if not kapitel:
+                return None
+
+            return {
+                'id': kapitel_id,
+                'nummer': kapitel.get('nummer', '?'),
+                'title': kapitel.get('title', 'Untitled'),
+            }
+        except Exception as e:
+            logger.error(f"Error fetching Kapitel metadata for {kapitel_id}: {str(e)}")
+            raise
+
+    async def get_kapitel_runs(self, user_id: str, kapitel_id: str) -> list:
+        """
+        Fetch all runs for a Kapitel.
+
+        Returns:
+            list: List of run dicts with 'id' field added
+        """
+        try:
+            runs_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+            )
+            docs = runs_ref.stream()
+            runs = []
+            for doc in docs:
+                data = doc.to_dict()
+                data['id'] = doc.id
+                runs.append(data)
+            return runs
+        except Exception as e:
+            logger.error(f"Error fetching runs for Kapitel {kapitel_id}: {str(e)}")
+            raise
+
+    async def get_kapitel_run(self, user_id: str, kapitel_id: str, run_id: str) -> Optional[dict]:
+        """
+        Fetch a specific run document.
+        Alias for get_run() for clarity in shorten service.
+        """
+        return await self.get_run(user_id, kapitel_id, run_id)
+
 
 # Create singleton instance
 firebase_service = FirebaseService()

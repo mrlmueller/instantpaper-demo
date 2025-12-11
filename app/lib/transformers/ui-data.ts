@@ -67,6 +67,7 @@ export function transformKapitelToUI(
     order: fbKapitel.order ?? 0,
     projektId,
     assignedQuellenIds: fbKapitel.quelleIds || [],
+    parentId: (fbKapitel as any).parentId ?? null,
   };
 }
 
@@ -146,6 +147,9 @@ export function transformRunToUI(
   const combinedCost = fbRun.combined
     ? Math.round((fbRun.combined.cost || 0) * 100)
     : 0;
+  const shortenedCost = fbRun.shortened
+    ? Math.round((fbRun.shortened.cost || 0) * 100)
+    : undefined;
 
   // Determine status
   // For now, simplified: if we have a combined result, it's success
@@ -168,6 +172,11 @@ export function transformRunToUI(
     quellenCost,
     combinedCost,
     intermediateGroups,
+    shortenedText: fbRun.shortened?.shortenedContent || null,
+    shortenedCost,
+    shortenedOriginalLength: fbRun.shortened?.originalLength,
+    shortenedLength: fbRun.shortened?.shortenedLength,
+    explanation: fbRun.shortened?.explanation,
   };
 }
 
