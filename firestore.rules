@@ -91,6 +91,20 @@ service cloud.firestore {
           allow create: if isAuthenticated() && isOwner(userId);
           allow update, delete: if isAuthenticated() && isOwner(userId);
         }
+
+        // Shortened results under each run
+        match /shortened/{shortenedId} {
+          allow read: if isAuthenticated() && isOwner(userId);
+          allow create: if isAuthenticated() && isOwner(userId);
+          allow update, delete: if isAuthenticated() && isOwner(userId);
+        }
+
+        // Summaries under each run
+        match /summaries/{summaryId} {
+          allow read: if isAuthenticated() && isOwner(userId);
+          allow create: if isAuthenticated() && isOwner(userId);
+          allow update, delete: if isAuthenticated() && isOwner(userId);
+        }
       }
     }
 

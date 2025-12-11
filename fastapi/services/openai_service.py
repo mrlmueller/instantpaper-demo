@@ -262,5 +262,155 @@ class OpenAIService:
             logger.error(f"OpenAI combine error: {str(e)}")
             raise
 
+    async def summarize_kapitel(self, prompt: str, model: str) -> tuple[str, dict]:
+        "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+        try:
+            logger.info(f"Summarizing Kapitel with model {model}")
+
+            response = await self.client.responses.create(
+                model=model,
+                input=[
+                    {
+                        "role": "system",
+                        "content": "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                reasoning={"effort": "medium"},
+                max_output_tokens=None,
+            )
+
+            result_text = None
+            if hasattr(response, "output_text") and response.output_text is not None:
+                result_text = response.output_text
+            elif hasattr(response, "output") and response.output:
+                try:
+                    result_text = response.output[0].content[0].text
+                except Exception:
+                    pass
+
+            if not result_text:
+                raise ValueError("No text output returned from OpenAI response")
+
+            usage = getattr(response, "usage", None)
+            input_tokens = (
+                getattr(usage, "input_tokens", None)
+                or getattr(usage, "prompt_tokens", 0)
+                or 0
+            )
+            output_tokens = (
+                getattr(usage, "output_tokens", None)
+                or getattr(usage, "completion_tokens", 0)
+                or 0
+            )
+
+            cached_input_tokens = 0
+            input_details = getattr(usage, "input_tokens_details", None)
+            if input_details:
+                cached_input_tokens = getattr(input_details, "cached_tokens", 0) or 0
+
+            reasoning_tokens = 0
+            completion_details = getattr(usage, "completion_tokens_details", None)
+            if completion_details:
+                reasoning_tokens = (
+                    getattr(completion_details, "reasoning_tokens", 0) or 0
+                )
+
+            tokens_used = input_tokens + output_tokens + reasoning_tokens
+
+            logger.info(
+                f"Summarization complete. "
+                f"Input: {input_tokens} (cached: {cached_input_tokens}), "
+                f"Output: {output_tokens}, Total: {tokens_used} tokens"
+            )
+
+            # Return content and usage dict
+            usage_dict = {
+                'prompt_tokens': input_tokens,
+                'prompt_tokens_details': {'cached_tokens': cached_input_tokens},
+                'completion_tokens': output_tokens,
+            }
+
+            return result_text, usage_dict
+
+        except Exception as e:
+            logger.error(f"OpenAI summarization error: {str(e)}")
+            raise
+
+    async def shorten_and_deduplicate(self, prompt: str, model: str) -> tuple[str, dict]:
+        "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+        try:
+            logger.info(f"Shortening and deduplicating Kapitel with model {model}")
+
+            response = await self.client.responses.create(
+                model=model,
+                input=[
+                    {
+                        "role": "system",
+                        "content": "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                reasoning={"effort": "high"},
+                max_output_tokens=None,
+            )
+
+            result_text = None
+            if hasattr(response, "output_text") and response.output_text is not None:
+                result_text = response.output_text
+            elif hasattr(response, "output") and response.output:
+                try:
+                    result_text = response.output[0].content[0].text
+                except Exception:
+                    pass
+
+            if not result_text:
+                raise ValueError("No text output returned from OpenAI response")
+
+            usage = getattr(response, "usage", None)
+            input_tokens = (
+                getattr(usage, "input_tokens", None)
+                or getattr(usage, "prompt_tokens", 0)
+                or 0
+            )
+            output_tokens = (
+                getattr(usage, "output_tokens", None)
+                or getattr(usage, "completion_tokens", 0)
+                or 0
+            )
+
+            cached_input_tokens = 0
+            input_details = getattr(usage, "input_tokens_details", None)
+            if input_details:
+                cached_input_tokens = getattr(input_details, "cached_tokens", 0) or 0
+
+            reasoning_tokens = 0
+            completion_details = getattr(usage, "completion_tokens_details", None)
+            if completion_details:
+                reasoning_tokens = (
+                    getattr(completion_details, "reasoning_tokens", 0) or 0
+                )
+
+            tokens_used = input_tokens + output_tokens + reasoning_tokens
+
+            logger.info(
+                f"Shortening complete. "
+                f"Input: {input_tokens} (cached: {cached_input_tokens}), "
+                f"Output: {output_tokens}, Total: {tokens_used} tokens"
+            )
+
+            # Return content and usage dict
+            usage_dict = {
+                'prompt_tokens': input_tokens,
+                'prompt_tokens_details': {'cached_tokens': cached_input_tokens},
+                'completion_tokens': output_tokens,
+            }
+
+            return result_text, usage_dict
+
+        except Exception as e:
+            logger.error(f"OpenAI shortening error: {str(e)}")
+            raise
+
 # Create singleton instance
 openai_service = OpenAIService()

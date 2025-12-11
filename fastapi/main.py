@@ -4,9 +4,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from utils.config import config
 from middleware.auth import verify_firebase_token
-from models.request import ProcessQuelleRequest, CombineRunRequest
+from models.request import ProcessQuelleRequest, CombineRunRequest, ShortenKapitelRequest
 from models.response import ProcessQuelleResponse
 from services.quelle_service import quelle_service
+from services.shorten_service import shorten_service
 import logging
 
 # Configure logging
@@ -167,6 +168,48 @@ async def combine_run(
             )
 
     background_tasks.add_task(_run_combine_run_results)
+
+    return {
+        "status": "queued",
+        "kapitel_id": request.kapitel_id,
+        "run_id": request.run_id,
+        "queued_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@app.post("/api/shorten", status_code=status.HTTP_202_ACCEPTED)
+async def shorten_kapitel(
+    request: ShortenKapitelRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Shorten and deduplicate a Kapitel text using context from other Kapitels.
+
+    Requires Authorization header with Firebase ID token.
+    """
+    logger.info(
+        f"Shortening Kapitel {request.kapitel_id} run {request.run_id} for user {user_id} "
+        f"with {len(request.context_kapitel_ids)} context Kapitels"
+    )
+
+    async def _run_shorten_process() -> None:
+        try:
+            await shorten_service.process_shorten_request(
+                user_id,
+                request.kapitel_id,
+                request.run_id,
+                request.context_kapitel_ids,
+                request.model,
+            )
+        except Exception as e:
+            logger.error(
+                f"Background shortening failed for Kapitel {request.kapitel_id} "
+                f"(run {request.run_id}, user {user_id}): {e}",
+                exc_info=True,
+            )
+
+    background_tasks.add_task(_run_shorten_process)
 
     return {
         "status": "queued",

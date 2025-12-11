@@ -62,6 +62,8 @@ export interface Run {
   quellenCost: number; // Cost for per-source processing in cents
   combinedCost: number; // Cost for combining in cents
   intermediateGroups?: IntermediateGroup[]; // Optional array of intermediate groups
+  shortenedText?: string | null; // Shortened and deduplicated text
+  shortenedCost?: number; // Cost for shortening in cents
 }
 
 export interface ProcessingSettings {

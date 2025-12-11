@@ -7,6 +7,7 @@ import { ProjektHeader } from './ProjektHeader';
 import { QuellenPanel } from './QuellenPanel';
 import { TextViewerModal } from './TextViewerModal';
 import { ProcessingDialog } from './ProcessingDialog';
+import { ShortenDialog } from './ShortenDialog';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import { QuellenPanelSkeleton } from './QuellenPanelSkeleton';
@@ -33,6 +34,7 @@ import {
   deleteKapitel as deleteKapitelAction,
   updateKapitelTitle,
   createKapitelRun,
+  createShortenRun,
   getUserKapitels,
   type KapitelRun as FirebaseKapitelRun,
   type Kapitel as FirebaseKapitel,
@@ -112,6 +114,7 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
     text: string;
   } | null>(null);
   const [processingDialogOpen, setProcessingDialogOpen] = useState(false);
+  const [shortenDialogOpen, setShortenDialogOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     type: 'quelle' | 'kapitel' | 'projekt';
     id: string;
@@ -842,6 +845,45 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
     }
   }, [activeKapitelId, selectedRun]);
 
+  const handleShorten = useCallback(
+    async (contextKapitelIds: string[], model: string) => {
+      if (!activeKapitel || !selectedRun) return;
+
+      if (contextKapitelIds.length === 0) {
+        toast.error('Keine Kontextkapitel ausgewählt', {
+          description: 'Wähle mindestens ein Kapitel als Kontext aus.',
+        });
+        return;
+      }
+
+      toast.loading('Text wird gekürzt', {
+        description: 'Der Text wird mit Hilfe der ausgewählten Kapitel gekürzt...',
+        id: 'shortening',
+      });
+
+      try {
+        await createShortenRun(
+          activeKapitelId,
+          selectedRun.id,
+          contextKapitelIds,
+          model as 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.1'
+        );
+
+        toast.success('Kürzung gestartet', {
+          description: 'Der Text wird nun gekürzt und entdupliziert.',
+          id: 'shortening',
+        });
+      } catch (err: any) {
+        console.error('Fehler beim Kürzen:', err);
+        toast.error('Kürzung fehlgeschlagen', {
+          description: err.message || 'Unbekannter Fehler beim Kürzen',
+          id: 'shortening',
+        });
+      }
+    },
+    [activeKapitelId, activeKapitel, selectedRun]
+  );
+
   const handleToggleQuellenPanel = useCallback(() => {
     if (!showQuellenPanel) {
       setIsQuellenLoading(true);
@@ -895,6 +937,7 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
               onOpenProcessing={() => setProcessingDialogOpen(true)}
               onCombineTexts={handleCombineTexts}
               onToggleQuellenPanel={handleToggleQuellenPanel}
+              onOpenShorten={() => setShortenDialogOpen(true)}
             />
           ) : (
             <div className="h-full flex items-center justify-center">
@@ -932,6 +975,17 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
           kapitelTitle={activeKapitel.title}
           quellenCount={assignedQuellen.length}
           onProcess={handleProcess}
+        />
+      )}
+
+      {activeKapitel && selectedRun && (
+        <ShortenDialog
+          open={shortenDialogOpen}
+          onOpenChange={setShortenDialogOpen}
+          kapitel={activeKapitel}
+          selectedRun={selectedRun}
+          allKapitels={kapiteln}
+          onShorten={handleShorten}
         />
       )}
 

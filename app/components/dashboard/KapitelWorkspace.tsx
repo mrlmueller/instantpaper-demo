@@ -18,6 +18,7 @@ import {
   Loader2,
   AlertCircle,
   Coins,
+  Scissors,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useState } from "react"
@@ -34,6 +35,7 @@ interface KapitelWorkspaceProps {
   onOpenProcessing: () => void
   onCombineTexts: () => void
   onToggleQuellenPanel: () => void
+  onOpenShorten: () => void
 }
 
 export function KapitelWorkspace({
@@ -46,6 +48,7 @@ export function KapitelWorkspace({
   onOpenProcessing,
   onCombineTexts,
   onToggleQuellenPanel,
+  onOpenShorten,
 }: KapitelWorkspaceProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [themaExpanded, setThemaExpanded] = useState(false)
@@ -120,6 +123,12 @@ export function KapitelWorkspace({
             <BookOpen className="h-4 w-4 mr-2" />
             Quellen verwalten
           </Button>
+          {hasContent && (
+            <Button variant="outline" onClick={onOpenShorten}>
+              <Scissors className="h-4 w-4 mr-2" />
+              Text kürzen
+            </Button>
+          )}
 
           <div className="flex items-center gap-3 ml-auto">
             {selectedRun && (
@@ -199,6 +208,64 @@ export function KapitelWorkspace({
             </div>
           </Card>
         ) : null}
+
+        {/* Shortened Text */}
+        {selectedRun?.shortenedText && (
+          <Card className="mb-8 bg-card border-border shadow-sm">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-lg font-medium text-foreground">Gekürzter Text</h2>
+                  {selectedRun.shortenedCost && (
+                    <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded">
+                      {formatCost(selectedRun.shortenedCost)}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => handleCopy(selectedRun.shortenedText!, "shortened")}>
+                    {copiedId === "shortened" ? (
+                      <Check className="h-4 w-4 text-primary" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      onOpenTextViewer({
+                        title: `${kapitel.nummer} ${kapitel.title} - Gekürzter Text`,
+                        text: selectedRun.shortenedText!,
+                      })
+                    }
+                  >
+                    <Maximize2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="prose prose-sm max-w-none">
+                <div className="text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-[12]">
+                  {selectedRun.shortenedText}
+                </div>
+              </div>
+              {selectedRun.shortenedText.split("\n").length > 12 && (
+                <Button
+                  variant="link"
+                  className="mt-4 p-0 h-auto text-primary"
+                  onClick={() =>
+                    onOpenTextViewer({
+                      title: `${kapitel.nummer} ${kapitel.title} - Gekürzter Text`,
+                      text: selectedRun.shortenedText!,
+                    })
+                  }
+                >
+                  Vollständigen Text anzeigen
+                </Button>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* Intermediate Groups - Collapsible section */}
         {hasContent && selectedRun?.intermediateGroups && selectedRun.intermediateGroups.length > 0 && (

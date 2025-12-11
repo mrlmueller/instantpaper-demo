@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 import { requireAuth } from '@/app/lib/auth/server-auth';
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 
 export type KapitelRunResult = {
   quelleId: string;
@@ -67,6 +68,39 @@ export type IntermediateGroupResult = {
   createdAt: string;
 };
 
+export type ShortenedResult = {
+  id: string;
+  shortenedContent: string;
+  originalLength: number;
+  shortenedLength: number;
+  usedKapitelIds: string[];
+  model: string;
+  cost: number;
+  tokensUsed: {
+    input: number;
+    cachedInput: number;
+    output: number;
+  };
+  createdAt: string;
+};
+
+export type SummaryResult = {
+  id: string;
+  summaryContent: string;
+  sourceKapitelId: string;
+  sourceRunId: string;
+  sourceType: 'combined' | 'shortened';
+  originalLength: number;
+  summaryLength: number;
+  model: string;
+  cost: number;
+  tokensUsed: {
+    input: number;
+    output: number;
+  };
+  createdAt: string;
+};
+
 export type KapitelRun = {
   id: string;
   index: number;
@@ -76,6 +110,8 @@ export type KapitelRun = {
   results: KapitelRunResult[];
   combined?: CombinedResult | null;
   intermediateGroups?: IntermediateGroupResult[];
+  shortened?: ShortenedResult | null;
+  summaries?: SummaryResult[];
   promptTemplateId?: string;
   promptPayload?: Record<string, any>;
   autoCombine?: boolean;
@@ -582,6 +618,38 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
         intermediateGroups.sort((a, b) => a.groupNumber - b.groupNumber);
       }
 
+      // Fetch shortened result (single doc named 'shortened' if it exists)
+      const shortenedRef = collection(
+        db,
+        'users',
+        user.uid,
+        'kapitels',
+        kapitelId,
+        'runs',
+        runDoc.id,
+        'shortened'
+      );
+      const shortenedSnapshot = await getDocs(shortenedRef);
+      let shortened: ShortenedResult | null = null;
+      if (!shortenedSnapshot.empty) {
+        const doc = shortenedSnapshot.docs[0];
+        const s = doc.data();
+        shortened = {
+          id: doc.id,
+          shortenedContent: s.shortened_content ?? s.shortenedContent ?? '',
+          originalLength: s.original_length ?? s.originalLength ?? 0,
+          shortenedLength: s.shortened_length ?? s.shortenedLength ?? 0,
+          usedKapitelIds: s.used_kapitel_ids ?? s.usedKapitelIds ?? [],
+          model: s.model ?? '',
+          cost: s.cost ?? 0,
+          tokensUsed: s.tokens_used ?? s.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
+          createdAt:
+            s.created_at?.toDate?.()?.toISOString() ||
+            s.createdAt?.toDate?.()?.toISOString() ||
+            new Date().toISOString(),
+        };
+      }
+
       runs.push({
         id: runDoc.id,
         index: runData.index || 0,
@@ -599,6 +667,7 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
         results,
         combined,
         intermediateGroups: intermediateGroups.length > 0 ? intermediateGroups : undefined,
+        shortened: shortened ?? undefined,
       });
     }
 
@@ -644,6 +713,159 @@ export async function getUserKapitels(projektId: string, withRuns = true, runLim
     return kapitels;
   } catch (error: any) {
     console.error('Error getting user Kapitels:', error);
+    return [];
+  }
+}
+
+/**
+ * Create a shortening run for a Kapitel
+ */
+export async function createShortenRun(
+  kapitelId: string,
+  runId: string,
+  contextKapitelIds: string[],
+  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.1' = 'gpt-5-nano'
+) {
+  const user = await requireAuth();
+
+  try {
+    // Get the auth token from session cookie
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('__session')?.value;
+
+    if (!authToken) {
+      throw new Error('Authentication token not found');
+    }
+
+    // Call the FastAPI endpoint
+    const response = await fetch('http://localhost:8000/api/shorten', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        kapitel_id: kapitelId,
+        run_id: runId,
+        context_kapitel_ids: contextKapitelIds,
+        model: model,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to start shortening: ${response.status} ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('Shortening queued:', result);
+
+    // Revalidate the dashboard path
+    revalidatePath('/dashboard');
+
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('Error creating shorten run:', error);
+    throw new Error(`Failed to create shorten run: ${error.message}`);
+  }
+}
+
+/**
+ * Get the shortened result for a specific run
+ */
+export async function getShortenedResult(
+  kapitelId: string,
+  runId: string
+): Promise<ShortenedResult | null> {
+  const user = await requireAuth();
+
+  try {
+    const db = await getFirestoreForUser();
+
+    const shortenedRef = doc(
+      db,
+      'users',
+      user.uid,
+      'kapitels',
+      kapitelId,
+      'runs',
+      runId,
+      'shortened',
+      'shortened'
+    );
+
+    const shortenedDoc = await getDoc(shortenedRef);
+
+    if (!shortenedDoc.exists()) {
+      return null;
+    }
+
+    const data = shortenedDoc.data();
+
+    return {
+      id: shortenedDoc.id,
+      shortenedContent: data.shortened_content || '',
+      originalLength: data.original_length || 0,
+      shortenedLength: data.shortened_length || 0,
+      usedKapitelIds: data.used_kapitel_ids || [],
+      model: data.model || '',
+      cost: data.cost || 0,
+      tokensUsed: data.tokens_used || { input: 0, cachedInput: 0, output: 0 },
+      createdAt: data.created_at || new Date().toISOString(),
+    };
+  } catch (error: any) {
+    console.error('Error getting shortened result:', error);
+    return null;
+  }
+}
+
+/**
+ * Get all summaries for a run
+ */
+export async function getSummaries(
+  kapitelId: string,
+  runId: string
+): Promise<SummaryResult[]> {
+  const user = await requireAuth();
+
+  try {
+    const db = await getFirestoreForUser();
+
+    const summariesRef = collection(
+      db,
+      'users',
+      user.uid,
+      'kapitels',
+      kapitelId,
+      'runs',
+      runId,
+      'summaries'
+    );
+
+    const snapshot = await getDocs(summariesRef);
+
+    const summaries: SummaryResult[] = [];
+
+    for (const summaryDoc of snapshot.docs) {
+      const data = summaryDoc.data();
+      summaries.push({
+        id: summaryDoc.id,
+        summaryContent: data.summary_content || '',
+        sourceKapitelId: data.source_kapitel_id || '',
+        sourceRunId: data.source_run_id || '',
+        sourceType: data.source_type || 'combined',
+        originalLength: data.original_length || 0,
+        summaryLength: data.summary_length || 0,
+        model: data.model || '',
+        cost: data.cost || 0,
+        tokensUsed: data.tokens_used || { input: 0, output: 0 },
+        createdAt: data.created_at || new Date().toISOString(),
+      });
+    }
+
+    return summaries;
+  } catch (error: any) {
+    console.error('Error getting summaries:', error);
     return [];
   }
 }
