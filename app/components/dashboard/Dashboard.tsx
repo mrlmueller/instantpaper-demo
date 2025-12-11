@@ -430,6 +430,12 @@ export function Dashboard({
         shortened = {
           id: doc.id,
           shortenedContent: data.shortened_content ?? data.shortenedContent ?? '',
+          explanation: data.explanation ? {
+            lengthDecision: data.explanation.length_decision ?? '',
+            omittedTopics: data.explanation.omitted_topics ?? [],
+            preservedFocus: data.explanation.preserved_focus ?? [],
+            compressionNotes: data.explanation.compression_notes ?? '',
+          } : undefined,
           originalLength: data.original_length ?? data.originalLength ?? 0,
           shortenedLength: data.shortened_length ?? data.shortenedLength ?? 0,
           usedKapitelIds: data.used_kapitel_ids ?? data.usedKapitelIds ?? [],

@@ -61,6 +61,7 @@ export function KapitelWorkspace({
   const [themaExpanded, setThemaExpanded] = useState(false)
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] = useState(false)
   const [contextSummariesExpanded, setContextSummariesExpanded] = useState(false)
+  const [explanationExpanded, setExplanationExpanded] = useState(false)
   const [summaries, setSummaries] = useState<SummaryResult[]>([])
   const [summariesLoading, setSummariesLoading] = useState(false)
 
@@ -251,6 +252,84 @@ export function KapitelWorkspace({
             </div>
           </Card>
         ) : null}
+
+        {/* Explanation Card */}
+        {selectedRun?.shortenedText && selectedRun.explanation && (
+          <Card className="mb-4 bg-blue-50/50 border-blue-200/70">
+            <Collapsible open={explanationExpanded} onOpenChange={setExplanationExpanded}>
+              <div className="p-6">
+                <CollapsibleTrigger asChild>
+                  <button className="flex items-center justify-between w-full group">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-5 w-5 text-blue-600" />
+                      <h3 className="text-base font-medium text-foreground">Bearbeitungsdetails</h3>
+                    </div>
+                    {explanationExpanded ? (
+                      <ChevronUp className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    )}
+                  </button>
+                </CollapsibleTrigger>
+
+                <CollapsibleContent className="mt-4 space-y-4">
+                  {selectedRun.explanation.lengthDecision && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm font-medium text-foreground">📝 Längenentscheidung:</span>
+                      </div>
+                      <p className="text-sm text-foreground/80 leading-relaxed">{selectedRun.explanation.lengthDecision}</p>
+                    </div>
+                  )}
+
+                  {selectedRun.explanation.omittedTopics && selectedRun.explanation.omittedTopics.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm font-medium text-foreground">❌ Weggelassene Themen:</span>
+                      </div>
+                      <ul className="text-sm text-foreground/80 list-disc pl-5 space-y-1">
+                        {selectedRun.explanation.omittedTopics.map((topic, i) => (
+                          <li key={i}>{topic}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {selectedRun.explanation.preservedFocus && selectedRun.explanation.preservedFocus.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm font-medium text-foreground">✓ Beibehaltener Fokus:</span>
+                      </div>
+                      <ul className="text-sm text-foreground/80 list-disc pl-5 space-y-1">
+                        {selectedRun.explanation.preservedFocus.map((point, i) => (
+                          <li key={i}>{point}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {selectedRun.explanation.compressionNotes && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm font-medium text-foreground">💡 Zusätzliche Notizen:</span>
+                      </div>
+                      <p className="text-sm text-foreground/80 leading-relaxed">{selectedRun.explanation.compressionNotes}</p>
+                    </div>
+                  )}
+
+                  {selectedRun.shortenedOriginalLength && selectedRun.shortenedLength && (
+                    <div className="pt-2 border-t border-border">
+                      <span className="text-sm text-muted-foreground">
+                        📊 Kompression: {selectedRun.shortenedOriginalLength} → {selectedRun.shortenedLength} Wörter
+                        {' '}({((1 - selectedRun.shortenedLength / selectedRun.shortenedOriginalLength) * 100).toFixed(0)}% Reduktion)
+                      </span>
+                    </div>
+                  )}
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
+          </Card>
+        )}
 
         {/* Shortened Text */}
         {selectedRun?.shortenedText && (

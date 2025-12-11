@@ -65,6 +65,14 @@ export interface Run {
   intermediateGroups?: IntermediateGroup[]; // Optional array of intermediate groups
   shortenedText?: string | null; // Shortened and deduplicated text
   shortenedCost?: number; // Cost for shortening in cents
+  shortenedOriginalLength?: number; // Original word count before shortening
+  shortenedLength?: number; // Word count after shortening
+  explanation?: {
+    lengthDecision: string;
+    omittedTopics: string[];
+    preservedFocus: string[];
+    compressionNotes: string;
+  };
 }
 
 export interface ProcessingSettings {

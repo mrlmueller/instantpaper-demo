@@ -71,6 +71,12 @@ export type IntermediateGroupResult = {
 export type ShortenedResult = {
   id: string;
   shortenedContent: string;
+  explanation?: {
+    lengthDecision: string;
+    omittedTopics: string[];
+    preservedFocus: string[];
+    compressionNotes: string;
+  };
   originalLength: number;
   shortenedLength: number;
   usedKapitelIds: string[];
@@ -579,6 +585,12 @@ export async function getKapitelRuns(
         shortened = {
           id: doc.id,
           shortenedContent: s.shortened_content ?? s.shortenedContent ?? '',
+          explanation: s.explanation ? {
+            lengthDecision: s.explanation.length_decision ?? '',
+            omittedTopics: s.explanation.omitted_topics ?? [],
+            preservedFocus: s.explanation.preserved_focus ?? [],
+            compressionNotes: s.explanation.compression_notes ?? '',
+          } : undefined,
           originalLength: s.original_length ?? s.originalLength ?? 0,
           shortenedLength: s.shortened_length ?? s.shortenedLength ?? 0,
           usedKapitelIds: s.used_kapitel_ids ?? s.usedKapitelIds ?? [],

@@ -257,15 +257,17 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
         model: str,
         target_kapitel_id: str = None,
         context_kapitel_ids: list = None,
-    ) -> tuple[str, dict]:
+    ) -> tuple[str, dict, dict]:
         """
         Shorten and deduplicate text using OpenAI.
 
         Returns:
-            tuple: (shortened_content, usage_dict)
+            tuple: (shortened_content, usage_dict, explanation_dict)
         """
         prompt = f"""### Aufgabe:
-Ich schreibe gerade eine Wissenschaftliche Arbeit. Der folgende Text ist bereits gut, so wie er ist, allerding ist er noch zu lang. Aber damit du optimal den Text kürzen kannst, also das du den Fokus auf die richtigen Fakten und Themen legen kannst werde ich dir die Überschrift „{ueberschrift}" und auch das Thema des Textes geben „{thema}". Zusätzlich werde ich dir Folgend einen Teil meiner Gliederung geben zusammen mit einer zusammengefassten Version der Texte von den anderen Kapitel und Unterpunkten der Kapitel. All dies gebe ich dir damit du perfekt entscheiden kannst auf was der Fokus gelegt werden sollte in der Arbeit. Konkret ist deine Aufgabe den Text auf die hälft oder noch etwas weniger zu kürzen, aber dabei alle wichtigen Informationen bei zu behalten. Behalte auch sämtliche Quellen an den richtigen Stellen bei außer, wenn du eine Information zu einer Quelle komplett eliminierst. Du sollst nur die gegebenen Informationen nutzen, und keine Informationen aus deinem eigenen wissen mit einbeziezen! Schreibe keine Zusammenfassung am Ende, da dies nur ein Teil eines längeren Textes ist. Habe Spaß mit der Findung deines Textes. Schreibe ohne "Wir/Ich haben herausgefunden". Schreibe aber dennoch das es Spaß macht den Text zu lesen, also dass es kein zu trockener Text wird, aber behalte dennoch die Wissenschaftliche Schreibweise bei. Wenn du Argumente beschreibst, gehe sicher immer eine Quelle zu integrieren. Am Anfang bevor du deinen Text schreibst erkläre ganz kurz warum du diese Länge des Textes gewählt hast, welche Informationen du weggelassen hast usw. Formuliere den Text ohne das du ; verwendest, außer zwischen zwei Quellen.
+Ich schreibe gerade eine Wissenschaftliche Arbeit. Der folgende Text ist bereits gut, so wie er ist, allerding ist er noch zu lang. Aber damit du optimal den Text kürzen kannst, also das du den Fokus auf die richtigen Fakten und Themen legen kannst werde ich dir die Überschrift „{ueberschrift}" und auch das Thema des Textes geben „{thema}". Zusätzlich werde ich dir Folgend einen Teil meiner Gliederung geben zusammen mit einer zusammengefassten Version der Texte von den anderen Kapitel und Unterpunkten der Kapitel. All dies gebe ich dir damit du perfekt entscheiden kannst auf was der Fokus gelegt werden sollte in der Arbeit. Konkret ist deine Aufgabe den Text auf die hälft oder noch etwas weniger zu kürzen, aber dabei alle wichtigen Informationen bei zu behalten. Behalte auch sämtliche Quellen an den richtigen Stellen bei außer, wenn du eine Information zu einer Quelle komplett eliminierst. Du sollst nur die gegebenen Informationen nutzen, und keine Informationen aus deinem eigenen wissen mit einbeziezen! Schreibe keine Zusammenfassung am Ende, da dies nur ein Teil eines längeren Textes ist. Habe Spaß mit der Findung deines Textes. Schreibe ohne "Wir/Ich haben herausgefunden". Schreibe aber dennoch das es Spaß macht den Text zu lesen, also dass es kein zu trockener Text wird, aber behalte dennoch die Wissenschaftliche Schreibweise bei. Wenn du Argumente beschreibst, gehe sicher immer eine Quelle zu integrieren. Formuliere den Text ohne das du ; verwendest, außer zwischen zwei Quellen.
+
+WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe eine kurze Erklärung deiner Entscheidungen im explanation-Feld und den gekürzten Text im shortened_text-Feld.
 
 ### Gliederung:
 {gliederung}
@@ -375,7 +377,7 @@ Ich schreibe gerade eine Wissenschaftliche Arbeit. Der folgende Text ist bereits
             # Step 3: Shorten the target text
             logger.info("Shortening target Kapitel text")
 
-            shortened_content, usage = await self.shorten_and_deduplicate(
+            shortened_content, usage, explanation = await self.shorten_and_deduplicate(
                 ueberschrift, thema, gliederung, target_text, model,
                 target_kapitel_id=kapitel_id,
                 context_kapitel_ids=valid_context_ids
@@ -401,8 +403,15 @@ Ich schreibe gerade eine Wissenschaftliche Arbeit. Der folgende Text ist bereits
 
             shortened_data = {
                 'shortened_content': shortened_content,
+                'explanation': {
+                    'length_decision': explanation.get('length_decision', ''),
+                    'omitted_topics': explanation.get('omitted_topics', []),
+                    'preserved_focus': explanation.get('preserved_focus', []),
+                    'compression_notes': explanation.get('compression_notes', '')
+                },
                 'original_length': original_length,
                 'shortened_length': shortened_length,
+                'compression_ratio': shortened_length / original_length if original_length > 0 else 0,
                 'used_kapitel_ids': valid_context_ids,
                 'model': model,
                 'cost': cost_cents,

@@ -7,10 +7,7 @@ logger = logging.getLogger(__name__)
 SUMMARIZE_SYSTEM_MESSAGE = (
     "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
 )
-SHORTEN_SYSTEM_MESSAGE = (
-    "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
-    "information and preserving essential details."
-)
+SHORTEN_SYSTEM_MESSAGE = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
 
 NO_CONTENT_SENTINEL = "NO_CONTENT"
 
@@ -345,7 +342,7 @@ class OpenAIService:
             logger.error(f"OpenAI summarization error: {str(e)}")
             raise
 
-    async def shorten_and_deduplicate(self, prompt: str, model: str) -> tuple[str, dict]:
+    async def shorten_and_deduplicate(self, prompt: str, model: str) -> tuple[str, dict, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
             logger.info(f"Shortening and deduplicating Kapitel with model {model}")
@@ -374,6 +371,27 @@ class OpenAIService:
 
             if not result_text:
                 raise ValueError("No text output returned from OpenAI response")
+
+            # Try to parse as JSON
+            import json
+            shortened_text = result_text
+            explanation_dict = {}
+
+            try:
+                # Attempt to parse JSON response
+                json_response = json.loads(result_text.strip())
+
+                if isinstance(json_response, dict) and 'shortened_text' in json_response:
+                    shortened_text = json_response.get('shortened_text', '')
+                    explanation_dict = json_response.get('explanation', {})
+
+                    logger.info("Successfully parsed JSON response with structured explanation")
+                else:
+                    logger.warning("JSON response missing 'shortened_text' field, using plain text fallback")
+
+            except json.JSONDecodeError:
+                logger.info("Response is not JSON, using plain text (backward compatibility)")
+                # Keep shortened_text as result_text and explanation_dict as empty
 
             usage = getattr(response, "usage", None)
             input_tokens = (
@@ -414,7 +432,7 @@ class OpenAIService:
                 'completion_tokens': output_tokens,
             }
 
-            return result_text, usage_dict
+            return shortened_text, usage_dict, explanation_dict
 
         except Exception as e:
             logger.error(f"OpenAI shortening error: {str(e)}")

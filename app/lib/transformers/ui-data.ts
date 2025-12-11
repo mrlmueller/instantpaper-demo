@@ -174,6 +174,9 @@ export function transformRunToUI(
     intermediateGroups,
     shortenedText: fbRun.shortened?.shortenedContent || null,
     shortenedCost,
+    shortenedOriginalLength: fbRun.shortened?.originalLength,
+    shortenedLength: fbRun.shortened?.shortenedLength,
+    explanation: fbRun.shortened?.explanation,
   };
 }
 
