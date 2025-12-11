@@ -67,6 +67,7 @@ export function transformKapitelToUI(
     order: fbKapitel.order ?? 0,
     projektId,
     assignedQuellenIds: fbKapitel.quelleIds || [],
+    parentId: (fbKapitel as any).parentId ?? null,
   };
 }
 

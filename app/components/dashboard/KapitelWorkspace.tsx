@@ -33,6 +33,8 @@ interface KapitelWorkspaceProps {
   selectedRun: Run | undefined
   allKapitels: Kapitel[]
   onSelectRun: (id: string) => void
+  onLoadAllRuns: () => void
+  allRunsLoaded: boolean
   onOpenTextViewer: (content: { title: string; text: string }) => void
   onOpenProcessing: () => void
   onCombineTexts: () => void
@@ -47,6 +49,8 @@ export function KapitelWorkspace({
   selectedRun,
   allKapitels,
   onSelectRun,
+  onLoadAllRuns,
+  allRunsLoaded,
   onOpenTextViewer,
   onOpenProcessing,
   onCombineTexts,
@@ -170,7 +174,16 @@ export function KapitelWorkspace({
             {runs.length > 0 && (
               <div className="flex items-center gap-2">
                 <History className="h-4 w-4 text-muted-foreground" />
-                <Select value={selectedRun?.id || ""} onValueChange={onSelectRun}>
+                <Select
+                  value={selectedRun?.id || ""}
+                  onValueChange={(value) => {
+                    if (value === "load_all") {
+                      onLoadAllRuns()
+                      return
+                    }
+                    onSelectRun(value)
+                  }}
+                >
                   <SelectTrigger className="w-[200px]">
                     <SelectValue placeholder="Run auswählen" />
                   </SelectTrigger>
@@ -180,6 +193,7 @@ export function KapitelWorkspace({
                         {`Run ${run.index ?? runs.length - index}`} - {run.timestamp.toLocaleDateString("de-DE")}
                       </SelectItem>
                     ))}
+                    {!allRunsLoaded && <SelectItem value="load_all">Alle Runs laden</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>

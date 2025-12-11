@@ -64,6 +64,7 @@ import Cookies from 'js-cookie';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
 const RUN_HISTORY_LIMIT = 10;
+const MAX_RUN_HISTORY_LIMIT = 200;
 
 interface DashboardProps {
   initialKapitels: FirebaseKapitel[];
@@ -118,11 +119,16 @@ export function Dashboard({
       : initialKapitels.find((k) => k.id === initialActiveKapitelId)?.runs || [];
   const [fbRuns, setFbRuns] = useState<FirebaseKapitelRun[]>(initialRunsForActive);
   const keepInitialRunsRef = useRef(initialRunsForActive.length > 0);
-  const runSnapshotReceivedRef = useRef(false);
+  const [runListLimit, setRunListLimit] = useState<number>(RUN_HISTORY_LIMIT);
+  const [allRunsLoaded, setAllRunsLoaded] = useState(false);
   const [isKapitelLoading, setIsKapitelLoading] = useState(initialRunsForActive.length === 0);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const selectedRun = runs.find((r) => r.id === selectedRunId);
+  const handleSelectRun = useCallback((id: string) => {
+    setIsKapitelLoading(true);
+    setSelectedRunId(id);
+  }, []);
 
   const [showQuellenPanel, setShowQuellenPanel] = useState(false);
   const [textViewerContent, setTextViewerContent] = useState<{
@@ -139,6 +145,8 @@ export function Dashboard({
 
   const loadProjektData = useCallback(async (projektId: string) => {
     setIsKapitelLoading(true);
+    setRunListLimit(RUN_HISTORY_LIMIT);
+    setAllRunsLoaded(false);
     const [fbQuellen, fbKapitels] = await Promise.all([
       getUserQuellen(projektId),
       getUserKapitels(projektId, false, RUN_HISTORY_LIMIT),
@@ -206,7 +214,6 @@ export function Dashboard({
 
   // When the active Kapitel changes, seed runs from initial data while real-time listeners attach
   useEffect(() => {
-    runSnapshotReceivedRef.current = false;
     if (!activeKapitelId) {
       setFbRuns([]);
       setRuns([]);
@@ -217,6 +224,8 @@ export function Dashboard({
 
     setIsKapitelLoading(true);
     setSelectedRunId(null);
+    setRunListLimit(RUN_HISTORY_LIMIT);
+    setAllRunsLoaded(false);
 
     if (keepInitialRunsRef.current) {
       // Preserve the initially provided runs once; subsequent Kapitel switches clear state
@@ -240,17 +249,11 @@ export function Dashboard({
 
     const db = getFirestore(firebaseApp);
     const runsRef = collection(db, 'users', user.uid, 'kapitels', activeKapitelId, 'runs');
-    const q = query(runsRef, orderBy('index', 'desc'), limit(RUN_HISTORY_LIMIT));
-
-    let runLevelUnsubs: Unsubscribe[] = [];
+    const q = query(runsRef, orderBy('index', 'desc'), limit(runListLimit));
 
     const unsubscribeRuns = onSnapshot(
       q,
       (snapshot) => {
-        // Reset existing run-level listeners to avoid duplicates when the run list changes
-        runLevelUnsubs.forEach((u) => u());
-        runLevelUnsubs = [];
-
         setFbRuns((prev) => {
           const prevMap = new Map(prev.map((run) => [run.id, run]));
           const baseRuns: FirebaseKapitelRun[] = snapshot.docs.map((doc) => {
@@ -278,144 +281,13 @@ export function Dashboard({
           return baseRuns;
         });
 
-        if (!runSnapshotReceivedRef.current) {
-          runSnapshotReceivedRef.current = true;
+        if (!snapshot.empty && !selectedRunId) {
+          handleSelectRun(snapshot.docs[0].id);
         }
 
-        // If there are no runs, finish loading immediately
         if (snapshot.empty) {
           setIsKapitelLoading(false);
         }
-
-        // Subscribe to result/combined updates for each run
-        snapshot.docs.forEach((runDoc) => {
-          // 1) Combined first
-          const combinedRef = collection(
-            db,
-            'users',
-            user.uid,
-            'kapitels',
-            activeKapitelId,
-            'runs',
-            runDoc.id,
-            'combined'
-          );
-          const combinedUnsub = onSnapshot(combinedRef, (combinedSnap) => {
-            let combined: any = null;
-            if (!combinedSnap.empty) {
-              const doc = combinedSnap.docs[0];
-              const data: any = doc.data();
-              combined = {
-                id: doc.id,
-                combinedContent: data.combined_content ?? data.combinedContent ?? '',
-                sourceQuelleIds: data.source_quelle_ids ?? data.sourceQuelleIds ?? [],
-                heading: data.heading ?? '',
-                topic: data.topic ?? '',
-                modelUsed: data.model_used ?? data.modelUsed ?? '',
-                tokensUsed: data.tokens_used ?? data.tokensUsed ?? 0,
-                inputTokens: data.input_tokens ?? data.inputTokens ?? 0,
-                cachedInputTokens: data.cached_input_tokens ?? data.cachedInputTokens ?? 0,
-                outputTokens: data.output_tokens ?? data.outputTokens ?? 0,
-                reasoningTokens: data.reasoning_tokens ?? data.reasoningTokens ?? 0,
-                cost: data.cost ?? 0,
-                createdAt:
-                  data.created_at?.toDate?.()?.toISOString() ||
-                  data.createdAt?.toDate?.()?.toISOString() ||
-                  new Date().toISOString(),
-              };
-            }
-
-            setFbRuns((prev) =>
-              prev.map((run) => (run.id === runDoc.id ? { ...run, combined } : run))
-            );
-
-            // As soon as we have combined data, we can end the loading state
-            setIsKapitelLoading(false);
-          });
-          runLevelUnsubs.push(combinedUnsub);
-
-          // 2) Shortened second
-          const shortenedRef = collection(
-            db,
-            'users',
-            user.uid,
-            'kapitels',
-            activeKapitelId,
-            'runs',
-            runDoc.id,
-            'shortened'
-          );
-          const shortenedUnsub = onSnapshot(shortenedRef, (shortenedSnap) => {
-            let shortened: any = null;
-            if (!shortenedSnap.empty) {
-              const doc = shortenedSnap.docs[0];
-              const data: any = doc.data();
-              shortened = {
-                id: doc.id,
-                shortenedContent: data.shortened_content ?? data.shortenedContent ?? '',
-                originalLength: data.original_length ?? data.originalLength ?? 0,
-                shortenedLength: data.shortened_length ?? data.shortenedLength ?? 0,
-                usedKapitelIds: data.used_kapitel_ids ?? data.usedKapitelIds ?? [],
-                model: data.model ?? '',
-                cost: data.cost ?? 0,
-                tokensUsed: data.tokens_used ?? data.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
-                createdAt:
-                  data.created_at?.toDate?.()?.toISOString() ||
-                  data.createdAt?.toDate?.()?.toISOString() ||
-                  new Date().toISOString(),
-              };
-            }
-
-            setFbRuns((prev) =>
-              prev.map((run) => (run.id === runDoc.id ? { ...run, shortened } : run))
-            );
-
-            // Shortened data also counts as loaded content
-            setIsKapitelLoading(false);
-          });
-          runLevelUnsubs.push(shortenedUnsub);
-
-          // 3) Einzelne Quellen-Ergebnisse zuletzt
-          const resultsRef = collection(
-            db,
-            'users',
-            user.uid,
-            'kapitels',
-            activeKapitelId,
-            'runs',
-            runDoc.id,
-            'results'
-          );
-          const resultsUnsub = onSnapshot(resultsRef, (resSnapshot) => {
-            const results = resSnapshot.docs.map((resDoc) => {
-              const resData: any = resDoc.data();
-              return {
-                quelleId: resDoc.id,
-                resultContent: resData.result_content ?? resData.resultContent ?? '',
-                hasContent: resData.has_content ?? resData.hasContent ?? true,
-                modelUsed: resData.model_used ?? resData.modelUsed ?? '',
-                tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
-                inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
-                cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
-                outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
-                reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
-                cost: resData.cost ?? 0,
-                createdAt:
-                  resData.created_at?.toDate?.()?.toISOString() ||
-                  resData.createdAt?.toDate?.()?.toISOString() ||
-                  new Date().toISOString(),
-              };
-            });
-
-            setFbRuns((prev) =>
-              prev.map((run) => (run.id === runDoc.id ? { ...run, results } : run))
-            );
-
-            // Results present -> loading finished
-            setIsKapitelLoading(false);
-          });
-          runLevelUnsubs.push(resultsUnsub);
-        });
       },
       (error) => {
         console.error('Error listening to runs:', error);
@@ -425,9 +297,289 @@ export function Dashboard({
 
     return () => {
       unsubscribeRuns();
-      runLevelUnsubs.forEach((u) => u());
     };
-  }, [user?.uid, activeKapitelId]);
+  }, [user?.uid, activeKapitelId, runListLimit, selectedRunId, handleSelectRun]);
+
+  // Load data (combined/shortened/results) only for the selected run
+  useEffect(() => {
+    if (!user?.uid || !activeKapitelId || !selectedRunId) {
+      return;
+    }
+
+    const db = getFirestore(firebaseApp);
+
+    const combinedRef = collection(
+      db,
+      'users',
+      user.uid,
+      'kapitels',
+      activeKapitelId,
+      'runs',
+      selectedRunId,
+      'combined'
+    );
+    const shortenedRef = collection(
+      db,
+      'users',
+      user.uid,
+      'kapitels',
+      activeKapitelId,
+      'runs',
+      selectedRunId,
+      'shortened'
+    );
+    const resultsRef = collection(
+      db,
+      'users',
+      user.uid,
+      'kapitels',
+      activeKapitelId,
+      'runs',
+      selectedRunId,
+      'results'
+    );
+
+    setIsKapitelLoading(true);
+    let hasData = false;
+    let settledOnce = false;
+
+    const updateRunPartial = (partial: Partial<FirebaseKapitelRun>) => {
+      setFbRuns((prev) =>
+        prev.map((run) => (run.id === selectedRunId ? { ...run, ...partial } : run))
+      );
+    };
+    const finishIfNeeded = () => {
+      if (!settledOnce) {
+        settledOnce = true;
+        setIsKapitelLoading(false);
+      }
+    };
+
+    const combinedUnsub = onSnapshot(combinedRef, (combinedSnap) => {
+      let combined: any = null;
+      if (!combinedSnap.empty) {
+        const doc = combinedSnap.docs[0];
+        const data: any = doc.data();
+        combined = {
+          id: doc.id,
+          combinedContent: data.combined_content ?? data.combinedContent ?? '',
+          sourceQuelleIds: data.source_quelle_ids ?? data.sourceQuelleIds ?? [],
+          heading: data.heading ?? '',
+          topic: data.topic ?? '',
+          modelUsed: data.model_used ?? data.modelUsed ?? '',
+          tokensUsed: data.tokens_used ?? data.tokensUsed ?? 0,
+          inputTokens: data.input_tokens ?? data.inputTokens ?? 0,
+          cachedInputTokens: data.cached_input_tokens ?? data.cachedInputTokens ?? 0,
+          outputTokens: data.output_tokens ?? data.outputTokens ?? 0,
+          reasoningTokens: data.reasoning_tokens ?? data.reasoningTokens ?? 0,
+          cost: data.cost ?? 0,
+          createdAt:
+            data.created_at?.toDate?.()?.toISOString() ||
+            data.createdAt?.toDate?.()?.toISOString() ||
+            new Date().toISOString(),
+        };
+      }
+      updateRunPartial({ combined });
+      hasData = hasData || !!combined;
+      if (hasData) finishIfNeeded();
+    });
+
+    const shortenedUnsub = onSnapshot(shortenedRef, (shortenedSnap) => {
+      let shortened: any = null;
+      if (!shortenedSnap.empty) {
+        const doc = shortenedSnap.docs[0];
+        const data: any = doc.data();
+        shortened = {
+          id: doc.id,
+          shortenedContent: data.shortened_content ?? data.shortenedContent ?? '',
+          originalLength: data.original_length ?? data.originalLength ?? 0,
+          shortenedLength: data.shortened_length ?? data.shortenedLength ?? 0,
+          usedKapitelIds: data.used_kapitel_ids ?? data.usedKapitelIds ?? [],
+          model: data.model ?? '',
+          cost: data.cost ?? 0,
+          tokensUsed: data.tokens_used ?? data.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
+          createdAt:
+            data.created_at?.toDate?.()?.toISOString() ||
+            data.createdAt?.toDate?.()?.toISOString() ||
+            new Date().toISOString(),
+        };
+      }
+      updateRunPartial({ shortened });
+      hasData = hasData || !!shortened;
+      if (hasData) finishIfNeeded();
+    });
+
+    const resultsUnsub = onSnapshot(resultsRef, (resSnapshot) => {
+      const results = resSnapshot.docs.map((resDoc) => {
+        const resData: any = resDoc.data();
+        return {
+          quelleId: resDoc.id,
+          resultContent: resData.result_content ?? resData.resultContent ?? '',
+          hasContent: resData.has_content ?? resData.hasContent ?? true,
+          modelUsed: resData.model_used ?? resData.modelUsed ?? '',
+          tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
+          inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
+          cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
+          outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
+          reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
+          cost: resData.cost ?? 0,
+          createdAt:
+            resData.created_at?.toDate?.()?.toISOString() ||
+            resData.createdAt?.toDate?.()?.toISOString() ||
+            new Date().toISOString(),
+        };
+      });
+
+      updateRunPartial({ results });
+      hasData = hasData || results.length > 0;
+      if (hasData) finishIfNeeded();
+      if (!hasData && resSnapshot.empty) {
+        finishIfNeeded();
+      }
+    });
+
+    return () => {
+      combinedUnsub();
+      shortenedUnsub();
+      resultsUnsub();
+    };
+  }, [user?.uid, activeKapitelId, selectedRunId]);
+
+  // Live status per Kapitel (latest run only, minimal data)
+  useEffect(() => {
+    if (!user?.uid || kapiteln.length === 0) return;
+
+    const db = getFirestore(firebaseApp);
+    const runUnsubs: Unsubscribe[] = [];
+    const combinedUnsubs: Map<string, Unsubscribe> = new Map();
+    const kapitelIds = kapiteln.map((k) => k.id);
+
+    const updateKapitelStatus = (
+      kapitelId: string,
+      status: 'nicht-verarbeitet' | 'in-bearbeitung' | 'fertig'
+    ) => {
+      setKapiteln((prev) =>
+        prev.map((k) => {
+          if (k.id !== kapitelId) return k;
+          if (k.status === status) return k;
+          return { ...k, status };
+        })
+      );
+    };
+
+    kapitelIds.forEach((kapitelId) => {
+      const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
+      const q = query(runsRef, orderBy('index', 'desc'), limit(1));
+
+      const runUnsub = onSnapshot(q, (runSnap) => {
+        const existing = combinedUnsubs.get(kapitelId);
+        if (existing) {
+          existing();
+          combinedUnsubs.delete(kapitelId);
+        }
+
+        if (runSnap.empty) {
+          updateKapitelStatus(kapitelId, 'nicht-verarbeitet');
+          return;
+        }
+
+        const latestRunId = runSnap.docs[0].id;
+        updateKapitelStatus(kapitelId, 'in-bearbeitung');
+
+        const combinedRef = collection(
+          db,
+          'users',
+          user.uid,
+          'kapitels',
+          kapitelId,
+          'runs',
+          latestRunId,
+          'combined'
+        );
+        const combinedUnsub = onSnapshot(combinedRef, (combinedSnap) => {
+          if (!combinedSnap.empty) {
+            updateKapitelStatus(kapitelId, 'fertig');
+          } else {
+            updateKapitelStatus(kapitelId, 'in-bearbeitung');
+          }
+        });
+
+        combinedUnsubs.set(kapitelId, combinedUnsub);
+      });
+
+      runUnsubs.push(runUnsub);
+    });
+
+    return () => {
+      runUnsubs.forEach((u) => u());
+      combinedUnsubs.forEach((u) => u());
+    };
+  }, [user?.uid, kapiteln.map((k) => k.id).join(',')]);
+
+  // Live status per Kapitel (latest run only, minimal data)
+  useEffect(() => {
+    if (!user?.uid || kapiteln.length === 0) return;
+
+    const db = getFirestore(firebaseApp);
+    const runUnsubs: Unsubscribe[] = [];
+    const combinedUnsubs: Map<string, Unsubscribe> = new Map();
+    const kapitelIds = kapiteln.map((k) => k.id);
+
+    const updateKapitelStatus = (
+      kapitelId: string,
+      status: 'nicht-verarbeitet' | 'in-bearbeitung' | 'fertig'
+    ) => {
+      setKapiteln((prev) => prev.map((k) => (k.id === kapitelId ? { ...k, status } : k)));
+    };
+
+    kapitelIds.forEach((kapitelId) => {
+      const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
+      const q = query(runsRef, orderBy('index', 'desc'), limit(1));
+
+      const runUnsub = onSnapshot(q, (runSnap) => {
+        const existing = combinedUnsubs.get(kapitelId);
+        if (existing) {
+          existing();
+          combinedUnsubs.delete(kapitelId);
+        }
+
+        if (runSnap.empty) {
+          updateKapitelStatus(kapitelId, 'nicht-verarbeitet');
+          return;
+        }
+
+        const latestRunId = runSnap.docs[0].id;
+        updateKapitelStatus(kapitelId, 'in-bearbeitung');
+
+        const combinedRef = collection(
+          db,
+          'users',
+          user.uid,
+          'kapitels',
+          kapitelId,
+          'runs',
+          latestRunId,
+          'combined'
+        );
+        const combinedUnsub = onSnapshot(combinedRef, (combinedSnap) => {
+          if (!combinedSnap.empty) {
+            updateKapitelStatus(kapitelId, 'fertig');
+          } else {
+            updateKapitelStatus(kapitelId, 'in-bearbeitung');
+          }
+        });
+
+        combinedUnsubs.set(kapitelId, combinedUnsub);
+      });
+
+      runUnsubs.push(runUnsub);
+    });
+
+    return () => {
+      runUnsubs.forEach((u) => u());
+      combinedUnsubs.forEach((u) => u());
+    };
+  }, [user?.uid, kapiteln.map((k) => k.id).join(',')]);
 
   // hide initial skeleton once first client render completes
   useEffect(() => {
@@ -476,15 +628,10 @@ export function Dashboard({
     if (uiRuns.length === 0) {
       setSelectedRunId(null);
     } else if (!selectedRunId || !uiRuns.some((run) => run.id === selectedRunId)) {
-      setSelectedRunId(uiRuns[0].id);
+      handleSelectRun(uiRuns[0].id);
     }
 
-    // update status for the active Kapitel based on its latest run
-    const nextStatus = deriveKapitelStatus(fbRuns);
-    setKapiteln((prev) =>
-      prev.map((k) => (k.id === activeKapitelId ? { ...k, status: nextStatus } : k))
-    );
-  }, [fbRuns, quellen, activeKapitelId, activeKapitel?.assignedQuellenIds, selectedRunId]);
+  }, [fbRuns, quellen, activeKapitelId, activeKapitel?.assignedQuellenIds, selectedRunId, handleSelectRun]);
 
   // Handlers
   const handleSwitchProjekt = useCallback(
@@ -826,7 +973,7 @@ export function Dashboard({
             ...prev,
           ];
         });
-        setSelectedRunId(result.runId);
+        handleSelectRun(result.runId);
         setProcessingDialogOpen(false);
 
         // Queue processing for all assigned Quellen (mirrors previous implementation)
@@ -1033,7 +1180,12 @@ export function Dashboard({
                 runs={runs}
                 selectedRun={selectedRun}
                 allKapitels={kapiteln}
-                onSelectRun={setSelectedRunId}
+                onLoadAllRuns={() => {
+                  setRunListLimit(MAX_RUN_HISTORY_LIMIT);
+                  setAllRunsLoaded(true);
+                }}
+                allRunsLoaded={allRunsLoaded}
+                onSelectRun={handleSelectRun}
                 onOpenTextViewer={setTextViewerContent}
                 onOpenProcessing={() => setProcessingDialogOpen(true)}
                 onCombineTexts={handleCombineTexts}
@@ -1121,13 +1273,4 @@ Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz i
   return `${prompt}${grundInfo}`;
 }
 
-function deriveKapitelStatus(
-  runs: FirebaseKapitelRun[]
-): 'nicht-verarbeitet' | 'in-bearbeitung' | 'fertig' {
-  if (!runs || runs.length === 0) return 'nicht-verarbeitet';
-  const latestRun = runs[0];
-  if (latestRun.combined && latestRun.combined.combinedContent) {
-    return 'fertig';
-  }
-  return 'in-bearbeitung';
-}
+// Status is now maintained via lightweight live listeners per Kapitel

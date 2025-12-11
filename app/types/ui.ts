@@ -23,6 +23,7 @@ export interface Kapitel {
   order: number;
   projektId: string;
   assignedQuellenIds: string[]; // Maps to Firebase 'quelleIds'
+  parentId?: string | null;
 }
 
 export interface QuellenErgebnis {
