@@ -1,13 +1,14 @@
 """
 Simple verification of cost calculation fixes (no API calls).
 """
+
 import re
 
 # Pricing per million tokens (input, output)
 MODEL_PRICING = {
-    "gpt-5.1": (1.25, 10.00),          # Most expensive model
-    "gpt-5-mini": (0.25, 2.00),        # Mid-tier model
-    "gpt-5-nano": (0.05, 0.40),        # Most economical model
+    "gpt-5.1": (1.25, 10.00),  # Most expensive model
+    "gpt-5-mini": (0.25, 2.00),  # Mid-tier model
+    "gpt-5-nano": (0.05, 0.40),  # Most economical model
 }
 
 
