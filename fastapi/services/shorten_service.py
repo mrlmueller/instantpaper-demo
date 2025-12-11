@@ -9,7 +9,9 @@ import os
 logger = logging.getLogger(__name__)
 
 # TEMPORARY: Debug prompt saving
-DEBUG_PROMPT_DIR = "/mnt/e/datein/coding/instantpaper/debug_prompts"
+# Use project-root-relative path so files land inside the repo regardless of host OS
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+DEBUG_PROMPT_DIR = os.path.join(PROJECT_ROOT, "debug_prompts")
 os.makedirs(DEBUG_PROMPT_DIR, exist_ok=True)
 
 
@@ -131,7 +133,7 @@ class ShortenService:
 
         # Generate new summary
         logger.info(f"Generating new summary for Kapitel {source_kapitel_id}")
-        summary_content, usage = await self.summarize_text(source_text, model)
+        summary_content, usage = await self.summarize_text(source_text, model, source_kapitel_id)
 
         # Calculate cost
         cost = calculate_cost(
@@ -177,7 +179,7 @@ class ShortenService:
 
         return summary_content
 
-    async def summarize_text(self, text: str, model: str) -> tuple[str, dict]:
+    async def summarize_text(self, text: str, model: str, source_kapitel_id: str = None) -> tuple[str, dict]:
         """
         Summarize text to ~30% of original using OpenAI.
 
@@ -190,17 +192,16 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
 ### Text:
 {text}"""
 
-        # TEMPORARY: Save prompt to file
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
-        prompt_file = os.path.join(DEBUG_PROMPT_DIR, f"summarize_{timestamp}.md")
-        with open(prompt_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Summarization Prompt\n\n")
-            f.write(f"**Model:** {model}\n\n")
-            f.write(f"**Timestamp:** {datetime.utcnow().isoformat()}\n\n")
-            f.write(f"**Original Text Length:** {len(text.split())} words\n\n")
-            f.write("---\n\n")
-            f.write(prompt)
-        logger.info(f"DEBUG: Saved summarization prompt to {prompt_file}")
+        # TEMPORARY: Save prompt to file for debugging
+        try:
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+            kapitel_suffix = f"_kapitel_{source_kapitel_id[:8]}" if source_kapitel_id else ""
+            prompt_file = os.path.join(DEBUG_PROMPT_DIR, f"summarize_{timestamp}{kapitel_suffix}.md")
+            with open(prompt_file, 'w', encoding='utf-8') as f:
+                f.write(prompt)
+            logger.info(f"DEBUG: Saved summarization prompt to {prompt_file}")
+        except Exception as e:
+            logger.error(f"DEBUG: Failed to save prompt file: {e}")
 
         return await openai_service.summarize_kapitel(prompt, model)
 
@@ -248,6 +249,8 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
         gliederung: str,
         target_text: str,
         model: str,
+        target_kapitel_id: str = None,
+        context_kapitel_ids: list = None,
     ) -> tuple[str, dict]:
         """
         Shorten and deduplicate text using OpenAI.
@@ -256,7 +259,7 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
             tuple: (shortened_content, usage_dict)
         """
         prompt = f"""### Aufgabe:
-Ich schreibe gerade eine Wissenschaftliche Arbeit. Der folgende Text ist bereits gut, so wie er ist, allerding ist er noch zu lang. Aber damit du optimal den Text kürzen kannst, also das du den Fokus auf die richtigen Fakten und Themen legen kannst werde ich dir die Überschrift „{ueberschrift}" und auch das Thema des Textes geben „{thema}". Zusätzlich werde ich dir Folgend einen Teil meiner Gliederung geben zusammen mit einer zusammengefassten Version der Texte von den anderen Kapitel und Unterpunkten der Kapitel. All dies gebe ich dir damit du perfekt entscheiden kannst auf was der Fokus gelegt werden sollte in der Arbeit. Konkret ist deine Aufgabe den Text auf die hälft oder noch etwas weniger zu kürzen, aber dabei alle wichtigen Informationen bei zu behalten. Behalte auch sämtliche Quellen an den richtigen Stellen bei außer, wenn du eine Information zu einer Quelle komplett eliminierst. Du sollst nur die gegebenen Informationen nutzen, und keine Informationen aus deinem eigenen wissen mit einbeziehen! Schreibe keine Zusammenfassung am Ende, da dies nur ein Teil eines längeren Textes ist. Habe Spaß mit der Findung deines Textes. Schreibe ohne "Wir/Ich haben herausgefunden". Schreibe aber dennoch das es Spaß macht den Text zu lesen, also dass es kein zu trockener Text wird, aber behalte dennoch die Wissenschaftliche Schreibweise bei. Wenn du Argumente beschreibst, gehe sicher immer eine Quelle zu integrieren. Am Anfang bevor du deinen Text schreibst erkläre ganz kurz warum du diese Länge des Textes gewählt hast, welche Informationen du weggelassen hast usw. Formuliere den Text ohne das du ; verwendest, außer zwischen zwei Quellen.
+Ich schreibe gerade eine Wissenschaftliche Arbeit. Der folgende Text ist bereits gut, so wie er ist, allerding ist er noch zu lang. Aber damit du optimal den Text kürzen kannst, also das du den Fokus auf die richtigen Fakten und Themen legen kannst werde ich dir die Überschrift „{ueberschrift}" und auch das Thema des Textes geben „{thema}". Zusätzlich werde ich dir Folgend einen Teil meiner Gliederung geben zusammen mit einer zusammengefassten Version der Texte von den anderen Kapitel und Unterpunkten der Kapitel. All dies gebe ich dir damit du perfekt entscheiden kannst auf was der Fokus gelegt werden sollte in der Arbeit. Konkret ist deine Aufgabe den Text auf die hälft oder noch etwas weniger zu kürzen, aber dabei alle wichtigen Informationen bei zu behalten. Behalte auch sämtliche Quellen an den richtigen Stellen bei außer, wenn du eine Information zu einer Quelle komplett eliminierst. Du sollst nur die gegebenen Informationen nutzen, und keine Informationen aus deinem eigenen wissen mit einbeziezen! Schreibe keine Zusammenfassung am Ende, da dies nur ein Teil eines längeren Textes ist. Habe Spaß mit der Findung deines Textes. Schreibe ohne "Wir/Ich haben herausgefunden". Schreibe aber dennoch das es Spaß macht den Text zu lesen, also dass es kein zu trockener Text wird, aber behalte dennoch die Wissenschaftliche Schreibweise bei. Wenn du Argumente beschreibst, gehe sicher immer eine Quelle zu integrieren. Am Anfang bevor du deinen Text schreibst erkläre ganz kurz warum du diese Länge des Textes gewählt hast, welche Informationen du weggelassen hast usw. Formuliere den Text ohne das du ; verwendest, außer zwischen zwei Quellen.
 
 ### Gliederung:
 {gliederung}
@@ -264,20 +267,16 @@ Ich schreibe gerade eine Wissenschaftliche Arbeit. Der folgende Text ist bereits
 ### Text zum Kürzen:
 {target_text}"""
 
-        # TEMPORARY: Save prompt to file
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
-        prompt_file = os.path.join(DEBUG_PROMPT_DIR, f"shorten_{timestamp}.md")
-        with open(prompt_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Shorten & Deduplicate Prompt\n\n")
-            f.write(f"**Model:** {model}\n\n")
-            f.write(f"**Timestamp:** {datetime.utcnow().isoformat()}\n\n")
-            f.write(f"**Überschrift:** {ueberschrift}\n\n")
-            f.write(f"**Thema:** {thema}\n\n")
-            f.write(f"**Target Text Length:** {len(target_text.split())} words\n\n")
-            f.write(f"**Gliederung Length:** {len(gliederung.split())} words\n\n")
-            f.write("---\n\n")
-            f.write(prompt)
-        logger.info(f"DEBUG: Saved shorten prompt to {prompt_file}")
+        # TEMPORARY: Save prompt to file for debugging
+        try:
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+            kapitel_suffix = f"_kapitel_{target_kapitel_id[:8]}" if target_kapitel_id else ""
+            prompt_file = os.path.join(DEBUG_PROMPT_DIR, f"shorten_{timestamp}{kapitel_suffix}.md")
+            with open(prompt_file, 'w', encoding='utf-8') as f:
+                f.write(prompt)
+            logger.info(f"DEBUG: Saved shorten prompt to {prompt_file}")
+        except Exception as e:
+            logger.error(f"DEBUG: Failed to save prompt file: {e}")
 
         return await openai_service.shorten_and_deduplicate(prompt, model)
 
@@ -367,7 +366,9 @@ Ich schreibe gerade eine Wissenschaftliche Arbeit. Der folgende Text ist bereits
             logger.info("Shortening target Kapitel text")
 
             shortened_content, usage = await self.shorten_and_deduplicate(
-                ueberschrift, thema, gliederung, target_text, model
+                ueberschrift, thema, gliederung, target_text, model,
+                target_kapitel_id=kapitel_id,
+                context_kapitel_ids=valid_context_ids
             )
 
             # Calculate cost
