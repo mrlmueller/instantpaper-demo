@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from services.firebase_service import firebase_service
 from services.openai_service import openai_service
+from services.user_key_service import user_key_service
 import logging
 import re
 import asyncio
@@ -202,12 +203,14 @@ class QuelleService:
             grundlegende_informationen = run.get('grundlegendeInformationen') if run else None
 
             # Step 2: Process with OpenAI
+            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
             logger.info(f"Processing Quelle {quelle_id} with OpenAI model {model}")
             openai_result = await self.openai.process_quelle(
                 quelle['content'],
                 user_input,
                 model,
-                grundlegende_informationen
+                grundlegende_informationen,
+                api_key=api_key
             )
 
             # Step 2.5: Calculate cost (including cached input and reasoning tokens)
@@ -235,7 +238,8 @@ class QuelleService:
                 cached_input_tokens=openai_result.get('cached_input_tokens', 0),
                 output_tokens=openai_result['output_tokens'],
                 reasoning_tokens=openai_result.get('reasoning_tokens', 0),
-                cost=cost
+                cost=cost,
+                key_source=key_source
             )
 
             logger.info(f"Quelle processing complete. Result ID: {result_id}, Cost: ${cost:.6f}")
@@ -342,6 +346,8 @@ class QuelleService:
             if not run:
                 raise HTTPException(status_code=404, detail="Run not found")
 
+            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+
             existing_combined = await self.firebase.get_combined_result(user_id, kapitel_id, run_id)
             if existing_combined:
                 raise HTTPException(status_code=400, detail="Combined result already exists for this run.")
@@ -375,14 +381,14 @@ class QuelleService:
                 # Hierarchical combining for large sets
                 logger.info(f"Using hierarchical combining for {len(eligible)} sources")
                 return await self._hierarchical_combine(
-                    user_id, kapitel_id, run_id, eligible, heading, topic, model
+                    user_id, kapitel_id, run_id, eligible, heading, topic, model, api_key, key_source
                 )
 
             # Single-level combining (existing logic for ≤5 sources)
             source_quelle_ids = [res["id"] for res in eligible]
             texts = [res["content"] for res in eligible]
 
-            openai_result = await self.openai.combine_texts(texts, heading, topic, model)
+            openai_result = await self.openai.combine_texts(texts, heading, topic, model, api_key=api_key)
 
             cost = calculate_cost(
                 model=openai_result['model'],
@@ -406,7 +412,8 @@ class QuelleService:
                 cached_input_tokens=openai_result.get('cached_input_tokens', 0),
                 output_tokens=openai_result['output_tokens'],
                 reasoning_tokens=openai_result.get('reasoning_tokens', 0),
-                cost=cost
+                cost=cost,
+                key_source=key_source
             )
 
             logger.info(
@@ -446,7 +453,9 @@ class QuelleService:
         eligible: list,
         heading: str,
         topic: str,
-        model: str
+        model: str,
+        api_key: str,
+        key_source: str,
     ) -> dict:
         """
         Perform hierarchical combining:
@@ -476,7 +485,7 @@ class QuelleService:
 
             # Call OpenAI to combine this group
             openai_result = await self.openai.combine_texts(
-                group_texts, heading, topic, model
+                group_texts, heading, topic, model, api_key=api_key
             )
 
             # Calculate cost
@@ -505,7 +514,8 @@ class QuelleService:
                 cached_input_tokens=openai_result.get('cached_input_tokens', 0),
                 output_tokens=openai_result['output_tokens'],
                 reasoning_tokens=openai_result.get('reasoning_tokens', 0),
-                cost=cost
+                cost=cost,
+                key_source=key_source
             )
 
             logger.info(f"Group {group_number} combined and saved (id: {group_id}, cost: ${cost:.6f})")
@@ -521,7 +531,7 @@ class QuelleService:
         intermediate_texts = [r['content'] for r in intermediate_results]
 
         final_openai_result = await self.openai.combine_texts(
-            intermediate_texts, heading, topic, model
+            intermediate_texts, heading, topic, model, api_key=api_key
         )
 
         final_cost = calculate_cost(
@@ -549,7 +559,8 @@ class QuelleService:
             cached_input_tokens=final_openai_result.get('cached_input_tokens', 0),
             output_tokens=final_openai_result['output_tokens'],
             reasoning_tokens=final_openai_result.get('reasoning_tokens', 0),
-            cost=final_cost
+            cost=final_cost,
+            key_source=key_source
         )
 
         total_cost = total_intermediate_cost + final_cost

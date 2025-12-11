@@ -130,7 +130,8 @@ class FirebaseService:
         cached_input_tokens: int,
         output_tokens: int,
         reasoning_tokens: int,
-        cost: float
+        cost: float,
+        key_source: Optional[str] = None,
     ) -> str:
         """
         Save AI processing result to Firestore under a Kapitel run
@@ -183,6 +184,9 @@ class FirebaseService:
                 'cost': cost,
                 'created_at': SERVER_TIMESTAMP
             }
+
+            if key_source:
+                result_data['key_source'] = key_source
 
             result_ref.set(result_data)
             logger.info(
@@ -268,7 +272,8 @@ class FirebaseService:
         cached_input_tokens: int,
         output_tokens: int,
         reasoning_tokens: int,
-        cost: float
+        cost: float,
+        key_source: Optional[str] = None,
     ) -> str:
         """
         Save combined result under a run (separate collection next to results).
@@ -300,6 +305,9 @@ class FirebaseService:
                 'created_at': SERVER_TIMESTAMP
             }
 
+            if key_source:
+                combined_data['key_source'] = key_source
+
             combined_ref.set(combined_data)
             logger.info(
                 f"Saved combined result for kapitel {kapitel_id} run {run_id} (cost: ${cost:.6f})"
@@ -325,7 +333,8 @@ class FirebaseService:
         cached_input_tokens: int,
         output_tokens: int,
         reasoning_tokens: int,
-        cost: float
+        cost: float,
+        key_source: Optional[str] = None,
     ) -> str:
         """
         Save intermediate group combination result.
@@ -358,6 +367,9 @@ class FirebaseService:
                 'cost': cost,
                 'created_at': SERVER_TIMESTAMP
             }
+
+            if key_source:
+                group_data['key_source'] = key_source
 
             group_ref.set(group_data)
             logger.info(
@@ -643,6 +655,86 @@ class FirebaseService:
         Alias for get_run() for clarity in shorten service.
         """
         return await self.get_run(user_id, kapitel_id, run_id)
+
+    async def get_user_doc(self, user_id: str) -> Optional[dict]:
+        """Fetch the user document."""
+        try:
+            user_ref = self.db.collection('users').document(user_id)
+            doc = user_ref.get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Error fetching user doc {user_id}: {str(e)}")
+            raise
+
+    async def get_allow_platform_key(self, user_id: str) -> bool:
+        """Return whether the user is allowed to use the platform OpenAI key."""
+        user_doc = await self.get_user_doc(user_id)
+        return bool(user_doc.get('allowPlatformKey')) if user_doc else False
+
+    async def save_user_openai_secret(self, user_id: str, data: dict) -> None:
+        """
+        Persist encrypted OpenAI key for the user under users/{uid}/secrets/openai.
+
+        Expects keys: iv, ciphertext, tag, last4.
+        """
+        try:
+            secret_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('secrets')
+                .document('openai')
+            )
+
+            payload = {
+                "iv": data["iv"],
+                "ciphertext": data["ciphertext"],
+                "tag": data["tag"],
+                "last4": data.get("last4", ""),
+                "updated_at": SERVER_TIMESTAMP,
+            }
+
+            existing = secret_ref.get()
+            if not existing.exists:
+                payload["created_at"] = SERVER_TIMESTAMP
+
+            secret_ref.set(payload)
+            logger.info(f"Stored encrypted OpenAI key for user {user_id}")
+        except Exception as e:
+            logger.error(f"Error saving OpenAI secret for user {user_id}: {str(e)}")
+            raise
+
+    async def get_user_openai_secret(self, user_id: str) -> Optional[dict]:
+        """Fetch encrypted OpenAI secret for the user."""
+        try:
+            secret_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('secrets')
+                .document('openai')
+            )
+            doc = secret_ref.get()
+            if not doc.exists:
+                return None
+            data = doc.to_dict()
+            return data
+        except Exception as e:
+            logger.error(f"Error fetching OpenAI secret for user {user_id}: {str(e)}")
+            raise
+
+    async def delete_user_openai_secret(self, user_id: str) -> None:
+        """Delete the stored OpenAI secret for the user."""
+        try:
+            secret_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('secrets')
+                .document('openai')
+            )
+            secret_ref.delete()
+            logger.info(f"Deleted OpenAI secret for user {user_id}")
+        except Exception as e:
+            logger.error(f"Error deleting OpenAI secret for user {user_id}: {str(e)}")
+            raise
 
 
 # Create singleton instance

@@ -17,7 +17,28 @@ service cloud.firestore {
 
     // User documents - users can only access their own data
     match /users/{userId} {
-      allow read, write: if isAuthenticated() && isOwner(userId);
+      allow read: if isAuthenticated() && isOwner(userId);
+
+      // Users can create their doc but cannot grant themselves platform access
+      allow create: if isAuthenticated()
+        && isOwner(userId)
+        && (
+          !request.resource.data.keys().hasAny(['allowPlatformKey'])
+          || request.resource.data.allowPlatformKey == false
+        );
+
+      // Users may update their profile but not change allowPlatformKey
+      allow update: if isAuthenticated()
+        && isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['allowPlatformKey']);
+
+      // Users can delete their profile
+      allow delete: if isAuthenticated() && isOwner(userId);
+    }
+
+    // Secrets subcollection - server only
+    match /users/{userId}/secrets/{secretId} {
+      allow read, write: if false;
     }
 
     // Projects collection per user

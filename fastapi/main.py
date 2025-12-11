@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, BackgroundTasks, status
+from fastapi import FastAPI, Depends, BackgroundTasks, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -8,6 +8,8 @@ from models.request import ProcessQuelleRequest, CombineRunRequest, ShortenKapit
 from models.response import ProcessQuelleResponse
 from services.quelle_service import quelle_service
 from services.shorten_service import shorten_service
+from services.user_key_service import user_key_service
+from pydantic import BaseModel
 import logging
 
 # Configure logging
@@ -21,6 +23,10 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+
+class SaveOpenAIKeyRequest(BaseModel):
+    key: str
 
 
 @asynccontextmanager
@@ -88,6 +94,30 @@ async def test_auth(user_id: str = Depends(verify_firebase_token)):
         "message": "Authentication successful",
         "user_id": user_id
     }
+
+
+@app.get("/api/user/openai-key")
+async def get_openai_key_status(user_id: str = Depends(verify_firebase_token)):
+    """Return whether a user has their own OpenAI key and if platform key is allowed."""
+    return await user_key_service.get_status(user_id)
+
+
+@app.post("/api/user/openai-key")
+async def save_openai_key(
+    payload: SaveOpenAIKeyRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """Validate and store a user's OpenAI key securely."""
+    try:
+        return await user_key_service.save_user_key(user_id, payload.key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.delete("/api/user/openai-key")
+async def delete_openai_key(user_id: str = Depends(verify_firebase_token)):
+    """Delete the stored OpenAI key for the user."""
+    return await user_key_service.delete_user_key(user_id)
 
 
 @app.post("/api/process", status_code=status.HTTP_202_ACCEPTED)

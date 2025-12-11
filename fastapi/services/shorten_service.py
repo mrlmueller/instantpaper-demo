@@ -1,6 +1,7 @@
 from services.firebase_service import firebase_service
 from services.openai_service import openai_service
 from services.quelle_service import calculate_cost
+from services.user_key_service import user_key_service
 import logging
 import asyncio
 from datetime import datetime
@@ -98,6 +99,8 @@ class ShortenService:
         target_run_id: str,
         source_kapitel_id: str,
         model: str,
+        api_key: str,
+        key_source: str,
     ) -> str:
         """
         Get cached summary or create new one.
@@ -135,7 +138,9 @@ class ShortenService:
 
         # Generate new summary
         logger.info(f"Generating new summary for Kapitel {source_kapitel_id}")
-        summary_content, usage = await self.summarize_text(source_text, model, source_kapitel_id)
+        summary_content, usage = await self.summarize_text(
+            source_text, model, source_kapitel_id, api_key=api_key
+        )
 
         # Calculate cost
         cost = calculate_cost(
@@ -167,6 +172,7 @@ class ShortenService:
                 'output': usage.get('completion_tokens', 0),
             },
             'created_at': datetime.utcnow().isoformat() + 'Z',
+            'key_source': key_source,
         }
 
         await firebase_service.save_summary_result(
@@ -181,7 +187,13 @@ class ShortenService:
 
         return summary_content
 
-    async def summarize_text(self, text: str, model: str, source_kapitel_id: str = None) -> tuple[str, dict]:
+    async def summarize_text(
+        self,
+        text: str,
+        model: str,
+        source_kapitel_id: str = None,
+        api_key: str | None = None
+    ) -> tuple[str, dict]:
         """
         Summarize text to ~30% of original using OpenAI.
 
@@ -209,7 +221,7 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
         except Exception as e:
             logger.error(f"DEBUG: Failed to save prompt file: {e}")
 
-        return await openai_service.summarize_kapitel(prompt, model)
+        return await openai_service.summarize_kapitel(prompt, model, api_key=api_key)
 
     async def build_gliederung(
         self,
@@ -257,6 +269,7 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
         model: str,
         target_kapitel_id: str = None,
         context_kapitel_ids: list = None,
+        api_key: str | None = None,
     ) -> tuple[str, dict, dict]:
         """
         Shorten and deduplicate text using OpenAI.
@@ -290,7 +303,7 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
         except Exception as e:
             logger.error(f"DEBUG: Failed to save prompt file: {e}")
 
-        return await openai_service.shorten_and_deduplicate(prompt, model)
+        return await openai_service.shorten_and_deduplicate(prompt, model, api_key=api_key)
 
     async def process_shorten_request(
         self,
@@ -310,6 +323,7 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
         4. Saves the result
         """
         try:
+            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
             logger.info(
                 f"Starting shorten process for Kapitel {kapitel_id}, run {run_id}, "
                 f"with {len(context_kapitel_ids)} context Kapitels"
@@ -339,7 +353,7 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
             logger.info(f"Generating summaries for {len(context_kapitel_ids)} context Kapitels")
 
             summary_tasks = [
-                self.get_or_create_summary(user_id, kapitel_id, run_id, ctx_id, model)
+                self.get_or_create_summary(user_id, kapitel_id, run_id, ctx_id, model, api_key, key_source)
                 for ctx_id in context_kapitel_ids
             ]
 
@@ -380,7 +394,8 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
             shortened_content, usage, explanation = await self.shorten_and_deduplicate(
                 ueberschrift, thema, gliederung, target_text, model,
                 target_kapitel_id=kapitel_id,
-                context_kapitel_ids=valid_context_ids
+                context_kapitel_ids=valid_context_ids,
+                api_key=api_key
             )
 
             # Calculate cost
@@ -421,6 +436,7 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
                     'output': usage.get('completion_tokens', 0),
                 },
                 'created_at': datetime.utcnow().isoformat() + 'Z',
+                'key_source': key_source,
             }
 
             await firebase_service.save_shortened_result(

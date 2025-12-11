@@ -54,15 +54,26 @@ class OpenAIService:
         self._ensure_initialized()
         return self._client
 
+    def _get_client(self, api_key: str | None = None) -> AsyncOpenAI:
+        """
+        Return an AsyncOpenAI client for the given key.
+        Defaults to the platform key (cached).
+        """
+        if api_key is None or api_key == config.OPENAI_API_KEY:
+            return self.client
+        return AsyncOpenAI(api_key=api_key)
+
     async def process_quelle(
         self,
         quelle_content: str,
         user_input: str,
         model: str,
-        grundlegende_informationen: str = None
+        grundlegende_informationen: str = None,
+        api_key: str | None = None
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
+            client = self._get_client(api_key)
             # Build prompt with optional grundlegende informationen
             if grundlegende_informationen and grundlegende_informationen.strip():
                 prompt = f"""{quelle_content}
@@ -87,7 +98,7 @@ class OpenAIService:
                 "Otherwise, return only the final answer without any extra commentary."
             )
 
-            response = await self.client.responses.create(
+            response = await client.responses.create(
                 model=model,
                 input=[
                     {
@@ -180,11 +191,13 @@ class OpenAIService:
         heading: str,
         topic: str,
         model: str,
+        api_key: str | None = None,
     ) -> dict:
         """
         Combine multiple texts into one consolidated text.
         """
         try:
+            client = self._get_client(api_key)
             combined_texts = "\n\n".join(
                 [f"### Text {i+1}:\n{texts[i]}" for i in range(len(texts))]
             )
@@ -193,7 +206,7 @@ class OpenAIService:
 
             logger.info(f"Combining {len(texts)} texts with model {model}")
 
-            response = await self.client.responses.create(
+            response = await client.responses.create(
                 model=model,
                 input=[
                     {
@@ -267,12 +280,13 @@ class OpenAIService:
             logger.error(f"OpenAI combine error: {str(e)}")
             raise
 
-    async def summarize_kapitel(self, prompt: str, model: str) -> tuple[str, dict]:
+    async def summarize_kapitel(self, prompt: str, model: str, api_key: str | None = None) -> tuple[str, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
+            client = self._get_client(api_key)
             logger.info(f"Summarizing Kapitel with model {model}")
 
-            response = await self.client.responses.create(
+            response = await client.responses.create(
                 model=model,
                 input=[
                     {
@@ -342,12 +356,18 @@ class OpenAIService:
             logger.error(f"OpenAI summarization error: {str(e)}")
             raise
 
-    async def shorten_and_deduplicate(self, prompt: str, model: str) -> tuple[str, dict, dict]:
+    async def shorten_and_deduplicate(
+        self,
+        prompt: str,
+        model: str,
+        api_key: str | None = None
+    ) -> tuple[str, dict, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
+            client = self._get_client(api_key)
             logger.info(f"Shortening and deduplicating Kapitel with model {model}")
 
-            response = await self.client.responses.create(
+            response = await client.responses.create(
                 model=model,
                 input=[
                     {

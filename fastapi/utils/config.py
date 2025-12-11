@@ -19,10 +19,13 @@ class Config:
 
     # OpenAI
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    USER_KEY_ENCRYPTION_KEY: str = os.getenv("USER_KEY_ENCRYPTION_KEY", "").strip()
 
     # Log the last 4 characters of API key for debugging (on module load)
     if OPENAI_API_KEY:
         logger.info(f"OpenAI API Key loaded (ends with: ...{OPENAI_API_KEY[-4:]})")
+    if USER_KEY_ENCRYPTION_KEY:
+        logger.info("User key encryption key loaded")
 
     # Server
     PORT: int = int(os.getenv("PORT", "8000"))
@@ -39,7 +42,8 @@ class Config:
             "FIREBASE_PROJECT_ID",
             "FIREBASE_PRIVATE_KEY",
             "FIREBASE_CLIENT_EMAIL",
-            "OPENAI_API_KEY"
+            "OPENAI_API_KEY",
+            "USER_KEY_ENCRYPTION_KEY",
         ]
 
         missing_fields = []

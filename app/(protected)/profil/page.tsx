@@ -8,6 +8,11 @@ import { ArrowLeft, Mail, Calendar, FileText, BookOpen, Coins, BarChart3, Zap, P
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Input } from "@/components/ui/input"
+import { toast } from "sonner"
+import Cookies from "js-cookie"
+import { useAuth } from "@/app/components/providers/AuthProvider"
+import { deleteOpenAIKey, fetchOpenAIKeyStatus, saveOpenAIKey, type OpenAIKeyStatus } from "@/app/lib/api/openaiKeyClient"
 
 // Mock data - will be replaced with real Firebase data later
 const mockUser = {
@@ -148,31 +153,87 @@ function ProfilePageSkeleton() {
 }
 
 export default function ProfilPage() {
-  const [user, setUser] = useState<typeof mockUser | null>(null)
-  const [stats, setStats] = useState<typeof mockUserStats | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { user: authUser, loading: authLoading } = useAuth()
+  const [stats] = useState<typeof mockUserStats | null>(mockUserStats)
+  const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null)
+  const [keyLoading, setKeyLoading] = useState(true)
+  const [savingKey, setSavingKey] = useState(false)
+  const [apiKeyInput, setApiKeyInput] = useState("")
+  const [statusError, setStatusError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Simulate loading user data and stats from database
-    const loadData = async () => {
-      setLoading(true)
-      // Simulate network delay
-      await new Promise((resolve) => setTimeout(resolve, 1200))
-      setUser(mockUser)
-      setStats(mockUserStats)
-      setLoading(false)
+    if (authLoading) return
+    const token = Cookies.get("__session")
+    if (!token) {
+      setStatusError("Keine Sitzung gefunden. Bitte melde dich erneut an.")
+      setKeyLoading(false)
+      return
     }
-    loadData()
-  }, [])
 
-  if (loading || !user || !stats) {
+    fetchOpenAIKeyStatus(token)
+      .then(setKeyStatus)
+      .catch((err: any) => {
+        const message = err?.message || "OpenAI-Schlüsselstatus konnte nicht geladen werden."
+        setStatusError(message)
+        toast.error("OpenAI Key", { description: message })
+      })
+      .finally(() => setKeyLoading(false))
+  }, [authLoading, authUser?.uid])
+
+  const handleSaveKey = async () => {
+    if (!apiKeyInput.trim()) return
+    const token = Cookies.get("__session")
+    if (!token) {
+      toast.error("Sitzung abgelaufen", { description: "Bitte melde dich erneut an." })
+      return
+    }
+    try {
+      setSavingKey(true)
+      const status = await saveOpenAIKey(token, apiKeyInput.trim())
+      setKeyStatus(status)
+      setApiKeyInput("")
+      toast.success("OpenAI Key gespeichert")
+    } catch (err: any) {
+      const message = err?.message || "Key konnte nicht gespeichert werden."
+      toast.error("Fehler", { description: message })
+    } finally {
+      setSavingKey(false)
+    }
+  }
+
+  const handleDeleteKey = async () => {
+    const token = Cookies.get("__session")
+    if (!token) {
+      toast.error("Sitzung abgelaufen", { description: "Bitte melde dich erneut an." })
+      return
+    }
+    try {
+      setSavingKey(true)
+      const status = await deleteOpenAIKey(token)
+      setKeyStatus(status)
+      toast.success("OpenAI Key entfernt")
+    } catch (err: any) {
+      const message = err?.message || "Key konnte nicht entfernt werden."
+      toast.error("Fehler", { description: message })
+    } finally {
+      setSavingKey(false)
+    }
+  }
+
+  const isLoading = authLoading || keyLoading || !authUser
+
+  if (isLoading || !stats) {
     return <ProfilePageSkeleton />
   }
+
+  const userName = authUser?.displayName || authUser?.email || mockUser.name
+  const userEmail = authUser?.email || mockUser.email
+  const memberSince = stats.memberSince
 
   const formatCost = (cents: number) => `${(cents / 100).toFixed(2)} €`
   const formatNumber = (num: number) => num.toLocaleString("de-DE")
 
-  const initials = user.name
+  const initials = userName
     .split(" ")
     .map((n) => n[0])
     .join("")
@@ -202,19 +263,65 @@ export default function ProfilPage() {
               {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-semibold text-foreground">{user.name}</h2>
+              <h2 className="text-xl font-semibold text-foreground">{userName}</h2>
               <div className="flex items-center gap-2 mt-1 text-muted-foreground">
                 <Mail className="h-4 w-4" />
-                <span className="text-sm">{user.email}</span>
+                <span className="text-sm">{userEmail}</span>
               </div>
               <div className="flex items-center gap-4 mt-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-1.5">
                   <Calendar className="h-4 w-4" />
                   <span>
-                    Mitglied seit {user.memberSince.toLocaleDateString("de-DE", { month: "long", year: "numeric" })}
+                    Mitglied seit {memberSince.toLocaleDateString("de-DE", { month: "long", year: "numeric" })}
                   </span>
                 </div>
               </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* OpenAI Key Management */}
+        <Card className="p-6 mb-10">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-foreground">OpenAI API Key</h3>
+              <p className="text-sm text-muted-foreground">
+                Dein Key wird serverseitig validiert und verschlüsselt gespeichert. Ohne eigenen Key können keine
+                Verarbeitungen gestartet werden (außer du bist für den Plattform-Key freigeschaltet).
+              </p>
+              <div className="text-sm">
+                <span className="font-medium">Status: </span>
+                {keyStatus
+                  ? keyStatus.hasKey
+                    ? `Eigener Key aktiv${keyStatus.last4 ? ` (****${keyStatus.last4})` : ""}`
+                    : keyStatus.allowPlatformKey
+                      ? "Plattform-Key wird verwendet, solange kein eigener Key hinterlegt ist."
+                      : "Kein Key hinterlegt."
+                  : "Status konnte nicht geladen werden."}
+              </div>
+              {statusError && <p className="text-sm text-destructive">{statusError}</p>}
+            </div>
+            <div className="w-full sm:w-96 space-y-3">
+              <Input
+                type="password"
+                placeholder="sk-..."
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                disabled={savingKey}
+              />
+              <div className="flex gap-2">
+                <Button onClick={handleSaveKey} disabled={!apiKeyInput.trim() || savingKey}>
+                  Key speichern
+                </Button>
+                {keyStatus?.hasKey && (
+                  <Button variant="outline" onClick={handleDeleteKey} disabled={savingKey}>
+                    Key entfernen
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Hinweis: Der Key wird nicht im Browser angezeigt. Speichere ihn sicher für spätere Updates.
+              </p>
             </div>
           </div>
         </Card>

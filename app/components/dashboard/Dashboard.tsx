@@ -62,6 +62,7 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import Cookies from 'js-cookie';
+import { fetchOpenAIKeyStatus, type OpenAIKeyStatus } from '@/app/lib/api/openaiKeyClient';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
 const RUN_HISTORY_LIMIT = 10;
@@ -129,6 +130,9 @@ export function Dashboard({
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const selectedRun = runs.find((r) => r.id === selectedRunId);
   const hasShownNoticeRef = useRef(false);
+  const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
+  const [keyStatusLoading, setKeyStatusLoading] = useState(false);
+  const keyNoticeShownRef = useRef(false);
 
   const handleAuthFailure = useCallback(() => {
     toast.error('Sitzung erforderlich', {
@@ -137,6 +141,62 @@ export function Dashboard({
     });
     router.replace('/login?reason=unauthenticated');
   }, [router]);
+
+  const ensureOpenAIAccess = useCallback(async (): Promise<boolean> => {
+    if (keyStatusLoading) {
+      toast.info('Bitte warten', {
+        description: 'Wir prüfen deinen OpenAI-Key...',
+        id: 'openai-key-loading',
+      });
+      return false;
+    }
+
+    let status = keyStatus;
+
+    if (!status) {
+      const token = Cookies.get('__session');
+      if (!token) {
+        handleAuthFailure();
+        return false;
+      }
+
+      try {
+        setKeyStatusLoading(true);
+        status = await fetchOpenAIKeyStatus(token);
+        setKeyStatus(status);
+      } catch (err) {
+        console.error('OpenAI key status failed', err);
+        if (!keyNoticeShownRef.current) {
+          keyNoticeShownRef.current = true;
+          toast.error('OpenAI Key erforderlich', {
+            description: 'Bitte hinterlege deinen OpenAI Key im Profil, sonst können keine Läufe gestartet werden.',
+            id: 'openai-key-missing',
+          });
+        }
+        return false;
+      } finally {
+        setKeyStatusLoading(false);
+      }
+    }
+
+    if (!status) {
+      return false;
+    }
+
+    if (!status.hasKey && !status.allowPlatformKey) {
+      if (!keyNoticeShownRef.current) {
+        keyNoticeShownRef.current = true;
+        toast.error('OpenAI Key erforderlich', {
+          description: 'Füge deinen OpenAI Key im Profil hinzu, um weiterzumachen.',
+          id: 'openai-key-missing',
+        });
+      }
+      router.push('/profil');
+      return false;
+    }
+
+    return true;
+  }, [handleAuthFailure, keyStatus, keyStatusLoading, router]);
 
   const notifyServerDown = useCallback(
     (toastId = 'fastapi-down') => {
@@ -948,6 +1008,8 @@ export function Dashboard({
     async (settings: ProcessingSettings) => {
       if (!activeKapitel) return;
 
+      if (!(await ensureOpenAIAccess())) return;
+
       const assignedQuellen = quellen.filter((q) => activeKapitel.assignedQuellenIds.includes(q.id));
       if (assignedQuellen.length === 0) {
         toast.error('Keine Quellen', {
@@ -1110,7 +1172,7 @@ export function Dashboard({
         });
       }
     },
-    [activeKapitelId, activeKapitel, handleAuthFailure, handleSelectRun, notifyServerDown, quellen]
+    [activeKapitelId, activeKapitel, ensureOpenAIAccess, handleAuthFailure, handleSelectRun, notifyServerDown, quellen]
   );
 
   const handleCombineTexts = useCallback(async () => {
@@ -1118,6 +1180,8 @@ export function Dashboard({
       toast.error('Kein Run ausgewählt');
       return;
     }
+
+    if (!(await ensureOpenAIAccess())) return;
 
     const readyResults =
       selectedRun.quellenErgebnisse?.filter((r) => r.status !== 'waiting' && r.text?.trim()) || [];
@@ -1194,11 +1258,13 @@ export function Dashboard({
         id: 'combine',
       });
     }
-  }, [activeKapitelId, handleAuthFailure, notifyServerDown, selectedRun]);
+  }, [activeKapitelId, ensureOpenAIAccess, handleAuthFailure, notifyServerDown, selectedRun]);
 
   const handleShorten = useCallback(
     async (contextKapitelIds: string[], model: string) => {
       if (!activeKapitel || !selectedRun) return;
+
+      if (!(await ensureOpenAIAccess())) return;
 
       if (contextKapitelIds.length === 0) {
         toast.error('Keine Kontextkapitel ausgewählt', {
@@ -1273,7 +1339,7 @@ export function Dashboard({
         });
       }
     },
-    [activeKapitelId, activeKapitel, handleAuthFailure, notifyServerDown, selectedRun]
+    [activeKapitelId, activeKapitel, ensureOpenAIAccess, handleAuthFailure, notifyServerDown, selectedRun]
   );
 
   const handleToggleQuellenPanel = useCallback(() => {
