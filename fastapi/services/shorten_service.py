@@ -30,10 +30,12 @@ class ShortenService:
         kapitel_id: str,
     ) -> tuple[str, str, str]:
         """
-        Get the latest text for a Kapitel (shortened if exists, else combined).
+        Get the latest text for a Kapitel.
+        Priority: lesefluss > shortened > combined
 
         Returns:
-            tuple: (text_content, run_id, text_type) where text_type is 'shortened' or 'combined'
+            tuple: (text_content, run_id, text_type)
+            where text_type is 'lesefluss' | 'shortened' | 'combined'
 
         Raises:
             ValueError: If no text is found
@@ -49,17 +51,23 @@ class ShortenService:
         # Sort by createdAt (most recent first)
         sorted_runs = sorted(runs, key=lambda r: r.get('createdAt', ''), reverse=True)
 
-        # Try to find shortened text first, then combined
+        # Try to find text with priority: lesefluss > shortened > combined
         for run in sorted_runs:
             run_id = run['id']
 
-            # Check for shortened text
+            # 1. Check for lesefluss text FIRST
+            lesefluss = await firebase_service.get_lesefluss_result(user_id, kapitel_id, run_id)
+            if lesefluss and lesefluss.get('lesefluss_content'):
+                logger.info(f"Found lesefluss text for Kapitel {kapitel_id} in run {run_id}")
+                return (lesefluss['lesefluss_content'], run_id, 'lesefluss')
+
+            # 2. Check for shortened text SECOND
             shortened = await firebase_service.get_shortened_result(user_id, kapitel_id, run_id)
             if shortened and shortened.get('shortened_content'):
                 logger.info(f"Found shortened text for Kapitel {kapitel_id} in run {run_id}")
                 return (shortened['shortened_content'], run_id, 'shortened')
 
-            # Check for combined text
+            # 3. Check for combined text LAST
             combined = await firebase_service.get_combined_result(user_id, kapitel_id, run_id)
             if combined and combined.get('combined_content'):
                 logger.info(f"Found combined text for Kapitel {kapitel_id} in run {run_id}")
@@ -76,9 +84,8 @@ class ShortenService:
         """
         Check if a cached summary is still valid.
 
-        A summary is valid if:
-        1. It was created from the same run
-        2. It was created from the same text type (combined vs shortened)
+        Valid if: same run AND same text type
+        text_type can be: 'combined' | 'shortened' | 'lesefluss'
         """
         source_run_id = summary.get('source_run_id')
         source_type = summary.get('source_type')
@@ -452,6 +459,290 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
         except Exception as e:
             logger.error(
                 f"Error in shorten process for Kapitel {kapitel_id}, run {run_id}: {e}",
+                exc_info=True
+            )
+            raise
+
+    async def build_gliederung_with_descriptions(
+        self,
+        user_id: str,
+        target_kapitel_id: str,
+        context_kapitels: list[dict],
+        summaries: dict[str, str],
+    ) -> str:
+        """
+        Build the Gliederung with chapter descriptions.
+
+        Format:
+        ### Zusammenfassung Kapitel 1
+        1.1 Title
+        Summary of 1.1...
+
+        1.2 Title
+        Summary of 1.2...
+
+        ### Zusammenfassung Kapitel 2
+        ...
+
+        Args:
+            context_kapitels: List of Kapitel dicts with 'id', 'nummer', 'title'
+            summaries: Dict mapping kapitel_id to summary_content
+
+        Returns:
+            str: Formatted Gliederung text
+        """
+        lines = []
+
+        # Group kapitels by their main chapter number (e.g., "2" from "2.1.3")
+        from collections import defaultdict
+        chapters = defaultdict(list)
+
+        for kapitel in context_kapitels:
+            nummer = kapitel.get('nummer', '?')
+            # Extract main chapter (first digit/number before first dot)
+            main_chapter = nummer.split('.')[0] if '.' in nummer else nummer
+            chapters[main_chapter].append(kapitel)
+
+        # Sort main chapters
+        sorted_chapters = sorted(chapters.keys(), key=lambda x: float(x) if x.replace('.','').isdigit() else 999)
+
+        for main_chapter in sorted_chapters:
+            # Add chapter header
+            lines.append(f"### Zusammenfassung Kapitel {main_chapter}")
+            lines.append("")
+
+            # Add all kapitels in this chapter
+            for kapitel in chapters[main_chapter]:
+                kapitel_id = kapitel['id']
+                nummer = kapitel.get('nummer', '?')
+                title = kapitel.get('title', 'Untitled')
+
+                # Add the Kapitel header with description
+                lines.append(f"{nummer} {title}")
+
+                # Add the summary if available
+                if kapitel_id in summaries:
+                    lines.append(summaries[kapitel_id])
+                else:
+                    lines.append("[Keine Zusammenfassung verfügbar]")
+
+                lines.append("")  # Empty line between kapitels
+
+            lines.append("")  # Extra empty line between chapters
+
+        return "\n".join(lines)
+
+    async def improve_reading_flow(
+        self,
+        aufgabenstellung: str,
+        gliederung: str,
+        kapitel_nummer: str,
+        target_text: str,
+        model: str,
+        api_key: str | None = None
+    ) -> tuple[str, str, dict]:
+        """
+        Improve reading flow using OpenAI.
+
+        Returns:
+            tuple: (lesefluss_content, explanation, usage_dict)
+        """
+        prompt = f"""### Aufgabe
+Ich schreibe gerade meine Wissenschaftlichen Arbeit.
+Momentan sind die Texte aus den verschiedenen Unterkapiteln noch sehr "alleinstehend" was ich meine ist das in den einzelnen Unterkapitel nicht auf die Folgenden oder kommenden Kapitel eingegangen wird und der Text somit noch sehr gestückelt und keine Gesamtheit ist. Auch kommen Informationen doppelt vor oder das Thema wird unterschiedlich behandelt in verschiedenen Unterkapiteln.
+Für einen besseren Kontext für dich ist hier die Aufgabenstellung für die gesamte Arbeit:
+
+AUFGABENSTELLUNG:
+{aufgabenstellung}
+AUFGABENSTELLUNG ENDE
+
+Ich werde dir außerdem eine zusammengefasste Version der ganzen Arbeit geben. Zu jedem Unterkapitel gibt es einen am Anfang kleinen Text der beschreibt was in diesem Unterkapitel für Informationen behandelt werden. Allerdings sind die Texte zusammengefasst, da die ganze Arbeit zu lang wäre. Berücksichtige diese Information wenn die auf ein Kapitel verweist. Dies ist damit du einen besseren Kontext für die ganze Arbeit hast. Du kannst auch auf Informationen die hier bearbeitet wurden verweisen.
+Ich will von dir das du einen fließenden Text aus dem ganzen machst, dass in dem Text an dem du gerade Arbeitest auf bereits behandelte Informationen verwiesen werden kann, wenn das Sinn macht, oder das darauf verwiesen wird, das etwas noch tiefer bearbeitet werden wird in einem kommenden Kapitel. Wenn du auf ein anderes Kapitel verweißt, dann schreibe nicht „wie in 2.2 beschrieben…" sondern „wie in Kapitel 2.2 beschrieben …" also schreibe dazu das du auf das Kapitel xy verweist.
+Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das nächste Kapitel einzuweben. Schreibe nicht einfach am ende einen kurzen Absatz in dem du überleitest. Der Lesefluss soll nicht unterbrochen werden. Schreibe auch nicht "dies leitet über". Gebe dir mühe bei der Überleitung da dies den Text Charakter verleiht. Habe Spaß mit der Findung. Nutze nur die Informationen die in den Texten gegeben sind, ergänze nichts dazu, das nicht in den Texten steht.. Übernehme außerdem die angegebenen Quellen (mit Seitenzahlen, wenn Seitenzahlen in der Quelle vorhanden sind) in deinen Text. Gehe sicher, dass keine Informationen weggelassen werden. Erfinde aber auch keine zusätzlichen Kapitel oder Informationen hinzu. Was du aber machen kannst ist zusätzliche Informationen so zu nutzen das neue Schlüsse gezogen werden, gehe aber sicher diese dann immer so zu formulieren das klar wird das es sich hier um dein Gedankengut und nicht um Wissenschaftlich bewiesenes geht. Formuliere den Text ohne das du ; verwendest, außer zwischen zwei Quellen.
+Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze, zu was du verändert hast.
+
+{gliederung}
+
+### Kapitel {kapitel_nummer} (TEXT AN DEM DU ARBEITEN SOLLST)
+{target_text}
+"""
+
+        result = await openai_service.improve_reading_flow(prompt, model, api_key)
+
+        # Parse the result to extract explanation
+        # The model is instructed to write explanation at the end
+        # We need to extract it
+        lines = result[0].split('\n')
+
+        # Last non-empty lines should be the explanation (2 sentences)
+        explanation_lines = []
+        content_lines = []
+
+        # Simple heuristic: last paragraph is likely the explanation
+        # Find last empty line and take everything after
+        last_empty_idx = -1
+        for i in range(len(lines) - 1, -1, -1):
+            if lines[i].strip() == '':
+                last_empty_idx = i
+                break
+
+        if last_empty_idx > 0:
+            content_lines = lines[:last_empty_idx]
+            explanation_lines = lines[last_empty_idx + 1:]
+        else:
+            # No clear separation, keep everything as content
+            content_lines = lines
+            explanation_lines = ["Keine Erklärung gefunden."]
+
+        lesefluss_content = '\n'.join(content_lines).strip()
+        explanation = ' '.join(explanation_lines).strip()
+
+        return lesefluss_content, explanation, result[1]
+
+    async def process_lesefluss_request(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        context_kapitel_ids: list[str],
+        aufgabenstellung: str,
+        model: str,
+        api_key: str | None = None,
+        key_source: str = "backend"
+    ) -> None:
+        """
+        Main orchestration method for improving reading flow (Lese Fluss).
+
+        This method:
+        1. Gets the shortened text for the target Kapitel
+        2. Gets summaries for all context Kapitels (with caching)
+        3. Builds the Gliederung (with summaries)
+        4. Calls OpenAI with special prompt for flow improvement
+        5. Saves the result
+        """
+        try:
+            logger.info(
+                f"Starting lesefluss process for Kapitel {kapitel_id}, run {run_id}, "
+                f"with {len(context_kapitel_ids)} context Kapitels"
+            )
+
+            # Step 1: Get the target Kapitel's SHORTENED text from the specific run
+            shortened = await firebase_service.get_shortened_result(user_id, kapitel_id, run_id)
+            if not shortened or not shortened.get('shortened_content'):
+                raise ValueError(
+                    f"No shortened text found for Kapitel {kapitel_id} in run {run_id}. "
+                    f"Please shorten the text first before improving reading flow."
+                )
+
+            target_text = shortened['shortened_content']
+
+            # Get the target Kapitel's metadata
+            run_data = await firebase_service.get_kapitel_run(user_id, kapitel_id, run_id)
+            if not run_data:
+                raise ValueError(f"Run {run_id} not found for Kapitel {kapitel_id}")
+
+            kapitel_nummer = run_data.get('nummer', '?')
+
+            # Step 2: Generate/fetch summaries for context Kapitels (in parallel)
+            logger.info(f"Generating summaries for {len(context_kapitel_ids)} context Kapitels")
+
+            summary_tasks = [
+                self.get_or_create_summary(user_id, kapitel_id, run_id, ctx_id, model, api_key, key_source)
+                for ctx_id in context_kapitel_ids
+            ]
+
+            summaries_list = await asyncio.gather(*summary_tasks, return_exceptions=True)
+
+            # Build summaries dict, filtering out errors
+            summaries = {}
+            valid_context_ids = []
+            for ctx_id, summary_result in zip(context_kapitel_ids, summaries_list):
+                if isinstance(summary_result, Exception):
+                    logger.error(f"Failed to get summary for Kapitel {ctx_id}: {summary_result}")
+                else:
+                    summaries[ctx_id] = summary_result
+                    valid_context_ids.append(ctx_id)
+
+            if not summaries:
+                raise ValueError("No valid summaries could be generated for context Kapitels")
+
+            # Step 3: Get metadata for context Kapitels to build Gliederung
+            logger.info("Building Gliederung")
+
+            context_kapitels = []
+            for ctx_id in valid_context_ids:
+                metadata = await firebase_service.get_kapitel_metadata(user_id, ctx_id)
+                if metadata:
+                    context_kapitels.append(metadata)
+
+            # Sort by nummer for proper ordering
+            context_kapitels.sort(key=lambda k: k.get('nummer', ''))
+
+            gliederung = await self.build_gliederung_with_descriptions(
+                user_id, kapitel_id, context_kapitels, summaries
+            )
+
+            # Step 4: Call OpenAI to improve reading flow
+            logger.info("Improving reading flow for target Kapitel text")
+
+            lesefluss_content, explanation, usage = await self.improve_reading_flow(
+                aufgabenstellung=aufgabenstellung,
+                gliederung=gliederung,
+                kapitel_nummer=kapitel_nummer,
+                target_text=target_text,
+                model=model,
+                api_key=api_key
+            )
+
+            # Calculate cost
+            cost = calculate_cost(
+                model,
+                usage.get('prompt_tokens', 0),
+                usage.get('prompt_tokens_details', {}).get('cached_tokens', 0),
+                usage.get('completion_tokens', 0)
+            )
+
+            # Convert to cents
+            cost_cents = int(cost * 100)
+
+            # Count words
+            original_length = len(target_text.split())
+            lesefluss_length = len(lesefluss_content.split())
+
+            # Step 5: Save the lesefluss result
+            logger.info("Saving lesefluss result")
+
+            lesefluss_data = {
+                'lesefluss_content': lesefluss_content,
+                'aufgabenstellung': aufgabenstellung,
+                'explanation': explanation,
+                'original_length': original_length,
+                'lesefluss_length': lesefluss_length,
+                'used_kapitel_ids': valid_context_ids,
+                'model': model,
+                'cost': cost_cents,
+                'tokens_used': {
+                    'input': usage.get('prompt_tokens', 0),
+                    'cached_input': usage.get('prompt_tokens_details', {}).get('cached_tokens', 0),
+                    'output': usage.get('completion_tokens', 0),
+                },
+                'created_at': datetime.utcnow().isoformat() + 'Z',
+                'key_source': key_source,
+            }
+
+            await firebase_service.save_lesefluss_result(
+                user_id, kapitel_id, run_id, lesefluss_data
+            )
+
+            logger.info(
+                f"Lesefluss process complete for Kapitel {kapitel_id}: "
+                f"{original_length} -> {lesefluss_length} words, "
+                f"cost: ${cost:.4f}"
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Error in lesefluss process for Kapitel {kapitel_id}, run {run_id}: {e}",
                 exc_info=True
             )
             raise

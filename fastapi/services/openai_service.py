@@ -9,6 +9,8 @@ SUMMARIZE_SYSTEM_MESSAGE = (
 )
 SHORTEN_SYSTEM_MESSAGE = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
 
+LESEFLUSS_SYSTEM_MESSAGE = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+
 NO_CONTENT_SENTINEL = "NO_CONTENT"
 
 
@@ -456,6 +458,87 @@ class OpenAIService:
 
         except Exception as e:
             logger.error(f"OpenAI shortening error: {str(e)}")
+            raise
+
+    async def improve_reading_flow(
+        self,
+        prompt: str,
+        model: str,
+        api_key: str | None = None
+    ) -> tuple[str, dict]:
+        "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+        try:
+            client = self._get_client(api_key)
+            logger.info(f"Improving reading flow with model {model}")
+
+            response = await client.responses.create(
+                model=model,
+                input=[
+                    {
+                        "role": "system",
+                        "content": LESEFLUSS_SYSTEM_MESSAGE,
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                reasoning={"effort": "high"},  # High effort for narrative quality
+                max_output_tokens=None,
+            )
+
+            result_text = None
+            if hasattr(response, "output_text") and response.output_text is not None:
+                result_text = response.output_text
+            elif hasattr(response, "output") and response.output:
+                try:
+                    result_text = response.output[0].content[0].text
+                except Exception:
+                    pass
+
+            if not result_text:
+                raise ValueError("No text output returned from OpenAI response")
+
+            usage = getattr(response, "usage", None)
+            input_tokens = (
+                getattr(usage, "input_tokens", None)
+                or getattr(usage, "prompt_tokens", 0)
+                or 0
+            )
+            output_tokens = (
+                getattr(usage, "output_tokens", None)
+                or getattr(usage, "completion_tokens", 0)
+                or 0
+            )
+
+            cached_input_tokens = 0
+            input_details = getattr(usage, "input_tokens_details", None)
+            if input_details:
+                cached_input_tokens = getattr(input_details, "cached_tokens", 0) or 0
+
+            reasoning_tokens = 0
+            completion_details = getattr(usage, "completion_tokens_details", None)
+            if completion_details:
+                reasoning_tokens = (
+                    getattr(completion_details, "reasoning_tokens", 0) or 0
+                )
+
+            tokens_used = input_tokens + output_tokens + reasoning_tokens
+
+            logger.info(
+                f"Reading flow improvement complete. "
+                f"Input: {input_tokens} (cached: {cached_input_tokens}), "
+                f"Output: {output_tokens}, Total: {tokens_used} tokens"
+            )
+
+            # Return content and usage dict
+            usage_dict = {
+                'prompt_tokens': input_tokens,
+                'prompt_tokens_details': {'cached_tokens': cached_input_tokens},
+                'completion_tokens': output_tokens,
+            }
+
+            return result_text, usage_dict
+
+        except Exception as e:
+            logger.error(f"OpenAI reading flow improvement error: {str(e)}")
             raise
 
 # Create singleton instance

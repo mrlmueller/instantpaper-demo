@@ -65,3 +65,35 @@ class ShortenKapitelRequest(BaseModel):
                 "model": "gpt-5-nano"
             }
         }
+
+
+class LeseflussKapitelRequest(BaseModel):
+    """Request model for improving reading flow (Lese Fluss) of a Kapitel text"""
+
+    kapitel_id: str = Field(..., description="ID of the Kapitel to improve reading flow for")
+    run_id: str = Field(..., description="Run ID that contains the shortened text")
+    context_kapitel_ids: list[str] = Field(
+        ...,
+        description="IDs of other Kapitels to use for context (will be summarized)",
+        min_length=1
+    )
+    aufgabenstellung: str = Field(
+        ...,
+        description="Task description for the entire paper",
+        min_length=10
+    )
+    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.1"] = Field(
+        default="gpt-5-nano",
+        description="OpenAI model to use for improving reading flow"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "kapitel_id": "kap123",
+                "run_id": "run456",
+                "context_kapitel_ids": ["kap789", "kap012", "kap345"],
+                "aufgabenstellung": "Analyse der Auswirkungen von KI auf die Arbeitswelt",
+                "model": "gpt-5-nano"
+            }
+        }

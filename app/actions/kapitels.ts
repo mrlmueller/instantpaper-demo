@@ -107,6 +107,24 @@ export type SummaryResult = {
   createdAt: string;
 };
 
+export type LeseflussResult = {
+  id: string;
+  leseflussContent: string;
+  aufgabenstellung: string;
+  explanation: string;
+  originalLength: number;
+  leseflussLength: number;
+  usedKapitelIds: string[];
+  model: string;
+  cost: number;
+  tokensUsed: {
+    input: number;
+    cachedInput: number;
+    output: number;
+  };
+  createdAt: string;
+};
+
 export type KapitelRun = {
   id: string;
   index: number;
@@ -117,6 +135,7 @@ export type KapitelRun = {
   combined?: CombinedResult | null;
   intermediateGroups?: IntermediateGroupResult[];
   shortened?: ShortenedResult | null;
+  lesefluss?: LeseflussResult | null;
   summaries?: SummaryResult[];
   promptTemplateId?: string;
   promptPayload?: Record<string, any>;
@@ -604,6 +623,40 @@ export async function getKapitelRuns(
         };
       }
 
+      // Fetch lesefluss result (single doc named 'lesefluss' if it exists)
+      const leseflussRef = collection(
+        db,
+        'users',
+        user.uid,
+        'kapitels',
+        kapitelId,
+        'runs',
+        runDoc.id,
+        'lesefluss'
+      );
+      const leseflussSnapshot = await getDocs(leseflussRef);
+      let lesefluss: LeseflussResult | null = null;
+      if (!leseflussSnapshot.empty) {
+        const doc = leseflussSnapshot.docs[0];
+        const l = doc.data();
+        lesefluss = {
+          id: doc.id,
+          leseflussContent: l.lesefluss_content ?? l.leseflussContent ?? '',
+          aufgabenstellung: l.aufgabenstellung ?? '',
+          explanation: l.explanation ?? '',
+          originalLength: l.original_length ?? l.originalLength ?? 0,
+          leseflussLength: l.lesefluss_length ?? l.leseflussLength ?? 0,
+          usedKapitelIds: l.used_kapitel_ids ?? l.usedKapitelIds ?? [],
+          model: l.model ?? '',
+          cost: l.cost ?? 0,
+          tokensUsed: l.tokens_used ?? l.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
+          createdAt:
+            l.created_at?.toDate?.()?.toISOString() ||
+            l.createdAt?.toDate?.()?.toISOString() ||
+            new Date().toISOString(),
+        };
+      }
+
       // Fetch intermediate groups
       const intermediateGroupsRef = collection(
         db,
@@ -695,6 +748,7 @@ export async function getKapitelRuns(
         combined,
         intermediateGroups: intermediateGroups.length > 0 ? intermediateGroups : undefined,
         shortened: shortened ?? undefined,
+        lesefluss: lesefluss ?? undefined,
       });
     }
 
@@ -819,6 +873,76 @@ export async function createShortenRun(
   } catch (error: any) {
     console.error('Error creating shorten run:', error);
     return { success: false, error: error?.message || 'Failed to create shorten run' };
+  }
+}
+
+export async function createLeseflussRun(
+  kapitelId: string,
+  runId: string,
+  contextKapitelIds: string[],
+  aufgabenstellung: string,
+  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.1' = 'gpt-5-nano'
+) {
+  const user = await requireAuth();
+
+  try {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('__session')?.value;
+
+    if (!authToken) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/lesefluss`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+          context_kapitel_ids: contextKapitelIds,
+          aufgabenstellung: aufgabenstellung,
+          model: model,
+        }),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem – bitte später erneut versuchen.',
+      };
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    if (response.status >= 500) {
+      return {
+        success: false,
+        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir – versuche es später erneut.',
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: errorText || 'Lese Fluss verbessern konnte nicht gestartet werden.' };
+    }
+
+    const result = await response.json();
+    console.log('Lesefluss queued:', result);
+
+    revalidatePath('/dashboard');
+
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('Error creating lesefluss run:', error);
+    return { success: false, error: error?.message || 'Failed to create lesefluss run' };
   }
 }
 

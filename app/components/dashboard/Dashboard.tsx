@@ -9,6 +9,7 @@ import { QuellenPanel } from './QuellenPanel';
 import { TextViewerModal } from './TextViewerModal';
 import { ProcessingDialog } from './ProcessingDialog';
 import { ShortenDialog } from './ShortenDialog';
+import { LeseflussDialog } from './LeseflussDialog';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import { QuellenPanelSkeleton } from './QuellenPanelSkeleton';
@@ -37,6 +38,7 @@ import {
   updateKapitelTitle,
   createKapitelRun,
   createShortenRun,
+  createLeseflussRun,
   getKapitelRuns,
   getUserKapitels,
   type KapitelRun as FirebaseKapitelRun,
@@ -235,6 +237,7 @@ export function Dashboard({
   } | null>(null);
   const [processingDialogOpen, setProcessingDialogOpen] = useState(false);
   const [shortenDialogOpen, setShortenDialogOpen] = useState(false);
+  const [leseflussDialogOpen, setLeseflussDialogOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     type: 'quelle' | 'kapitel' | 'projekt';
     id: string;
@@ -513,6 +516,44 @@ export function Dashboard({
       if (hasData) finishIfNeeded();
     });
 
+    const leseflussRef = collection(
+      db,
+      'users',
+      user.uid,
+      'kapitels',
+      activeKapitelId,
+      'runs',
+      selectedRunId,
+      'lesefluss'
+    );
+
+    const leseflussUnsub = onSnapshot(leseflussRef, (leseflussSnap) => {
+      let lesefluss: any = null;
+      if (!leseflussSnap.empty) {
+        const doc = leseflussSnap.docs[0];
+        const data: any = doc.data();
+        lesefluss = {
+          id: doc.id,
+          leseflussContent: data.lesefluss_content ?? data.leseflussContent ?? '',
+          aufgabenstellung: data.aufgabenstellung ?? '',
+          explanation: data.explanation ?? '',
+          originalLength: data.original_length ?? data.originalLength ?? 0,
+          leseflussLength: data.lesefluss_length ?? data.leseflussLength ?? 0,
+          usedKapitelIds: data.used_kapitel_ids ?? data.usedKapitelIds ?? [],
+          model: data.model ?? '',
+          cost: data.cost ?? 0,
+          tokensUsed: data.tokens_used ?? data.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
+          createdAt:
+            data.created_at?.toDate?.()?.toISOString() ||
+            data.createdAt?.toDate?.()?.toISOString() ||
+            new Date().toISOString(),
+        };
+      }
+      updateRunPartial({ lesefluss });
+      hasData = hasData || !!lesefluss;
+      if (hasData) finishIfNeeded();
+    });
+
     const resultsUnsub = onSnapshot(resultsRef, (resSnapshot) => {
       const results = resSnapshot.docs.map((resDoc) => {
         const resData: any = resDoc.data();
@@ -545,6 +586,7 @@ export function Dashboard({
     return () => {
       combinedUnsub();
       shortenedUnsub();
+      leseflussUnsub();
       resultsUnsub();
     };
   }, [user?.uid, activeKapitelId, selectedRunId]);
@@ -1342,6 +1384,89 @@ export function Dashboard({
     [activeKapitelId, activeKapitel, ensureOpenAIAccess, handleAuthFailure, notifyServerDown, selectedRun]
   );
 
+  const handleLesefluss = useCallback(
+    async (contextKapitelIds: string[], aufgabenstellung: string, model: string) => {
+      if (!activeKapitel || !selectedRun) return;
+
+      if (!(await ensureOpenAIAccess())) return;
+
+      if (contextKapitelIds.length === 0) {
+        toast.error('Keine Kontextkapitel ausgewählt', {
+          description: 'Wähle mindestens ein Kapitel als Kontext aus.',
+        });
+        return;
+      }
+
+      toast.loading('Lese Fluss wird verbessert', {
+        description: 'Der Text wird nun mit verbessertem Lesefluss erstellt...',
+        id: 'lesefluss',
+      });
+
+      try {
+        const result = await createLeseflussRun(
+          activeKapitelId,
+          selectedRun.id,
+          contextKapitelIds,
+          aufgabenstellung,
+          model as 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.1'
+        );
+
+        if (!result?.success) {
+          const message = result?.error || 'Lese Fluss verbessern konnte nicht gestartet werden.';
+          const lower = message.toLowerCase();
+
+          if (lower.includes('sitzung')) {
+            toast.error('Lese Fluss abgebrochen', {
+              description: message,
+              id: 'lesefluss',
+            });
+            handleAuthFailure();
+            return;
+          }
+
+          if (lower.includes('fastapi-server')) {
+            notifyServerDown('lesefluss');
+            return;
+          }
+
+          toast.error('Lese Fluss fehlgeschlagen', {
+            description: message,
+            id: 'lesefluss',
+          });
+          return;
+        }
+
+        toast.success('Lese Fluss gestartet', {
+          description: 'Der Text wird nun mit verbessertem Lesefluss erstellt.',
+          id: 'lesefluss',
+        });
+      } catch (err: any) {
+        console.error('Fehler beim Lese Fluss:', err);
+        const message = err?.message || 'Unbekannter Fehler beim Lese Fluss';
+
+        if (message.toLowerCase().includes('sitzung')) {
+          toast.error('Lese Fluss abgebrochen', {
+            description: message,
+            id: 'lesefluss',
+          });
+          handleAuthFailure();
+          return;
+        }
+
+        if (message.toLowerCase().includes('fastapi-server')) {
+          notifyServerDown('lesefluss');
+          return;
+        }
+
+        toast.error('Lese Fluss fehlgeschlagen', {
+          description: message,
+          id: 'lesefluss',
+        });
+      }
+    },
+    [activeKapitelId, activeKapitel, ensureOpenAIAccess, handleAuthFailure, notifyServerDown, selectedRun]
+  );
+
   const handleToggleQuellenPanel = useCallback(() => {
     if (!showQuellenPanel) {
       setIsQuellenLoading(true);
@@ -1405,6 +1530,7 @@ export function Dashboard({
                 onCombineTexts={handleCombineTexts}
                 onToggleQuellenPanel={handleToggleQuellenPanel}
                 onOpenShorten={() => setShortenDialogOpen(true)}
+                onOpenLesefluss={() => setLeseflussDialogOpen(true)}
               />
             )
           ) : (
@@ -1454,6 +1580,17 @@ export function Dashboard({
           selectedRun={selectedRun}
           allKapitels={kapiteln}
           onShorten={handleShorten}
+        />
+      )}
+
+      {activeKapitel && (
+        <LeseflussDialog
+          open={leseflussDialogOpen}
+          onOpenChange={setLeseflussDialogOpen}
+          kapitel={activeKapitel}
+          selectedRun={selectedRun}
+          allKapitels={kapiteln}
+          onLesefluss={handleLesefluss}
         />
       )}
 
