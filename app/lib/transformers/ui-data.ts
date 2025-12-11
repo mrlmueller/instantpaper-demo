@@ -1,21 +1,21 @@
 // Data Transformers
 // Convert between Firebase data structures and UI types
 
-import type { Quelle as FirebaseQuelle } from '@/app/actions/quellen';
+import type { Quelle as FirebaseQuelle } from "@/app/actions/quellen";
 import type {
   Kapitel as FirebaseKapitel,
   KapitelRun as FirebaseKapitelRun,
   KapitelRunResult as FirebaseKapitelRunResult,
   CombinedResult as FirebaseCombinedResult,
   IntermediateGroupResult as FirebaseIntermediateGroupResult,
-} from '@/app/actions/kapitels';
+} from "@/app/actions/kapitels";
 import type {
   Quelle as UIQuelle,
   Kapitel as UIKapitel,
   Run as UIRun,
   QuellenErgebnis as UIQuellenErgebnis,
   IntermediateGroup as UIIntermediateGroup,
-} from '@/app/types/ui';
+} from "@/app/types/ui";
 
 /**
  * Transform Firebase Quelle to UI Quelle
@@ -138,9 +138,10 @@ export function transformRunToUI(
   });
 
   // Transform intermediate groups if they exist
-  const intermediateGroups: UIIntermediateGroup[] | undefined = fbRun.intermediateGroups
-    ? fbRun.intermediateGroups.map(transformIntermediateGroupToUI)
-    : undefined;
+  const intermediateGroups: UIIntermediateGroup[] | undefined =
+    fbRun.intermediateGroups
+      ? fbRun.intermediateGroups.map(transformIntermediateGroupToUI)
+      : undefined;
 
   // Calculate total costs in cents
   const quellenCost = quellenErgebnisse.reduce((sum, r) => sum + r.cost, 0);
@@ -166,7 +167,8 @@ export function transformRunToUI(
     status,
     model: fbRun.model || "",
     ueberschrift: (fbRun as any).ueberschrift || fbRun.combined?.heading || "",
-    thema: (fbRun as any).thema || fbRun.instruction || fbRun.combined?.topic || "",
+    thema:
+      (fbRun as any).thema || fbRun.instruction || fbRun.combined?.topic || "",
     combinedText: fbRun.combined?.combinedContent || "",
     quellenErgebnisse,
     quellenCost,
@@ -177,6 +179,14 @@ export function transformRunToUI(
     shortenedOriginalLength: fbRun.shortened?.originalLength,
     shortenedLength: fbRun.shortened?.shortenedLength,
     explanation: fbRun.shortened?.explanation,
+    leseflussText: fbRun.lesefluss?.leseflussContent || null,
+    leseflussExplanation: fbRun.lesefluss?.explanation,
+    leseflussAufgabenstellung: fbRun.lesefluss?.aufgabenstellung,
+    leseflussOriginalLength: fbRun.lesefluss?.originalLength,
+    leseflussLength: fbRun.lesefluss?.leseflussLength,
+    leseflussCost: fbRun.lesefluss
+      ? Math.round((fbRun.lesefluss.cost || 0) * 100)
+      : undefined,
   };
 }
 

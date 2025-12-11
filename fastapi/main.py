@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from utils.config import config
 from middleware.auth import verify_firebase_token
-from models.request import ProcessQuelleRequest, CombineRunRequest, ShortenKapitelRequest
+from models.request import ProcessQuelleRequest, CombineRunRequest, ShortenKapitelRequest, LeseflussKapitelRequest
 from models.response import ProcessQuelleResponse
 from services.quelle_service import quelle_service
 from services.shorten_service import shorten_service
@@ -247,6 +247,68 @@ async def shorten_kapitel(
         "run_id": request.run_id,
         "queued_at": datetime.utcnow().isoformat() + "Z",
     }
+
+
+@app.post("/api/lesefluss", status_code=status.HTTP_202_ACCEPTED)
+async def improve_lesefluss(
+    request: LeseflussKapitelRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Improve reading flow (Lese Fluss) for a Kapitel.
+
+    Requirements:
+    - Kapitel must have shortened text
+    - Context kapitels must have shortened text
+    - Aufgabenstellung (task description) required
+
+    Queues background task and returns immediately.
+    """
+    try:
+        logger.info(
+            f"Received lesefluss request for kapitel {request.kapitel_id}, "
+            f"run {request.run_id}, user {user_id}"
+        )
+
+        # Resolve API key (user key or platform key)
+        api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+
+        # Queue the lesefluss process as a background task
+        async def _run_lesefluss_process() -> None:
+            try:
+                await shorten_service.process_lesefluss_request(
+                    user_id=user_id,
+                    kapitel_id=request.kapitel_id,
+                    run_id=request.run_id,
+                    context_kapitel_ids=request.context_kapitel_ids,
+                    aufgabenstellung=request.aufgabenstellung,
+                    model=request.model,
+                    api_key=api_key,
+                    key_source=key_source,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Background lesefluss failed for Kapitel {request.kapitel_id} "
+                    f"(run {request.run_id}, user {user_id}): {e}",
+                    exc_info=True,
+                )
+
+        background_tasks.add_task(_run_lesefluss_process)
+
+        return {
+            "status": "queued",
+            "kapitel_id": request.kapitel_id,
+            "run_id": request.run_id,
+            "queued_at": datetime.utcnow().isoformat() + "Z",
+        }
+
+    except Exception as e:
+        logger.error(f"Error queueing lesefluss request: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to queue lesefluss request: {str(e)}",
+        )
 
 
 if __name__ == "__main__":

@@ -126,6 +126,13 @@ service cloud.firestore {
           allow create: if isAuthenticated() && isOwner(userId);
           allow update, delete: if isAuthenticated() && isOwner(userId);
         }
+
+        // Lesefluss results under each run
+        match /lesefluss/{leseflussId} {
+          allow read: if isAuthenticated() && isOwner(userId);
+          allow create: if isAuthenticated() && isOwner(userId);
+          allow update, delete: if isAuthenticated() && isOwner(userId);
+        }
       }
     }
 

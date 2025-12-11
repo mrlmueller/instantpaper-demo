@@ -73,6 +73,12 @@ export interface Run {
     preservedFocus: string[];
     compressionNotes: string;
   };
+  leseflussText?: string | null;
+  leseflussExplanation?: string;
+  leseflussAufgabenstellung?: string;
+  leseflussOriginalLength?: number;
+  leseflussLength?: number;
+  leseflussCost?: number;
 }
 
 export interface ProcessingSettings {

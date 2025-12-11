@@ -537,6 +537,60 @@ class FirebaseService:
             logger.error(f"Error saving shortened result: {str(e)}")
             raise
 
+    async def get_lesefluss_result(
+        self, user_id: str, kapitel_id: str, run_id: str
+    ) -> dict | None:
+        """Get lesefluss result for a specific run."""
+        try:
+            doc_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('lesefluss')
+                .document('lesefluss')
+            )
+
+            doc = doc_ref.get()
+            if doc.exists:
+                data = doc.to_dict()
+                data['id'] = doc.id
+                return data
+            return None
+        except Exception as e:
+            logger.error(f"Error getting lesefluss result: {e}")
+            return None
+
+    async def save_lesefluss_result(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        lesefluss_data: dict
+    ) -> None:
+        """Save lesefluss result to Firestore."""
+        try:
+            doc_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('lesefluss')
+                .document('lesefluss')
+            )
+
+            doc_ref.set(lesefluss_data)
+            logger.info(
+                f"Saved lesefluss result for kapitel {kapitel_id}, run {run_id}"
+            )
+        except Exception as e:
+            logger.error(f"Error saving lesefluss result: {e}")
+            raise
+
     async def get_summary_result(
         self,
         user_id: str,
