@@ -67,6 +67,20 @@ Get your API key from https://platform.openai.com/api-keys
 OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxx
 ```
 
+#### User key encryption
+Base64-encoded AES key used to encrypt per-user OpenAI keys. Generate one (32 bytes recommended) and keep it secret.
+
+```bash
+python - <<'PY'
+import base64, os
+print(base64.b64encode(os.urandom(32)).decode())
+PY
+```
+
+```env
+USER_KEY_ENCRYPTION_KEY=base64-encoded-aes-key
+```
+
 #### Server Configuration
 
 ```env
