@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { onAuthStateChange } from '@/app/lib/firebase/auth';
 import type { User, AuthContextType } from '@/app/types/auth';
 
@@ -9,6 +10,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChange((firebaseUser) => {
@@ -28,6 +31,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user && pathname !== '/login') {
+      router.replace('/login');
+    }
+  }, [loading, user, pathname, router]);
 
   return (
     <AuthContext.Provider value={{ user, loading }}>

@@ -748,32 +748,53 @@ export async function createShortenRun(
   const user = await requireAuth();
 
   try {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+
     // Get the auth token from session cookie
     const cookieStore = await cookies();
     const authToken = cookieStore.get('__session')?.value;
 
     if (!authToken) {
-      throw new Error('Authentication token not found');
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
     }
 
     // Call the FastAPI endpoint
-    const response = await fetch('http://localhost:8000/api/shorten', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        kapitel_id: kapitelId,
-        run_id: runId,
-        context_kapitel_ids: contextKapitelIds,
-        model: model,
-      }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/shorten`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+          context_kapitel_ids: contextKapitelIds,
+          model: model,
+        }),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem – bitte später erneut versuchen.',
+      };
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    if (response.status >= 500) {
+      return {
+        success: false,
+        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir – versuche es später erneut.',
+      };
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to start shortening: ${response.status} ${errorText}`);
+      return { success: false, error: errorText || 'Kürzen konnte nicht gestartet werden.' };
     }
 
     const result = await response.json();
@@ -785,7 +806,7 @@ export async function createShortenRun(
     return { success: true, data: result };
   } catch (error: any) {
     console.error('Error creating shorten run:', error);
-    throw new Error(`Failed to create shorten run: ${error.message}`);
+    return { success: false, error: error?.message || 'Failed to create shorten run' };
   }
 }
 

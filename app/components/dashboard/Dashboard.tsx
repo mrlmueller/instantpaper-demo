@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { KapitelNavigator } from './KapitelNavigator';
 import { KapitelWorkspace } from './KapitelWorkspace';
 import { ProjektHeader } from './ProjektHeader';
@@ -81,6 +82,8 @@ export function Dashboard({
   initialProjekte,
   initialRuns = [],
 }: DashboardProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   // Start with skeleton to avoid empty flash before data appears
   const [isLoading, setIsLoading] = useState(true);
@@ -125,6 +128,41 @@ export function Dashboard({
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const selectedRun = runs.find((r) => r.id === selectedRunId);
+  const hasShownNoticeRef = useRef(false);
+
+  const handleAuthFailure = useCallback(() => {
+    toast.error('Sitzung erforderlich', {
+      description: 'Bitte melde dich erneut an.',
+      id: 'auth-required',
+    });
+    router.replace('/login?reason=unauthenticated');
+  }, [router]);
+
+  const notifyServerDown = useCallback(
+    (toastId = 'fastapi-down') => {
+      toast.error('Server nicht erreichbar', {
+        description:
+          'Der FastAPI-Server antwortet aktuell nicht. Das ist ein Server-Problem – du kannst nichts tun außer es später erneut zu versuchen.',
+        id: toastId,
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (hasShownNoticeRef.current) return;
+    const notice = searchParams.get('notice');
+    if (!notice) return;
+    hasShownNoticeRef.current = true;
+
+    if (notice === 'already-authenticated') {
+      toast.info('Bereits angemeldet', {
+        description: 'Du bist bereits eingeloggt.',
+      });
+      router.replace('/dashboard');
+    }
+  }, [router, searchParams]);
+
   const handleSelectRun = useCallback((id: string) => {
     setIsKapitelLoading(true);
     setSelectedRunId(id);
@@ -919,9 +957,7 @@ export function Dashboard({
 
       const token = Cookies.get('__session');
       if (!token) {
-        toast.error('Authentifizierung erforderlich', {
-          description: 'Bitte melde dich erneut an.',
-        });
+        handleAuthFailure();
         return;
       }
 
@@ -980,8 +1016,11 @@ export function Dashboard({
         const queue = [...assignedQuellen];
         const concurrency = Math.min(3, queue.length || 1);
 
+        let authFailed = false;
+        let serverUnavailable = false;
+
         const worker = async () => {
-          while (queue.length > 0) {
+          while (queue.length > 0 && !authFailed && !serverUnavailable) {
             const nextQuelle = queue.shift();
             if (!nextQuelle) return;
             try {
@@ -1001,11 +1040,45 @@ export function Dashboard({
               });
 
               if (!response.ok) {
-                const error = await response.json().catch(() => ({}));
-                throw new Error(error.detail || 'Fehler beim Verarbeiten');
+                if (response.status === 401) {
+                  authFailed = true;
+                  queue.length = 0;
+                  toast.error('Verarbeitung abgebrochen', {
+                    description: 'Bitte melde dich erneut an.',
+                    id: 'processing',
+                  });
+                  handleAuthFailure();
+                  return;
+                }
+
+                const errorBody = await response.json().catch(() => ({}));
+                const error: any = new Error(errorBody.detail || 'Fehler beim Verarbeiten');
+                error.status = response.status;
+                throw error;
               }
             } catch (err: any) {
-              console.error(`Error processing Quelle ${nextQuelle.id}:`, err);
+              if (authFailed || serverUnavailable) return;
+
+              const status = err?.status;
+              if (status === 401) {
+                authFailed = true;
+                queue.length = 0;
+                toast.error('Verarbeitung abgebrochen', {
+                  description: 'Bitte melde dich erneut an.',
+                  id: 'processing',
+                });
+                handleAuthFailure();
+                return;
+              }
+
+              if (err instanceof TypeError || (typeof status === 'number' && status >= 500)) {
+                serverUnavailable = true;
+                queue.length = 0;
+                notifyServerDown('processing');
+                return;
+              }
+
+              console.error(`Error processing Quelle ${nextQuelle?.id}:`, err);
               toast.error('Fehler bei einer Quelle', {
                 description: err.message || 'Unbekannter Fehler beim Verarbeiten der Quelle',
               });
@@ -1014,6 +1087,10 @@ export function Dashboard({
         };
 
         await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+        if (authFailed || serverUnavailable) {
+          return;
+        }
 
         toast.success('Run erstellt', {
           description: 'Die Verarbeitung wurde gestartet...',
@@ -1027,7 +1104,7 @@ export function Dashboard({
         });
       }
     },
-    [activeKapitelId, activeKapitel, quellen]
+    [activeKapitelId, activeKapitel, handleAuthFailure, handleSelectRun, notifyServerDown, quellen]
   );
 
   const handleCombineTexts = useCallback(async () => {
@@ -1047,9 +1124,7 @@ export function Dashboard({
 
     const token = Cookies.get('__session');
     if (!token) {
-      toast.error('Authentifizierung erforderlich', {
-        description: 'Bitte melde dich erneut an.',
-      });
+      handleAuthFailure();
       return;
     }
 
@@ -1072,8 +1147,24 @@ export function Dashboard({
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          toast.error('Kombination abgebrochen', {
+            description: 'Bitte melde dich erneut an.',
+            id: 'combine',
+          });
+          handleAuthFailure();
+          return;
+        }
+
+        if (response.status >= 500) {
+          notifyServerDown('combine');
+          return;
+        }
+
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.detail || 'Fehler beim Kombinieren');
+        const err: any = new Error(error.detail || 'Fehler beim Kombinieren');
+        err.status = response.status;
+        throw err;
       }
 
       toast.success('Kombination gestartet', {
@@ -1081,13 +1172,23 @@ export function Dashboard({
         id: 'combine',
       });
     } catch (err: any) {
+      if (err instanceof TypeError) {
+        notifyServerDown('combine');
+        return;
+      }
+
+      if (err?.status === 401) {
+        handleAuthFailure();
+        return;
+      }
+
       console.error('Fehler beim Kombinieren:', err);
       toast.error('Combine fehlgeschlagen', {
         description: err.message || 'Unbekannter Fehler beim Kombinieren',
         id: 'combine',
       });
     }
-  }, [activeKapitelId, selectedRun]);
+  }, [activeKapitelId, handleAuthFailure, notifyServerDown, selectedRun]);
 
   const handleShorten = useCallback(
     async (contextKapitelIds: string[], model: string) => {
@@ -1106,12 +1207,37 @@ export function Dashboard({
       });
 
       try {
-        await createShortenRun(
+        const result = await createShortenRun(
           activeKapitelId,
           selectedRun.id,
           contextKapitelIds,
           model as 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.1'
         );
+
+        if (!result?.success) {
+          const message = result?.error || 'Kürzung konnte nicht gestartet werden.';
+          const lower = message.toLowerCase();
+
+          if (lower.includes('sitzung')) {
+            toast.error('Kürzung abgebrochen', {
+              description: message,
+              id: 'shortening',
+            });
+            handleAuthFailure();
+            return;
+          }
+
+          if (lower.includes('fastapi-server')) {
+            notifyServerDown('shortening');
+            return;
+          }
+
+          toast.error('Kürzung fehlgeschlagen', {
+            description: message,
+            id: 'shortening',
+          });
+          return;
+        }
 
         toast.success('Kürzung gestartet', {
           description: 'Der Text wird nun gekürzt und entdupliziert.',
@@ -1119,13 +1245,29 @@ export function Dashboard({
         });
       } catch (err: any) {
         console.error('Fehler beim Kürzen:', err);
+        const message = err?.message || 'Unbekannter Fehler beim Kürzen';
+
+        if (message.toLowerCase().includes('sitzung')) {
+          toast.error('Kürzung abgebrochen', {
+            description: message,
+            id: 'shortening',
+          });
+          handleAuthFailure();
+          return;
+        }
+
+        if (message.toLowerCase().includes('fastapi-server')) {
+          notifyServerDown('shortening');
+          return;
+        }
+
         toast.error('Kürzung fehlgeschlagen', {
-          description: err.message || 'Unbekannter Fehler beim Kürzen',
+          description: message,
           id: 'shortening',
         });
       }
     },
-    [activeKapitelId, activeKapitel, selectedRun]
+    [activeKapitelId, activeKapitel, handleAuthFailure, notifyServerDown, selectedRun]
   );
 
   const handleToggleQuellenPanel = useCallback(() => {

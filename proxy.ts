@@ -8,14 +8,19 @@ export async function proxy(request: NextRequest) {
   const isPublicRoute = publicRoutes.some((route) =>
     pathname.startsWith(route)
   );
+  const token = request.cookies.get("__session")?.value;
+
+  // If user is already authenticated, keep them away from the login page
+  if (token && pathname.startsWith("/login")) {
+    const dashboardUrl = new URL("/dashboard", request.url);
+    return NextResponse.redirect(dashboardUrl);
+  }
 
   if (isPublicRoute) {
     return NextResponse.next();
   }
 
   // Check for auth token cookie
-  const token = request.cookies.get("__session")?.value;
-
   if (!token) {
     // Redirect to login if no token
     const loginUrl = new URL("/login", request.url);
