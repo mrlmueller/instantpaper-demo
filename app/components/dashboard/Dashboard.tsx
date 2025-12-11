@@ -233,6 +233,7 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
               autoCombine: data.autoCombine ?? false,
               results: existing?.results || [],
               combined: existing?.combined || null,
+              shortened: existing?.shortened || null,
               ueberschrift: data.ueberschrift || existing?.ueberschrift || '',
               thema: data.thema || data.instruction || existing?.thema || '',
             } as FirebaseKapitelRun;
@@ -319,6 +320,44 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
             );
           });
           runLevelUnsubs.push(combinedUnsub);
+
+          // Listen for shortened results
+          const shortenedRef = collection(
+            db,
+            'users',
+            user.uid,
+            'kapitels',
+            activeKapitelId,
+            'runs',
+            runDoc.id,
+            'shortened'
+          );
+          const shortenedUnsub = onSnapshot(shortenedRef, (shortenedSnap) => {
+            let shortened: any = null;
+            if (!shortenedSnap.empty) {
+              const doc = shortenedSnap.docs[0];
+              const data: any = doc.data();
+              shortened = {
+                id: doc.id,
+                shortenedContent: data.shortened_content ?? data.shortenedContent ?? '',
+                originalLength: data.original_length ?? data.originalLength ?? 0,
+                shortenedLength: data.shortened_length ?? data.shortenedLength ?? 0,
+                usedKapitelIds: data.used_kapitel_ids ?? data.usedKapitelIds ?? [],
+                model: data.model ?? '',
+                cost: data.cost ?? 0,
+                tokensUsed: data.tokens_used ?? data.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
+                createdAt:
+                  data.created_at?.toDate?.()?.toISOString() ||
+                  data.createdAt?.toDate?.()?.toISOString() ||
+                  new Date().toISOString(),
+              };
+            }
+
+            setFbRuns((prev) =>
+              prev.map((run) => (run.id === runDoc.id ? { ...run, shortened } : run))
+            );
+          });
+          runLevelUnsubs.push(shortenedUnsub);
         });
       },
       (error) => {
@@ -932,6 +971,7 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
               assignedQuellen={assignedQuellen}
               runs={runs}
               selectedRun={selectedRun}
+              allKapitels={kapiteln}
               onSelectRun={setSelectedRunId}
               onOpenTextViewer={setTextViewerContent}
               onOpenProcessing={() => setProcessingDialogOpen(true)}

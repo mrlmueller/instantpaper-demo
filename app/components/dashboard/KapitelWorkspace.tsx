@@ -21,15 +21,17 @@ import {
   Scissors,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import type { Kapitel, Quelle, Run } from "@/app/types/ui"
+import { getSummaries, type SummaryResult } from "@/app/actions/kapitels"
 
 interface KapitelWorkspaceProps {
   kapitel: Kapitel
   assignedQuellen: Quelle[]
   runs: Run[]
   selectedRun: Run | undefined
+  allKapitels: Kapitel[]
   onSelectRun: (id: string) => void
   onOpenTextViewer: (content: { title: string; text: string }) => void
   onOpenProcessing: () => void
@@ -43,6 +45,7 @@ export function KapitelWorkspace({
   assignedQuellen,
   runs,
   selectedRun,
+  allKapitels,
   onSelectRun,
   onOpenTextViewer,
   onOpenProcessing,
@@ -53,9 +56,31 @@ export function KapitelWorkspace({
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [themaExpanded, setThemaExpanded] = useState(false)
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] = useState(false)
+  const [contextSummariesExpanded, setContextSummariesExpanded] = useState(false)
+  const [summaries, setSummaries] = useState<SummaryResult[]>([])
+  const [summariesLoading, setSummariesLoading] = useState(false)
 
   const hasContent = selectedRun?.combinedText && selectedRun.combinedText.length > 0
   const hasQuellenErgebnisse = selectedRun?.quellenErgebnisse && selectedRun.quellenErgebnisse.length > 0
+
+  // Fetch summaries when selectedRun changes and has shortened text
+  useEffect(() => {
+    if (selectedRun?.shortenedText) {
+      setSummariesLoading(true)
+      getSummaries(kapitel.id, selectedRun.id)
+        .then((fetchedSummaries) => {
+          setSummaries(fetchedSummaries)
+          setSummariesLoading(false)
+        })
+        .catch((error) => {
+          console.error("Error fetching summaries:", error)
+          setSummaries([])
+          setSummariesLoading(false)
+        })
+    } else {
+      setSummaries([])
+    }
+  }, [selectedRun?.id, selectedRun?.shortenedText, kapitel.id])
 
   const handleCopy = async (text: string, id: string) => {
     await navigator.clipboard.writeText(text)
@@ -63,7 +88,11 @@ export function KapitelWorkspace({
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  const totalCost = selectedRun ? selectedRun.quellenCost + selectedRun.combinedCost : 0
+  // Calculate total cost including summaries
+  const summariesCost = summaries.reduce((sum, summary) => sum + summary.cost, 0)
+  const totalCost = selectedRun
+    ? selectedRun.quellenCost + selectedRun.combinedCost + (selectedRun.shortenedCost || 0) + summariesCost
+    : 0
 
   const formatCost = (cents: number) => {
     const euros = cents / 100
@@ -211,28 +240,49 @@ export function KapitelWorkspace({
 
         {/* Shortened Text */}
         {selectedRun?.shortenedText && (
-          <Card className="mb-8 bg-card border-border shadow-sm">
-            <div className="p-8">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-lg font-medium text-foreground">Gekürzter Text</h2>
-                  {selectedRun.shortenedCost && (
-                    <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded">
-                      {formatCost(selectedRun.shortenedCost)}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => handleCopy(selectedRun.shortenedText!, "shortened")}>
-                    {copiedId === "shortened" ? (
-                      <Check className="h-4 w-4 text-primary" />
-                    ) : (
-                      <Copy className="h-4 w-4" />
+          <>
+            <Card className="mb-8 bg-card border-border shadow-sm">
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-medium text-foreground">Gekürzter Text</h2>
+                    {selectedRun.shortenedCost && (
+                      <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded">
+                        {formatCost(selectedRun.shortenedCost)}
+                      </span>
                     )}
-                  </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => handleCopy(selectedRun.shortenedText!, "shortened")}>
+                      {copiedId === "shortened" ? (
+                        <Check className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        onOpenTextViewer({
+                          title: `${kapitel.nummer} ${kapitel.title} - Gekürzter Text`,
+                          text: selectedRun.shortenedText!,
+                        })
+                      }
+                    >
+                      <Maximize2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="prose prose-sm max-w-none">
+                  <div className="text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-[12]">
+                    {selectedRun.shortenedText}
+                  </div>
+                </div>
+                {selectedRun.shortenedText.split("\n").length > 12 && (
                   <Button
-                    variant="ghost"
-                    size="sm"
+                    variant="link"
+                    className="mt-4 p-0 h-auto text-primary"
                     onClick={() =>
                       onOpenTextViewer({
                         title: `${kapitel.nummer} ${kapitel.title} - Gekürzter Text`,
@@ -240,31 +290,95 @@ export function KapitelWorkspace({
                       })
                     }
                   >
-                    <Maximize2 className="h-4 w-4" />
+                    Vollständigen Text anzeigen
                   </Button>
-                </div>
+                )}
               </div>
-              <div className="prose prose-sm max-w-none">
-                <div className="text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-[12]">
-                  {selectedRun.shortenedText}
-                </div>
-              </div>
-              {selectedRun.shortenedText.split("\n").length > 12 && (
-                <Button
-                  variant="link"
-                  className="mt-4 p-0 h-auto text-primary"
-                  onClick={() =>
-                    onOpenTextViewer({
-                      title: `${kapitel.nummer} ${kapitel.title} - Gekürzter Text`,
-                      text: selectedRun.shortenedText!,
-                    })
-                  }
+            </Card>
+
+            {/* Context Summaries */}
+            {summaries.length > 0 && (
+              <Card className="mb-8 bg-card border-border shadow-sm">
+                <Collapsible
+                  open={contextSummariesExpanded}
+                  onOpenChange={setContextSummariesExpanded}
                 >
-                  Vollständigen Text anzeigen
-                </Button>
-              )}
-            </div>
-          </Card>
+                  <div className="p-6">
+                    <CollapsibleTrigger asChild>
+                      <button className="flex items-center justify-between w-full group">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="h-5 w-5 text-muted-foreground" />
+                          <h3 className="text-base font-medium text-foreground">
+                            Verwendeter Kontext
+                          </h3>
+                          <span className="text-sm text-muted-foreground">
+                            ({summaries.length} Kapitel)
+                          </span>
+                          {summariesCost > 0 && (
+                            <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded ml-2">
+                              {formatCost(summariesCost)}
+                            </span>
+                          )}
+                        </div>
+                        {contextSummariesExpanded ? (
+                          <ChevronUp className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                        ) : (
+                          <ChevronDown className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                        )}
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-6 space-y-4">
+                      {summaries.map((summary) => {
+                        const sourceKapitel = allKapitels.find((k) => k.id === summary.sourceKapitelId)
+                        const reductionPercent = summary.originalLength > 0
+                          ? ((summary.originalLength - summary.summaryLength) / summary.originalLength * 100).toFixed(0)
+                          : 0
+
+                        return (
+                          <div
+                            key={summary.id}
+                            className="border border-border rounded-lg p-4 bg-muted/30"
+                          >
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-sm font-medium text-foreground">
+                                    {sourceKapitel?.nummer || "?"} {sourceKapitel?.title || "Unbekanntes Kapitel"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                  <span>{summary.originalLength} → {summary.summaryLength} Wörter</span>
+                                  <span className="text-primary">−{reductionPercent}%</span>
+                                  {summary.cost > 0 && (
+                                    <span>{formatCost(summary.cost)}</span>
+                                  )}
+                                </div>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  onOpenTextViewer({
+                                    title: `Zusammenfassung: ${sourceKapitel?.nummer} ${sourceKapitel?.title}`,
+                                    text: summary.summaryContent,
+                                  })
+                                }
+                              >
+                                <Maximize2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <div className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap line-clamp-3">
+                              {summary.summaryContent}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+              </Card>
+            )}
+          </>
         )}
 
         {/* Intermediate Groups - Collapsible section */}
