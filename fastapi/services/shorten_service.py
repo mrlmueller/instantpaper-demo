@@ -5,6 +5,8 @@ import logging
 import asyncio
 from datetime import datetime
 import os
+import json
+import services.openai_service as openai_module
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +200,11 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
             kapitel_suffix = f"_kapitel_{source_kapitel_id[:8]}" if source_kapitel_id else ""
             prompt_file = os.path.join(DEBUG_PROMPT_DIR, f"summarize_{timestamp}{kapitel_suffix}.md")
             with open(prompt_file, 'w', encoding='utf-8') as f:
-                f.write(prompt)
+                messages = [
+                    {"role": "system", "content": openai_module.SUMMARIZE_SYSTEM_MESSAGE},
+                    {"role": "user", "content": prompt},
+                ]
+                json.dump(messages, f, ensure_ascii=False, indent=2)
             logger.info(f"DEBUG: Saved summarization prompt to {prompt_file}")
         except Exception as e:
             logger.error(f"DEBUG: Failed to save prompt file: {e}")
@@ -273,7 +279,11 @@ Ich schreibe gerade eine Wissenschaftliche Arbeit. Der folgende Text ist bereits
             kapitel_suffix = f"_kapitel_{target_kapitel_id[:8]}" if target_kapitel_id else ""
             prompt_file = os.path.join(DEBUG_PROMPT_DIR, f"shorten_{timestamp}{kapitel_suffix}.md")
             with open(prompt_file, 'w', encoding='utf-8') as f:
-                f.write(prompt)
+                messages = [
+                    {"role": "system", "content": openai_module.SHORTEN_SYSTEM_MESSAGE},
+                    {"role": "user", "content": prompt},
+                ]
+                json.dump(messages, f, ensure_ascii=False, indent=2)
             logger.info(f"DEBUG: Saved shorten prompt to {prompt_file}")
         except Exception as e:
             logger.error(f"DEBUG: Failed to save prompt file: {e}")

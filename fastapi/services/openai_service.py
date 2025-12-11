@@ -4,6 +4,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+SUMMARIZE_SYSTEM_MESSAGE = (
+    "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+)
+SHORTEN_SYSTEM_MESSAGE = (
+    "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+    "information and preserving essential details."
+)
+
 NO_CONTENT_SENTINEL = "NO_CONTENT"
 
 
@@ -272,7 +280,7 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>",
+                        "content": SUMMARIZE_SYSTEM_MESSAGE,
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -347,7 +355,7 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>",
+                        "content": SHORTEN_SYSTEM_MESSAGE,
                     },
                     {"role": "user", "content": prompt},
                 ],
