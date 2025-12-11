@@ -281,7 +281,7 @@ class OpenAIService:
                     },
                     {"role": "user", "content": prompt},
                 ],
-                reasoning={"effort": "medium"},
+                reasoning={"effort": "low"},
                 max_output_tokens=None,
             )
 
