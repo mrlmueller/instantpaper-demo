@@ -1,13 +1,23 @@
 'use server';
 
 import { getFirestoreForUser } from '@/app/lib/firebase/serverApp';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { requireAuth } from '@/app/lib/auth/server-auth';
+import { doc, setDoc, getDoc, serverTimestamp, type Firestore } from 'firebase/firestore';
+import { requireAuth, type AuthUser } from '@/app/lib/auth/server-auth';
 import { getOrCreateDefaultProject } from './projects';
 
-export async function createOrUpdateUser() {
-  const user = await requireAuth();
-  const db = await getFirestoreForUser();
+type ActionContext = {
+  user?: AuthUser;
+  db?: Firestore;
+};
+
+async function getContext(ctx?: ActionContext) {
+  const user = ctx?.user ?? (await requireAuth());
+  const db = ctx?.db ?? (await getFirestoreForUser());
+  return { user, db };
+}
+
+export async function createOrUpdateUser(ctx?: ActionContext) {
+  const { user, db } = await getContext(ctx);
 
   const userRef = doc(db, 'users', user.uid);
   const userDoc = await getDoc(userRef);
@@ -25,7 +35,7 @@ export async function createOrUpdateUser() {
     console.log('User created in Firestore:', user.uid);
 
     // Ensure a default project exists for this user
-    await getOrCreateDefaultProject();
+    await getOrCreateDefaultProject({ user, db });
   } else {
     // Update existing user document
     await setDoc(

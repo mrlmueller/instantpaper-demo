@@ -17,7 +17,7 @@ import {
   type Firestore,
   type DocumentReference,
 } from 'firebase/firestore';
-import { requireAuth } from '@/app/lib/auth/server-auth';
+import { requireAuth, type AuthUser } from '@/app/lib/auth/server-auth';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 
@@ -131,6 +131,17 @@ export type Kapitel = {
   parentId?: string | null;
   order?: number;
 };
+
+type ActionContext = {
+  user?: AuthUser;
+  db?: Firestore;
+};
+
+async function getContext(ctx?: ActionContext) {
+  const user = ctx?.user ?? (await requireAuth());
+  const db = ctx?.db ?? (await getFirestoreForUser());
+  return { user, db };
+}
 
 // Helper function to check for circular references in parent chain
 async function checkCircularReference(
@@ -498,10 +509,13 @@ export async function createKapitelRun(
   }
 }
 
-export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<KapitelRun[]> {
+export async function getKapitelRuns(
+  kapitelId: string,
+  runLimit = 10,
+  ctx?: ActionContext
+): Promise<KapitelRun[]> {
   try {
-    const user = await requireAuth();
-    const db = await getFirestoreForUser();
+    const { user, db } = await getContext(ctx);
 
     const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
     const runsSnapshot = await getDocs(query(runsRef, orderBy('index', 'desc'), limit(runLimit)));
@@ -510,38 +524,7 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
 
     for (const runDoc of runsSnapshot.docs) {
       const runData = runDoc.data();
-      const resultsRef = collection(
-        db,
-        'users',
-        user.uid,
-        'kapitels',
-        kapitelId,
-        'runs',
-        runDoc.id,
-        'results'
-      );
-
-      const resultsSnapshot = await getDocs(resultsRef);
-      const results: KapitelRunResult[] = resultsSnapshot.docs.map((resDoc) => {
-        const resData = resDoc.data();
-        return {
-          quelleId: resDoc.id,
-          resultContent: resData.result_content ?? resData.resultContent ?? '',
-          hasContent: resData.has_content ?? resData.hasContent ?? true,
-          modelUsed: resData.model_used ?? resData.modelUsed ?? '',
-          tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
-          inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
-          cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
-          outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
-          reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
-          cost: resData.cost ?? 0,
-          createdAt: resData.created_at?.toDate?.()?.toISOString()
-            || resData.createdAt?.toDate?.()?.toISOString()
-            || new Date().toISOString(),
-        };
-      });
-
-      // fetch combined (single doc named 'combined' if it exists)
+      // fetch combined (single doc named 'combined' if it exists) first
       const combinedRef = collection(
         db,
         'users',
@@ -573,6 +556,38 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
           createdAt:
             c.created_at?.toDate?.()?.toISOString() ||
             c.createdAt?.toDate?.()?.toISOString() ||
+            new Date().toISOString(),
+        };
+      }
+
+      // Fetch shortened result (single doc named 'shortened' if it exists) second
+      const shortenedRef = collection(
+        db,
+        'users',
+        user.uid,
+        'kapitels',
+        kapitelId,
+        'runs',
+        runDoc.id,
+        'shortened'
+      );
+      const shortenedSnapshot = await getDocs(shortenedRef);
+      let shortened: ShortenedResult | null = null;
+      if (!shortenedSnapshot.empty) {
+        const doc = shortenedSnapshot.docs[0];
+        const s = doc.data();
+        shortened = {
+          id: doc.id,
+          shortenedContent: s.shortened_content ?? s.shortenedContent ?? '',
+          originalLength: s.original_length ?? s.originalLength ?? 0,
+          shortenedLength: s.shortened_length ?? s.shortenedLength ?? 0,
+          usedKapitelIds: s.used_kapitel_ids ?? s.usedKapitelIds ?? [],
+          model: s.model ?? '',
+          cost: s.cost ?? 0,
+          tokensUsed: s.tokens_used ?? s.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
+          createdAt:
+            s.created_at?.toDate?.()?.toISOString() ||
+            s.createdAt?.toDate?.()?.toISOString() ||
             new Date().toISOString(),
         };
       }
@@ -618,8 +633,8 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
         intermediateGroups.sort((a, b) => a.groupNumber - b.groupNumber);
       }
 
-      // Fetch shortened result (single doc named 'shortened' if it exists)
-      const shortenedRef = collection(
+      // Fetch results last to show combined/shortened first
+      const resultsRef = collection(
         db,
         'users',
         user.uid,
@@ -627,28 +642,28 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
         kapitelId,
         'runs',
         runDoc.id,
-        'shortened'
+        'results'
       );
-      const shortenedSnapshot = await getDocs(shortenedRef);
-      let shortened: ShortenedResult | null = null;
-      if (!shortenedSnapshot.empty) {
-        const doc = shortenedSnapshot.docs[0];
-        const s = doc.data();
-        shortened = {
-          id: doc.id,
-          shortenedContent: s.shortened_content ?? s.shortenedContent ?? '',
-          originalLength: s.original_length ?? s.originalLength ?? 0,
-          shortenedLength: s.shortened_length ?? s.shortenedLength ?? 0,
-          usedKapitelIds: s.used_kapitel_ids ?? s.usedKapitelIds ?? [],
-          model: s.model ?? '',
-          cost: s.cost ?? 0,
-          tokensUsed: s.tokens_used ?? s.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
-          createdAt:
-            s.created_at?.toDate?.()?.toISOString() ||
-            s.createdAt?.toDate?.()?.toISOString() ||
-            new Date().toISOString(),
+
+      const resultsSnapshot = await getDocs(resultsRef);
+      const results: KapitelRunResult[] = resultsSnapshot.docs.map((resDoc) => {
+        const resData = resDoc.data();
+        return {
+          quelleId: resDoc.id,
+          resultContent: resData.result_content ?? resData.resultContent ?? '',
+          hasContent: resData.has_content ?? resData.hasContent ?? true,
+          modelUsed: resData.model_used ?? resData.modelUsed ?? '',
+          tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
+          inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
+          cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
+          outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
+          reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
+          cost: resData.cost ?? 0,
+          createdAt: resData.created_at?.toDate?.()?.toISOString()
+            || resData.createdAt?.toDate?.()?.toISOString()
+            || new Date().toISOString(),
         };
-      }
+      });
 
       runs.push({
         id: runDoc.id,
@@ -678,10 +693,14 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10): Promise<
   }
 }
 
-export async function getUserKapitels(projektId: string, withRuns = true, runLimit = 5): Promise<Kapitel[]> {
+export async function getUserKapitels(
+  projektId: string,
+  withRuns = false,
+  runLimit = 10,
+  ctx?: ActionContext
+): Promise<Kapitel[]> {
   try {
-    const user = await requireAuth();
-    const db = await getFirestoreForUser();
+    const { user, db } = await getContext(ctx);
 
     const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
     const snapshot = await getDocs(
@@ -704,7 +723,7 @@ export async function getUserKapitels(projektId: string, withRuns = true, runLim
       };
 
       if (withRuns) {
-        kapitel.runs = await getKapitelRuns(kapitelDoc.id, runLimit);
+        kapitel.runs = await getKapitelRuns(kapitelDoc.id, runLimit, { user, db });
       }
 
       kapitels.push(kapitel);

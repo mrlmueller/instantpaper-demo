@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { KapitelNavigator } from './KapitelNavigator';
 import { KapitelWorkspace } from './KapitelWorkspace';
 import { ProjektHeader } from './ProjektHeader';
@@ -11,6 +11,7 @@ import { ShortenDialog } from './ShortenDialog';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import { QuellenPanelSkeleton } from './QuellenPanelSkeleton';
+import { KapitelWorkspaceSkeleton } from './KapitelWorkspaceSkeleton';
 import { toast } from 'sonner';
 
 import type { Quelle, Kapitel, Run, ProcessingSettings, Projekt } from '@/app/types/ui';
@@ -35,6 +36,7 @@ import {
   updateKapitelTitle,
   createKapitelRun,
   createShortenRun,
+  getKapitelRuns,
   getUserKapitels,
   type KapitelRun as FirebaseKapitelRun,
   type Kapitel as FirebaseKapitel,
@@ -50,6 +52,7 @@ import {
   onSnapshot,
   query,
   orderBy,
+  limit,
   type Unsubscribe,
   doc,
   updateDoc,
@@ -60,15 +63,23 @@ import {
 import Cookies from 'js-cookie';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+const RUN_HISTORY_LIMIT = 10;
 
 interface DashboardProps {
   initialKapitels: FirebaseKapitel[];
   initialQuellen: FirebaseQuelle[];
   initialProjekt: FirebaseProject;
   initialProjekte: FirebaseProject[];
+  initialRuns?: FirebaseKapitelRun[];
 }
 
-export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, initialProjekte }: DashboardProps) {
+export function Dashboard({
+  initialKapitels,
+  initialQuellen,
+  initialProjekt,
+  initialProjekte,
+  initialRuns = [],
+}: DashboardProps) {
   const { user } = useAuth();
   // Start with skeleton to avoid empty flash before data appears
   const [isLoading, setIsLoading] = useState(true);
@@ -102,8 +113,13 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
   const activeKapitel = kapiteln.find((k) => k.id === activeKapitelId);
 
   const initialRunsForActive =
-    initialKapitels.find((k) => k.id === initialActiveKapitelId)?.runs || [];
+    initialRuns.length > 0
+      ? initialRuns
+      : initialKapitels.find((k) => k.id === initialActiveKapitelId)?.runs || [];
   const [fbRuns, setFbRuns] = useState<FirebaseKapitelRun[]>(initialRunsForActive);
+  const keepInitialRunsRef = useRef(initialRunsForActive.length > 0);
+  const runSnapshotReceivedRef = useRef(false);
+  const [isKapitelLoading, setIsKapitelLoading] = useState(initialRunsForActive.length === 0);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const selectedRun = runs.find((r) => r.id === selectedRunId);
@@ -122,16 +138,26 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
   } | null>(null);
 
   const loadProjektData = useCallback(async (projektId: string) => {
+    setIsKapitelLoading(true);
     const [fbQuellen, fbKapitels] = await Promise.all([
       getUserQuellen(projektId),
-      getUserKapitels(projektId, true, 50),
+      getUserKapitels(projektId, false, RUN_HISTORY_LIMIT),
     ]);
     setQuellen(fbQuellen.map((q) => transformQuelleToUI(q, projektId)));
     setKapiteln(fbKapitels.map((k) => transformKapitelToUI(k, projektId)));
     const firstKapitelId = fbKapitels[0]?.id || '';
     setActiveKapitelId(firstKapitelId);
-    setFbRuns(fbKapitels.find((k) => k.id === firstKapitelId)?.runs || []);
     setSelectedRunId(null);
+    setFbRuns([]);
+
+    if (firstKapitelId) {
+      const runs = await getKapitelRuns(firstKapitelId, RUN_HISTORY_LIMIT);
+      setFbRuns(runs);
+      keepInitialRunsRef.current = runs.length > 0;
+      setIsKapitelLoading(runs.length === 0);
+    } else {
+      setIsKapitelLoading(false);
+    }
   }, []);
 
   const persistKapitelQuellenClient = useCallback(async (kapitelId: string, quelleIds: string[]) => {
@@ -180,17 +206,28 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
 
   // When the active Kapitel changes, seed runs from initial data while real-time listeners attach
   useEffect(() => {
+    runSnapshotReceivedRef.current = false;
     if (!activeKapitelId) {
       setFbRuns([]);
       setRuns([]);
       setSelectedRunId(null);
+      setIsKapitelLoading(false);
       return;
     }
 
-    const initialKapitel = initialKapitels.find((k) => k.id === activeKapitelId);
-    setFbRuns(initialKapitel?.runs || []);
+    setIsKapitelLoading(true);
     setSelectedRunId(null);
-  }, [activeKapitelId, initialKapitels]);
+
+    if (keepInitialRunsRef.current) {
+      // Preserve the initially provided runs once; subsequent Kapitel switches clear state
+      setIsKapitelLoading(false);
+      keepInitialRunsRef.current = false;
+      return;
+    }
+
+    setFbRuns([]);
+    setRuns([]);
+  }, [activeKapitelId]);
 
   // Real-time updates for runs, results, and combined content of the active Kapitel
   useEffect(() => {
@@ -203,7 +240,7 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
 
     const db = getFirestore(firebaseApp);
     const runsRef = collection(db, 'users', user.uid, 'kapitels', activeKapitelId, 'runs');
-    const q = query(runsRef, orderBy('index', 'desc'));
+    const q = query(runsRef, orderBy('index', 'desc'), limit(RUN_HISTORY_LIMIT));
 
     let runLevelUnsubs: Unsubscribe[] = [];
 
@@ -241,45 +278,18 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
           return baseRuns;
         });
 
+        if (!runSnapshotReceivedRef.current) {
+          runSnapshotReceivedRef.current = true;
+        }
+
+        // If there are no runs, finish loading immediately
+        if (snapshot.empty) {
+          setIsKapitelLoading(false);
+        }
+
         // Subscribe to result/combined updates for each run
         snapshot.docs.forEach((runDoc) => {
-          const resultsRef = collection(
-            db,
-            'users',
-            user.uid,
-            'kapitels',
-            activeKapitelId,
-            'runs',
-            runDoc.id,
-            'results'
-          );
-          const resultsUnsub = onSnapshot(resultsRef, (resSnapshot) => {
-            const results = resSnapshot.docs.map((resDoc) => {
-              const resData: any = resDoc.data();
-              return {
-                quelleId: resDoc.id,
-                resultContent: resData.result_content ?? resData.resultContent ?? '',
-                hasContent: resData.has_content ?? resData.hasContent ?? true,
-                modelUsed: resData.model_used ?? resData.modelUsed ?? '',
-                tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
-                inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
-                cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
-                outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
-                reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
-                cost: resData.cost ?? 0,
-                createdAt:
-                  resData.created_at?.toDate?.()?.toISOString() ||
-                  resData.createdAt?.toDate?.()?.toISOString() ||
-                  new Date().toISOString(),
-              };
-            });
-
-            setFbRuns((prev) =>
-              prev.map((run) => (run.id === runDoc.id ? { ...run, results } : run))
-            );
-          });
-          runLevelUnsubs.push(resultsUnsub);
-
+          // 1) Combined first
           const combinedRef = collection(
             db,
             'users',
@@ -318,10 +328,13 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
             setFbRuns((prev) =>
               prev.map((run) => (run.id === runDoc.id ? { ...run, combined } : run))
             );
+
+            // As soon as we have combined data, we can end the loading state
+            setIsKapitelLoading(false);
           });
           runLevelUnsubs.push(combinedUnsub);
 
-          // Listen for shortened results
+          // 2) Shortened second
           const shortenedRef = collection(
             db,
             'users',
@@ -356,12 +369,57 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
             setFbRuns((prev) =>
               prev.map((run) => (run.id === runDoc.id ? { ...run, shortened } : run))
             );
+
+            // Shortened data also counts as loaded content
+            setIsKapitelLoading(false);
           });
           runLevelUnsubs.push(shortenedUnsub);
+
+          // 3) Einzelne Quellen-Ergebnisse zuletzt
+          const resultsRef = collection(
+            db,
+            'users',
+            user.uid,
+            'kapitels',
+            activeKapitelId,
+            'runs',
+            runDoc.id,
+            'results'
+          );
+          const resultsUnsub = onSnapshot(resultsRef, (resSnapshot) => {
+            const results = resSnapshot.docs.map((resDoc) => {
+              const resData: any = resDoc.data();
+              return {
+                quelleId: resDoc.id,
+                resultContent: resData.result_content ?? resData.resultContent ?? '',
+                hasContent: resData.has_content ?? resData.hasContent ?? true,
+                modelUsed: resData.model_used ?? resData.modelUsed ?? '',
+                tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
+                inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
+                cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
+                outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
+                reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
+                cost: resData.cost ?? 0,
+                createdAt:
+                  resData.created_at?.toDate?.()?.toISOString() ||
+                  resData.createdAt?.toDate?.()?.toISOString() ||
+                  new Date().toISOString(),
+              };
+            });
+
+            setFbRuns((prev) =>
+              prev.map((run) => (run.id === runDoc.id ? { ...run, results } : run))
+            );
+
+            // Results present -> loading finished
+            setIsKapitelLoading(false);
+          });
+          runLevelUnsubs.push(resultsUnsub);
         });
       },
       (error) => {
         console.error('Error listening to runs:', error);
+        setIsKapitelLoading(false);
       }
     );
 
@@ -966,19 +1024,23 @@ export function Dashboard({ initialKapitels, initialQuellen, initialProjekt, ini
       <div className="flex-1 overflow-hidden flex">
         <div className="flex-1 overflow-hidden">
           {activeKapitel ? (
-            <KapitelWorkspace
-              kapitel={activeKapitel}
-              assignedQuellen={assignedQuellen}
-              runs={runs}
-              selectedRun={selectedRun}
-              allKapitels={kapiteln}
-              onSelectRun={setSelectedRunId}
-              onOpenTextViewer={setTextViewerContent}
-              onOpenProcessing={() => setProcessingDialogOpen(true)}
-              onCombineTexts={handleCombineTexts}
-              onToggleQuellenPanel={handleToggleQuellenPanel}
-              onOpenShorten={() => setShortenDialogOpen(true)}
-            />
+            isKapitelLoading ? (
+              <KapitelWorkspaceSkeleton />
+            ) : (
+              <KapitelWorkspace
+                kapitel={activeKapitel}
+                assignedQuellen={assignedQuellen}
+                runs={runs}
+                selectedRun={selectedRun}
+                allKapitels={kapiteln}
+                onSelectRun={setSelectedRunId}
+                onOpenTextViewer={setTextViewerContent}
+                onOpenProcessing={() => setProcessingDialogOpen(true)}
+                onCombineTexts={handleCombineTexts}
+                onToggleQuellenPanel={handleToggleQuellenPanel}
+                onOpenShorten={() => setShortenDialogOpen(true)}
+              />
+            )
           ) : (
             <div className="h-full flex items-center justify-center">
               <div className="text-center">

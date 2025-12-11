@@ -1,7 +1,7 @@
 'use server';
 
 import { getFirestoreForUser } from '@/app/lib/firebase/serverApp';
-import { requireAuth } from '@/app/lib/auth/server-auth';
+import { requireAuth, type AuthUser } from '@/app/lib/auth/server-auth';
 import {
   collection,
   doc,
@@ -12,6 +12,7 @@ import {
   serverTimestamp,
   query,
   orderBy,
+  type Firestore,
 } from 'firebase/firestore';
 
 export type Project = {
@@ -24,9 +25,19 @@ export type Project = {
 const DEFAULT_PROJECT_ID = 'default';
 const DEFAULT_PROJECT_NAME = 'Standardprojekt';
 
-export async function getOrCreateDefaultProject(): Promise<Project> {
-  const user = await requireAuth();
-  const db = await getFirestoreForUser();
+type ActionContext = {
+  user?: AuthUser;
+  db?: Firestore;
+};
+
+async function getContext(ctx?: ActionContext) {
+  const user = ctx?.user ?? (await requireAuth());
+  const db = ctx?.db ?? (await getFirestoreForUser());
+  return { user, db };
+}
+
+export async function getOrCreateDefaultProject(ctx?: ActionContext): Promise<Project> {
+  const { user, db } = await getContext(ctx);
 
   const projectRef = doc(db, 'users', user.uid, 'projects', DEFAULT_PROJECT_ID);
   const projectSnap = await getDoc(projectRef);
@@ -55,9 +66,8 @@ export async function getOrCreateDefaultProject(): Promise<Project> {
   };
 }
 
-export async function getProjects(): Promise<Project[]> {
-  const user = await requireAuth();
-  const db = await getFirestoreForUser();
+export async function getProjects(ctx?: ActionContext): Promise<Project[]> {
+  const { user, db } = await getContext(ctx);
 
   const projectsRef = collection(db, 'users', user.uid, 'projects');
   const snapshot = await getDocs(query(projectsRef, orderBy('createdAt', 'desc')));
