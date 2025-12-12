@@ -95,9 +95,9 @@ export function KapitelWorkspace({
   const hasIntermediateGroups =
     selectedRun?.intermediateGroups && selectedRun.intermediateGroups.length > 0;
 
-  // Fetch summaries when selectedRun changes and has shortened text
+  // Fetch summaries when selectedRun changes and has generated text (shortened or improved)
   useEffect(() => {
-    if (selectedRun?.shortenedText) {
+    if (selectedRun?.shortenedText || selectedRun?.leseflussText) {
       setSummariesLoading(true);
       getSummaries(kapitel.id, selectedRun.id)
         .then((fetchedSummaries) => {
@@ -112,7 +112,7 @@ export function KapitelWorkspace({
     } else {
       setSummaries([]);
     }
-  }, [selectedRun?.id, selectedRun?.shortenedText, kapitel.id]);
+  }, [selectedRun?.id, selectedRun?.shortenedText, selectedRun?.leseflussText, kapitel.id]);
 
   const handleCopy = async (text: string, id: string) => {
     await navigator.clipboard.writeText(text);
@@ -297,18 +297,6 @@ export function KapitelWorkspace({
                     <h2 className="text-lg font-medium text-foreground">
                       Verbesserter Text
                     </h2>
-                    {selectedRun.leseflussLength &&
-                      selectedRun.leseflussOriginalLength && (
-                        <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded">
-                          {selectedRun.leseflussOriginalLength} →{" "}
-                          {selectedRun.leseflussLength} Wörter
-                        </span>
-                      )}
-                    {selectedRun.leseflussCost && (
-                      <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded">
-                        {formatCost(selectedRun.leseflussCost)}
-                      </span>
-                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
@@ -343,21 +331,72 @@ export function KapitelWorkspace({
                     {selectedRun.leseflussText}
                   </div>
                 </div>
-                {selectedRun.leseflussText!.split("\n").length > 12 && (
-                  <Button
-                    variant="link"
-                    className="mt-4 p-0 h-auto text-primary"
-                    onClick={() =>
-                      onOpenTextViewer({
-                        title: `${kapitel.nummer} ${kapitel.title} - Verbesserter Text`,
-                        text: selectedRun.leseflussText!,
-                      })
-                    }
-                  >
-                    Vollständigen Text anzeigen
-                  </Button>
-                )}
               </div>
+
+              {/* Kontext-Zusammenfassungen for Verbesserter Text */}
+              {summaries.length > 0 && (
+                <div className="px-8 pb-8">
+                  <div className="pt-6 border-t border-border/50">
+                    <Collapsible
+                      open={verbessertSummariesExpanded}
+                      onOpenChange={setVerbessertSummariesExpanded}
+                    >
+                      <CollapsibleTrigger asChild>
+                        <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full justify-between group">
+                          <span className="font-medium">
+                            Kontext-Zusammenfassungen ({summaries.length})
+                          </span>
+                          <ChevronDown
+                            className={cn(
+                              "h-4 w-4 transition-transform",
+                              verbessertSummariesExpanded && "rotate-180"
+                            )}
+                          />
+                        </button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="mt-3 space-y-3">
+                        {summaries.map((summary) => {
+                          const sourceKapitel = allKapitels.find(
+                            (k) => k.id === summary.sourceKapitelId
+                          );
+
+                          return (
+                            <div
+                              key={summary.id}
+                              className="p-3 bg-muted/30 rounded-md"
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-xs font-medium text-muted-foreground">
+                                  <span className="mr-1">
+                                    {sourceKapitel?.nummer || "?"}
+                                  </span>
+                                  {sourceKapitel?.title || "Unbekanntes Kapitel"}
+                                </h4>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() =>
+                                    onOpenTextViewer({
+                                      title: `Zusammenfassung: ${sourceKapitel?.nummer} ${sourceKapitel?.title}`,
+                                      text: summary.summaryContent,
+                                    })
+                                  }
+                                >
+                                  <Maximize2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              <p className="text-xs text-foreground/70 leading-relaxed line-clamp-3">
+                                {summary.summaryContent}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+                </div>
+              )}
             </Card>
           </>
         )}
@@ -367,17 +406,12 @@ export function KapitelWorkspace({
           <>
             <Card className="mb-8 bg-card border-border shadow-sm">
               <div className="p-8">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <h2 className="text-lg font-medium text-foreground">
-                      Gekürzter Text
-                    </h2>
-                    {selectedRun!.shortenedCost && (
-                      <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded">
-                        {formatCost(selectedRun!.shortenedCost)}
-                      </span>
-                    )}
-                  </div>
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-lg font-medium text-foreground">
+                        Gekürzter Text
+                      </h2>
+                    </div>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="ghost"

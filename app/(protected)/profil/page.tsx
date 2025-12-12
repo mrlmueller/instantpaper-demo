@@ -134,6 +134,12 @@ function ProfilePageSkeleton() {
           </div>
         </Card>
 
+        {/* API key card skeleton */}
+        <Card className="p-6 mb-10">
+          <Skeleton className="h-5 w-32 mb-4" />
+          <Skeleton className="h-10 w-full" />
+        </Card>
+
         {/* Stats grid skeleton */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
           {[...Array(4)].map((_, i) => (
