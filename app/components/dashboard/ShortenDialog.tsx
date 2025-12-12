@@ -88,7 +88,7 @@ export function ShortenDialog({
   onShorten,
 }: ShortenDialogProps) {
   const [selectedKapitelIds, setSelectedKapitelIds] = useState<Set<string>>(new Set())
-  const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.1">("gpt-5-nano")
+  const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-nano")
 
   const kapitelTree = useMemo(() => buildKapitelTree(allKapitels, kapitel.id), [allKapitels, kapitel.id])
 
@@ -278,9 +278,9 @@ export function ShortenDialog({
                       <span className="text-xs text-muted-foreground">Beste Qualität</span>
                     </div>
                   </SelectItem>
-                  <SelectItem value="gpt-5.1">
+                  <SelectItem value="gpt-5.2">
                     <div className="flex items-center justify-between w-full gap-4">
-                      <span>GPT-5.1</span>
+                      <span>GPT-5.2</span>
                       <span className="text-xs text-muted-foreground">Beste Qualität</span>
                     </div>
                   </SelectItem>

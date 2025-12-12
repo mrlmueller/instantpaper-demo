@@ -22,7 +22,7 @@ class ProcessQuelleResponse(BaseModel):
                 "kapitel_id": "kap456",
                 "run_id": "run789",
                 "result_content": "Summary of the Quelle...",
-                "model_used": "gpt-5.1",
+                "model_used": "gpt-5.2",
                 "tokens_used": 1523,
                 "created_at": "2025-01-15T10:30:00Z"
             }

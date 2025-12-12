@@ -809,7 +809,7 @@ export async function createShortenRun(
   kapitelId: string,
   runId: string,
   contextKapitelIds: string[],
-  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.1' = 'gpt-5-nano'
+  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano'
 ) {
   const user = await requireAuth();
 
@@ -881,7 +881,7 @@ export async function createLeseflussRun(
   runId: string,
   contextKapitelIds: string[],
   aufgabenstellung: string,
-  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.1' = 'gpt-5-nano'
+  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano'
 ) {
   const user = await requireAuth();
 

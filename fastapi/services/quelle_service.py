@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 # Pricing per million tokens (input, cached_input, output)
 MODEL_PRICING = {
-    "gpt-5.1": (1.25, 0.125, 10.00),      # Most expensive model
+    "gpt-5.2": (1.75, 0.175, 14.00),      # Most expensive model
     "gpt-5-mini": (0.25, 0.025, 2.00),    # Mid-tier model
     "gpt-5-nano": (0.05, 0.005, 0.40),    # Most economical model
 }
@@ -27,7 +27,7 @@ def calculate_cost(
     Calculate cost in USD based on model and token usage
 
     Args:
-        model: Model name (e.g., "gpt-5.1", "gpt-5-mini", "gpt-5-nano")
+        model: Model name (e.g., "gpt-5.2", "gpt-5-mini", "gpt-5-nano")
         input_tokens: Total number of input tokens used
         cached_input_tokens: Number of input tokens from cache (charged at 10% rate)
         output_tokens: Number of output tokens used (visible output)
@@ -45,7 +45,7 @@ def calculate_cost(
         """
         Return pricing tuple and matched key for potentially versioned model names.
 
-        The OpenAI API returns release-stamped model names (e.g., gpt-5.1-2025-11-13).
+        The OpenAI API returns release-stamped model names (e.g., gpt-5.2-2025-11-13).
         We normalize those back to their base product name so we don't undercharge
         when a date suffix appears.
         """
@@ -57,13 +57,13 @@ def calculate_cost(
             matched_key, pricing = normalized_pricing[model_lower]
             return matched_key, pricing, "exact"
 
-        # 2) Strip release-date suffixes (e.g., gpt-5.1-2025-11-13 -> gpt-5.1)
+        # 2) Strip release-date suffixes (e.g., gpt-5.2-2025-11-13 -> gpt-5.2)
         date_stripped = re.sub(r"-20\d{2}-\d{2}-\d{2}$", "", model_lower)
         if date_stripped in normalized_pricing:
             matched_key, pricing = normalized_pricing[date_stripped]
             return matched_key, pricing, "date_suffix"
 
-        # 3) Prefix match for other versioned variants (e.g., gpt-5.1-xyz)
+        # 3) Prefix match for other versioned variants (e.g., gpt-5.2-xyz)
         for key_lower, (original_key, pricing) in normalized_pricing.items():
             if model_lower.startswith(f"{key_lower}-"):
                 return original_key, pricing, "prefix"
@@ -362,7 +362,7 @@ class QuelleService:
             prompt_payload = run.get("promptPayload") or run.get("prompt_payload") or {}
             heading = prompt_payload.get("heading", "").strip() or "Zusammenfassung"
             topic = prompt_payload.get("topic", "").strip() or "Thema"
-            model = run.get("model") or "gpt-5.1"
+            model = run.get("model") or "gpt-5.2"
 
             results = await self.firebase.get_run_results(user_id, kapitel_id, run_id)
             eligible = []

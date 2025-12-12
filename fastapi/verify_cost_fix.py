@@ -6,7 +6,7 @@ import re
 
 # Pricing per million tokens (input, output)
 MODEL_PRICING = {
-    "gpt-5.1": (1.25, 10.00),  # Most expensive model
+    "gpt-5.2": (1.75, 14.00),  # Most expensive model
     "gpt-5-mini": (0.25, 2.00),  # Mid-tier model
     "gpt-5-nano": (0.05, 0.40),  # Most economical model
 }
@@ -14,7 +14,7 @@ MODEL_PRICING = {
 
 def resolve_model_key(model_name: str):
     """
-    Normalize model names that include release suffixes (e.g., gpt-5.1-2025-11-13).
+    Normalize model names that include release suffixes (e.g., gpt-5.2-2025-11-13).
     Mirrors the production cost calculation logic.
     """
     model_lower = (model_name or "").lower()
@@ -62,11 +62,11 @@ print("\nTest 1: Model Name Matching")
 print("-" * 80)
 
 test_models = [
-    "gpt-5.1",
+    "gpt-5.2",
     "gpt-5-mini",
     "gpt-5-nano",
-    "GPT-5.1",
-    "gpt-5.1-2025-11-13",
+    "GPT-5.2",
+    "gpt-5.2-2025-11-13",
     "gpt-4o",
     "unknown",
 ]
@@ -82,7 +82,7 @@ print("\nTest 2: Cost Calculation")
 print("-" * 80)
 print("Sample scenario: 1000 input, 500 output, 2000 reasoning tokens\n")
 
-for model in ["gpt-5.1", "gpt-5-mini", "gpt-5-nano"]:
+for model in ["gpt-5.2", "gpt-5-mini", "gpt-5-nano"]:
     cost = calculate_test_cost(model, 1000, 500, 2000)
     pricing = MODEL_PRICING[model]
     print(f"  {model}:")
@@ -94,22 +94,22 @@ for model in ["gpt-5.1", "gpt-5-mini", "gpt-5-nano"]:
 print("\nTest 3: Relative Cost Comparison")
 print("-" * 80)
 
-cost_5_1 = calculate_test_cost("gpt-5.1", 1000, 500, 2000)
+cost_5_2 = calculate_test_cost("gpt-5.2", 1000, 500, 2000)
 cost_5_mini = calculate_test_cost("gpt-5-mini", 1000, 500, 2000)
 cost_5_nano = calculate_test_cost("gpt-5-nano", 1000, 500, 2000)
 
-print(f"  gpt-5.1:    ${cost_5_1:.6f}")
+print(f"  gpt-5.2:    ${cost_5_2:.6f}")
 print(f"  gpt-5-mini: ${cost_5_mini:.6f}")
 print(f"  gpt-5-nano: ${cost_5_nano:.6f}")
 print()
 
-ratio_5_1_to_nano = cost_5_1 / cost_5_nano
-ratio_5_1_to_mini = cost_5_1 / cost_5_mini
+ratio_5_2_to_nano = cost_5_2 / cost_5_nano
+ratio_5_2_to_mini = cost_5_2 / cost_5_mini
 ratio_5_mini_to_nano = cost_5_mini / cost_5_nano
 
 print("  Ratios:")
-print(f"    gpt-5.1 / gpt-5-nano = {ratio_5_1_to_nano:.1f}x (expected: ~25x)")
-print(f"    gpt-5.1 / gpt-5-mini = {ratio_5_1_to_mini:.1f}x (expected: ~5x)")
+print(f"    gpt-5.2 / gpt-5-nano = {ratio_5_2_to_nano:.1f}x (expected: ~35x)")
+print(f"    gpt-5.2 / gpt-5-mini = {ratio_5_2_to_mini:.1f}x (expected: ~7x)")
 print(f"    gpt-5-mini / gpt-5-nano = {ratio_5_mini_to_nano:.1f}x (expected: ~5x)")
 
 print("\n" + "=" * 80)

@@ -1383,7 +1383,7 @@ export function Dashboard({
           activeKapitelId,
           selectedRun.id,
           contextKapitelIds,
-          model as 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.1'
+          model as 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2'
         );
 
         if (!result?.success) {
@@ -1466,7 +1466,7 @@ export function Dashboard({
           selectedRun.id,
           contextKapitelIds,
           aufgabenstellung,
-          model as 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.1'
+          model as 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2'
         );
 
         if (!result?.success) {

@@ -43,7 +43,7 @@ export function LeseflussDialog({
 }: LeseflussDialogProps) {
   const [selectedKapitelIds, setSelectedKapitelIds] = useState<Set<string>>(new Set())
   const [aufgabenstellung, setAufgabenstellung] = useState("")
-  const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.1">("gpt-5-nano")
+  const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-nano")
 
   // Build kapitel tree
   const kapitelTree = useMemo(() => buildKapitelTree(allKapitels, kapitel.id), [allKapitels, kapitel.id])
@@ -217,7 +217,7 @@ export function LeseflussDialog({
               <SelectContent>
                 <SelectItem value="gpt-5-nano">gpt-5-nano (Empfohlen)</SelectItem>
                 <SelectItem value="gpt-5-mini">gpt-5-mini (Beste Qualität)</SelectItem>
-                <SelectItem value="gpt-5.1">gpt-5.1 (Beste Qualität)</SelectItem>
+                <SelectItem value="gpt-5.2">gpt-5.2 (Beste Qualität)</SelectItem>
               </SelectContent>
             </Select>
           </div>

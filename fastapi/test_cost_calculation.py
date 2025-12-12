@@ -24,7 +24,7 @@ load_dotenv()
 
 # Pricing per million tokens (input, output)
 MODEL_PRICING = {
-    "gpt-5.1": (1.25, 10.00),
+    "gpt-5.2": (1.75, 14.00),
     "gpt-5-mini": (0.25, 2.00),
     "gpt-5-nano": (0.05, 0.40),
 }
@@ -69,7 +69,7 @@ async def test_cost_calculation():
     print("Expected: Very low cost due to minimal tokens\n")
 
     # Test each model
-    models_to_test = ["gpt-5-nano", "gpt-5-mini", "gpt-5.1", "gpt-5.1-2025-11-13"]
+    models_to_test = ["gpt-5-nano", "gpt-5-mini", "gpt-5.2", "gpt-5.2-2025-11-13"]
 
     for model in models_to_test:
         print(f"\n{'=' * 80}")

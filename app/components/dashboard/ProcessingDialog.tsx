@@ -148,9 +148,9 @@ export function ProcessingDialog({ open, onOpenChange, kapitelTitle, quellenCoun
                         <span className="text-xs text-muted-foreground">Beste Qualitaet</span>
                       </div>
                     </SelectItem>
-                    <SelectItem value="gpt-5.1">
+                    <SelectItem value="gpt-5.2">
                       <div className="flex items-center justify-between w-full gap-4">
-                        <span>GPT-5.1</span>
+                        <span>GPT-5.2</span>
                         <span className="text-xs text-muted-foreground">Beste Qualitaet</span>
                       </div>
                     </SelectItem>

@@ -9,8 +9,8 @@ class ProcessQuelleRequest(BaseModel):
     kapitel_id: str = Field(..., description="Kapitel ID this run belongs to")
     run_id: str = Field(..., description="Kapitel run ID for grouping results")
     user_input: str = Field(..., description="User instructions for the AI", min_length=1)
-    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.1"] = Field(
-        default="gpt-5.1",
+    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
+        default="gpt-5.2",
         description="OpenAI model to use for processing"
     )
 
@@ -21,7 +21,7 @@ class ProcessQuelleRequest(BaseModel):
                 "kapitel_id": "kap456",
                 "run_id": "run789",
                 "user_input": "Summarize the main points of this Quelle",
-                "model": "gpt-5.1"
+                "model": "gpt-5.2"
             }
         }
 
@@ -51,7 +51,7 @@ class ShortenKapitelRequest(BaseModel):
         description="IDs of other Kapitels to use for context (will be summarized)",
         min_length=1
     )
-    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.1"] = Field(
+    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
         default="gpt-5-nano",
         description="OpenAI model to use for summarization and shortening"
     )
@@ -82,7 +82,7 @@ class LeseflussKapitelRequest(BaseModel):
         description="Task description for the entire paper",
         min_length=10
     )
-    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.1"] = Field(
+    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
         default="gpt-5-nano",
         description="OpenAI model to use for improving reading flow"
     )
