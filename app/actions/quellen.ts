@@ -198,12 +198,6 @@ export async function getUserQuellen(projektId: string, ctx?: ActionContext): Pr
     querySnapshot.forEach((d) => {
       const data = d.data();
 
-      // Debug logging
-      if (data.images) {
-        console.log('🔍 getUserQuellen - Quelle ID:', d.id);
-        console.log('🔍 getUserQuellen - data.images:', data.images);
-      }
-
       quellen.push({
         id: d.id,
         title: data.title,

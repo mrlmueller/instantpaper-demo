@@ -60,12 +60,6 @@ export function QuelleViewerModal({
 
   const wordCount = quelle?.text.split(/\s+/).filter(Boolean).length || 0;
 
-  // Debug logging
-  if (quelle && open) {
-    console.log('🔍 QuelleViewerModal - quelle:', quelle);
-    console.log('🔍 QuelleViewerModal - quelle.images:', quelle.images);
-  }
-
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -158,7 +152,7 @@ export function QuelleViewerModal({
               <Skeleton className="absolute inset-4 rounded-lg" />
             )}
             <img
-              src={viewingImage || ""}
+              src={viewingImage ?? undefined}
               alt="Vergrößertes Bild"
               className={`max-w-full max-h-[85vh] object-contain rounded-lg transition-opacity ${
                 zoomedImageLoaded ? 'opacity-100' : 'opacity-0'

@@ -25,12 +25,6 @@ export function transformQuelleToUI(
   fbQuelle: FirebaseQuelle,
   projektId: string
 ): UIQuelle {
-  // Debug logging
-  if (fbQuelle.images) {
-    console.log('🔍 Transform - fbQuelle.images:', fbQuelle.images);
-    console.log('🔍 Transform - mapped URLs:', fbQuelle.images.map((img) => img.url));
-  }
-
   return {
     id: fbQuelle.id,
     name: fbQuelle.title,
