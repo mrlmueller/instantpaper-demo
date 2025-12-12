@@ -24,6 +24,8 @@ import {
   AlertCircle,
   Coins,
   Scissors,
+  Sparkles,
+  Library,
 } from "lucide-react";
 import {
   Select,
@@ -36,6 +38,7 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import type { Kapitel, Quelle, Run } from "@/app/types/ui";
 import { getSummaries, type SummaryResult } from "@/app/actions/kapitels";
+import { ProcessingStepper } from "./ProcessingStepper";
 
 interface KapitelWorkspaceProps {
   kapitel: Kapitel;
@@ -71,12 +74,13 @@ export function KapitelWorkspace({
   onOpenLesefluss,
 }: KapitelWorkspaceProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [themaExpanded, setThemaExpanded] = useState(false);
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] =
     useState(false);
-  const [contextSummariesExpanded, setContextSummariesExpanded] =
+  const [gekuerztSummariesExpanded, setGekuerztSummariesExpanded] =
     useState(false);
-  const [explanationExpanded, setExplanationExpanded] = useState(false);
+  const [verbessertSummariesExpanded, setVerbessertSummariesExpanded] =
+    useState(false);
+  const [showAllQuellen, setShowAllQuellen] = useState(false);
   const [summaries, setSummaries] = useState<SummaryResult[]>([]);
   const [summariesLoading, setSummariesLoading] = useState(false);
 
@@ -84,6 +88,12 @@ export function KapitelWorkspace({
     selectedRun?.combinedText && selectedRun.combinedText.length > 0;
   const hasQuellenErgebnisse =
     selectedRun?.quellenErgebnisse && selectedRun.quellenErgebnisse.length > 0;
+  const hasGekuerzt =
+    selectedRun?.shortenedText && selectedRun.shortenedText.length > 0;
+  const hasVerbessert =
+    selectedRun?.leseflussText && selectedRun.leseflussText.length > 0;
+  const hasIntermediateGroups =
+    selectedRun?.intermediateGroups && selectedRun.intermediateGroups.length > 0;
 
   // Fetch summaries when selectedRun changes and has shortened text
   useEffect(() => {
@@ -110,7 +120,7 @@ export function KapitelWorkspace({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Calculate total cost including summaries
+  // Calculate total cost including summaries and lesefluss
   const summariesCost = summaries.reduce(
     (sum, summary) => sum + summary.cost,
     0
@@ -119,6 +129,7 @@ export function KapitelWorkspace({
     ? selectedRun.quellenCost +
       selectedRun.combinedCost +
       (selectedRun.shortenedCost || 0) +
+      (selectedRun.leseflussCost || 0) +
       summariesCost
     : 0;
 
@@ -129,118 +140,462 @@ export function KapitelWorkspace({
 
   const themaIsLong = selectedRun?.thema && selectedRun.thema.length > 80;
 
+  // Show first 5 quellen by default in header tags
+  const MAX_VISIBLE_QUELLEN_HEADER = 5;
+  const hasMoreQuellenHeader = assignedQuellen.length > MAX_VISIBLE_QUELLEN_HEADER;
+  const visibleQuellen = showAllQuellen
+    ? assignedQuellen
+    : assignedQuellen.slice(0, MAX_VISIBLE_QUELLEN_HEADER);
+  const hiddenCount = assignedQuellen.length - MAX_VISIBLE_QUELLEN_HEADER;
+
+  // Show first 5 quellen results by default in results section
+  const MAX_VISIBLE_QUELLEN = 5;
+  const hasMoreQuellen =
+    selectedRun?.quellenErgebnisse &&
+    selectedRun.quellenErgebnisse.length > MAX_VISIBLE_QUELLEN;
+  const visibleQuellenResults = selectedRun?.quellenErgebnisse?.slice(0, MAX_VISIBLE_QUELLEN) || [];
+  const hiddenResultsCount = hasMoreQuellen
+    ? (selectedRun?.quellenErgebnisse?.length || 0) - MAX_VISIBLE_QUELLEN
+    : 0;
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-4xl mx-auto py-12 px-8">
-        {/* Kapitel Header - Added nummer prefix */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-semibold text-foreground mb-2 text-balance leading-tight">
-            <span className="text-muted-foreground/60 mr-2">
-              {kapitel.nummer}
-            </span>
-            {kapitel.title}
-          </h1>
-          <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-            <button
-              onClick={onToggleQuellenPanel}
-              className="flex items-center gap-1.5 hover:text-foreground transition-colors"
-            >
-              <FileText className="h-4 w-4" />
-              <span>{assignedQuellen.length} Quellen zugewiesen</span>
-            </button>
-            {selectedRun && (
-              <>
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="h-4 w-4" />
-                  <span>
-                    Verarbeitet:{" "}
-                    {selectedRun.timestamp.toLocaleDateString("de-DE", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+        {/* Kapitel Header with Quellen Tags */}
+        <div className="mb-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                <span className="text-muted-foreground mr-2">{kapitel.nummer}</span>
+                {kapitel.title}
+              </h1>
+              {assignedQuellen.length > 0 && (
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-muted-foreground">Quellen:</span>
+                  {visibleQuellen.map((quelle) => (
+                    <span
+                      key={quelle.id}
+                      className="px-2 py-0.5 bg-primary/10 text-primary rounded text-xs font-medium"
+                    >
+                      {quelle.name.length > 25 ? `${quelle.name.slice(0, 25)}...` : quelle.name}
+                    </span>
+                  ))}
+                  {hasMoreQuellenHeader && !showAllQuellen && (
+                    <button
+                      onClick={() => setShowAllQuellen(true)}
+                      className="px-2 py-0.5 bg-muted text-muted-foreground rounded text-xs font-medium hover:bg-muted/80 transition-colors"
+                    >
+                      +{hiddenCount} weitere
+                    </button>
+                  )}
+                  {showAllQuellen && hasMoreQuellenHeader && (
+                    <button
+                      onClick={() => setShowAllQuellen(false)}
+                      className="px-2 py-0.5 bg-muted text-muted-foreground rounded text-xs font-medium hover:bg-muted/80 transition-colors"
+                    >
+                      weniger
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={onToggleQuellenPanel}>
+                <Library className="h-4 w-4 mr-2" />
+                Quellen
+              </Button>
+              <Button onClick={onOpenProcessing}>
+                <Play className="h-4 w-4 mr-2" />
+                Kapitel verarbeiten
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Run Selector & Cost Display */}
+        {selectedRun && (
+          <div className="flex items-center justify-between mb-4 gap-4">
+            <Select value={selectedRun.id} onValueChange={onSelectRun}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Run auswählen" />
+              </SelectTrigger>
+              <SelectContent>
+                {runs.map((run, index) => (
+                  <SelectItem key={run.id} value={run.id}>
+                    Run {runs.length - index}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-muted-foreground">{selectedRun.model}</span>
+              <span className="text-sm font-medium px-2.5 py-1 bg-muted rounded-md">
+                Kosten: {formatCost(totalCost)}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Processing Stepper */}
+        {selectedRun && (
+          <ProcessingStepper
+            hasQuellen={!!hasQuellenErgebnisse}
+            hasCombined={!!hasContent}
+            hasGekuerzt={!!hasGekuerzt}
+            hasVerbessert={!!hasVerbessert}
+          />
+        )}
+
+        {/* Run Info Card */}
+        {selectedRun && (
+          <Card className="p-4 mb-6 bg-muted/20">
+            <div className="space-y-2 text-sm">
+              <div className="flex items-start gap-2">
+                <span className="text-muted-foreground shrink-0 w-24">Überschrift:</span>
+                <span className="text-foreground">{selectedRun.ueberschrift}</span>
+              </div>
+              {selectedRun.thema && (
+                <div className="flex items-start gap-2">
+                  <span className="text-muted-foreground shrink-0 w-24">Anweisung:</span>
+                  <span className={cn("text-foreground", themaIsLong && "line-clamp-2")}>
+                    {selectedRun.thema}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Coins className="h-4 w-4" />
-                  <span>Kosten: {formatCost(totalCost)}</span>
+              )}
+            </div>
+          </Card>
+        )}
+
+        {/* NEW ORDER: Verbessert → Gekürzt → Intermediate Groups → Kombiniert → Quellen */}
+
+        {/* 1. Verbesserter Text (Lesefluss) - PRIMARY STYLING */}
+        {hasVerbessert && (
+          <>
+            {/* Explanation Card */}
+            {selectedRun.leseflussExplanation && (
+              <Card className="mb-4 bg-green-50/50 dark:bg-green-950/20 border-green-200/70 dark:border-green-800/50">
+                <div className="p-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-500" />
+                    <h3 className="text-base font-medium text-foreground">
+                      Was wurde verändert
+                    </h3>
+                  </div>
+                  <p className="text-sm text-foreground/80 leading-relaxed">
+                    {selectedRun.leseflussExplanation}
+                  </p>
                 </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Action Bar */}
-        <div className="flex items-center gap-3 mb-6 flex-wrap">
-          <Button
-            onClick={onOpenProcessing}
-            className="bg-primary text-primary-foreground"
-          >
-            <Play className="h-4 w-4 mr-2" />
-            Kapitel verarbeiten
-          </Button>
-          <Button variant="outline" onClick={onToggleQuellenPanel}>
-            <BookOpen className="h-4 w-4 mr-2" />
-            Quellen verwalten
-          </Button>
-          {hasContent && (
-            <Button variant="outline" onClick={onOpenShorten}>
-              <Scissors className="h-4 w-4 mr-2" />
-              Text kürzen
-            </Button>
-          )}
-          {hasContent && selectedRun?.shortenedText && (
-            <Button variant="outline" onClick={onOpenLesefluss}>
-              <BookOpen className="h-4 w-4 mr-2" />
-              Lese Fluss verbessern
-            </Button>
-          )}
-
-          <div className="flex items-center gap-3 ml-auto">
-            {selectedRun && (
-              <div className="flex items-center gap-1.5 text-sm text-muted-foreground px-3 py-1.5 bg-muted/50 rounded-md">
-                <Coins className="h-4 w-4" />
-                <span>{formatCost(totalCost)}</span>
-              </div>
+              </Card>
             )}
 
-            {runs.length > 0 && (
-              <div className="flex items-center gap-2">
-                <History className="h-4 w-4 text-muted-foreground" />
-                <Select
-                  value={selectedRun?.id || ""}
-                  onValueChange={(value) => {
-                    if (value === "load_all") {
-                      onLoadAllRuns();
-                      return;
-                    }
-                    onSelectRun(value);
-                  }}
-                >
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Run auswählen" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {runs.map((run, index) => (
-                      <SelectItem key={run.id} value={run.id}>
-                        {`Run ${run.index ?? runs.length - index}`} -{" "}
-                        {run.timestamp.toLocaleDateString("de-DE")}
-                      </SelectItem>
-                    ))}
-                    {!allRunsLoaded && (
-                      <SelectItem value="load_all">Alle Runs laden</SelectItem>
+            {/* Verbesserter Text Card */}
+            <Card className="mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20">
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-medium text-foreground">
+                      Verbesserter Text
+                    </h2>
+                    {selectedRun.leseflussLength &&
+                      selectedRun.leseflussOriginalLength && (
+                        <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded">
+                          {selectedRun.leseflussOriginalLength} →{" "}
+                          {selectedRun.leseflussLength} Wörter
+                        </span>
+                      )}
+                    {selectedRun.leseflussCost && (
+                      <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded">
+                        {formatCost(selectedRun.leseflussCost)}
+                      </span>
                     )}
-                  </SelectContent>
-                </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        handleCopy(selectedRun.leseflussText!, "verbessert")
+                      }
+                    >
+                      {copiedId === "verbessert" ? (
+                        <Check className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        onOpenTextViewer({
+                          title: `${kapitel.nummer} ${kapitel.title} - Verbesserter Text`,
+                          text: selectedRun.leseflussText!,
+                        })
+                      }
+                    >
+                      <Maximize2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="prose prose-sm max-w-none">
+                  <div className="text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-[12]">
+                    {selectedRun.leseflussText}
+                  </div>
+                </div>
+                {selectedRun.leseflussText!.split("\n").length > 12 && (
+                  <Button
+                    variant="link"
+                    className="mt-4 p-0 h-auto text-primary"
+                    onClick={() =>
+                      onOpenTextViewer({
+                        title: `${kapitel.nummer} ${kapitel.title} - Verbesserter Text`,
+                        text: selectedRun.leseflussText!,
+                      })
+                    }
+                  >
+                    Vollständigen Text anzeigen
+                  </Button>
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </Card>
+          </>
+        )}
 
-        {/* Combined Text - Removed individual cost badge */}
-        {hasContent ? (
+        {/* 2. Gekürzter Text (Shortened) */}
+        {hasGekuerzt && (
+          <>
+            <Card className="mb-8 bg-card border-border shadow-sm">
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-medium text-foreground">
+                      Gekürzter Text
+                    </h2>
+                    {selectedRun!.shortenedCost && (
+                      <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded">
+                        {formatCost(selectedRun!.shortenedCost)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        handleCopy(selectedRun!.shortenedText!, "gekuerzt")
+                      }
+                    >
+                      {copiedId === "gekuerzt" ? (
+                        <Check className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        onOpenTextViewer({
+                          title: `${kapitel.nummer} ${kapitel.title} - Gekürzter Text`,
+                          text: selectedRun!.shortenedText!,
+                        })
+                      }
+                    >
+                      <Maximize2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="prose prose-sm max-w-none">
+                  <div className="text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-[12]">
+                    {selectedRun!.shortenedText}
+                  </div>
+                </div>
+                {selectedRun!.shortenedText!.split("\n").length > 12 && (
+                  <Button
+                    variant="link"
+                    className="mt-4 p-0 h-auto text-primary"
+                    onClick={() =>
+                      onOpenTextViewer({
+                        title: `${kapitel.nummer} ${kapitel.title} - Gekürzter Text`,
+                        text: selectedRun!.shortenedText!,
+                      })
+                    }
+                  >
+                    Vollständigen Text anzeigen
+                  </Button>
+                )}
+              </div>
+
+              {/* Context Summaries for Gekürzt - Collapsible with preview */}
+              {summaries.length > 0 && (
+                <div className="px-8 pb-8">
+                  <div className="pt-6 border-t border-border/50">
+                    <Collapsible
+                      open={gekuerztSummariesExpanded}
+                      onOpenChange={setGekuerztSummariesExpanded}
+                    >
+                      <CollapsibleTrigger asChild>
+                        <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full justify-between group">
+                          <span className="font-medium">
+                            Kontext-Zusammenfassungen ({summaries.length})
+                          </span>
+                          <ChevronDown
+                            className={cn(
+                              "h-4 w-4 transition-transform",
+                              gekuerztSummariesExpanded && "rotate-180"
+                            )}
+                          />
+                        </button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="mt-3 space-y-3">
+                        {summaries.map((summary) => {
+                          const sourceKapitel = allKapitels.find(
+                            (k) => k.id === summary.sourceKapitelId
+                          );
+
+                          return (
+                            <div
+                              key={summary.id}
+                              className="p-3 bg-muted/30 rounded-md"
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-xs font-medium text-muted-foreground">
+                                  <span className="mr-1">
+                                    {sourceKapitel?.nummer || "?"}
+                                  </span>
+                                  {sourceKapitel?.title || "Unbekanntes Kapitel"}
+                                </h4>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() =>
+                                    onOpenTextViewer({
+                                      title: `Zusammenfassung: ${sourceKapitel?.nummer} ${sourceKapitel?.title}`,
+                                      text: summary.summaryContent,
+                                    })
+                                  }
+                                >
+                                  <Maximize2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              <p className="text-xs text-foreground/70 leading-relaxed line-clamp-3">
+                                {summary.summaryContent}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </>
+        )}
+
+        {/* 3. Intermediate Groups - IMPROVED STYLING */}
+        {hasIntermediateGroups && (
+          <Card className="mb-8 bg-card border-border shadow-sm">
+            <Collapsible
+              open={intermediateGroupsExpanded}
+              onOpenChange={setIntermediateGroupsExpanded}
+            >
+              <div className="p-6 pb-4">
+                <CollapsibleTrigger asChild>
+                  <button className="flex items-center justify-between w-full group">
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-5 w-5 text-muted-foreground" />
+                      <h3 className="text-lg font-medium text-foreground">
+                        Zwischengruppen
+                      </h3>
+                      <span className="text-sm text-muted-foreground">
+                        ({selectedRun!.intermediateGroups!.length} Gruppen)
+                      </span>
+                    </div>
+                    <ChevronDown
+                      className={cn(
+                        "h-5 w-5 text-muted-foreground group-hover:text-foreground transition-all",
+                        intermediateGroupsExpanded && "rotate-180"
+                      )}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+              </div>
+
+              <CollapsibleContent>
+                <div className="px-6 pb-6 space-y-4">
+                  {selectedRun!.intermediateGroups!.map((group) => (
+                    <Card key={group.id} className="p-4 bg-muted/30">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-medium text-muted-foreground">
+                              Gruppe {group.groupNumber}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {group.sourceCount} Quellen
+                            </span>
+                          </div>
+                          <h4 className="font-medium">{group.heading}</h4>
+                          {group.topic && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {group.topic}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              handleCopy(
+                                group.combinedContent,
+                                `group-${group.id}`
+                              )
+                            }
+                          >
+                            {copiedId === `group-${group.id}` ? (
+                              <Check className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              onOpenTextViewer({
+                                title: `Gruppe ${group.groupNumber}: ${group.heading}`,
+                                text: group.combinedContent,
+                              })
+                            }
+                          >
+                            <Maximize2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">
+                        {group.combinedContent}
+                      </p>
+                      <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>{group.modelUsed}</span>
+                        <span>•</span>
+                        <span>{group.tokensUsed.toLocaleString()} tokens</span>
+                        <span>•</span>
+                        <span>{formatCost(group.cost)}</span>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          </Card>
+        )}
+
+        {/* 4. Kombinierter Text (Combined) */}
+        {hasContent && (
           <Card className="mb-8 bg-card border-border shadow-sm">
             <div className="p-8">
               <div className="flex items-center justify-between mb-6">
@@ -252,10 +607,10 @@ export function KapitelWorkspace({
                     variant="ghost"
                     size="sm"
                     onClick={() =>
-                      handleCopy(selectedRun!.combinedText, "combined")
+                      handleCopy(selectedRun!.combinedText, "kombiniert")
                     }
                   >
-                    {copiedId === "combined" ? (
+                    {copiedId === "kombiniert" ? (
                       <Check className="h-4 w-4 text-primary" />
                     ) : (
                       <Copy className="h-4 w-4" />
@@ -296,469 +651,10 @@ export function KapitelWorkspace({
               )}
             </div>
           </Card>
-        ) : null}
-
-        {/* Explanation Card */}
-        {selectedRun?.shortenedText && selectedRun.explanation && (
-          <Card className="mb-4 bg-blue-50/50 border-blue-200/70">
-            <Collapsible
-              open={explanationExpanded}
-              onOpenChange={setExplanationExpanded}
-            >
-              <div className="p-6">
-                <CollapsibleTrigger asChild>
-                  <button className="flex items-center justify-between w-full group">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle className="h-5 w-5 text-blue-600" />
-                      <h3 className="text-base font-medium text-foreground">
-                        Bearbeitungsdetails
-                      </h3>
-                    </div>
-                    {explanationExpanded ? (
-                      <ChevronUp className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                    ) : (
-                      <ChevronDown className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                    )}
-                  </button>
-                </CollapsibleTrigger>
-
-                <CollapsibleContent className="mt-4 space-y-4">
-                  {selectedRun.explanation.lengthDecision && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-sm font-medium text-foreground">
-                          📝 Längenentscheidung:
-                        </span>
-                      </div>
-                      <p className="text-sm text-foreground/80 leading-relaxed">
-                        {selectedRun.explanation.lengthDecision}
-                      </p>
-                    </div>
-                  )}
-
-                  {selectedRun.explanation.omittedTopics &&
-                    selectedRun.explanation.omittedTopics.length > 0 && (
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-sm font-medium text-foreground">
-                            ❌ Weggelassene Themen:
-                          </span>
-                        </div>
-                        <ul className="text-sm text-foreground/80 list-disc pl-5 space-y-1">
-                          {selectedRun.explanation.omittedTopics.map(
-                            (topic, i) => (
-                              <li key={i}>{topic}</li>
-                            )
-                          )}
-                        </ul>
-                      </div>
-                    )}
-
-                  {selectedRun.explanation.preservedFocus &&
-                    selectedRun.explanation.preservedFocus.length > 0 && (
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-sm font-medium text-foreground">
-                            ✓ Beibehaltener Fokus:
-                          </span>
-                        </div>
-                        <ul className="text-sm text-foreground/80 list-disc pl-5 space-y-1">
-                          {selectedRun.explanation.preservedFocus.map(
-                            (point, i) => (
-                              <li key={i}>{point}</li>
-                            )
-                          )}
-                        </ul>
-                      </div>
-                    )}
-
-                  {selectedRun.explanation.compressionNotes && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-sm font-medium text-foreground">
-                          💡 Zusätzliche Notizen:
-                        </span>
-                      </div>
-                      <p className="text-sm text-foreground/80 leading-relaxed">
-                        {selectedRun.explanation.compressionNotes}
-                      </p>
-                    </div>
-                  )}
-
-                  {selectedRun.shortenedOriginalLength &&
-                    selectedRun.shortenedLength && (
-                      <div className="pt-2 border-t border-border">
-                        <span className="text-sm text-muted-foreground">
-                          📊 Kompression: {selectedRun.shortenedOriginalLength}{" "}
-                          → {selectedRun.shortenedLength} Wörter (
-                          {(
-                            (1 -
-                              selectedRun.shortenedLength /
-                                selectedRun.shortenedOriginalLength) *
-                            100
-                          ).toFixed(0)}
-                          % Reduktion)
-                        </span>
-                      </div>
-                    )}
-                </CollapsibleContent>
-              </div>
-            </Collapsible>
-          </Card>
         )}
 
-        {/* Shortened Text */}
-        {selectedRun?.shortenedText && (
-          <>
-            <Card className="mb-8 bg-card border-border shadow-sm">
-              <div className="p-8">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <h2 className="text-lg font-medium text-foreground">
-                      Gekürzter Text
-                    </h2>
-                    {selectedRun.shortenedCost && (
-                      <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded">
-                        {formatCost(selectedRun.shortenedCost)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        handleCopy(selectedRun.shortenedText!, "shortened")
-                      }
-                    >
-                      {copiedId === "shortened" ? (
-                        <Check className="h-4 w-4 text-primary" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        onOpenTextViewer({
-                          title: `${kapitel.nummer} ${kapitel.title} - Gekürzter Text`,
-                          text: selectedRun.shortenedText!,
-                        })
-                      }
-                    >
-                      <Maximize2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-                <div className="prose prose-sm max-w-none">
-                  <div className="text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-[12]">
-                    {selectedRun.shortenedText}
-                  </div>
-                </div>
-                {selectedRun.shortenedText.split("\n").length > 12 && (
-                  <Button
-                    variant="link"
-                    className="mt-4 p-0 h-auto text-primary"
-                    onClick={() =>
-                      onOpenTextViewer({
-                        title: `${kapitel.nummer} ${kapitel.title} - Gekürzter Text`,
-                        text: selectedRun.shortenedText!,
-                      })
-                    }
-                  >
-                    Vollständigen Text anzeigen
-                  </Button>
-                )}
-              </div>
-            </Card>
-
-            {/* Context Summaries */}
-            {summaries.length > 0 && (
-              <Card className="mb-8 bg-card border-border shadow-sm">
-                <Collapsible
-                  open={contextSummariesExpanded}
-                  onOpenChange={setContextSummariesExpanded}
-                >
-                  <div className="p-6">
-                    <CollapsibleTrigger asChild>
-                      <button className="flex items-center justify-between w-full group">
-                        <div className="flex items-center gap-2">
-                          <BookOpen className="h-5 w-5 text-muted-foreground" />
-                          <h3 className="text-base font-medium text-foreground">
-                            Verwendeter Kontext
-                          </h3>
-                          <span className="text-sm text-muted-foreground">
-                            ({summaries.length} Kapitel)
-                          </span>
-                          {summariesCost > 0 && (
-                            <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded ml-2">
-                              {formatCost(summariesCost)}
-                            </span>
-                          )}
-                        </div>
-                        {contextSummariesExpanded ? (
-                          <ChevronUp className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                        ) : (
-                          <ChevronDown className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                        )}
-                      </button>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="mt-6 space-y-4">
-                      {summaries.map((summary) => {
-                        const sourceKapitel = allKapitels.find(
-                          (k) => k.id === summary.sourceKapitelId
-                        );
-                        const reductionPercent =
-                          summary.originalLength > 0
-                            ? (
-                                ((summary.originalLength -
-                                  summary.summaryLength) /
-                                  summary.originalLength) *
-                                100
-                              ).toFixed(0)
-                            : 0;
-
-                        return (
-                          <div
-                            key={summary.id}
-                            className="border border-border rounded-lg p-4 bg-muted/30"
-                          >
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-sm font-medium text-foreground">
-                                    {sourceKapitel?.nummer || "?"}{" "}
-                                    {sourceKapitel?.title ||
-                                      "Unbekanntes Kapitel"}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                  <span>
-                                    {summary.originalLength} →{" "}
-                                    {summary.summaryLength} Wörter
-                                  </span>
-                                  <span className="text-primary">
-                                    −{reductionPercent}%
-                                  </span>
-                                  {summary.cost > 0 && (
-                                    <span>{formatCost(summary.cost)}</span>
-                                  )}
-                                </div>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                  onOpenTextViewer({
-                                    title: `Zusammenfassung: ${sourceKapitel?.nummer} ${sourceKapitel?.title}`,
-                                    text: summary.summaryContent,
-                                  })
-                                }
-                              >
-                                <Maximize2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            <div className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap line-clamp-3">
-                              {summary.summaryContent}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </CollapsibleContent>
-                  </div>
-                </Collapsible>
-              </Card>
-            )}
-          </>
-        )}
-
-        {/* Lesefluss Text */}
-        {selectedRun?.leseflussText && (
-          <>
-            {/* Explanation Card */}
-            {selectedRun.leseflussExplanation && (
-              <Card className="mb-4 bg-green-50/50 border-green-200/70">
-                <div className="p-6">
-                  <div className="flex items-center gap-2 mb-3">
-                    <CheckCircle className="h-5 w-5 text-green-600" />
-                    <h3 className="text-base font-medium text-foreground">
-                      Was wurde verändert
-                    </h3>
-                  </div>
-                  <p className="text-sm text-foreground/80 leading-relaxed">
-                    {selectedRun.leseflussExplanation}
-                  </p>
-                </div>
-              </Card>
-            )}
-
-            {/* Lesefluss Text Card */}
-            <Card className="mb-8 bg-card border-border shadow-sm">
-              <div className="p-8">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <h2 className="text-lg font-medium text-foreground">
-                      Text mit verbessertem Lesefluss
-                    </h2>
-                    {selectedRun.leseflussLength &&
-                      selectedRun.leseflussOriginalLength && (
-                        <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded">
-                          {selectedRun.leseflussOriginalLength} →{" "}
-                          {selectedRun.leseflussLength} Wörter
-                        </span>
-                      )}
-                    {selectedRun.leseflussCost && (
-                      <span className="text-xs text-muted-foreground px-2 py-1 bg-muted/50 rounded">
-                        {formatCost(selectedRun.leseflussCost)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        handleCopy(selectedRun.leseflussText!, "lesefluss")
-                      }
-                    >
-                      {copiedId === "lesefluss" ? (
-                        <Check className="h-4 w-4 text-primary" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        onOpenTextViewer({
-                          title: `${kapitel.nummer} ${kapitel.title} - Lese Fluss`,
-                          text: selectedRun.leseflussText!,
-                        })
-                      }
-                    >
-                      <Maximize2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-                <div className="prose prose-sm max-w-none">
-                  <div className="text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-[12]">
-                    {selectedRun.leseflussText}
-                  </div>
-                </div>
-                {selectedRun.leseflussText.split("\n").length > 12 && (
-                  <Button
-                    variant="link"
-                    className="mt-4 p-0 h-auto text-primary"
-                    onClick={() =>
-                      onOpenTextViewer({
-                        title: `${kapitel.nummer} ${kapitel.title} - Lese Fluss`,
-                        text: selectedRun.leseflussText!,
-                      })
-                    }
-                  >
-                    Vollständigen Text anzeigen
-                  </Button>
-                )}
-              </div>
-            </Card>
-          </>
-        )}
-
-        {/* Intermediate Groups - Collapsible section */}
-        {hasContent &&
-          selectedRun?.intermediateGroups &&
-          selectedRun.intermediateGroups.length > 0 && (
-            <Card className="mb-8 bg-card border-border shadow-sm">
-              <Collapsible
-                open={intermediateGroupsExpanded}
-                onOpenChange={setIntermediateGroupsExpanded}
-              >
-                <div className="p-6">
-                  <CollapsibleTrigger asChild>
-                    <button className="flex items-center justify-between w-full group">
-                      <div className="flex items-center gap-2">
-                        <Layers className="h-5 w-5 text-muted-foreground" />
-                        <h3 className="text-base font-medium text-foreground">
-                          Zwischenergebnisse
-                        </h3>
-                        <span className="text-sm text-muted-foreground">
-                          ({selectedRun.intermediateGroups.length} Gruppen)
-                        </span>
-                      </div>
-                      {intermediateGroupsExpanded ? (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                      )}
-                    </button>
-                  </CollapsibleTrigger>
-
-                  <CollapsibleContent>
-                    <div className="mt-4 space-y-3">
-                      {selectedRun.intermediateGroups.map((group) => (
-                        <Card
-                          key={group.id}
-                          className="bg-muted/20 border-border/50"
-                        >
-                          <div className="p-4">
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center gap-2">
-                                <h4 className="text-sm font-semibold text-foreground">
-                                  Gruppe {group.groupNumber}
-                                </h4>
-                                <span className="text-xs text-muted-foreground">
-                                  {group.sourceQuelleIds.length} Quellen
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0"
-                                  onClick={() =>
-                                    handleCopy(
-                                      group.combinedContent,
-                                      `group-${group.id}`
-                                    )
-                                  }
-                                >
-                                  {copiedId === `group-${group.id}` ? (
-                                    <Check className="h-3.5 w-3.5 text-primary" />
-                                  ) : (
-                                    <Copy className="h-3.5 w-3.5" />
-                                  )}
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0"
-                                  onClick={() =>
-                                    onOpenTextViewer({
-                                      title: `${kapitel.nummer} ${kapitel.title} - Gruppe ${group.groupNumber}`,
-                                      text: group.combinedContent,
-                                    })
-                                  }
-                                >
-                                  <Maximize2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </div>
-                            <div className="text-sm text-foreground/80 leading-relaxed line-clamp-3">
-                              {group.combinedContent}
-                            </div>
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                  </CollapsibleContent>
-                </div>
-              </Collapsible>
-            </Card>
-          )}
-
-        {hasQuellenErgebnisse && !hasContent ? (
+        {/* Combine Button (if only quellen exist) */}
+        {hasQuellenErgebnisse && !hasContent && (
           <Card className="mb-8 bg-accent/30 border-border border-dashed">
             <div className="p-8 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
@@ -777,7 +673,10 @@ export function KapitelWorkspace({
               </Button>
             </div>
           </Card>
-        ) : runs.length === 0 ? (
+        )}
+
+        {/* No Run Yet */}
+        {runs.length === 0 && (
           <Card className="mb-8 bg-accent/30 border-border border-dashed">
             <div className="p-12 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
@@ -801,66 +700,9 @@ export function KapitelWorkspace({
               </Button>
             </div>
           </Card>
-        ) : null}
-
-        {/* Run Info */}
-        {selectedRun && (
-          <div className="mb-6 p-4 bg-muted/30 rounded-lg">
-            <div className="flex items-start gap-6 text-sm text-muted-foreground">
-              <div className="shrink-0">
-                <span className="font-medium">Modell:</span> {selectedRun.model}
-              </div>
-              <div className="shrink-0">
-                <span className="font-medium">Überschrift:</span>{" "}
-                {selectedRun.ueberschrift}
-              </div>
-            </div>
-            {selectedRun.thema && (
-              <div className="mt-3 text-sm">
-                <div className="flex items-start gap-2">
-                  <span className="font-medium text-muted-foreground shrink-0">
-                    Anweisung:
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    {themaIsLong && !themaExpanded ? (
-                      <div>
-                        <span className="text-muted-foreground">
-                          {selectedRun.thema.slice(0, 80)}...
-                        </span>
-                        <button
-                          onClick={() => setThemaExpanded(true)}
-                          className="ml-2 text-primary hover:underline inline-flex items-center gap-1"
-                        >
-                          Mehr anzeigen
-                          <ChevronDown className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ) : themaIsLong ? (
-                      <div>
-                        <span className="text-muted-foreground">
-                          {selectedRun.thema}
-                        </span>
-                        <button
-                          onClick={() => setThemaExpanded(false)}
-                          className="ml-2 text-primary hover:underline inline-flex items-center gap-1"
-                        >
-                          Weniger anzeigen
-                          <ChevronUp className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">
-                        {selectedRun.thema}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
         )}
 
-        {/* Per-Quelle Ergebnisse - Removed individual cost badges */}
+        {/* 5. Ergebnisse pro Quelle - Show first 5, "Show More" button */}
         {hasQuellenErgebnisse && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -872,7 +714,7 @@ export function KapitelWorkspace({
               </span>
             </div>
             <div className="space-y-3">
-              {selectedRun!.quellenErgebnisse.map((ergebnis) => (
+              {visibleQuellenResults.map((ergebnis) => (
                 <Card
                   key={ergebnis.id}
                   className={cn(
@@ -880,7 +722,7 @@ export function KapitelWorkspace({
                     ergebnis.status === "success" && "hover:border-primary/30",
                     ergebnis.status === "waiting" && "bg-muted/20",
                     ergebnis.status === "no-content" &&
-                      "bg-amber-50/50 border-amber-200/50"
+                      "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200/50 dark:border-amber-800/50"
                   )}
                 >
                   <div className="p-5">
@@ -929,13 +771,13 @@ export function KapitelWorkspace({
                         <span className="text-sm">Text wird generiert...</span>
                       </div>
                     ) : ergebnis.status === "no-content" ? (
-                      <div className="flex items-start gap-3 py-3 text-amber-700">
+                      <div className="flex items-start gap-3 py-3 text-amber-700 dark:text-amber-500">
                         <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                         <div>
                           <p className="text-sm font-medium">
                             Keine verwendbaren Inhalte
                           </p>
-                          <p className="text-xs text-amber-600 mt-1">
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
                             Diese Quelle enthält keine relevanten Informationen
                             für das angegebene Thema.
                           </p>
@@ -950,6 +792,19 @@ export function KapitelWorkspace({
                 </Card>
               ))}
             </div>
+
+            {/* Show More Button */}
+            {hasMoreQuellen && !showAllQuellen && (
+              <div className="flex justify-center mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAllQuellen(true)}
+                >
+                  Weitere {hiddenCount} Quellen anzeigen
+                </Button>
+              </div>
+            )}
           </div>
         )}
 

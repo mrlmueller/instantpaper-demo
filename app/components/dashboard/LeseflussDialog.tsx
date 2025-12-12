@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { BookOpen, Info } from "lucide-react"
+import { Sparkles, Info, Settings2, FileText } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import type { Kapitel, Run } from "@/app/types/ui"
 
@@ -124,19 +124,20 @@ export function LeseflussDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <BookOpen className="h-5 w-5" />
-            Lese Fluss verbessern
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col [&>button]:hidden">
+        <DialogHeader className="pb-4 border-b">
+          <DialogTitle className="flex items-center gap-2 text-lg">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Sparkles className="h-4 w-4 text-primary" />
+            </div>
+            Lesefluss verbessern
           </DialogTitle>
-          <DialogDescription>
-            Verbessere den Lesefluss und schaffe Übergänge zwischen Kapiteln.
-            Nur Kapitel mit gekürzten Texten können ausgewählt werden.
+          <DialogDescription className="pt-1">
+            {kapitel.nummer} {kapitel.title}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <div className="space-y-6 py-5 overflow-y-auto flex-1">
           {/* Aufgabenstellung Input */}
           <div className="space-y-2">
             <Label htmlFor="aufgabenstellung" className="flex items-center gap-2">
@@ -222,7 +223,7 @@ export function LeseflussDialog({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="pt-4 border-t gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Abbrechen
           </Button>
@@ -230,7 +231,8 @@ export function LeseflussDialog({
             onClick={handleSubmit}
             disabled={selectedKapitelIds.size === 0 || aufgabenstellung.trim().length < 10}
           >
-            Lese Fluss verbessern
+            <Sparkles className="h-4 w-4 mr-2" />
+            Lesefluss verbessern
           </Button>
         </DialogFooter>
       </DialogContent>

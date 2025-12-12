@@ -36,17 +36,19 @@ export function DeleteConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-destructive" />
+      <DialogContent className="sm:max-w-md [&>button]:hidden">
+        <DialogHeader className="pb-4 border-b">
+          <DialogTitle className="flex items-center gap-2 text-lg">
+            <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+            </div>
             {typeLabel} löschen?
           </DialogTitle>
-          <DialogDescription className="pt-2">
+          <DialogDescription className="pt-1">
             Bist du sicher, dass du <strong>&quot;{name}&quot;</strong> löschen möchtest? {warning}
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter className="mt-4">
+        <DialogFooter className="pt-4 border-t gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Abbrechen
           </Button>

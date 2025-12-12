@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { X, Plus, Trash2, Check, Eye, BookOpen, Search } from "lucide-react"
+import { X, Plus, Trash2, Check, Eye, BookOpen, Search, Upload, Link as LinkIcon, ImageIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -199,11 +199,34 @@ export function QuellenPanel({
                 value={newQuelleText}
                 onChange={(e) => setNewQuelleText(e.target.value)}
                 placeholder="Füge hier den relevanten Textabschnitt aus deiner Quelle ein..."
-                className="mt-2 h-64 font-mono text-sm resize-none"
-                style={{ maxHeight: '300px', overflowY: 'auto' }}
+                className="mt-2 h-[200px] font-mono text-sm resize-none"
               />
               <div className="mt-2 text-xs text-muted-foreground">
                 {newQuelleText.split(/\s+/).filter(Boolean).length} Wörter
+              </div>
+            </div>
+
+            {/* Image Upload UI Mockup (disabled) */}
+            <div>
+              <Label className="text-sm text-muted-foreground">
+                Bilder (optional, max. 9)
+              </Label>
+              <div className="mt-2 border-2 border-dashed border-border rounded-lg p-6 text-center bg-muted/30">
+                <Upload className="mx-auto h-8 w-8 text-muted-foreground/50 mb-2" />
+                <p className="text-sm text-muted-foreground mb-3">
+                  Bilder hier ablegen oder
+                </p>
+                <Button variant="outline" size="sm" disabled className="mb-3">
+                  Hochladen
+                </Button>
+                <Input
+                  placeholder="Oder Bild-URL eingeben..."
+                  className="mt-2"
+                  disabled
+                />
+                <p className="text-xs text-muted-foreground/70 mt-2">
+                  Bildupload wird in Kürze verfügbar sein
+                </p>
               </div>
             </div>
           </div>
@@ -249,7 +272,11 @@ function QuelleCard({
           {isAssigned && <Check className="h-3 w-3" />}
         </button>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-foreground truncate">{quelle.name}</div>
+          <div className="flex items-center gap-2">
+            <div className="text-sm font-medium text-foreground truncate">{quelle.name}</div>
+            {/* Always show ImageIcon for demo purposes - in production would check quelle.images?.length > 0 */}
+            <ImageIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          </div>
           <div className="text-xs text-muted-foreground mt-1">{wordCount.toLocaleString("de-DE")} Wörter</div>
         </div>
         <div className="flex items-center gap-1">

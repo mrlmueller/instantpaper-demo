@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { ArrowLeft, Mail, Calendar, FileText, BookOpen, Coins, BarChart3, Zap, PenTool } from "lucide-react"
+import { ArrowLeft, Mail, Calendar, FileText, BookOpen, Coins, BarChart3, Zap, PenTool, Key, Eye, EyeOff, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -160,6 +160,7 @@ export default function ProfilPage() {
   const [savingKey, setSavingKey] = useState(false)
   const [apiKeyInput, setApiKeyInput] = useState("")
   const [statusError, setStatusError] = useState<string | null>(null)
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false)
 
   useEffect(() => {
     if (authLoading) return
@@ -282,48 +283,76 @@ export default function ProfilPage() {
 
         {/* OpenAI Key Management */}
         <Card className="p-6 mb-10">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-2">
-              <h3 className="text-lg font-semibold text-foreground">OpenAI API Key</h3>
+          <div className="flex items-center gap-2 mb-4">
+            <Key className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-semibold">OpenAI API-Schlüssel</h2>
+          </div>
+
+          {!keyStatus?.hasKey ? (
+            // No key saved - show input to add new key
+            <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Dein Key wird serverseitig validiert und verschlüsselt gespeichert. Ohne eigenen Key können keine
-                Verarbeitungen gestartet werden (außer du bist für den Plattform-Key freigeschaltet).
+                Hinterlege deinen OpenAI API-Schlüssel, um Verarbeitungen zu starten. Der Key wird verschlüsselt
+                gespeichert.
               </p>
-              <div className="text-sm">
-                <span className="font-medium">Status: </span>
-                {keyStatus
-                  ? keyStatus.hasKey
-                    ? `Eigener Key aktiv${keyStatus.last4 ? ` (****${keyStatus.last4})` : ""}`
-                    : keyStatus.allowPlatformKey
-                      ? "Plattform-Key wird verwendet, solange kein eigener Key hinterlegt ist."
-                      : "Kein Key hinterlegt."
-                  : "Status konnte nicht geladen werden."}
-              </div>
-              {statusError && <p className="text-sm text-destructive">{statusError}</p>}
-            </div>
-            <div className="w-full sm:w-96 space-y-3">
-              <Input
-                type="password"
-                placeholder="sk-..."
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                disabled={savingKey}
-              />
               <div className="flex gap-2">
-                <Button onClick={handleSaveKey} disabled={!apiKeyInput.trim() || savingKey}>
-                  Key speichern
+                <Input
+                  type={showApiKeyInput ? "text" : "password"}
+                  placeholder="sk-proj-..."
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  disabled={savingKey}
+                  className="flex-1 font-mono text-sm"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowApiKeyInput(!showApiKeyInput)}
+                  disabled={savingKey}
+                >
+                  {showApiKeyInput ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
-                {keyStatus?.hasKey && (
-                  <Button variant="outline" onClick={handleDeleteKey} disabled={savingKey}>
-                    Key entfernen
-                  </Button>
-                )}
+              </div>
+              <Button onClick={handleSaveKey} disabled={!apiKeyInput.trim() || savingKey}>
+                Schlüssel speichern
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Hinweis: Der Key wird nach dem Speichern nicht mehr im Browser angezeigt. Bewahre ihn sicher auf.
+              </p>
+            </div>
+          ) : (
+            // Key exists - show masked preview with actions
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Dein API-Schlüssel ist hinterlegt und wird für alle Verarbeitungen verwendet.
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 font-mono text-sm bg-muted px-4 py-2 rounded text-foreground">
+                  sk-******{keyStatus.last4 || "****"}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleDeleteKey}
+                  disabled={savingKey}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Hinweis: Der Key wird nicht im Browser angezeigt. Speichere ihn sicher für spätere Updates.
+                Um den Schlüssel zu ändern, entferne den aktuellen Key und füge einen neuen hinzu.
               </p>
             </div>
-          </div>
+          )}
+
+          {statusError && <p className="text-sm text-destructive mt-3">{statusError}</p>}
+
+          {keyStatus && !keyStatus.hasKey && keyStatus.allowPlatformKey && (
+            <p className="text-xs text-muted-foreground mt-3 p-3 bg-blue-50/50 dark:bg-blue-950/20 rounded border border-blue-200/50 dark:border-blue-800/30">
+              ℹ️ Du bist für den Plattform-Key freigeschaltet und kannst auch ohne eigenen Key verarbeiten.
+            </p>
+          )}
         </Card>
 
         {/* Quick Stats */}
