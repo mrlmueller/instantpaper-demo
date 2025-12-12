@@ -1,18 +1,37 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState, useEffect } from "react"
-import Link from "next/link"
-import { ArrowLeft, Mail, Calendar, FileText, BookOpen, Coins, BarChart3, Zap, PenTool, Key, Eye, EyeOff, Trash2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Input } from "@/components/ui/input"
-import { toast } from "sonner"
-import Cookies from "js-cookie"
-import { useAuth } from "@/app/components/providers/AuthProvider"
-import { deleteOpenAIKey, fetchOpenAIKeyStatus, saveOpenAIKey, type OpenAIKeyStatus } from "@/app/lib/api/openaiKeyClient"
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  Mail,
+  Calendar,
+  FileText,
+  BookOpen,
+  Coins,
+  BarChart3,
+  Zap,
+  PenTool,
+  Key,
+  Eye,
+  EyeOff,
+  Trash2,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import Cookies from "js-cookie";
+import { useAuth } from "@/app/components/providers/AuthProvider";
+import {
+  deleteOpenAIKey,
+  fetchOpenAIKeyStatus,
+  saveOpenAIKey,
+  type OpenAIKeyStatus,
+} from "@/app/lib/api/openaiKeyClient";
 
 // Mock data - will be replaced with real Firebase data later
 const mockUser = {
@@ -20,7 +39,7 @@ const mockUser = {
   name: "Max Mustermann",
   email: "max.mustermann@example.com",
   memberSince: new Date("2024-01-15"),
-}
+};
 
 const mockUserStats = {
   totalCost: 1247, // in cents
@@ -45,7 +64,7 @@ const mockUserStats = {
     { model: "gpt-5.1", count: 1 },
   ],
   memberSince: new Date("2024-01-15"),
-}
+};
 
 function StatCard({
   icon: Icon,
@@ -53,10 +72,10 @@ function StatCard({
   value,
   subtext,
 }: {
-  icon: React.ElementType
-  label: string
-  value: string
-  subtext?: string
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  subtext?: string;
 }) {
   return (
     <Card className="p-5">
@@ -67,11 +86,13 @@ function StatCard({
         <div className="min-w-0">
           <p className="text-sm text-muted-foreground">{label}</p>
           <p className="text-2xl font-semibold text-foreground mt-1">{value}</p>
-          {subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
+          {subtext && (
+            <p className="text-xs text-muted-foreground mt-1">{subtext}</p>
+          )}
         </div>
       </div>
     </Card>
-  )
+  );
 }
 
 function StatCardSkeleton() {
@@ -85,7 +106,7 @@ function StatCardSkeleton() {
         </div>
       </div>
     </Card>
-  )
+  );
 }
 
 function ProfilePageSkeleton() {
@@ -149,100 +170,108 @@ function ProfilePageSkeleton() {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 export default function ProfilPage() {
-  const { user: authUser, loading: authLoading } = useAuth()
-  const [stats] = useState<typeof mockUserStats | null>(mockUserStats)
-  const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null)
-  const [keyLoading, setKeyLoading] = useState(true)
-  const [savingKey, setSavingKey] = useState(false)
-  const [apiKeyInput, setApiKeyInput] = useState("")
-  const [statusError, setStatusError] = useState<string | null>(null)
-  const [showApiKeyInput, setShowApiKeyInput] = useState(false)
+  const { user: authUser, loading: authLoading } = useAuth();
+  const [stats] = useState<typeof mockUserStats | null>(mockUserStats);
+  const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
+  const [keyLoading, setKeyLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [showSavedKey, setShowSavedKey] = useState(true);
 
   useEffect(() => {
-    if (authLoading) return
-    const token = Cookies.get("__session")
+    if (authLoading) return;
+    const token = Cookies.get("__session");
     if (!token) {
-      setStatusError("Keine Sitzung gefunden. Bitte melde dich erneut an.")
-      setKeyLoading(false)
-      return
+      setStatusError("Keine Sitzung gefunden. Bitte melde dich erneut an.");
+      setKeyLoading(false);
+      return;
     }
 
     fetchOpenAIKeyStatus(token)
       .then(setKeyStatus)
       .catch((err: any) => {
-        const message = err?.message || "OpenAI-Schlüsselstatus konnte nicht geladen werden."
-        setStatusError(message)
-        toast.error("OpenAI Key", { description: message })
+        const message =
+          err?.message || "OpenAI-Schlüsselstatus konnte nicht geladen werden.";
+        setStatusError(message);
+        toast.error("OpenAI Key", { description: message });
       })
-      .finally(() => setKeyLoading(false))
-  }, [authLoading, authUser?.uid])
+      .finally(() => setKeyLoading(false));
+  }, [authLoading, authUser?.uid]);
 
   const handleSaveKey = async () => {
-    if (!apiKeyInput.trim()) return
-    const token = Cookies.get("__session")
+    if (!apiKeyInput.trim()) return;
+    const token = Cookies.get("__session");
     if (!token) {
-      toast.error("Sitzung abgelaufen", { description: "Bitte melde dich erneut an." })
-      return
+      toast.error("Sitzung abgelaufen", {
+        description: "Bitte melde dich erneut an.",
+      });
+      return;
     }
     try {
-      setSavingKey(true)
-      const status = await saveOpenAIKey(token, apiKeyInput.trim())
-      setKeyStatus(status)
-      setApiKeyInput("")
-      toast.success("OpenAI Key gespeichert")
+      setSavingKey(true);
+      const status = await saveOpenAIKey(token, apiKeyInput.trim());
+      setKeyStatus(status);
+      setApiKeyInput("");
+      toast.success("OpenAI Key gespeichert");
     } catch (err: any) {
-      const message = err?.message || "Key konnte nicht gespeichert werden."
-      toast.error("Fehler", { description: message })
+      const message = err?.message || "Key konnte nicht gespeichert werden.";
+      toast.error("Fehler", { description: message });
     } finally {
-      setSavingKey(false)
+      setSavingKey(false);
     }
-  }
+  };
 
   const handleDeleteKey = async () => {
-    const token = Cookies.get("__session")
+    const token = Cookies.get("__session");
     if (!token) {
-      toast.error("Sitzung abgelaufen", { description: "Bitte melde dich erneut an." })
-      return
+      toast.error("Sitzung abgelaufen", {
+        description: "Bitte melde dich erneut an.",
+      });
+      return;
     }
     try {
-      setSavingKey(true)
-      const status = await deleteOpenAIKey(token)
-      setKeyStatus(status)
-      toast.success("OpenAI Key entfernt")
+      setSavingKey(true);
+      const status = await deleteOpenAIKey(token);
+      setKeyStatus(status);
+      toast.success("OpenAI Key entfernt");
     } catch (err: any) {
-      const message = err?.message || "Key konnte nicht entfernt werden."
-      toast.error("Fehler", { description: message })
+      const message = err?.message || "Key konnte nicht entfernt werden.";
+      toast.error("Fehler", { description: message });
     } finally {
-      setSavingKey(false)
+      setSavingKey(false);
     }
-  }
+  };
 
-  const isLoading = authLoading || keyLoading || !authUser
+  const isLoading = authLoading || keyLoading || !authUser;
 
   if (isLoading || !stats) {
-    return <ProfilePageSkeleton />
+    return <ProfilePageSkeleton />;
   }
 
-  const userName = authUser?.displayName || authUser?.email || mockUser.name
-  const userEmail = authUser?.email || mockUser.email
-  const memberSince = stats.memberSince
+  const userName = authUser?.displayName || authUser?.email || mockUser.name;
+  const userEmail = authUser?.email || mockUser.email;
+  const memberSince = stats.memberSince;
 
-  const formatCost = (cents: number) => `${(cents / 100).toFixed(2)} €`
-  const formatNumber = (num: number) => num.toLocaleString("de-DE")
+  const formatCost = (cents: number) => `${(cents / 100).toFixed(2)} €`;
+  const formatNumber = (num: number) => num.toLocaleString("de-DE");
 
+  const maskedSavedKey = `sk-**************************************${
+    keyStatus?.last4 || "****"
+  }`;
   const initials = userName
     .split(" ")
     .map((n) => n[0])
     .join("")
     .toUpperCase()
-    .slice(0, 2)
+    .slice(0, 2);
 
-  const maxMonthlyRuns = Math.max(...stats.runsByMonth.map((m) => m.runs))
-  const maxProjektCost = Math.max(...stats.costByProjekt.map((p) => p.cost))
+  const maxMonthlyRuns = Math.max(...stats.runsByMonth.map((m) => m.runs));
+  const maxProjektCost = Math.max(...stats.costByProjekt.map((p) => p.cost));
 
   return (
     <div className="min-h-screen bg-background">
@@ -254,7 +283,9 @@ export default function ProfilPage() {
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-semibold text-foreground">Dein Profil</h1>
+          <h1 className="text-2xl font-semibold text-foreground">
+            Dein Profil
+          </h1>
         </div>
 
         {/* Profile Card */}
@@ -264,7 +295,9 @@ export default function ProfilPage() {
               {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-semibold text-foreground">{userName}</h2>
+              <h2 className="text-xl font-semibold text-foreground">
+                {userName}
+              </h2>
               <div className="flex items-center gap-2 mt-1 text-muted-foreground">
                 <Mail className="h-4 w-4" />
                 <span className="text-sm">{userEmail}</span>
@@ -273,7 +306,11 @@ export default function ProfilPage() {
                 <div className="flex items-center gap-1.5">
                   <Calendar className="h-4 w-4" />
                   <span>
-                    Mitglied seit {memberSince.toLocaleDateString("de-DE", { month: "long", year: "numeric" })}
+                    Mitglied seit{" "}
+                    {memberSince.toLocaleDateString("de-DE", {
+                      month: "long",
+                      year: "numeric",
+                    })}
                   </span>
                 </div>
               </div>
@@ -283,74 +320,81 @@ export default function ProfilPage() {
 
         {/* OpenAI Key Management */}
         <Card className="p-6 mb-10">
-          <div className="flex items-center gap-2 mb-4">
-            <Key className="h-5 w-5 text-muted-foreground" />
-            <h2 className="text-lg font-semibold">OpenAI API-Schlüssel</h2>
-          </div>
+          <h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
+            <Key className="h-4 w-4 text-muted-foreground" />
+            API-Schlüssel
+          </h3>
 
-          {!keyStatus?.hasKey ? (
-            // No key saved - show input to add new key
+          {keyStatus?.hasKey ? (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Hinterlege deinen OpenAI API-Schlüssel, um Verarbeitungen zu starten. Der Key wird verschlüsselt
-                gespeichert.
-              </p>
-              <div className="flex gap-2">
-                <Input
-                  type={showApiKeyInput ? "text" : "password"}
-                  placeholder="sk-proj-..."
-                  value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  disabled={savingKey}
-                  className="flex-1 font-mono text-sm"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowApiKeyInput(!showApiKeyInput)}
-                  disabled={savingKey}
-                >
-                  {showApiKeyInput ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
-              <Button onClick={handleSaveKey} disabled={!apiKeyInput.trim() || savingKey}>
-                Schlüssel speichern
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Hinweis: Der Key wird nach dem Speichern nicht mehr im Browser angezeigt. Bewahre ihn sicher auf.
-              </p>
-            </div>
-          ) : (
-            // Key exists - show masked preview with actions
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Dein API-Schlüssel ist hinterlegt und wird für alle Verarbeitungen verwendet.
-              </p>
               <div className="flex items-center gap-3">
-                <div className="flex-1 font-mono text-sm bg-muted px-4 py-2 rounded text-foreground">
-                  sk-******{keyStatus.last4 || "****"}
+                <div className="flex-1 relative">
+                  <Input
+                    type={showSavedKey ? "text" : "password"}
+                    value={maskedSavedKey}
+                    readOnly
+                    disabled={savingKey}
+                    className="pr-10 font-mono text-sm bg-muted/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSavedKey(!showSavedKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    disabled={savingKey}
+                  >
+                    {showSavedKey ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
                 </div>
                 <Button
-                  variant="ghost"
+                  variant="destructive"
                   size="icon"
                   onClick={handleDeleteKey}
                   disabled={savingKey}
-                  className="text-muted-foreground hover:text-destructive"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Um den Schlüssel zu ändern, entferne den aktuellen Key und füge einen neuen hinzu.
+                Dein API-Schlüssel ist sicher verschlüsselt gespeichert.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex gap-3">
+                <Input
+                  type="text"
+                  placeholder="sk-..."
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  disabled={savingKey}
+                  className="font-mono text-sm"
+                />
+                <Button
+                  onClick={handleSaveKey}
+                  disabled={!apiKeyInput.trim() || savingKey}
+                >
+                  Speichern
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Füge deinen API-Schlüssel hinzu, um die Verarbeitung zu
+                aktivieren.
               </p>
             </div>
           )}
 
-          {statusError && <p className="text-sm text-destructive mt-3">{statusError}</p>}
+          {statusError && (
+            <p className="text-sm text-destructive mt-3">{statusError}</p>
+          )}
 
           {keyStatus && !keyStatus.hasKey && keyStatus.allowPlatformKey && (
             <p className="text-xs text-muted-foreground mt-3 p-3 bg-blue-50/50 dark:bg-blue-950/20 rounded border border-blue-200/50 dark:border-blue-800/30">
-              ℹ️ Du bist für den Plattform-Key freigeschaltet und kannst auch ohne eigenen Key verarbeiten.
+              ℹ️ Du bist für den Plattform-Key freigeschaltet und kannst auch
+              ohne eigenen Key verarbeiten.
             </p>
           )}
         </Card>
@@ -369,7 +413,12 @@ export default function ProfilPage() {
             value={String(stats.totalProjekte)}
             subtext={`${stats.totalKapitel} Kapitel`}
           />
-          <StatCard icon={BookOpen} label="Quellen" value={String(stats.totalQuellen)} subtext="Hochgeladen" />
+          <StatCard
+            icon={BookOpen}
+            label="Quellen"
+            value={String(stats.totalQuellen)}
+            subtext="Hochgeladen"
+          />
           <StatCard
             icon={PenTool}
             label="Generierte Wörter"
@@ -389,14 +438,20 @@ export default function ProfilPage() {
             <div className="space-y-4">
               {stats.runsByMonth.map((month) => (
                 <div key={month.month} className="flex items-center gap-3">
-                  <span className="text-sm text-muted-foreground w-20 shrink-0">{month.month.slice(0, 3)}</span>
+                  <span className="text-sm text-muted-foreground w-20 shrink-0">
+                    {month.month.slice(0, 3)}
+                  </span>
                   <div className="flex-1 h-6 bg-muted/30 rounded overflow-hidden">
                     <div
                       className="h-full bg-primary/70 rounded transition-all"
-                      style={{ width: `${(month.runs / maxMonthlyRuns) * 100}%` }}
+                      style={{
+                        width: `${(month.runs / maxMonthlyRuns) * 100}%`,
+                      }}
                     />
                   </div>
-                  <span className="text-sm text-muted-foreground w-16 text-right">{month.runs} Runs</span>
+                  <span className="text-sm text-muted-foreground w-16 text-right">
+                    {month.runs} Runs
+                  </span>
                 </div>
               ))}
             </div>
@@ -412,13 +467,19 @@ export default function ProfilPage() {
               {stats.costByProjekt.map((projekt) => (
                 <div key={projekt.projektName}>
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm text-foreground truncate max-w-[200px]">{projekt.projektName}</span>
-                    <span className="text-sm font-medium text-foreground">{formatCost(projekt.cost)}</span>
+                    <span className="text-sm text-foreground truncate max-w-[200px]">
+                      {projekt.projektName}
+                    </span>
+                    <span className="text-sm font-medium text-foreground">
+                      {formatCost(projekt.cost)}
+                    </span>
                   </div>
                   <div className="h-2 bg-muted/30 rounded overflow-hidden">
                     <div
                       className="h-full bg-primary/70 rounded transition-all"
-                      style={{ width: `${(projekt.cost / maxProjektCost) * 100}%` }}
+                      style={{
+                        width: `${(projekt.cost / maxProjektCost) * 100}%`,
+                      }}
                     />
                   </div>
                 </div>
@@ -435,11 +496,18 @@ export default function ProfilPage() {
           </h3>
           <div className="flex gap-6 flex-wrap">
             {stats.modelUsage.map((model) => (
-              <div key={model.model} className="flex items-center gap-3 px-4 py-3 bg-muted/30 rounded-lg">
+              <div
+                key={model.model}
+                className="flex items-center gap-3 px-4 py-3 bg-muted/30 rounded-lg"
+              >
                 <div className="w-3 h-3 rounded-full bg-primary" />
                 <div>
-                  <p className="text-sm font-medium text-foreground">{model.model}</p>
-                  <p className="text-xs text-muted-foreground">{model.count} Verarbeitungen</p>
+                  <p className="text-sm font-medium text-foreground">
+                    {model.model}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {model.count} Verarbeitungen
+                  </p>
                 </div>
               </div>
             ))}
@@ -447,5 +515,5 @@ export default function ProfilPage() {
         </Card>
       </div>
     </div>
-  )
+  );
 }

@@ -906,8 +906,13 @@ export function Dashboard({
         prev.map((k) => (k.id === activeKapitelId ? { ...k, assignedQuellenIds: newQuelleIds } : k))
       );
 
+      const quelle = quellen.find((q) => q.id === quelleId);
+
       try {
         await persistKapitelQuellenClient(activeKapitelId, newQuelleIds);
+        toast.success('Quelle zugewiesen', {
+          description: quelle ? `"${quelle.name}" wurde dem Kapitel hinzugefügt.` : undefined,
+        });
       } catch (clientErr) {
         // Fallback to server action
         const result = await updateKapitelQuellen(activeKapitelId, newQuelleIds);
@@ -916,10 +921,14 @@ export function Dashboard({
             prev.map((k) => (k.id === activeKapitelId ? { ...k, assignedQuellenIds: prevQuelleIds } : k))
           );
           toast.error('Fehler', { description: result.error });
+        } else {
+          toast.success('Quelle zugewiesen', {
+            description: quelle ? `"${quelle.name}" wurde dem Kapitel hinzugefügt.` : undefined,
+          });
         }
       }
     },
-    [activeKapitelId, kapiteln, persistKapitelQuellenClient]
+    [activeKapitelId, kapiteln, persistKapitelQuellenClient, quellen]
   );
 
   const handleUnassignQuelle = useCallback(
@@ -936,8 +945,13 @@ export function Dashboard({
         prev.map((k) => (k.id === activeKapitelId ? { ...k, assignedQuellenIds: newQuelleIds } : k))
       );
 
+      const quelle = quellen.find((q) => q.id === quelleId);
+
       try {
         await persistKapitelQuellenClient(activeKapitelId, newQuelleIds);
+        toast.success('Quelle entfernt', {
+          description: quelle ? `"${quelle.name}" wurde vom Kapitel entfernt.` : undefined,
+        });
       } catch (clientErr) {
         const result = await updateKapitelQuellen(activeKapitelId, newQuelleIds);
         if (!result.success) {
@@ -945,10 +959,14 @@ export function Dashboard({
             prev.map((k) => (k.id === activeKapitelId ? { ...k, assignedQuellenIds: prevQuelleIds } : k))
           );
           toast.error('Fehler', { description: result.error });
+        } else {
+          toast.success('Quelle entfernt', {
+            description: quelle ? `"${quelle.name}" wurde vom Kapitel entfernt.` : undefined,
+          });
         }
       }
     },
-    [activeKapitelId, kapiteln, persistKapitelQuellenClient]
+    [activeKapitelId, kapiteln, persistKapitelQuellenClient, quellen]
   );
 
   const handleAddKapitel = useCallback(async (title: string, nummer: string) => {

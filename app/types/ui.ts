@@ -13,6 +13,7 @@ export interface Quelle {
   text: string; // Maps to Firebase 'content' field
   projektId: string;
   createdAt: Date;
+  images?: string[]; // Optional array of image URLs/data
 }
 
 export interface Kapitel {
