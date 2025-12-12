@@ -7,6 +7,7 @@ import { KapitelWorkspace } from './KapitelWorkspace';
 import { ProjektHeader } from './ProjektHeader';
 import { QuellenPanel } from './QuellenPanel';
 import { TextViewerModal } from './TextViewerModal';
+import { QuelleViewerModal } from './QuelleViewerModal';
 import { ProcessingDialog } from './ProcessingDialog';
 import { ShortenDialog } from './ShortenDialog';
 import { LeseflussDialog } from './LeseflussDialog';
@@ -30,6 +31,7 @@ import {
   deleteQuelle as deleteQuelleAction,
   getUserQuellen,
   type Quelle as FirebaseQuelle,
+  type ImageMetadata,
 } from '@/app/actions/quellen';
 import {
   createKapitel,
@@ -235,6 +237,7 @@ export function Dashboard({
     title: string;
     text: string;
   } | null>(null);
+  const [quelleViewer, setQuelleViewer] = useState<Quelle | null>(null);
   const [processingDialogOpen, setProcessingDialogOpen] = useState(false);
   const [shortenDialogOpen, setShortenDialogOpen] = useState(false);
   const [leseflussDialogOpen, setLeseflussDialogOpen] = useState(false);
@@ -852,26 +855,63 @@ export function Dashboard({
   );
 
   const handleAddQuelle = useCallback(
-    async (name: string, text: string) => {
-      const result = await createQuelle(name, text, projekt.id);
-      if (result.success) {
-        toast.success('Quelle hinzugefügt', {
-          description: `"${name}" wurde erfolgreich erstellt.`,
+    async (name: string, text: string, imageFiles: File[] = []) => {
+      const uploadingToast =
+        imageFiles.length > 0
+          ? toast.loading(`Lade ${imageFiles.length} Bild(er) hoch...`)
+          : undefined;
+
+      let imageMetadata: ImageMetadata[] = [];
+
+      try {
+        // Upload images to Storage first (client-side)
+        if (imageFiles.length > 0) {
+          const { uploadImagesToStorage } = await import('@/app/lib/firebase/storage');
+          imageMetadata = await uploadImagesToStorage(user!.uid, imageFiles);
+        }
+
+        // Create Quelle with image metadata (not files)
+        const result = await createQuelle(name, text, projekt.id, imageMetadata);
+
+        if (uploadingToast) toast.dismiss(uploadingToast);
+
+        if (result.success) {
+          toast.success('Quelle hinzugefügt', {
+            description: `"${name}" wurde erfolgreich erstellt${imageFiles.length > 0 ? ` mit ${imageFiles.length} Bild(ern)` : ''}.`,
+          });
+          // Optimistically update UI
+          const newQuelle: Quelle = {
+            id: result.id!,
+            name,
+            text,
+            projektId: projekt.id,
+            createdAt: new Date(),
+            images: result.imageUrls || [],
+          };
+          setQuellen((prev) => [...prev, newQuelle]);
+        } else {
+          toast.error('Fehler', { description: result.error });
+
+          // Cleanup uploaded images if Firestore creation failed
+          if (imageMetadata.length > 0) {
+            const { deleteImagesFromStorage } = await import('@/app/lib/firebase/storage');
+            await deleteImagesFromStorage(imageMetadata.map(img => img.path));
+          }
+        }
+      } catch (error) {
+        if (uploadingToast) toast.dismiss(uploadingToast);
+        toast.error('Upload fehlgeschlagen', {
+          description: error instanceof Error ? error.message : 'Unbekannter Fehler',
         });
-        // Optimistically update UI
-        const newQuelle: Quelle = {
-          id: result.id!,
-          name,
-          text,
-          projektId: projekt.id,
-          createdAt: new Date(),
-        };
-        setQuellen((prev) => [...prev, newQuelle]);
-      } else {
-        toast.error('Fehler', { description: result.error });
+
+        // Cleanup uploaded images on error
+        if (imageMetadata.length > 0) {
+          const { deleteImagesFromStorage } = await import('@/app/lib/firebase/storage');
+          await deleteImagesFromStorage(imageMetadata.map(img => img.path));
+        }
       }
     },
-    [projekt.id]
+    [projekt.id, user]
   );
 
   const handleDeleteQuelle = useCallback(async (id: string) => {
@@ -1573,12 +1613,19 @@ export function Dashboard({
               onDeleteQuelle={(id, name) => setDeleteConfirm({ type: 'quelle', id, name })}
               onAssignQuelle={handleAssignQuelle}
               onUnassignQuelle={handleUnassignQuelle}
-              onViewQuelle={(quelle) => setTextViewerContent({ title: quelle.name, text: quelle.text })}
+              onViewQuelle={(quelle) => setQuelleViewer(quelle)}
             />
           ))}
       </div>
 
       <TextViewerModal content={textViewerContent} onClose={() => setTextViewerContent(null)} />
+      <QuelleViewerModal
+        quelle={quelleViewer}
+        open={!!quelleViewer}
+        onOpenChange={(open) => {
+          if (!open) setQuelleViewer(null);
+        }}
+      />
 
       {activeKapitel && (
         <ProcessingDialog

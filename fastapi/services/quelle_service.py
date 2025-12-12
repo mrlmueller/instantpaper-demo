@@ -202,6 +202,12 @@ class QuelleService:
             run = await self.firebase.get_run(user_id, kapitel_id, run_id)
             grundlegende_informationen = run.get('grundlegendeInformationen') if run else None
 
+            # Step 1.6: Extract image URLs from Quelle (if any)
+            quelle_images = None
+            if 'images' in quelle and isinstance(quelle['images'], list):
+                quelle_images = [img['url'] for img in quelle['images'] if 'url' in img]
+                logger.info(f"Quelle has {len(quelle_images)} image(s)")
+
             # Step 2: Process with OpenAI
             api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
             logger.info(f"Processing Quelle {quelle_id} with OpenAI model {model}")
@@ -210,7 +216,8 @@ class QuelleService:
                 user_input,
                 model,
                 grundlegende_informationen,
-                api_key=api_key
+                api_key=api_key,
+                quelle_images=quelle_images
             )
 
             # Step 2.5: Calculate cost (including cached input and reasoning tokens)

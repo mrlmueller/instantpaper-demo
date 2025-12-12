@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useState } from "react";
 import type { Quelle } from "@/app/types/ui";
 
@@ -24,6 +25,8 @@ export function QuelleViewerModal({
 }: QuelleViewerModalProps) {
   const [copied, setCopied] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [loadedImages, setLoadedImages] = useState<Set<number>>(new Set());
+  const [zoomedImageLoaded, setZoomedImageLoaded] = useState(false);
 
   const handleCopy = async () => {
     if (quelle) {
@@ -33,11 +36,39 @@ export function QuelleViewerModal({
     }
   };
 
+  const handleImageLoad = (index: number) => {
+    setLoadedImages((prev) => new Set(prev).add(index));
+  };
+
+  // Reset loaded images when modal opens with new quelle
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen) {
+      setLoadedImages(new Set());
+    }
+    onOpenChange(newOpen);
+  };
+
+  const handleViewImage = (img: string) => {
+    setZoomedImageLoaded(false);
+    setViewingImage(img);
+  };
+
+  const handleCloseZoom = () => {
+    setViewingImage(null);
+    setZoomedImageLoaded(false);
+  };
+
   const wordCount = quelle?.text.split(/\s+/).filter(Boolean).length || 0;
+
+  // Debug logging
+  if (quelle && open) {
+    console.log('🔍 QuelleViewerModal - quelle:', quelle);
+    console.log('🔍 QuelleViewerModal - quelle.images:', quelle.images);
+  }
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col [&>button]:hidden">
           <DialogHeader className="flex-shrink-0 pr-0">
             <div className="flex items-start justify-between gap-4">
@@ -89,13 +120,19 @@ export function QuelleViewerModal({
                   {quelle.images.map((img, index) => (
                     <button
                       key={index}
-                      onClick={() => setViewingImage(img)}
+                      onClick={() => handleViewImage(img)}
                       className="relative aspect-square rounded-md overflow-hidden border bg-muted hover:ring-2 hover:ring-primary/50 transition-all"
                     >
+                      {!loadedImages.has(index) && (
+                        <Skeleton className="absolute inset-0 w-full h-full" />
+                      )}
                       <img
                         src={img}
                         alt={`Bild ${index + 1}`}
-                        className="w-full h-full object-cover"
+                        className={`w-full h-full object-cover transition-opacity ${
+                          loadedImages.has(index) ? 'opacity-100' : 'opacity-0'
+                        }`}
+                        onLoad={() => handleImageLoad(index)}
                       />
                     </button>
                   ))}
@@ -111,19 +148,28 @@ export function QuelleViewerModal({
       </Dialog>
 
       {/* Image Zoom Dialog */}
-      <Dialog open={viewingImage !== null} onOpenChange={() => setViewingImage(null)}>
+      <Dialog open={viewingImage !== null} onOpenChange={handleCloseZoom}>
         <DialogContent className="sm:max-w-5xl p-0 [&>button]:hidden bg-background border-0 shadow-2xl">
-          <div className="relative flex items-center justify-center p-4">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Bildansicht</DialogTitle>
+          </DialogHeader>
+          <div className="relative flex items-center justify-center p-4 min-h-[400px]">
+            {!zoomedImageLoaded && (
+              <Skeleton className="absolute inset-4 rounded-lg" />
+            )}
             <img
               src={viewingImage || ""}
               alt="Vergrößertes Bild"
-              className="max-w-full max-h-[85vh] object-contain rounded-lg"
+              className={`max-w-full max-h-[85vh] object-contain rounded-lg transition-opacity ${
+                zoomedImageLoaded ? 'opacity-100' : 'opacity-0'
+              }`}
+              onLoad={() => setZoomedImageLoaded(true)}
             />
             <Button
               variant="secondary"
               size="sm"
-              className="absolute top-6 right-6 shadow-lg"
-              onClick={() => setViewingImage(null)}
+              className="absolute top-6 right-6 shadow-lg z-10"
+              onClick={handleCloseZoom}
             >
               <X className="h-4 w-4" />
             </Button>

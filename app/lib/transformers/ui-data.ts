@@ -19,18 +19,25 @@ import type {
 
 /**
  * Transform Firebase Quelle to UI Quelle
- * Maps: title → name, content → text
+ * Maps: title → name, content → text, images metadata → image URLs
  */
 export function transformQuelleToUI(
   fbQuelle: FirebaseQuelle,
   projektId: string
 ): UIQuelle {
+  // Debug logging
+  if (fbQuelle.images) {
+    console.log('🔍 Transform - fbQuelle.images:', fbQuelle.images);
+    console.log('🔍 Transform - mapped URLs:', fbQuelle.images.map((img) => img.url));
+  }
+
   return {
     id: fbQuelle.id,
     name: fbQuelle.title,
     text: fbQuelle.content,
     projektId,
     createdAt: new Date(fbQuelle.createdAt),
+    images: fbQuelle.images?.map((img) => img.url),
   };
 }
 

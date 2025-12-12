@@ -71,7 +71,8 @@ class OpenAIService:
         user_input: str,
         model: str,
         grundlegende_informationen: str = None,
-        api_key: str | None = None
+        api_key: str | None = None,
+        quelle_images: list[str] | None = None
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
@@ -91,10 +92,26 @@ class OpenAIService:
 
             logger.info(f"Processing Quelle with {model}")
             logger.debug(f"Prompt length: {len(prompt)} characters")
+            if quelle_images:
+                logger.info(f"Including {len(quelle_images)} image(s) in request")
+
+            # Build user message content (multimodal format)
+            user_message_content = [
+                {"type": "input_text", "text": prompt}
+            ]
+
+            # Add images if provided
+            if quelle_images and len(quelle_images) > 0:
+                for img_url in quelle_images:
+                    user_message_content.append({
+                        "type": "input_image",
+                        "image_url": img_url
+                    })
 
             # Call OpenAI API
             system_message = (
                 "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+                "You can analyze both text and images provided. "
                 "Think step-by-step to ensure correctness. "
                 f"If the Quelle does NOT contain any useful information for the request, respond with the single token '{NO_CONTENT_SENTINEL}' only. "
                 "Otherwise, return only the final answer without any extra commentary."
@@ -105,9 +122,9 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": system_message,
+                        "content": [{"type": "input_text", "text": system_message}],
                     },
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": user_message_content},
                 ],
                 reasoning={"effort": "high"},
                 max_output_tokens=None,  # allow model to decide; adjust if you want a hard cap
@@ -213,9 +230,14 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>",
+                            }
+                        ],
                     },
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
                 ],
                 reasoning={"effort": "high"},
                 max_output_tokens=None,
@@ -293,9 +315,9 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": SUMMARIZE_SYSTEM_MESSAGE,
+                        "content": [{"type": "input_text", "text": SUMMARIZE_SYSTEM_MESSAGE}],
                     },
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
                 ],
                 reasoning={"effort": "low"},
                 max_output_tokens=None,
@@ -374,9 +396,9 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": SHORTEN_SYSTEM_MESSAGE,
+                        "content": [{"type": "input_text", "text": SHORTEN_SYSTEM_MESSAGE}],
                     },
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
                 ],
                 reasoning={"effort": "high"},
                 max_output_tokens=None,
@@ -476,9 +498,9 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": LESEFLUSS_SYSTEM_MESSAGE,
+                        "content": [{"type": "input_text", "text": LESEFLUSS_SYSTEM_MESSAGE}],
                     },
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
                 ],
                 reasoning={"effort": "high"},  # High effort for narrative quality
                 max_output_tokens=None,

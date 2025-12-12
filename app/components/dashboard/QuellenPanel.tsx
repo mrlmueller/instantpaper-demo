@@ -28,13 +28,14 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import type { Quelle } from "@/app/types/ui";
 
 interface QuellenPanelProps {
   quellen: Quelle[];
   assignedQuellenIds: string[];
   onClose: () => void;
-  onAddQuelle: (name: string, text: string) => Promise<void>;
+  onAddQuelle: (name: string, text: string, imageFiles?: File[]) => Promise<void>;
   onDeleteQuelle: (id: string, name: string) => void;
   onAssignQuelle: (id: string) => Promise<void>;
   onUnassignQuelle: (id: string) => Promise<void>;
@@ -55,29 +56,56 @@ export function QuellenPanel({
   const [newQuelleName, setNewQuelleName] = useState("");
   const [newQuelleText, setNewQuelleText] = useState("");
   const [newQuelleImages, setNewQuelleImages] = useState<string[]>([]);
+  const [newQuelleImageFiles, setNewQuelleImageFiles] = useState<File[]>([]);
   const [imageUrl, setImageUrl] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAddQuelle = async () => {
     if (newQuelleName.trim() && newQuelleText.trim()) {
-      await onAddQuelle(newQuelleName.trim(), newQuelleText.trim());
+      await onAddQuelle(newQuelleName.trim(), newQuelleText.trim(), newQuelleImageFiles);
       setNewQuelleName("");
       setNewQuelleText("");
       setNewQuelleImages([]);
+      setNewQuelleImageFiles([]);
       setAddDialogOpen(false);
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-
+  // Process files (used by both file input and drag-drop)
+  const processFiles = (files: FileList | File[]) => {
     const remaining = 9 - newQuelleImages.length;
     const filesToProcess = Array.from(files).slice(0, remaining);
 
-    filesToProcess.forEach((file) => {
+    // Validate file type and size
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    const maxSize = 5 * 1024 * 1024; // 5MB
+
+    const validFiles: File[] = [];
+
+    for (const file of filesToProcess) {
+      if (!validTypes.includes(file.type)) {
+        toast.error(`Ungültiger Dateityp: ${file.name}`, {
+          description: 'Nur JPG, PNG, WebP und GIF sind erlaubt.',
+        });
+        continue;
+      }
+      if (file.size > maxSize) {
+        toast.error(`Datei zu groß: ${file.name}`, {
+          description: `Maximale Größe: 5MB (aktuell: ${(file.size / 1024 / 1024).toFixed(2)}MB)`,
+        });
+        continue;
+      }
+      validFiles.push(file);
+    }
+
+    // Store File objects
+    setNewQuelleImageFiles((prev) => [...prev, ...validFiles]);
+
+    // Create preview URLs
+    validFiles.forEach((file) => {
       const reader = new FileReader();
       reader.onload = (event) => {
         if (event.target?.result) {
@@ -89,9 +117,44 @@ export function QuellenPanel({
       };
       reader.readAsDataURL(file);
     });
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    processFiles(files);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      processFiles(files);
     }
   };
 
@@ -104,6 +167,7 @@ export function QuellenPanel({
 
   const handleRemoveImage = (index: number) => {
     setNewQuelleImages((prev) => prev.filter((_, i) => i !== index));
+    setNewQuelleImageFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleViewQuelle = (quelle: Quelle) => {
@@ -363,7 +427,7 @@ export function QuellenPanel({
                       />
                       <button
                         onClick={() => handleRemoveImage(index)}
-                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:bg-destructive/90"
+                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white text-black flex items-center justify-center hover:bg-white/90 shadow-md"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -375,20 +439,44 @@ export function QuellenPanel({
               {newQuelleImages.length < 9 && (
                 <Tabs defaultValue="upload" className="mt-2">
                   <TabsList className="grid w-full grid-cols-2 h-9">
-                    <TabsTrigger value="upload" className="text-xs" disabled>
+                    <TabsTrigger value="upload" className="text-xs">
                       <Upload className="h-3 w-3 mr-1" />
                       Hochladen
                     </TabsTrigger>
-                    <TabsTrigger value="url" className="text-xs" disabled>
+                    <TabsTrigger value="url" className="text-xs">
                       <LinkIcon className="h-3 w-3 mr-1" />
                       URL
                     </TabsTrigger>
                   </TabsList>
                   <TabsContent value="upload" className="mt-2">
-                    <div className="border-2 border-dashed rounded-lg p-4 text-center bg-muted/30">
-                      <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground/50" />
-                      <p className="text-sm text-muted-foreground">
-                        Bildupload wird in Kürze verfügbar sein
+                    <div
+                      className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                        isDragging
+                          ? 'bg-primary/10 border-primary'
+                          : 'bg-muted/30 hover:bg-muted/50'
+                      }`}
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragEnter={handleDragEnter}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                    >
+                      <Upload
+                        className={`h-6 w-6 mx-auto mb-2 transition-colors ${
+                          isDragging ? 'text-primary' : 'text-muted-foreground'
+                        }`}
+                      />
+                      <p
+                        className={`text-sm transition-colors ${
+                          isDragging ? 'text-primary' : 'text-muted-foreground'
+                        }`}
+                      >
+                        {isDragging
+                          ? 'Dateien hier ablegen...'
+                          : 'Klicken zum Hochladen oder Dateien hierher ziehen'}
+                      </p>
+                      <p className="text-xs text-muted-foreground/70 mt-1">
+                        JPG, PNG, WebP, GIF (max. 5MB)
                       </p>
                     </div>
                     <input
@@ -398,7 +486,6 @@ export function QuellenPanel({
                       multiple
                       className="hidden"
                       onChange={handleFileUpload}
-                      disabled
                     />
                   </TabsContent>
                   <TabsContent value="url" className="mt-2">
@@ -410,7 +497,6 @@ export function QuellenPanel({
                         onKeyDown={(e) =>
                           e.key === "Enter" && handleAddImageUrl()
                         }
-                        disabled
                       />
                       <Button
                         size="sm"

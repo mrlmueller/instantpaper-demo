@@ -1,6 +1,7 @@
 import { initializeServerApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import { cookies } from 'next/headers';
 import { firebaseApp } from './config';
 
@@ -22,4 +23,9 @@ export async function getAuthenticatedAppForUser() {
 export async function getFirestoreForUser() {
   const { firebaseServerApp } = await getAuthenticatedAppForUser();
   return getFirestore(firebaseServerApp);
+}
+
+export async function getStorageForUser() {
+  const { firebaseServerApp } = await getAuthenticatedAppForUser();
+  return getStorage(firebaseServerApp);
 }
