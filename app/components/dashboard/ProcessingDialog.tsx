@@ -50,7 +50,7 @@ export function ProcessingDialog({
     grundlegendeInfos: "",
     directCombine: true,
   })
-  const [promptChoice, setPromptChoice] = useState<Record<PromptStage, string | "default">>({
+  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
     process_quelle: (promptActive?.process_quelle as string | "default") || "default",
     combine: (promptActive?.combine as string | "default") || "default",
   })

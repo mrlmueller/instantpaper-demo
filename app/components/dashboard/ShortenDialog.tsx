@@ -26,7 +26,7 @@ interface ShortenDialogProps {
   onShorten: (
     contextKapitelIds: string[],
     model: string,
-    promptChoice?: Record<PromptStage, string | "default">
+    promptChoice?: Partial<Record<PromptStage, string | "default">>
   ) => Promise<void>
   askOnEachProcess: boolean
   promptTemplates: PromptTemplate[]
@@ -47,7 +47,7 @@ export function ShortenDialog({
 }: ShortenDialogProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-mini")
-  const [promptChoice, setPromptChoice] = useState<Record<PromptStage, string | "default">>({
+  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
     summary: (promptActive?.summary as string | "default") || "default",
     shorten: (promptActive?.shorten as string | "default") || "default",
   })

@@ -1668,7 +1668,7 @@ export function Dashboard({
   ]);
 
   const handleShorten = useCallback(
-    async (contextKapitelIds: string[], model: string, promptChoice?: Record<PromptStage, string | 'default'>) => {
+    async (contextKapitelIds: string[], model: string, promptChoice?: Partial<Record<PromptStage, string | 'default'>>) => {
       if (!activeKapitel || !selectedRun) return;
 
       if (!(await ensureOpenAIAccess())) return;
@@ -1785,7 +1785,7 @@ export function Dashboard({
       contextKapitelIds: string[],
       aufgabenstellung: string,
       model: string,
-      promptChoice?: Record<PromptStage, string | 'default'>
+      promptChoice?: Partial<Record<PromptStage, string | 'default'>>
     ) => {
       if (!activeKapitel || !selectedRun) return;
 

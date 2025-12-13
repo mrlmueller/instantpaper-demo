@@ -28,7 +28,7 @@ interface LeseflussDialogProps {
     contextKapitelIds: string[],
     aufgabenstellung: string,
     model: string,
-    promptChoice?: Record<PromptStage, string | "default">
+    promptChoice?: Partial<Record<PromptStage, string | "default">>
   ) => Promise<void>
   askOnEachProcess: boolean
   promptTemplates: PromptTemplate[]
@@ -50,7 +50,7 @@ export function LeseflussDialog({
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [aufgabenstellung, setAufgabenstellung] = useState("")
   const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-mini")
-  const [promptChoice, setPromptChoice] = useState<Record<PromptStage, string | "default">>({
+  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
     summary: (promptActive?.summary as string | "default") || "default",
     lesefluss: (promptActive?.lesefluss as string | "default") || "default",
   })
