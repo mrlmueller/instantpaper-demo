@@ -44,6 +44,7 @@ async function ensureLimits(stage: PromptStage, userId: string, db: any) {
 export async function listPromptTemplates(): Promise<{
   templates: PromptTemplate[];
   active: ActivePromptSelections;
+  askOnEachProcess: boolean;
 }> {
   const user = await requireAuth();
   const db = await getFirestoreForUser();
@@ -65,7 +66,11 @@ export async function listPromptTemplates(): Promise<{
 
   const settingsDoc = await getDoc(doc(db, 'users', user.uid, 'promptSettings', 'active'));
   const active = (settingsDoc.exists() ? settingsDoc.data() : {}) as any;
-  return { templates, active: (active.activeTemplates || {}) as ActivePromptSelections };
+  return {
+    templates,
+    active: (active.activeTemplates || {}) as ActivePromptSelections,
+    askOnEachProcess: Boolean(active.askOnEachProcess),
+  };
 }
 
 export async function createPromptTemplate(payload: PromptTemplatePayload) {
@@ -166,6 +171,21 @@ export async function setActivePrompt(stage: PromptStage, templateId: string | '
     { merge: true }
   );
 
+  revalidatePath('/profil');
+}
+
+export async function setAskOnEachProcess(value: boolean) {
+  const user = await requireAuth();
+  const db = await getFirestoreForUser();
+  const settingsRef = doc(db, 'users', user.uid, 'promptSettings', 'active');
+  await setDoc(
+    settingsRef,
+    {
+      askOnEachProcess: value,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
   revalidatePath('/profil');
 }
 

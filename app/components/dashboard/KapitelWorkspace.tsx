@@ -396,13 +396,21 @@ export function KapitelWorkspace({
           <>
             <Card className="mb-8 bg-card border-border shadow-sm">
               <div className="p-8">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                      <h2 className="text-lg font-medium text-foreground">
-                        Gekürzter Text
-                      </h2>
-                    </div>
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-medium text-foreground">
+                      Gekürzter Text
+                    </h2>
+                  </div>
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onOpenLesefluss}
+                    >
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      Lesefluss
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -627,6 +635,15 @@ export function KapitelWorkspace({
                   Kombinierter Text
                 </h2>
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onOpenShorten}
+                    disabled={!hasContent}
+                  >
+                    <Scissors className="h-4 w-4 mr-2" />
+                    Kürzen
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"

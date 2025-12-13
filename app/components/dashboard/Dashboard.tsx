@@ -16,6 +16,12 @@ import { DashboardSkeleton } from './DashboardSkeleton';
 import { QuellenPanelSkeleton } from './QuellenPanelSkeleton';
 import { KapitelWorkspaceSkeleton } from './KapitelWorkspaceSkeleton';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import type { PromptStage, PromptTemplate, ActivePromptSelections } from '@/app/types/prompts';
+import { STAGE_CONFIG } from '@/app/lib/prompts/promptConfig';
 
 import type { Quelle, Kapitel, Run, ProcessingSettings, Projekt } from '@/app/types/ui';
 import {
@@ -24,7 +30,6 @@ import {
   transformRunToUI,
   createQuellenMap,
 } from '@/app/lib/transformers/ui-data';
-import { STAGE_CONFIG } from '@/app/lib/prompts/promptConfig';
 
 // Import Server Actions
 import {
@@ -72,6 +77,86 @@ import { fetchOpenAIKeyStatus, type OpenAIKeyStatus } from '@/app/lib/api/openai
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
 const RUN_HISTORY_LIMIT = 10;
 const MAX_RUN_HISTORY_LIMIT = 200;
+
+type PromptChoiceDialogProps = {
+  open: boolean;
+  stages: PromptStage[];
+  templates: PromptTemplate[];
+  active: ActivePromptSelections;
+  onConfirm: (choices: Record<PromptStage, string | 'default'>) => void;
+  onCancel: () => void;
+};
+
+function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCancel }: PromptChoiceDialogProps) {
+  const [choices, setChoices] = useState<Record<PromptStage, string | 'default'>>(() => {
+    const initial: Record<PromptStage, string | 'default'> = {} as any;
+    stages.forEach((s) => {
+      initial[s] = (active[s] as string | 'default') || 'default';
+    });
+    return initial;
+  });
+
+  useEffect(() => {
+    const init: Record<PromptStage, string | 'default'> = {} as any;
+    stages.forEach((s) => {
+      init[s] = (active[s] as string | 'default') || 'default';
+    });
+    setChoices(init);
+  }, [stages, active, open]);
+
+  return (
+    <Dialog open={open} onOpenChange={(val) => !val && onCancel()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Prompt auswählen</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          {stages.map((stage) => {
+            const stageTemplates = templates.filter((t) => t.stage === stage);
+            const config = STAGE_CONFIG[stage];
+            return (
+              <Card key={stage} className="p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <p className="text-sm font-medium">{config.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Pflicht: {config.requiredPlaceholders.length ? config.requiredPlaceholders.join(", ") : "Keine"}
+                    </p>
+                  </div>
+                  <Select
+                    value={choices[stage] || 'default'}
+                    onValueChange={(val) => setChoices((prev) => ({ ...prev, [stage]: val as any }))}
+                  >
+                    <SelectTrigger className="w-64">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">System-Standard</SelectItem>
+                      {stageTemplates.map((tpl) => (
+                        <SelectItem key={tpl.id} value={tpl.id}>
+                          {tpl.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-xs text-muted-foreground line-clamp-2 font-mono">
+                  {stageTemplates.find((t) => t.id === choices[stage])?.instructions?.slice(0, 160) || 'System-Standard'}
+                </p>
+              </Card>
+            );
+          })}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>
+            Abbrechen
+          </Button>
+          <Button onClick={() => onConfirm(choices)}>Weiter</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 interface DashboardProps {
   initialKapitels: FirebaseKapitel[];
@@ -138,6 +223,13 @@ export function Dashboard({
   const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
   const [keyStatusLoading, setKeyStatusLoading] = useState(false);
   const keyNoticeShownRef = useRef(false);
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
+  const [promptActive, setPromptActive] = useState<ActivePromptSelections>({});
+  const [askOnEachProcess, setAskOnEachProcess] = useState(false);
+  const [promptChooser, setPromptChooser] = useState<{
+    stages: PromptStage[];
+    resolve: (choices: Record<PromptStage, string | 'default'> | null) => void;
+  } | null>(null);
 
   const handleAuthFailure = useCallback(() => {
     toast.error('Sitzung erforderlich', {
@@ -207,7 +299,7 @@ export function Dashboard({
     (toastId = 'fastapi-down') => {
       toast.error('Server nicht erreichbar', {
         description:
-          'Der FastAPI-Server antwortet aktuell nicht. Das ist ein Server-Problem – du kannst nichts tun außer es später erneut zu versuchen.',
+          'Der FastAPI-Server antwortet aktuell nicht. Das ist ein Server-Problem - du kannst nichts tun außer es später erneut zu versuchen.',
         id: toastId,
       });
     },
@@ -1113,6 +1205,78 @@ export function Dashboard({
     return result;
   }, []);
 
+  useEffect(() => {
+    const loadPrompts = async () => {
+      try {
+        const res = await fetch('/api/prompt-templates');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Prompts konnten nicht geladen werden.');
+        setPromptTemplates(data.templates || []);
+        setPromptActive(data.active || {});
+        setAskOnEachProcess(Boolean(data.askOnEachProcess));
+      } catch (err: any) {
+        console.error('Prompt templates load failed', err);
+        toast.error('Prompts', { description: err?.message || 'Prompts konnten nicht geladen werden.' });
+      }
+    };
+    loadPrompts();
+  }, []);
+
+  const applyActivePrompt = useCallback(async (stage: PromptStage, templateId: string | 'default') => {
+    setPromptActive((prev) => ({ ...prev, [stage]: templateId }));
+    try {
+      await fetch('/api/prompt-templates/active', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage, templateId }),
+      });
+    } catch (err) {
+      console.error('Aktives Prompt setzen fehlgeschlagen', err);
+    }
+  }, []);
+
+  const getInstructionsFor = useCallback(
+    (stage: PromptStage, templateId?: string | 'default') => {
+      const targetId = templateId ?? (promptActive[stage] as string | 'default') ?? 'default';
+      if (targetId && targetId !== 'default') {
+        const tpl = promptTemplates.find((t) => t.id === targetId && t.stage === stage);
+        if (tpl?.instructions) return tpl.instructions;
+      }
+      return STAGE_CONFIG[stage].defaultInstructions;
+    },
+    [promptActive, promptTemplates]
+  );
+
+  const requestPromptChoice = useCallback(
+    async (stages: PromptStage[]): Promise<Record<PromptStage, string | 'default'> | null> => {
+      // Ensure we have the freshest askOnEachProcess flag in case the user just toggled it elsewhere.
+      let shouldAsk = askOnEachProcess;
+      if (!askOnEachProcess) {
+        try {
+          const res = await fetch('/api/prompt-templates/settings');
+          if (res.ok) {
+            const data = await res.json();
+            if (typeof data.askOnEachProcess === 'boolean') {
+              shouldAsk = data.askOnEachProcess;
+              setAskOnEachProcess(data.askOnEachProcess);
+            }
+          }
+        } catch (err) {
+          console.error('askOnEachProcess fetch failed', err);
+        }
+      }
+
+      if (!shouldAsk) {
+        return null;
+      }
+
+      return new Promise((resolve) => {
+        setPromptChooser({ stages, resolve });
+      });
+    },
+    [askOnEachProcess]
+  );
+
   const handleProcess = useCallback(
     async (settings: ProcessingSettings) => {
       if (!activeKapitel) return;
@@ -1138,16 +1302,37 @@ export function Dashboard({
         return;
       }
 
-      let promptTemplate = STAGE_CONFIG.process_quelle.defaultInstructions;
-      try {
-        const res = await fetch('/api/prompt-templates/active?stage=process_quelle');
-        const data = await res.json();
-        if (res.ok && data.instructions) {
-          promptTemplate = data.instructions as string;
-        }
-      } catch (e) {
-        console.error('Prompt Template fetch failed, fallback to default', e);
+      const requestedStages: PromptStage[] = settings.directCombine
+        ? ['process_quelle', 'combine']
+        : ['process_quelle'];
+      const providedChoices = settings.promptChoice;
+      const choices = providedChoices ?? (await requestPromptChoice(requestedStages));
+      if (askOnEachProcess && !providedChoices && choices === null) {
+        toast.info('Aktion abgebrochen');
+        return;
       }
+
+      const processChoice =
+        providedChoices?.process_quelle ??
+        choices?.process_quelle ??
+        (promptActive.process_quelle as string | 'default') ??
+        'default';
+      const combineChoice = settings.directCombine
+        ? providedChoices?.combine ??
+          choices?.combine ??
+          (promptActive.combine as string | 'default') ??
+          'default'
+        : undefined;
+
+      const shouldApplyChoice = Boolean(providedChoices || choices);
+      if (shouldApplyChoice) {
+        await applyActivePrompt('process_quelle', processChoice);
+        if (settings.directCombine && combineChoice) {
+          await applyActivePrompt('combine', combineChoice);
+        }
+      }
+
+      const promptTemplate = getInstructionsFor('process_quelle', processChoice);
 
       const prompt = renderPromptTemplate(promptTemplate, {
         heading: settings.ueberschrift.trim(),
@@ -1163,7 +1348,7 @@ export function Dashboard({
       try {
         const result = await createKapitelRun(activeKapitelId, prompt, settings.model, {
           autoCombine: settings.directCombine,
-          promptTemplateId: 'wissenschaftlicher_absatz_v1',
+          promptTemplateId: processChoice,
           promptPayload: {
             heading: settings.ueberschrift.trim(),
             topic: settings.thema.trim(),
@@ -1187,7 +1372,7 @@ export function Dashboard({
               instruction: prompt,
               model: settings.model,
               createdAt: new Date().toISOString(),
-              promptTemplateId: 'wissenschaftlicher_absatz_v1',
+              promptTemplateId: processChoice,
               promptPayload: {
                 heading: settings.ueberschrift.trim(),
                 topic: settings.thema.trim(),
@@ -1296,7 +1481,21 @@ export function Dashboard({
         });
       }
     },
-    [activeKapitelId, activeKapitel, ensureOpenAIAccess, handleAuthFailure, handleSelectRun, notifyServerDown, quellen, renderPromptTemplate]
+    [
+      activeKapitelId,
+      activeKapitel,
+      ensureOpenAIAccess,
+      handleAuthFailure,
+      handleSelectRun,
+      notifyServerDown,
+      quellen,
+      renderPromptTemplate,
+      requestPromptChoice,
+      askOnEachProcess,
+      promptActive,
+      applyActivePrompt,
+      getInstructionsFor,
+    ]
   );
 
   const handleCombineTexts = useCallback(async () => {
@@ -1320,6 +1519,15 @@ export function Dashboard({
     if (!token) {
       handleAuthFailure();
       return;
+    }
+
+    if (askOnEachProcess) {
+      const choice = await requestPromptChoice(['combine']);
+      if (!choice) {
+        toast.info('Aktion abgebrochen');
+        return;
+      }
+      await applyActivePrompt('combine', choice.combine ?? 'default');
     }
 
     toast.loading('Texte kombinieren', {
@@ -1382,10 +1590,19 @@ export function Dashboard({
         id: 'combine',
       });
     }
-  }, [activeKapitelId, ensureOpenAIAccess, handleAuthFailure, notifyServerDown, selectedRun]);
+  }, [
+    activeKapitelId,
+    ensureOpenAIAccess,
+    handleAuthFailure,
+    notifyServerDown,
+    selectedRun,
+    askOnEachProcess,
+    requestPromptChoice,
+    applyActivePrompt,
+  ]);
 
   const handleShorten = useCallback(
-    async (contextKapitelIds: string[], model: string) => {
+    async (contextKapitelIds: string[], model: string, promptChoice?: Record<PromptStage, string | 'default'>) => {
       if (!activeKapitel || !selectedRun) return;
 
       if (!(await ensureOpenAIAccess())) return;
@@ -1395,6 +1612,21 @@ export function Dashboard({
           description: 'Wähle mindestens ein Kapitel als Kontext aus.',
         });
         return;
+      }
+
+      const providedChoices = promptChoice;
+      if (askOnEachProcess && !providedChoices) {
+        const choice = await requestPromptChoice(['shorten', 'summary']);
+        if (!choice) {
+          toast.info('Aktion abgebrochen');
+          return;
+        }
+        await applyActivePrompt('shorten', choice.shorten ?? 'default');
+        await applyActivePrompt('summary', choice.summary ?? 'default');
+      }
+      if (providedChoices) {
+        await applyActivePrompt('shorten', providedChoices.shorten ?? 'default');
+        await applyActivePrompt('summary', providedChoices.summary ?? 'default');
       }
 
       toast.loading('Text wird gekürzt', {
@@ -1463,11 +1695,26 @@ export function Dashboard({
         });
       }
     },
-    [activeKapitelId, activeKapitel, ensureOpenAIAccess, handleAuthFailure, notifyServerDown, selectedRun]
+    [
+      activeKapitelId,
+      activeKapitel,
+      ensureOpenAIAccess,
+      handleAuthFailure,
+      notifyServerDown,
+      selectedRun,
+      askOnEachProcess,
+      requestPromptChoice,
+      applyActivePrompt,
+    ]
   );
 
   const handleLesefluss = useCallback(
-    async (contextKapitelIds: string[], aufgabenstellung: string, model: string) => {
+    async (
+      contextKapitelIds: string[],
+      aufgabenstellung: string,
+      model: string,
+      promptChoice?: Record<PromptStage, string | 'default'>
+    ) => {
       if (!activeKapitel || !selectedRun) return;
 
       if (!(await ensureOpenAIAccess())) return;
@@ -1477,6 +1724,21 @@ export function Dashboard({
           description: 'Wähle mindestens ein Kapitel als Kontext aus.',
         });
         return;
+      }
+
+      const providedChoices = promptChoice;
+      if (askOnEachProcess && !providedChoices) {
+        const choice = await requestPromptChoice(['lesefluss', 'summary']);
+        if (!choice) {
+          toast.info('Aktion abgebrochen');
+          return;
+        }
+        await applyActivePrompt('lesefluss', choice.lesefluss ?? 'default');
+        await applyActivePrompt('summary', choice.summary ?? 'default');
+      }
+      if (providedChoices) {
+        await applyActivePrompt('lesefluss', providedChoices.lesefluss ?? 'default');
+        await applyActivePrompt('summary', providedChoices.summary ?? 'default');
       }
 
       toast.loading('Lese Fluss wird verbessert', {
@@ -1546,7 +1808,17 @@ export function Dashboard({
         });
       }
     },
-    [activeKapitelId, activeKapitel, ensureOpenAIAccess, handleAuthFailure, notifyServerDown, selectedRun]
+    [
+      activeKapitelId,
+      activeKapitel,
+      ensureOpenAIAccess,
+      handleAuthFailure,
+      notifyServerDown,
+      selectedRun,
+      askOnEachProcess,
+      requestPromptChoice,
+      applyActivePrompt,
+    ]
   );
 
   const handleToggleQuellenPanel = useCallback(() => {
@@ -1657,6 +1929,9 @@ export function Dashboard({
           onOpenChange={setProcessingDialogOpen}
           kapitelTitle={activeKapitel.title}
           quellenCount={assignedQuellen.length}
+          askOnEachProcess={askOnEachProcess}
+          promptTemplates={promptTemplates}
+          promptActive={promptActive}
           onProcess={handleProcess}
         />
       )}
@@ -1665,10 +1940,12 @@ export function Dashboard({
         <ShortenDialog
           open={shortenDialogOpen}
           onOpenChange={setShortenDialogOpen}
-          kapitel={activeKapitel}
-          selectedRun={selectedRun}
           allKapitels={kapiteln}
+          currentKapitelId={activeKapitel.id}
           onShorten={handleShorten}
+          askOnEachProcess={askOnEachProcess}
+          promptTemplates={promptTemplates}
+          promptActive={promptActive}
         />
       )}
 
@@ -1676,10 +1953,29 @@ export function Dashboard({
         <LeseflussDialog
           open={leseflussDialogOpen}
           onOpenChange={setLeseflussDialogOpen}
-          kapitel={activeKapitel}
-          selectedRun={selectedRun}
           allKapitels={kapiteln}
+          currentKapitelId={activeKapitel.id}
           onLesefluss={handleLesefluss}
+          askOnEachProcess={askOnEachProcess}
+          promptTemplates={promptTemplates}
+          promptActive={promptActive}
+        />
+      )}
+
+      {promptChooser && (
+        <PromptSelectDialog
+          open={!!promptChooser}
+          stages={promptChooser.stages}
+          templates={promptTemplates}
+          active={promptActive}
+          onConfirm={(choices) => {
+            promptChooser.resolve(choices);
+            setPromptChooser(null);
+          }}
+          onCancel={() => {
+            promptChooser.resolve(null);
+            setPromptChooser(null);
+          }}
         />
       )}
 

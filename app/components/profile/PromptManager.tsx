@@ -33,13 +33,13 @@ import { toast } from "sonner";
 import { Info, Plus, Pencil, Trash2, Star, StarOff, Eye, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type TemplatesResponse = { templates: PromptTemplate[]; active: ActivePromptSelections };
-
 type EditorState = {
   id?: string;
   name: string;
   instructions: string;
 };
+
+type TemplatesResponse = { templates: PromptTemplate[]; active: ActivePromptSelections; askOnEachProcess?: boolean };
 
 const stageOptions: { value: PromptStage; label: string }[] = [
   { value: "process_quelle", label: STAGE_CONFIG.process_quelle.label },
@@ -65,7 +65,7 @@ export function PromptManager() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState>({ name: "", instructions: "" });
   const [missingPlaceholders, setMissingPlaceholders] = useState<string[]>([]);
-  const [askOnEachProcess, setAskOnEachProcess] = useState(true);
+  const [askOnEachProcess, setAskOnEachProcess] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [copiedVar, setCopiedVar] = useState<string | null>(null);
 
@@ -86,6 +86,7 @@ export function PromptManager() {
       if (!res.ok) throw new Error((data as any).error || "Konnte Prompts nicht laden.");
       setTemplates(data.templates);
       setActive(data.active || {});
+      setAskOnEachProcess(Boolean(data.askOnEachProcess));
     } catch (err: any) {
       toast.error("Prompts konnten nicht geladen werden", { description: err?.message });
     }
@@ -193,7 +194,22 @@ export function PromptManager() {
           <Switch
             id="ask-on-process"
             checked={askOnEachProcess}
-            onCheckedChange={setAskOnEachProcess}
+            onCheckedChange={async (checked) => {
+              setAskOnEachProcess(checked);
+              try {
+                const res = await fetch("/api/prompt-templates/settings", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ askOnEachProcess: checked }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Speichern fehlgeschlagen.");
+                toast.success("Einstellung gespeichert");
+              } catch (err: any) {
+                setAskOnEachProcess(!checked);
+                toast.error("Fehler beim Speichern", { description: err?.message });
+              }
+            }}
           />
         </div>
       </Card>

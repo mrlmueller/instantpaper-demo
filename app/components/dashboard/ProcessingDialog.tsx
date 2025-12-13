@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { Play, Sparkles, Settings2, FileText, Wand2 } from "lucide-react"
+import { useMemo, useState } from "react"
+import { Play, Sparkles, Settings2, FileText, Wand2, MessageSquareText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -17,6 +17,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { ProcessingSettings } from "@/app/types/ui"
+import type { ActivePromptSelections, PromptStage, PromptTemplate } from "@/app/types/prompts"
+import { STAGE_CONFIG } from "@/app/lib/prompts/promptConfig"
 
 interface ProcessingDialogProps {
   open: boolean
@@ -24,32 +26,95 @@ interface ProcessingDialogProps {
   kapitelTitle: string
   quellenCount: number
   onProcess: (settings: ProcessingSettings) => void
+  askOnEachProcess: boolean
+  promptTemplates: PromptTemplate[]
+  promptActive: ActivePromptSelections
 }
 
-export function ProcessingDialog({ open, onOpenChange, kapitelTitle, quellenCount, onProcess }: ProcessingDialogProps) {
+export function ProcessingDialog({
+  open,
+  onOpenChange,
+  kapitelTitle,
+  quellenCount,
+  onProcess,
+  askOnEachProcess,
+  promptTemplates,
+  promptActive,
+}: ProcessingDialogProps) {
   const [settings, setSettings] = useState<ProcessingSettings>({
-    model: "gpt-5-nano",
+    model: "gpt-5-mini",
     ueberschrift: kapitelTitle,
     thema: "",
     grundlegendeInfos: "",
     directCombine: true,
   })
+  const [promptChoice, setPromptChoice] = useState<Record<PromptStage, string | "default">>({
+    process_quelle: (promptActive?.process_quelle as string | "default") || "default",
+    combine: (promptActive?.combine as string | "default") || "default",
+  })
+
+  const templatesByStage = useMemo(() => {
+    return (stage: PromptStage) => promptTemplates.filter((tpl) => tpl.stage === stage)
+  }, [promptTemplates])
 
   const handleProcess = () => {
-    onProcess(settings)
+    onProcess({ ...settings, promptChoice })
   }
 
   const handleOpenChange = (open: boolean) => {
     if (open) {
       setSettings({
-        model: "gpt-5-nano",
+        model: "gpt-5-mini",
         ueberschrift: kapitelTitle,
         thema: "",
         grundlegendeInfos: "",
         directCombine: true,
       })
+      setPromptChoice({
+        process_quelle: (promptActive?.process_quelle as string | "default") || "default",
+        combine: (promptActive?.combine as string | "default") || "default",
+      })
     }
     onOpenChange(open)
+  }
+
+  const showPromptSelectors = askOnEachProcess && promptTemplates.length > 0
+
+  const renderPromptSelect = (stage: PromptStage, label: string) => {
+    const stageTemplates = templatesByStage(stage)
+    if (stageTemplates.length === 0) return null
+    const value = promptChoice[stage] || "default"
+    return (
+      <div className="space-y-2">
+        <Label className="text-sm">Prompt für {label}</Label>
+        <Select
+          value={value}
+          onValueChange={(val) =>
+            setPromptChoice((prev) => ({
+              ...prev,
+              [stage]: val as string | "default",
+            }))
+          }
+        >
+          <SelectTrigger className="mt-1.5">
+            <SelectValue placeholder="System-Standard" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="default">
+              <span className="text-muted-foreground">System-Standard</span>
+            </SelectItem>
+            {stageTemplates.map((tpl) => (
+              <SelectItem key={tpl.id} value={tpl.id}>
+                {tpl.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {STAGE_CONFIG[stage]?.tooltip && (
+          <p className="text-xs text-muted-foreground">{STAGE_CONFIG[stage].tooltip}</p>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -65,7 +130,20 @@ export function ProcessingDialog({ open, onOpenChange, kapitelTitle, quellenCoun
           <DialogDescription className="pt-1">{quellenCount} Quellen zugewiesen</DialogDescription>
         </DialogHeader>
 
-        <div className="py-5 space-y-6">
+        <div className="py-5 space-y-6 max-h-[60vh] overflow-y-auto">
+          {showPromptSelectors && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <MessageSquareText className="h-4 w-4" />
+                Prompts
+              </div>
+              <div className="grid gap-4 pl-6">
+                {renderPromptSelect("process_quelle", STAGE_CONFIG.process_quelle.label)}
+                {settings.directCombine && renderPromptSelect("combine", STAGE_CONFIG.combine.label)}
+              </div>
+            </div>
+          )}
+
           {/* Section 1: Kapitel Info */}
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">

@@ -88,6 +88,7 @@ export interface ProcessingSettings {
   thema: string; // Topic/instruction
   grundlegendeInfos: string; // Basic/contextual information
   directCombine: boolean; // Maps to Firebase 'autoCombine'
+  promptChoice?: Record<import("./prompts").PromptStage, string | "default">; // Optional user-selected prompts
 }
 
 // User and stats types for profile page (currently using mock data)
