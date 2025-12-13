@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useMemo } from "react"
-import { Scissors, Settings2, FileText, Sparkles } from "lucide-react"
+import { useMemo, useState } from "react"
+import { Scissors, ChevronRight, AlertCircle, MessageSquareText, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -11,282 +11,224 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog"
+import { cn } from "@/lib/utils"
+import type { Kapitel } from "@/app/types/ui"
+import type { ActivePromptSelections, PromptStage, PromptTemplate } from "@/app/types/prompts"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import type { Kapitel, Run } from "@/app/types/ui"
 
 interface ShortenDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  kapitel: Kapitel
-  selectedRun: Run | undefined
   allKapitels: Kapitel[]
-  onShorten: (contextKapitelIds: string[], model: string) => void
-}
-
-// Helper to build hierarchical tree structure
-interface TreeNode {
-  kapitel: Kapitel
-  children: TreeNode[]
-}
-
-function buildKapitelTree(kapitels: Kapitel[], targetKapitelId: string): TreeNode[] {
-  // Filter out the target Kapitel
-  const filteredKapitels = kapitels.filter((k) => k.id !== targetKapitelId)
-
-  // Create a map of id -> node
-  const nodeMap = new Map<string, TreeNode>()
-  filteredKapitels.forEach((k) => {
-    nodeMap.set(k.id, { kapitel: k, children: [] })
-  })
-
-  // Build tree structure
-  const roots: TreeNode[] = []
-
-  filteredKapitels.forEach((k) => {
-    const node = nodeMap.get(k.id)!
-    if (!k.parentId) {
-      // Top-level Kapitel
-      roots.push(node)
-    } else {
-      // Child Kapitel
-      const parent = nodeMap.get(k.parentId)
-      if (parent) {
-        parent.children.push(node)
-      } else {
-        // Parent not found, treat as root
-        roots.push(node)
-      }
-    }
-  })
-
-  // Sort roots and children by nummer
-  const sortByNummer = (a: TreeNode, b: TreeNode) => {
-    const numA = a.kapitel.nummer || ""
-    const numB = b.kapitel.nummer || ""
-    return numA.localeCompare(numB, undefined, { numeric: true })
-  }
-
-  const sortRecursive = (nodes: TreeNode[]) => {
-    nodes.sort(sortByNummer)
-    nodes.forEach((node) => sortRecursive(node.children))
-  }
-
-  sortRecursive(roots)
-
-  return roots
+  currentKapitelId: string
+  onShorten: (
+    contextKapitelIds: string[],
+    model: string,
+    promptChoice?: Partial<Record<PromptStage, string | "default">>
+  ) => Promise<void>
+  askOnEachProcess: boolean
+  promptTemplates: PromptTemplate[]
+  promptActive: ActivePromptSelections
+  isShortening: boolean
 }
 
 export function ShortenDialog({
   open,
   onOpenChange,
-  kapitel,
-  selectedRun,
   allKapitels,
+  currentKapitelId,
   onShorten,
+  askOnEachProcess,
+  promptTemplates,
+  promptActive,
+  isShortening,
 }: ShortenDialogProps) {
-  const [selectedKapitelIds, setSelectedKapitelIds] = useState<Set<string>>(new Set())
-  const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-nano")
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-mini")
+  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
+    summary: (promptActive?.summary as string | "default") || "default",
+    shorten: (promptActive?.shorten as string | "default") || "default",
+  })
+  const [localShortenLoading, setLocalShortenLoading] = useState(false)
 
-  const kapitelTree = useMemo(() => buildKapitelTree(allKapitels, kapitel.id), [allKapitels, kapitel.id])
-
-  const handleToggleKapitel = (kapitelId: string) => {
-    setSelectedKapitelIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(kapitelId)) {
-        next.delete(kapitelId)
-      } else {
-        next.add(kapitelId)
+  const sortedKapiteln = useMemo(() => {
+    const list = allKapitels.filter((k) => k.id !== currentKapitelId)
+    return list.sort((a, b) => {
+      const partsA = a.nummer.split(".").map(Number)
+      const partsB = b.nummer.split(".").map(Number)
+      for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+        const numA = partsA[i] || 0
+        const numB = partsB[i] || 0
+        if (numA !== numB) return numA - numB
       }
-      return next
+      return 0
     })
+  }, [allKapitels, currentKapitelId])
+
+  const hasCombinedText = (kapitelId: string) => {
+    const target = allKapitels.find((k) => k.id === kapitelId)
+    return target?.status === "fertig"
   }
 
-  // Check if a Kapitel is selectable (has combined text OR has exactly 1 Quelle)
-  const isKapitelSelectable = (kapitelToCheck: Kapitel): boolean => {
-    // Has combined text (status "fertig")
-    if (kapitelToCheck.status === "fertig") {
-      return true
-    }
-    // Has exactly 1 assigned Quelle
-    if (kapitelToCheck.assignedQuellenIds.length === 1) {
-      return true
-    }
-    return false
+  const toggleKapitel = (id: string) => {
+    if (!hasCombinedText(id)) return
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
   }
 
-  const handleShorten = () => {
-    if (selectedKapitelIds.size === 0) {
-      return
-    }
-
-    onShorten(Array.from(selectedKapitelIds), model)
+  const handleShorten = async () => {
+    if (selectedIds.length === 0 || localShortenLoading || isShortening) return
+    setLocalShortenLoading(true)
     onOpenChange(false)
-  }
-
-  const handleOpenChange = (open: boolean) => {
-    if (open) {
-      // Reset state when opening
-      setSelectedKapitelIds(new Set())
-      setModel("gpt-5-nano")
+    try {
+      await onShorten(selectedIds, model, promptChoice)
+      setSelectedIds([])
+    } finally {
+      setLocalShortenLoading(false)
     }
-    onOpenChange(open)
   }
 
-  // Render tree node recursively
-  const renderTreeNode = (node: TreeNode, depth: number = 0) => {
-    const indentClass = depth > 0 ? `pl-${depth * 6}` : ""
-    const hasChildren = node.children.length > 0
-    const isSelectable = isKapitelSelectable(node.kapitel)
+  const getIndentLevel = (nummer: string) => nummer.split(".").length - 1
 
-    const checkboxElement = (
-      <div className={`flex items-center py-2 ${indentClass}`}>
-        <Checkbox
-          id={node.kapitel.id}
-          checked={selectedKapitelIds.has(node.kapitel.id)}
-          onCheckedChange={() => handleToggleKapitel(node.kapitel.id)}
-          disabled={!isSelectable}
-          className="mr-3"
-        />
-        <label
-          htmlFor={node.kapitel.id}
-          className={`flex-1 text-sm select-none ${
-            isSelectable ? "cursor-pointer" : "cursor-not-allowed opacity-50"
-          }`}
-        >
-          <span className="text-muted-foreground mr-2">{node.kapitel.nummer}</span>
-          <span>{node.kapitel.title}</span>
-        </label>
-      </div>
-    )
+  const showPromptSelectors = askOnEachProcess && promptTemplates.length > 0
 
+  const renderPromptSelect = (stage: PromptStage, label: string) => {
+    const options = promptTemplates.filter((p) => p.stage === stage)
+    if (options.length === 0) return null
     return (
-      <div key={node.kapitel.id}>
-        {isSelectable ? (
-          checkboxElement
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {checkboxElement}
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Kein kombinierter Text generiert</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {hasChildren && node.children.map((child) => renderTreeNode(child, depth + 1))}
+      <div className="space-y-2">
+        <Label className="text-sm">{label}</Label>
+        <Select
+          value={promptChoice[stage] || "default"}
+          onValueChange={(val) =>
+            setPromptChoice((prev) => ({
+              ...prev,
+              [stage]: val as string | "default",
+            }))
+          }
+        >
+          <SelectTrigger className="mt-1.5">
+            <SelectValue placeholder="System-Standard" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="default">
+              <span className="text-muted-foreground">System-Standard</span>
+            </SelectItem>
+            {options.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     )
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-2xl [&>button]:hidden max-h-[90vh] flex flex-col">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg [&>button]:hidden">
         <DialogHeader className="pb-4 border-b">
           <DialogTitle className="flex items-center gap-2 text-lg">
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
               <Scissors className="h-4 w-4 text-primary" />
             </div>
-            Text kürzen & Duplikate entfernen
+            Text kürzen
           </DialogTitle>
           <DialogDescription className="pt-1">
-            {kapitel.nummer} {kapitel.title}
+            Wähle andere Kapitel als Kontext, um den Text konsistent zu kürzen
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-5 space-y-6 overflow-y-auto flex-1">
-          {/* Section 1: Metadata Display */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <FileText className="h-4 w-4" />
-              Aktuelle Informationen
-            </div>
-
-            <div className="grid gap-3 pl-6">
-              <div>
-                <Label className="text-xs text-muted-foreground">Überschrift</Label>
-                <div className="mt-1 text-sm">{selectedRun?.ueberschrift || "N/A"}</div>
+        <div className="py-4 max-h-[60vh] overflow-y-auto space-y-4">
+          {showPromptSelectors && (
+            <div className="pb-4 border-b space-y-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <MessageSquareText className="h-4 w-4" />
+                Prompts
               </div>
-
-              <div>
-                <Label className="text-xs text-muted-foreground">Thema</Label>
-                <div className="mt-1 text-sm line-clamp-2">{selectedRun?.thema || "N/A"}</div>
+              <div className="grid gap-4">
+                {renderPromptSelect("summary", "Zusammenfassung")}
+                {renderPromptSelect("shorten", "Kürzen")}
               </div>
             </div>
+          )}
+
+          <p className="text-sm text-muted-foreground">
+            Wähle 5-8 Kapitel aus, deren Inhalte als Kontext für die Kürzung verwendet werden. Nur Kapitel mit
+            kombiniertem Text können ausgewählt werden.
+          </p>
+
+          <div className="border rounded-lg max-h-[280px] overflow-y-auto">
+            <TooltipProvider>
+              {sortedKapiteln.map((kapitel) => {
+                const hasCombined = hasCombinedText(kapitel.id)
+                const isSelected = selectedIds.includes(kapitel.id)
+                const indentLevel = getIndentLevel(kapitel.nummer)
+
+                return (
+                  <Tooltip key={kapitel.id}>
+                    <TooltipTrigger asChild>
+                      <button
+                        className={cn(
+                          "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors border-b last:border-b-0",
+                          hasCombined && "hover:bg-muted/50 cursor-pointer",
+                          !hasCombined && "opacity-50 cursor-not-allowed",
+                          isSelected && "bg-primary/10",
+                        )}
+                        onClick={() => toggleKapitel(kapitel.id)}
+                        disabled={!hasCombined}
+                        style={{ paddingLeft: `${16 + indentLevel * 20}px` }}
+                      >
+                        <div
+                          className={cn(
+                            "w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
+                            isSelected
+                              ? "bg-primary border-primary text-primary-foreground"
+                              : hasCombined
+                                ? "border-muted-foreground/30"
+                                : "border-muted-foreground/20 bg-muted/30",
+                          )}
+                        >
+                          {isSelected && <ChevronRight className="h-3 w-3" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm">
+                            <span className="text-muted-foreground mr-1.5">{kapitel.nummer}</span>
+                            <span className={cn(!hasCombined && "text-muted-foreground")}>{kapitel.title}</span>
+                          </span>
+                        </div>
+                        {!hasCombined && <AlertCircle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
+                      </button>
+                    </TooltipTrigger>
+                    {!hasCombined && (
+                      <TooltipContent side="left">
+                        <p>Dieses Kapitel hat noch keinen kombinierten Text</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                )
+              })}
+            </TooltipProvider>
           </div>
 
-          {/* Section 2: Kapitel Selection */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Sparkles className="h-4 w-4" />
-              Kontext-Kapitel auswählen
-            </div>
+          {selectedIds.length > 0 && (
+            <p className="text-sm text-muted-foreground mt-1">{selectedIds.length} Kapitel ausgewählt</p>
+          )}
 
-            <div className="pl-6">
-              <Label className="text-sm mb-3 block">
-                Wählen Sie die Kapitel, die als Kontext verwendet werden sollen
-              </Label>
-
-              <div className="border rounded-lg p-4 max-h-[300px] overflow-y-auto bg-muted/20">
-                {kapitelTree.length === 0 ? (
-                  <div className="text-sm text-muted-foreground text-center py-4">
-                    Keine anderen Kapitel verfügbar
-                  </div>
-                ) : (
-                  <TooltipProvider>
-                    {kapitelTree.map((node) => renderTreeNode(node))}
-                  </TooltipProvider>
-                )}
-              </div>
-
-              <div className="mt-2 text-xs text-muted-foreground">
-                {selectedKapitelIds.size} Kapitel ausgewählt
-              </div>
-            </div>
-          </div>
-
-          {/* Section 3: Model Selection */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Settings2 className="h-4 w-4" />
-              Modelleinstellungen
-            </div>
-
-            <div className="pl-6">
-              <Label htmlFor="model" className="text-sm">
-                KI-Modell
-              </Label>
-              <Select
-                value={model}
-                onValueChange={(value) => setModel(value as typeof model)}
-              >
-                <SelectTrigger className="mt-1.5">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="gpt-5-nano">
-                    <div className="flex items-center justify-between w-full gap-4">
-                      <span>GPT-5 nano</span>
-                      <span className="text-xs text-muted-foreground">Empfohlen</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="gpt-5-mini">
-                    <div className="flex items-center justify-between w-full gap-4">
-                      <span>GPT-5 mini</span>
-                      <span className="text-xs text-muted-foreground">Beste Qualität</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="gpt-5.2">
-                    <div className="flex items-center justify-between w-full gap-4">
-                      <span>GPT-5.2</span>
-                      <span className="text-xs text-muted-foreground">Beste Qualität</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="shorten-model">Modell</Label>
+            <Select value={model} onValueChange={(value) => setModel(value as typeof model)}>
+              <SelectTrigger id="shorten-model">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gpt-5-nano">gpt-5-nano (Empfohlen)</SelectItem>
+                <SelectItem value="gpt-5-mini">gpt-5-mini (Beste Qualität)</SelectItem>
+                <SelectItem value="gpt-5.2">gpt-5.2 (Beste Qualität)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -294,9 +236,16 @@ export function ShortenDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Abbrechen
           </Button>
-          <Button onClick={handleShorten} disabled={selectedKapitelIds.size === 0}>
-            <Scissors className="h-4 w-4 mr-2" />
-            Text kürzen
+          <Button
+            onClick={handleShorten}
+            disabled={selectedIds.length === 0 || localShortenLoading || isShortening}
+          >
+            {localShortenLoading || isShortening ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Scissors className="h-4 w-4 mr-2" />
+            )}
+            Text kürzen ({selectedIds.length} Kontext)
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { ChevronDown, FolderOpen, Plus, LogOut, User } from "lucide-react"
+import { ChevronDown, FolderOpen, Plus, LogOut, User, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -23,17 +23,37 @@ interface ProjektHeaderProps {
   projekt: Projekt
   projekte: Projekt[]
   onSwitchProjekt: (id: string) => void
-  onCreateProjekt: (name: string) => void
+  onCreateProjekt: (name: string) => Promise<void>
   onDeleteProjekt: (id: string, name: string) => void
+  isCreatingProjekt: boolean
 }
 
-export function ProjektHeader({ projekt, projekte, onSwitchProjekt, onCreateProjekt, onDeleteProjekt }: ProjektHeaderProps) {
+export function ProjektHeader({
+  projekt,
+  projekte,
+  onSwitchProjekt,
+  onCreateProjekt,
+  onDeleteProjekt,
+  isCreatingProjekt,
+}: ProjektHeaderProps) {
   const { user } = useAuth()
   const [newProjektDialogOpen, setNewProjektDialogOpen] = useState(false)
   const [switchDialogOpen, setSwitchDialogOpen] = useState(false)
   const [newProjektName, setNewProjektName] = useState("")
+  const [localCreateLoading, setLocalCreateLoading] = useState(false)
 
   const userName = user?.displayName || user?.email || "User"
+  const handleCreateProjekt = async () => {
+    if (!newProjektName.trim() || localCreateLoading || isCreatingProjekt) return
+    setLocalCreateLoading(true)
+    setNewProjektDialogOpen(false)
+    try {
+      await onCreateProjekt(newProjektName.trim())
+      setNewProjektName("")
+    } finally {
+      setLocalCreateLoading(false)
+    }
+  }
 
   const handleSignOut = async () => {
     try {
@@ -130,9 +150,7 @@ export function ProjektHeader({ projekt, projekte, onSwitchProjekt, onCreateProj
               className="mt-2"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && newProjektName.trim()) {
-                  onCreateProjekt(newProjektName.trim())
-                  setNewProjektDialogOpen(false)
-                  setNewProjektName("")
+                  handleCreateProjekt()
                 }
               }}
             />
@@ -142,13 +160,10 @@ export function ProjektHeader({ projekt, projekte, onSwitchProjekt, onCreateProj
               Abbrechen
             </Button>
             <Button
-              onClick={() => {
-                onCreateProjekt(newProjektName.trim())
-                setNewProjektDialogOpen(false)
-                setNewProjektName("")
-              }}
-              disabled={!newProjektName.trim()}
+              onClick={handleCreateProjekt}
+              disabled={!newProjektName.trim() || localCreateLoading}
             >
+              {localCreateLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               Erstellen
             </Button>
           </DialogFooter>

@@ -211,6 +211,7 @@ class OpenAIService:
         topic: str,
         model: str,
         api_key: str | None = None,
+        instructions: str | None = None,
     ) -> dict:
         """
         Combine multiple texts into one consolidated text.
@@ -221,7 +222,8 @@ class OpenAIService:
                 [f"### Text {i+1}:\n{texts[i]}" for i in range(len(texts))]
             )
 
-            prompt = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+            prompt_body = instructions or "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+            prompt = f"{prompt_body}\n\n{combined_texts}"
 
             logger.info(f"Combining {len(texts)} texts with model {model}")
 

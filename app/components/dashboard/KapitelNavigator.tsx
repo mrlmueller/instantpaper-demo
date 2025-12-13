@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { Circle, CheckCircle2, Clock, Plus, Trash2, MoreVertical, Pencil } from "lucide-react"
+import { Circle, CheckCircle2, Clock, Plus, Trash2, MoreVertical, Pencil, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -17,6 +17,8 @@ interface KapitelNavigatorProps {
   onAddKapitel: (title: string, nummer: string) => Promise<void>
   onDeleteKapitel: (id: string, name: string) => void
   onEditKapitel: (id: string, title: string, nummer: string) => Promise<void>
+  addKapitelLoading: boolean
+  editKapitelLoading: boolean
 }
 
 const statusConfig = {
@@ -66,6 +68,8 @@ export function KapitelNavigator({
   onAddKapitel,
   onDeleteKapitel,
   onEditKapitel,
+  addKapitelLoading,
+  editKapitelLoading,
 }: KapitelNavigatorProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -73,38 +77,50 @@ export function KapitelNavigator({
   const [newKapitelTitle, setNewKapitelTitle] = useState("")
   const [newKapitelNummer, setNewKapitelNummer] = useState("")
   const [nummerError, setNummerError] = useState("")
+  const [localAddLoading, setLocalAddLoading] = useState(false)
+  const [localEditLoading, setLocalEditLoading] = useState(false)
 
   const sortedKapiteln = [...kapiteln].sort(sortByNummer)
 
   const handleAddKapitel = async () => {
-    if (!newKapitelTitle.trim() || !newKapitelNummer.trim()) return
+    if (!newKapitelTitle.trim() || !newKapitelNummer.trim() || localAddLoading || addKapitelLoading) return
 
     if (!isValidNummer(newKapitelNummer.trim())) {
       setNummerError("Bitte gib eine gültige Nummer ein (z.B. 1, 1.1 oder 1.1.1)")
       return
     }
 
-    await onAddKapitel(newKapitelTitle.trim(), newKapitelNummer.trim())
-    setNewKapitelTitle("")
-    setNewKapitelNummer("")
-    setNummerError("")
+    setLocalAddLoading(true)
     setAddDialogOpen(false)
+    try {
+      await onAddKapitel(newKapitelTitle.trim(), newKapitelNummer.trim())
+      setNewKapitelTitle("")
+      setNewKapitelNummer("")
+      setNummerError("")
+    } finally {
+      setLocalAddLoading(false)
+    }
   }
 
   const handleEditKapitel = async () => {
-    if (!editingKapitel || !newKapitelTitle.trim() || !newKapitelNummer.trim()) return
+    if (!editingKapitel || !newKapitelTitle.trim() || !newKapitelNummer.trim() || localEditLoading || editKapitelLoading) return
 
     if (!isValidNummer(newKapitelNummer.trim())) {
       setNummerError("Bitte gib eine gültige Nummer ein (z.B. 1, 1.1 oder 1.1.1)")
       return
     }
 
-    await onEditKapitel(editingKapitel.id, newKapitelTitle.trim(), newKapitelNummer.trim())
-    setEditingKapitel(null)
-    setNewKapitelTitle("")
-    setNewKapitelNummer("")
-    setNummerError("")
+    setLocalEditLoading(true)
     setEditDialogOpen(false)
+    try {
+      await onEditKapitel(editingKapitel.id, newKapitelTitle.trim(), newKapitelNummer.trim())
+      setEditingKapitel(null)
+      setNewKapitelTitle("")
+      setNewKapitelNummer("")
+      setNummerError("")
+    } finally {
+      setLocalEditLoading(false)
+    }
   }
 
   const openEditDialog = (kapitel: Kapitel) => {
@@ -253,7 +269,18 @@ export function KapitelNavigator({
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
               Abbrechen
             </Button>
-            <Button onClick={handleAddKapitel} disabled={!newKapitelTitle.trim() || !newKapitelNummer.trim()}>
+            <Button
+              onClick={handleAddKapitel}
+              disabled={
+                !newKapitelTitle.trim() ||
+                !newKapitelNummer.trim() ||
+                localAddLoading ||
+                addKapitelLoading
+              }
+            >
+              {localAddLoading || addKapitelLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
               Erstellen
             </Button>
           </DialogFooter>
@@ -313,7 +340,18 @@ export function KapitelNavigator({
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
               Abbrechen
             </Button>
-            <Button onClick={handleEditKapitel} disabled={!newKapitelTitle.trim() || !newKapitelNummer.trim()}>
+            <Button
+              onClick={handleEditKapitel}
+              disabled={
+                !newKapitelTitle.trim() ||
+                !newKapitelNummer.trim() ||
+                localEditLoading ||
+                editKapitelLoading
+              }
+            >
+              {localEditLoading || editKapitelLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
               Speichern
             </Button>
           </DialogFooter>

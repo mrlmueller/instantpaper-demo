@@ -1,9 +1,7 @@
 "use client";
 
-import type React from "react";
-
-import { useState, useEffect } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Mail,
@@ -18,31 +16,33 @@ import {
   Eye,
   EyeOff,
   Trash2,
+  Settings,
+  TrendingUp,
+  MessageSquareText,
+  Loader2,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import Cookies from "js-cookie";
+
 import { useAuth } from "@/app/components/providers/AuthProvider";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import {
   deleteOpenAIKey,
   fetchOpenAIKeyStatus,
   saveOpenAIKey,
   type OpenAIKeyStatus,
 } from "@/app/lib/api/openaiKeyClient";
+import { PromptManager } from "@/app/components/profile/PromptManager";
 
-// Mock data - will be replaced with real Firebase data later
-const mockUser = {
-  id: "1",
-  name: "Max Mustermann",
-  email: "max.mustermann@example.com",
-  memberSince: new Date("2024-01-15"),
-};
+type ProfileTab = "einstellungen" | "statistiken";
 
-const mockUserStats = {
-  totalCost: 1247, // in cents
+const mockStats = {
+  totalCost: 1247,
   totalRuns: 23,
   totalProjekte: 3,
   totalKapitel: 12,
@@ -58,11 +58,11 @@ const mockUserStats = {
     { projektName: "Bachelorarbeit", cost: 280 },
     { projektName: "Seminararbeit", cost: 120 },
   ],
-    modelUsage: [
-      { model: "gpt-5-nano", count: 18 },
-      { model: "gpt-5-mini", count: 4 },
-      { model: "gpt-5.2", count: 1 },
-    ],
+  modelUsage: [
+    { model: "gpt-5-nano", count: 18 },
+    { model: "gpt-5-mini", count: 4 },
+    { model: "gpt-5.2", count: 1 },
+  ],
   memberSince: new Date("2024-01-15"),
 };
 
@@ -86,9 +86,7 @@ function StatCard({
         <div className="min-w-0">
           <p className="text-sm text-muted-foreground">{label}</p>
           <p className="text-2xl font-semibold text-foreground mt-1">{value}</p>
-          {subtext && (
-            <p className="text-xs text-muted-foreground mt-1">{subtext}</p>
-          )}
+          {subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
         </div>
       </div>
     </Card>
@@ -112,67 +110,84 @@ function StatCardSkeleton() {
 function ProfilePageSkeleton() {
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-5xl mx-auto py-12 px-8">
-        {/* Header skeleton */}
-        <div className="flex items-center gap-3 mb-10">
-          <Skeleton className="h-9 w-9 rounded-md" />
-          <Skeleton className="h-8 w-48" />
-        </div>
-
-        {/* Profile card skeleton */}
-        <Card className="p-8 mb-10">
-          <div className="flex items-start gap-6">
-            <Skeleton className="w-20 h-20 rounded-full" />
-            <div className="flex-1">
-              <Skeleton className="h-7 w-48 mb-2" />
-              <Skeleton className="h-4 w-64 mb-4" />
-              <div className="flex gap-4">
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="h-4 w-40" />
-              </div>
+      <div className="flex h-screen">
+        {/* Left Sidebar skeleton */}
+        <div className="w-72 border-r bg-muted/10 flex flex-col shrink-0">
+          <div className="p-6 border-b">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-9 w-9 rounded-md" />
+              <Skeleton className="h-6 w-16" />
             </div>
           </div>
-        </Card>
-
-        {/* API key card skeleton */}
-        <Card className="p-6 mb-10">
-          <Skeleton className="h-5 w-32 mb-4" />
-          <Skeleton className="h-10 w-full" />
-        </Card>
-
-        {/* Stats grid skeleton */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-          {[...Array(4)].map((_, i) => (
-            <StatCardSkeleton key={i} />
-          ))}
+          <div className="p-6 border-b">
+            <div className="flex flex-col items-center text-center">
+              <Skeleton className="w-16 h-16 rounded-full mb-3" />
+              <Skeleton className="h-5 w-28 mb-2" />
+              <Skeleton className="h-4 w-36 mb-2" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+          </div>
+          <div className="p-4 flex-1">
+            <div className="space-y-1">
+              <Skeleton className="h-10 w-full rounded-lg" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+            </div>
+          </div>
         </div>
 
-        {/* Charts section skeleton */}
-        <div className="grid md:grid-cols-2 gap-6">
-          <Card className="p-6">
-            <Skeleton className="h-5 w-40 mb-6" />
-            <div className="space-y-3">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <Skeleton className="h-4 w-16" />
-                  <Skeleton className="h-6 flex-1 rounded" />
-                  <Skeleton className="h-4 w-12" />
-                </div>
-              ))}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-5xl mx-auto py-8 px-8">
+            <Skeleton className="h-6 w-40 mb-4" />
+            <Card className="p-6 mb-8">
+              <div className="flex items-center gap-2 mb-4">
+                <Skeleton className="h-4 w-4" />
+                <Skeleton className="h-4 w-28" />
+              </div>
+              <div className="flex gap-3">
+                <Skeleton className="h-10 flex-1" />
+                <Skeleton className="h-10 w-24" />
+              </div>
+              <Skeleton className="h-3 w-64 mt-3" />
+            </Card>
+
+            <div className="flex items-center gap-2 mb-4">
+              <Skeleton className="h-5 w-5" />
+              <Skeleton className="h-6 w-36" />
             </div>
-          </Card>
-          <Card className="p-6">
-            <Skeleton className="h-5 w-40 mb-6" />
-            <div className="space-y-3">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <Skeleton className="h-4 w-48" />
-                  <Skeleton className="h-4 flex-1" />
-                  <Skeleton className="h-4 w-16" />
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-6 pb-4 border-b">
+                <div>
+                  <Skeleton className="h-4 w-52 mb-2" />
+                  <Skeleton className="h-3 w-72" />
                 </div>
-              ))}
-            </div>
-          </Card>
+                <Skeleton className="h-6 w-11 rounded-full" />
+              </div>
+              <div className="flex gap-2 mb-6">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-9 w-28 rounded-md" />
+                ))}
+              </div>
+              <div className="grid gap-3">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="border rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Skeleton className="h-5 w-32" />
+                        <Skeleton className="h-5 w-16 rounded-full" />
+                      </div>
+                      <div className="flex gap-1">
+                        <Skeleton className="h-8 w-8 rounded-md" />
+                        <Skeleton className="h-8 w-8 rounded-md" />
+                        <Skeleton className="h-8 w-8 rounded-md" />
+                      </div>
+                    </div>
+                    <Skeleton className="h-4 w-full mb-1" />
+                    <Skeleton className="h-4 w-3/4" />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
@@ -181,13 +196,16 @@ function ProfilePageSkeleton() {
 
 export default function ProfilPage() {
   const { user: authUser, loading: authLoading } = useAuth();
-  const [stats] = useState<typeof mockUserStats | null>(mockUserStats);
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<ProfileTab>("einstellungen");
+  const [stats, setStats] = useState(mockStats);
   const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
   const [keyLoading, setKeyLoading] = useState(true);
   const [savingKey, setSavingKey] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [showSavedKey, setShowSavedKey] = useState(true);
+  const [showSavedKey, setShowSavedKey] = useState(false);
+  const [backLoading, setBackLoading] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -201,8 +219,7 @@ export default function ProfilPage() {
     fetchOpenAIKeyStatus(token)
       .then(setKeyStatus)
       .catch((err: any) => {
-        const message =
-          err?.message || "OpenAI-Schlüsselstatus konnte nicht geladen werden.";
+        const message = err?.message || "OpenAI-Schlüsselstatus konnte nicht geladen werden.";
         setStatusError(message);
         toast.error("OpenAI Key", { description: message });
       })
@@ -223,7 +240,9 @@ export default function ProfilPage() {
       const status = await saveOpenAIKey(token, apiKeyInput.trim());
       setKeyStatus(status);
       setApiKeyInput("");
-      toast.success("OpenAI Key gespeichert");
+      toast.success("API-Schlüssel gespeichert", {
+        description: "Dein API-Schlüssel wurde erfolgreich hinzugefügt.",
+      });
     } catch (err: any) {
       const message = err?.message || "Key konnte nicht gespeichert werden.";
       toast.error("Fehler", { description: message });
@@ -244,7 +263,7 @@ export default function ProfilPage() {
       setSavingKey(true);
       const status = await deleteOpenAIKey(token);
       setKeyStatus(status);
-      toast.success("OpenAI Key entfernt");
+      toast.success("API-Schlüssel gelöscht");
     } catch (err: any) {
       const message = err?.message || "Key konnte nicht entfernt werden.";
       toast.error("Fehler", { description: message });
@@ -254,21 +273,9 @@ export default function ProfilPage() {
   };
 
   const isLoading = authLoading || keyLoading || !authUser;
-
-  if (isLoading || !stats) {
-    return <ProfilePageSkeleton />;
-  }
-
-  const userName = authUser?.displayName || authUser?.email || mockUser.name;
-  const userEmail = authUser?.email || mockUser.email;
-  const memberSince = stats.memberSince;
-
-  const formatCost = (cents: number) => `${(cents / 100).toFixed(2)} €`;
-  const formatNumber = (num: number) => num.toLocaleString("de-DE");
-
-  const maskedSavedKey = `sk-**************************************${
-    keyStatus?.last4 || "****"
-  }`;
+  const userName = authUser?.displayName || authUser?.email || "Benutzer";
+  const userEmail = authUser?.email || "user@example.com";
+  const memberSince = useMemo(() => stats.memberSince, [stats]);
   const initials = userName
     .split(" ")
     .map((n) => n[0])
@@ -276,249 +283,262 @@ export default function ProfilPage() {
     .toUpperCase()
     .slice(0, 2);
 
+  const formatCost = (cents: number) => `${(cents / 100).toFixed(2)} €`;
+  const formatNumber = (num: number) => num.toLocaleString("de-DE");
+  const maskedSavedKey = `sk-**************************************${keyStatus?.last4 || "****"}`;
   const maxMonthlyRuns = Math.max(...stats.runsByMonth.map((m) => m.runs));
   const maxProjektCost = Math.max(...stats.costByProjekt.map((p) => p.cost));
 
+  const handleBack = () => {
+    if (backLoading) return;
+    setBackLoading(true);
+    const toastId = toast.loading("Zurück zum Dashboard...");
+    try {
+      router.push("/dashboard");
+      setTimeout(() => {
+        toast.success("Dashboard geöffnet", { id: toastId });
+      }, 300);
+    } catch (error: any) {
+      toast.error("Navigation fehlgeschlagen", { description: error?.message, id: toastId });
+      setBackLoading(false);
+    }
+  };
+
+  if (isLoading) {
+    return <ProfilePageSkeleton />;
+  }
+
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-5xl mx-auto py-12 px-8">
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-10">
-          <Link href="/dashboard">
-            <Button variant="ghost" size="icon" className="h-9 w-9">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-semibold text-foreground">
-            Dein Profil
-          </h1>
-        </div>
-
-        {/* Profile Card */}
-        <Card className="p-8 mb-10">
-          <div className="flex items-start gap-6">
-            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-semibold text-primary shrink-0">
-              {initials}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-semibold text-foreground">
-                {userName}
-              </h2>
-              <div className="flex items-center gap-2 mt-1 text-muted-foreground">
-                <Mail className="h-4 w-4" />
-                <span className="text-sm">{userEmail}</span>
-              </div>
-              <div className="flex items-center gap-4 mt-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="h-4 w-4" />
-                  <span>
-                    Mitglied seit{" "}
-                    {memberSince.toLocaleDateString("de-DE", {
-                      month: "long",
-                      year: "numeric",
-                    })}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* OpenAI Key Management */}
-        <Card className="p-6 mb-10">
-          <h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
-            <Key className="h-4 w-4 text-muted-foreground" />
-            API-Schlüssel
-          </h3>
-
-          {keyStatus?.hasKey ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="flex-1 relative">
-                  <Input
-                    type={showSavedKey ? "text" : "password"}
-                    value={maskedSavedKey}
-                    readOnly
-                    disabled={savingKey}
-                    className="pr-10 font-mono text-sm bg-muted/50"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowSavedKey(!showSavedKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    disabled={savingKey}
-                  >
-                    {showSavedKey ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
-                <Button
-                  variant="destructive"
-                  size="icon"
-                  onClick={handleDeleteKey}
-                  disabled={savingKey}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Dein API-Schlüssel ist sicher verschlüsselt gespeichert.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex gap-3">
-                <Input
-                  type="text"
-                  placeholder="sk-..."
-                  value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  disabled={savingKey}
-                  className="font-mono text-sm"
-                />
-                <Button
-                  onClick={handleSaveKey}
-                  disabled={!apiKeyInput.trim() || savingKey}
-                >
-                  Speichern
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Füge deinen API-Schlüssel hinzu, um die Verarbeitung zu
-                aktivieren.
-              </p>
-            </div>
-          )}
-
-          {statusError && (
-            <p className="text-sm text-destructive mt-3">{statusError}</p>
-          )}
-
-          {keyStatus && !keyStatus.hasKey && keyStatus.allowPlatformKey && (
-            <p className="text-xs text-muted-foreground mt-3 p-3 bg-blue-50/50 dark:bg-blue-950/20 rounded border border-blue-200/50 dark:border-blue-800/30">
-              ℹ️ Du bist für den Plattform-Key freigeschaltet und kannst auch
-              ohne eigenen Key verarbeiten.
-            </p>
-          )}
-        </Card>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-          <StatCard
-            icon={Coins}
-            label="Gesamtkosten"
-            value={formatCost(stats.totalCost)}
-            subtext={`${stats.totalRuns} Verarbeitungen`}
-          />
-          <StatCard
-            icon={FileText}
-            label="Projekte"
-            value={String(stats.totalProjekte)}
-            subtext={`${stats.totalKapitel} Kapitel`}
-          />
-          <StatCard
-            icon={BookOpen}
-            label="Quellen"
-            value={String(stats.totalQuellen)}
-            subtext="Hochgeladen"
-          />
-          <StatCard
-            icon={PenTool}
-            label="Generierte Wörter"
-            value={formatNumber(stats.totalWords)}
-            subtext="Insgesamt"
-          />
-        </div>
-
-        {/* Detailed Stats */}
-        <div className="grid md:grid-cols-2 gap-6 mb-10">
-          {/* Monthly Activity */}
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              Aktivität pro Monat
-            </h3>
-            <div className="space-y-4">
-              {stats.runsByMonth.map((month) => (
-                <div key={month.month} className="flex items-center gap-3">
-                  <span className="text-sm text-muted-foreground w-20 shrink-0">
-                    {month.month.slice(0, 3)}
-                  </span>
-                  <div className="flex-1 h-6 bg-muted/30 rounded overflow-hidden">
-                    <div
-                      className="h-full bg-primary/70 rounded transition-all"
-                      style={{
-                        width: `${(month.runs / maxMonthlyRuns) * 100}%`,
-                      }}
-                    />
-                  </div>
-                  <span className="text-sm text-muted-foreground w-16 text-right">
-                    {month.runs} Runs
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* Cost by Project */}
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
-              <Coins className="h-4 w-4 text-muted-foreground" />
-              Kosten pro Projekt
-            </h3>
-            <div className="space-y-4">
-              {stats.costByProjekt.map((projekt) => (
-                <div key={projekt.projektName}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm text-foreground truncate max-w-[200px]">
-                      {projekt.projektName}
-                    </span>
-                    <span className="text-sm font-medium text-foreground">
-                      {formatCost(projekt.cost)}
-                    </span>
-                  </div>
-                  <div className="h-2 bg-muted/30 rounded overflow-hidden">
-                    <div
-                      className="h-full bg-primary/70 rounded transition-all"
-                      style={{
-                        width: `${(projekt.cost / maxProjektCost) * 100}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-
-        {/* Model Usage */}
-        <Card className="p-6">
-          <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
-            <Zap className="h-4 w-4 text-muted-foreground" />
-            Modellnutzung
-          </h3>
-          <div className="flex gap-6 flex-wrap">
-            {stats.modelUsage.map((model) => (
-              <div
-                key={model.model}
-                className="flex items-center gap-3 px-4 py-3 bg-muted/30 rounded-lg"
+      <div className="flex h-screen">
+        <div className="w-72 border-r bg-muted/10 flex flex-col shrink-0">
+          <div className="p-6 border-b">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                onClick={handleBack}
+                disabled={backLoading}
               >
-                <div className="w-3 h-3 rounded-full bg-primary" />
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    {model.model}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {model.count} Verarbeitungen
-                  </p>
-                </div>
-              </div>
-            ))}
+                {backLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <ArrowLeft className="h-5 w-5" />
+                )}
+              </Button>
+              <h1 className="text-lg font-semibold text-foreground">Profil</h1>
+            </div>
           </div>
-        </Card>
+
+          <div className="p-6 border-b">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-xl font-semibold text-primary mb-3">
+                {initials}
+              </div>
+              <h2 className="font-semibold text-foreground">{userName}</h2>
+              <div className="flex items-center gap-1.5 mt-1 text-muted-foreground text-sm">
+                <Mail className="h-3.5 w-3.5" />
+                <span>{userEmail}</span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
+                <Calendar className="h-3.5 w-3.5" />
+                <span>
+                  Seit{" "}
+                  {memberSince.toLocaleDateString("de-DE", {
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 flex-1">
+            <nav className="space-y-1">
+              <button
+                onClick={() => setActiveTab("einstellungen")}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  activeTab === "einstellungen"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <Settings className="h-4 w-4" />
+                Einstellungen
+              </button>
+              <button
+                onClick={() => setActiveTab("statistiken")}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  activeTab === "statistiken"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <TrendingUp className="h-4 w-4" />
+                Statistiken
+              </button>
+            </nav>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-5xl mx-auto py-8 px-8">
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ProfileTab)}>
+              <TabsContent value="einstellungen">
+                <h2 className="text-lg font-semibold text-foreground mb-4">API-Konfiguration</h2>
+                <Card className="p-6 mb-8">
+                  <h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
+                    <Key className="h-4 w-4 text-muted-foreground" />
+                    API-Schlüssel
+                  </h3>
+
+                  {keyStatus?.hasKey ? (
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 relative">
+                        <Input
+                          type={showSavedKey ? "text" : "password"}
+                          value={showSavedKey ? maskedSavedKey : maskedSavedKey}
+                          readOnly
+                          disabled={savingKey}
+                          className="pr-10 font-mono text-sm bg-muted/50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowSavedKey(!showSavedKey)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          disabled={savingKey}
+                        >
+                          {showSavedKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <Button variant="destructive" size="icon" onClick={handleDeleteKey} disabled={savingKey}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-3">
+                      <Input
+                        type="text"
+                        placeholder="sk-..."
+                        value={apiKeyInput}
+                        onChange={(e) => setApiKeyInput(e.target.value)}
+                        disabled={savingKey}
+                        className="font-mono text-sm"
+                      />
+                      <Button onClick={handleSaveKey} disabled={!apiKeyInput.trim() || savingKey}>
+                        Speichern
+                      </Button>
+                    </div>
+                  )}
+
+                  {statusError && <p className="text-sm text-destructive mt-3">{statusError}</p>}
+
+                  {keyStatus && !keyStatus.hasKey && keyStatus.allowPlatformKey && (
+                    <p className="text-xs text-muted-foreground mt-3 p-3 bg-blue-50/50 dark:bg-blue-950/20 rounded border border-blue-200/50 dark:border-blue-800/30">
+                      Du bist für den Plattform-Key freigeschaltet und kannst auch ohne eigenen Key verarbeiten.
+                    </p>
+                  )}
+
+                  <p className="text-xs text-muted-foreground mt-3">
+                    {keyStatus?.hasKey
+                      ? "Dein API-Schlüssel ist sicher verschlüsselt gespeichert."
+                      : "Füge deinen API-Schlüssel hinzu, um die Verarbeitung zu aktivieren."}
+                  </p>
+                </Card>
+
+                <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                  <MessageSquareText className="h-5 w-5 text-muted-foreground" />
+                  Prompt-Bibliothek
+                </h2>
+                <Card className="p-4">
+                  <PromptManager />
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="statistiken">
+                <h2 className="text-lg font-semibold text-foreground mb-4">Übersicht</h2>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                  <StatCard
+                    icon={Coins}
+                    label="Gesamtkosten"
+                    value={formatCost(stats.totalCost)}
+                    subtext={`${stats.totalRuns} Verarbeitungen`}
+                  />
+                  <StatCard icon={FileText} label="Projekte" value={String(stats.totalProjekte)} subtext={`${stats.totalKapitel} Kapitel`} />
+                  <StatCard icon={BookOpen} label="Quellen" value={String(stats.totalQuellen)} subtext="Hochgeladen" />
+                  <StatCard icon={PenTool} label="Generierte Wörter" value={formatNumber(stats.totalWords)} subtext="Insgesamt" />
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6 mb-8">
+                  <Card className="p-6">
+                    <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
+                      <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                      Aktivität pro Monat
+                    </h3>
+                    <div className="space-y-4">
+                      {stats.runsByMonth.map((month) => (
+                        <div key={month.month} className="flex items-center gap-3">
+                          <span className="text-sm text-muted-foreground w-20 shrink-0">{month.month.slice(0, 3)}</span>
+                          <div className="flex-1 h-6 bg-muted/30 rounded overflow-hidden">
+                            <div
+                              className="h-full bg-primary/70 rounded transition-all"
+                              style={{ width: `${(month.runs / maxMonthlyRuns) * 100}%` }}
+                            />
+                          </div>
+                          <span className="text-sm text-muted-foreground w-16 text-right">{month.runs} Runs</span>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+
+                  <Card className="p-6">
+                    <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
+                      <Coins className="h-4 w-4 text-muted-foreground" />
+                      Kosten pro Projekt
+                    </h3>
+                    <div className="space-y-4">
+                      {stats.costByProjekt.map((projekt) => (
+                        <div key={projekt.projektName}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-sm text-foreground truncate max-w-[200px]">{projekt.projektName}</span>
+                            <span className="text-sm font-medium text-foreground">{formatCost(projekt.cost)}</span>
+                          </div>
+                          <div className="h-2 bg-muted/30 rounded overflow-hidden">
+                            <div
+                              className="h-full bg-primary/70 rounded transition-all"
+                              style={{ width: `${(projekt.cost / maxProjektCost) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </div>
+
+                <Card className="p-6">
+                  <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-muted-foreground" />
+                    Modellnutzung
+                  </h3>
+                  <div className="flex gap-6 flex-wrap">
+                    {stats.modelUsage.map((model) => (
+                      <div key={model.model} className="flex items-center gap-3 px-4 py-3 bg-muted/30 rounded-lg">
+                        <div className="w-3 h-3 rounded-full bg-primary" />
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{model.model}</p>
+                          <p className="text-xs text-muted-foreground">{model.count} Verarbeitungen</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </div>
+        </div>
       </div>
     </div>
   );

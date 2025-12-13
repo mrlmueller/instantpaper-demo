@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -10,121 +10,134 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Sparkles, Info, Settings2, FileText } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Sparkles, AlertCircle, MessageSquareText, ChevronRight, Loader2 } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import type { Kapitel, Run } from "@/app/types/ui"
+import { cn } from "@/lib/utils"
+import type { Kapitel } from "@/app/types/ui"
+import type { ActivePromptSelections, PromptStage, PromptTemplate } from "@/app/types/prompts"
 
 interface LeseflussDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  kapitel: Kapitel
-  selectedRun: Run | undefined
   allKapitels: Kapitel[]
-  onLesefluss: (contextKapitelIds: string[], aufgabenstellung: string, model: string) => void
+  currentKapitelId: string
+  onLesefluss: (
+    contextKapitelIds: string[],
+    aufgabenstellung: string,
+    model: string,
+    promptChoice?: Partial<Record<PromptStage, string | "default">>
+  ) => Promise<void>
+  askOnEachProcess: boolean
+  promptTemplates: PromptTemplate[]
+  promptActive: ActivePromptSelections
+  isLeseflussLoading: boolean
 }
 
 export function LeseflussDialog({
   open,
   onOpenChange,
-  kapitel,
-  selectedRun,
   allKapitels,
+  currentKapitelId,
   onLesefluss,
+  askOnEachProcess,
+  promptTemplates,
+  promptActive,
+  isLeseflussLoading,
 }: LeseflussDialogProps) {
-  const [selectedKapitelIds, setSelectedKapitelIds] = useState<Set<string>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [aufgabenstellung, setAufgabenstellung] = useState("")
-  const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-nano")
+  const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-mini")
+  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
+    summary: (promptActive?.summary as string | "default") || "default",
+    lesefluss: (promptActive?.lesefluss as string | "default") || "default",
+  })
+  const [localLeseflussLoading, setLocalLeseflussLoading] = useState(false)
 
-  // Build kapitel tree
-  const kapitelTree = useMemo(() => buildKapitelTree(allKapitels, kapitel.id), [allKapitels, kapitel.id])
-
-  // Check if a kapitel has shortened text
-  const hasShortenedText = (kapitelToCheck: Kapitel): boolean => {
-    // In real app, would need to check actual runs data
-    // For now, simple heuristic: if it has status "fertig", assume it might have shortened text
-    // This should be enhanced to actually check for shortened results
-    return kapitelToCheck.status === "fertig"
-  }
-
-  const handleKapitelToggle = (kapitelId: string) => {
-    setSelectedKapitelIds((prev) => {
-      const newSet = new Set(prev)
-      if (newSet.has(kapitelId)) {
-        newSet.delete(kapitelId)
-      } else {
-        newSet.add(kapitelId)
+  const sortedKapiteln = useMemo(() => {
+    const list = allKapitels.filter((k) => k.id !== currentKapitelId)
+    return list.sort((a, b) => {
+      const partsA = a.nummer.split(".").map(Number)
+      const partsB = b.nummer.split(".").map(Number)
+      for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+        const numA = partsA[i] || 0
+        const numB = partsB[i] || 0
+        if (numA !== numB) return numA - numB
       }
-      return newSet
+      return 0
     })
+  }, [allKapitels, currentKapitelId])
+
+  const hasCombinedText = (kapitelId: string) => {
+    const target = allKapitels.find((k) => k.id === kapitelId)
+    return target?.status === "fertig"
   }
 
-  const handleSubmit = () => {
-    if (selectedKapitelIds.size === 0) return
-    if (aufgabenstellung.trim().length < 10) return
+  const toggleKapitel = (id: string) => {
+    if (!hasCombinedText(id)) return
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
+  }
 
-    onLesefluss(Array.from(selectedKapitelIds), aufgabenstellung.trim(), model)
+  const handleSubmit = async () => {
+    if (
+      selectedIds.length === 0 ||
+      aufgabenstellung.trim().length < 10 ||
+      localLeseflussLoading ||
+      isLeseflussLoading
+    )
+      return
+    setLocalLeseflussLoading(true)
     onOpenChange(false)
-
-    // Reset form
-    setSelectedKapitelIds(new Set())
-    setAufgabenstellung("")
-    setModel("gpt-5-nano")
+    try {
+      await onLesefluss(selectedIds, aufgabenstellung.trim(), model, promptChoice)
+      setSelectedIds([])
+      setAufgabenstellung("")
+    } finally {
+      setLocalLeseflussLoading(false)
+    }
   }
 
-  const renderKapitelTree = (tree: KapitelTreeNode[], depth: number = 0) => {
-    return tree.map((node) => {
-      const isSelectable = hasShortenedText(node.kapitel)
-      const isSelected = selectedKapitelIds.has(node.kapitel.id)
+  const getIndentLevel = (nummer: string) => nummer.split(".").length - 1
+  const showPromptSelectors = askOnEachProcess && promptTemplates.length > 0
 
-      return (
-        <div key={node.kapitel.id} className="space-y-2">
-          <div className="flex items-center gap-2" style={{ paddingLeft: `${depth * 20}px` }}>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id={`kapitel-${node.kapitel.id}`}
-                      checked={isSelected}
-                      onCheckedChange={() => handleKapitelToggle(node.kapitel.id)}
-                      disabled={!isSelectable}
-                    />
-                    <Label
-                      htmlFor={`kapitel-${node.kapitel.id}`}
-                      className={`cursor-pointer ${!isSelectable ? "text-muted-foreground" : ""}`}
-                    >
-                      <span className="text-muted-foreground mr-2">{node.kapitel.nummer}</span>
-                      {node.kapitel.title}
-                    </Label>
-                  </div>
-                </TooltipTrigger>
-                {!isSelectable && (
-                  <TooltipContent>
-                    <p>Kein gekürzter Text vorhanden</p>
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-          {node.children.length > 0 && renderKapitelTree(node.children, depth + 1)}
-        </div>
-      )
-    })
+  const renderPromptSelect = (stage: PromptStage, label: string) => {
+    const options = promptTemplates.filter((p) => p.stage === stage)
+    if (options.length === 0) return null
+    return (
+      <div className="space-y-2">
+        <Label className="text-sm">Prompt für {label}</Label>
+        <Select
+          value={promptChoice[stage] || "default"}
+          onValueChange={(val) =>
+            setPromptChoice((prev) => ({
+              ...prev,
+              [stage]: val as string | "default",
+            }))
+          }
+        >
+          <SelectTrigger className="mt-1.5">
+            <SelectValue placeholder="System-Standard" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="default">
+              <span className="text-muted-foreground">System-Standard</span>
+            </SelectItem>
+            {options.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    )
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col [&>button]:hidden">
+      <DialogContent className="sm:max-w-lg max-h-[70vh] [&>button]:hidden">
         <DialogHeader className="pb-4 border-b">
           <DialogTitle className="flex items-center gap-2 text-lg">
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -133,85 +146,103 @@ export function LeseflussDialog({
             Lesefluss verbessern
           </DialogTitle>
           <DialogDescription className="pt-1">
-            {kapitel.nummer} {kapitel.title}
+            Wähle andere Kapitel als Kontext, um den Lesefluss konsistent zu verbessern
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-5 overflow-y-auto flex-1">
-          {/* Aufgabenstellung Input */}
+        <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+          {showPromptSelectors && (
+            <div className="pb-4 border-b space-y-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <MessageSquareText className="h-4 w-4" />
+                Prompts
+              </div>
+              <div className="grid gap-4">
+                {renderPromptSelect("summary", "Zusammenfassung")}
+                {renderPromptSelect("lesefluss", "Lesefluss")}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
-            <Label htmlFor="aufgabenstellung" className="flex items-center gap-2">
-              Aufgabenstellung für die gesamte Arbeit
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <Info className="h-4 w-4 text-muted-foreground" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      Beschreibe die Aufgabenstellung bzw. das Ziel deiner wissenschaftlichen Arbeit.
-                      Dies gibt dem Modell Kontext für die Verbesserung des Leseflusses.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </Label>
+            <Label htmlFor="aufgabenstellung">Aufgabenstellung für die gesamte Arbeit</Label>
             <Textarea
               id="aufgabenstellung"
               placeholder="z.B. Analyse der Auswirkungen von KI auf die Arbeitswelt..."
               value={aufgabenstellung}
               onChange={(e) => setAufgabenstellung(e.target.value)}
-              rows={6}
+              rows={5}
               className="resize-none"
             />
-            <p className="text-xs text-muted-foreground">
-              Mindestens 10 Zeichen erforderlich ({aufgabenstellung.length} / 10)
-            </p>
+            <p className="text-xs text-muted-foreground">Mindestens 10 Zeichen erforderlich ({aufgabenstellung.length} / 10)</p>
           </div>
 
-          {/* Context Kapitel Selection */}
           <div className="space-y-2">
             <Label>Kontext-Kapitel auswählen</Label>
             <p className="text-sm text-muted-foreground">
-              Wähle andere Kapitel aus, die als Kontext verwendet werden sollen.
+              Wähle andere Kapitel aus, die als Kontext verwendet werden sollen. Nur Kapitel mit kombiniertem Text können ausgewählt werden.
             </p>
-            <div className="border rounded-lg p-4 max-h-[300px] overflow-y-auto space-y-2">
-              {kapitelTree.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Keine Kapitel verfügbar
-                </p>
-              ) : (
-                renderKapitelTree(kapitelTree)
-              )}
+            <div className="border rounded-lg max-h-[240px] overflow-y-auto">
+              <TooltipProvider>
+                {sortedKapiteln.map((kapitel) => {
+                  const hasCombined = hasCombinedText(kapitel.id)
+                  const isSelected = selectedIds.includes(kapitel.id)
+                  const indentLevel = getIndentLevel(kapitel.nummer)
+
+                  return (
+                    <Tooltip key={kapitel.id}>
+                      <TooltipTrigger asChild>
+                        <button
+                          className={cn(
+                            "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors border-b last:border-b-0",
+                            hasCombined && "hover:bg-muted/50 cursor-pointer",
+                            !hasCombined && "opacity-50 cursor-not-allowed",
+                            isSelected && "bg-primary/10",
+                          )}
+                          onClick={() => toggleKapitel(kapitel.id)}
+                          disabled={!hasCombined}
+                          style={{ paddingLeft: `${16 + indentLevel * 20}px` }}
+                        >
+                          <div
+                            className={cn(
+                              "w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
+                              isSelected
+                                ? "bg-primary border-primary text-primary-foreground"
+                                : hasCombined
+                                  ? "border-muted-foreground/30"
+                                  : "border-muted-foreground/20 bg-muted/30",
+                            )}
+                          >
+                            {isSelected && <ChevronRight className="h-3 w-3" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm">
+                              <span className="text-muted-foreground mr-1.5">{kapitel.nummer}</span>
+                              <span className={cn(!hasCombined && "text-muted-foreground")}>{kapitel.title}</span>
+                            </span>
+                          </div>
+                          {!hasCombined && <AlertCircle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
+                        </button>
+                      </TooltipTrigger>
+                      {!hasCombined && (
+                        <TooltipContent side="left">
+                          <p>Dieses Kapitel hat noch keinen kombinierten Text</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  )
+                })}
+              </TooltipProvider>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {selectedKapitelIds.size} Kapitel ausgewählt
-            </p>
+            {selectedIds.length > 0 && (
+              <p className="text-xs text-muted-foreground">{selectedIds.length} Kapitel ausgewählt</p>
+            )}
           </div>
 
-          {/* Current Kapitel Info */}
-          {selectedRun && (
-            <div className="space-y-2 p-4 bg-muted/30 rounded-lg">
-              <div className="text-sm">
-                <span className="font-medium">Aktuelles Kapitel: </span>
-                <span className="text-muted-foreground">{kapitel.nummer} {kapitel.title}</span>
-              </div>
-              <div className="text-sm">
-                <span className="font-medium">Überschrift: </span>
-                <span className="text-muted-foreground">{selectedRun.ueberschrift}</span>
-              </div>
-              <div className="text-sm">
-                <span className="font-medium">Thema: </span>
-                <span className="text-muted-foreground">{selectedRun.thema}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Model Selection */}
           <div className="space-y-2">
-            <Label htmlFor="model">Modell</Label>
-            <Select value={model} onValueChange={(value: any) => setModel(value)}>
-              <SelectTrigger id="model">
+            <Label htmlFor="lesefluss-model">Modell</Label>
+            <Select value={model} onValueChange={(value) => setModel(value as typeof model)}>
+              <SelectTrigger id="lesefluss-model">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -229,52 +260,22 @@ export function LeseflussDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={selectedKapitelIds.size === 0 || aufgabenstellung.trim().length < 10}
+            disabled={
+              selectedIds.length === 0 ||
+              aufgabenstellung.trim().length < 10 ||
+              localLeseflussLoading ||
+              isLeseflussLoading
+            }
           >
-            <Sparkles className="h-4 w-4 mr-2" />
-            Lesefluss verbessern
+            {localLeseflussLoading || isLeseflussLoading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-2" />
+            )}
+            Lesefluss verbessern ({selectedIds.length} Kontext)
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
-}
-
-// Helper types and functions (same as ShortenDialog)
-type KapitelTreeNode = {
-  kapitel: Kapitel
-  children: KapitelTreeNode[]
-}
-
-function buildKapitelTree(allKapitels: Kapitel[], excludeId: string): KapitelTreeNode[] {
-  const filtered = allKapitels.filter((k) => k.id !== excludeId)
-
-  const map = new Map<string, KapitelTreeNode>()
-  filtered.forEach((k) => {
-    map.set(k.id, { kapitel: k, children: [] })
-  })
-
-  const roots: KapitelTreeNode[] = []
-
-  filtered.forEach((k) => {
-    const node = map.get(k.id)!
-    if (k.parentId && map.has(k.parentId)) {
-      map.get(k.parentId)!.children.push(node)
-    } else {
-      roots.push(node)
-    }
-  })
-
-  const sortByNummer = (nodes: KapitelTreeNode[]) => {
-    nodes.sort((a, b) => {
-      const numA = a.kapitel.nummer || ""
-      const numB = b.kapitel.nummer || ""
-      return numA.localeCompare(numB, undefined, { numeric: true })
-    })
-    nodes.forEach((n) => sortByNummer(n.children))
-  }
-
-  sortByNummer(roots)
-
-  return roots
 }
