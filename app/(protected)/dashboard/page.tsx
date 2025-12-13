@@ -2,7 +2,7 @@ import { getFirestoreForUser } from '@/app/lib/firebase/serverApp';
 import { requireAuth } from '@/app/lib/auth/server-auth';
 import { createOrUpdateUser } from '@/app/actions/user';
 import { getUserQuellen } from '@/app/actions/quellen';
-import { getKapitelRuns, getUserKapitels } from '@/app/actions/kapitels';
+import { getUserKapitels } from '@/app/actions/kapitels';
 import { getOrCreateDefaultProject, getProjects } from '@/app/actions/projects';
 import { Dashboard } from '@/app/components/dashboard/Dashboard';
 
@@ -31,20 +31,14 @@ export default async function DashboardPage() {
   // Ensure the default project is available even if it was created after fetching the list
   const projekteWithDefault = projekte.some((p) => p.id === projekt.id) ? projekte : [projekt, ...projekte];
 
-  // Preload runs only for the initially active Kapitel to keep first paint responsive
-  const initialKapitelId = kapitels[0]?.id;
-  const initialRuns =
-    initialKapitelId !== undefined
-      ? await getKapitelRuns(initialKapitelId, INITIAL_RUN_LIMIT, { user, db })
-      : [];
-
+  // Runs are loaded lazily via client-side listeners for faster initial paint
   return (
     <Dashboard
       initialKapitels={kapitels}
       initialQuellen={quellen}
       initialProjekt={projekt}
       initialProjekte={projekteWithDefault}
-      initialRuns={initialRuns}
+      initialRuns={[]}
     />
   );
 }

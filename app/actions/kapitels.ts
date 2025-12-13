@@ -545,212 +545,229 @@ export async function getKapitelRuns(
     const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
     const runsSnapshot = await getDocs(query(runsRef, orderBy('index', 'desc'), limit(runLimit)));
 
-    const runs: KapitelRun[] = [];
+    // Parallelize fetching all runs and their subcollections
+    const runs: KapitelRun[] = await Promise.all(
+      runsSnapshot.docs.map(async (runDoc) => {
+        const runData = runDoc.data();
 
-    for (const runDoc of runsSnapshot.docs) {
-      const runData = runDoc.data();
-      // fetch combined (single doc named 'combined' if it exists) first
-      const combinedRef = collection(
-        db,
-        'users',
-        user.uid,
-        'kapitels',
-        kapitelId,
-        'runs',
-        runDoc.id,
-        'combined'
-      );
-      const combinedSnapshot = await getDocs(combinedRef);
-      let combined: CombinedResult | null = null;
-      if (!combinedSnapshot.empty) {
-        const doc = combinedSnapshot.docs[0];
-        const c = doc.data();
-        combined = {
-          id: doc.id,
-          combinedContent: c.combined_content ?? c.combinedContent ?? '',
-          sourceQuelleIds: c.source_quelle_ids ?? c.sourceQuelleIds ?? [],
-          heading: c.heading ?? '',
-          topic: c.topic ?? '',
-          modelUsed: c.model_used ?? c.modelUsed ?? '',
-          tokensUsed: c.tokens_used ?? c.tokensUsed ?? 0,
-          inputTokens: c.input_tokens ?? c.inputTokens ?? 0,
-          cachedInputTokens: c.cached_input_tokens ?? c.cachedInputTokens ?? 0,
-          outputTokens: c.output_tokens ?? c.outputTokens ?? 0,
-          reasoningTokens: c.reasoning_tokens ?? c.reasoningTokens ?? 0,
-          cost: c.cost ?? 0,
-          createdAt:
-            c.created_at?.toDate?.()?.toISOString() ||
-            c.createdAt?.toDate?.()?.toISOString() ||
-            new Date().toISOString(),
-        };
-      }
+        // Define all collection references
+        const combinedRef = collection(
+          db,
+          'users',
+          user.uid,
+          'kapitels',
+          kapitelId,
+          'runs',
+          runDoc.id,
+          'combined'
+        );
+        const shortenedRef = collection(
+          db,
+          'users',
+          user.uid,
+          'kapitels',
+          kapitelId,
+          'runs',
+          runDoc.id,
+          'shortened'
+        );
+        const leseflussRef = collection(
+          db,
+          'users',
+          user.uid,
+          'kapitels',
+          kapitelId,
+          'runs',
+          runDoc.id,
+          'lesefluss'
+        );
+        const intermediateGroupsRef = collection(
+          db,
+          'users',
+          user.uid,
+          'kapitels',
+          kapitelId,
+          'runs',
+          runDoc.id,
+          'intermediate_groups'
+        );
+        const resultsRef = collection(
+          db,
+          'users',
+          user.uid,
+          'kapitels',
+          kapitelId,
+          'runs',
+          runDoc.id,
+          'results'
+        );
 
-      // Fetch shortened result (single doc named 'shortened' if it exists) second
-      const shortenedRef = collection(
-        db,
-        'users',
-        user.uid,
-        'kapitels',
-        kapitelId,
-        'runs',
-        runDoc.id,
-        'shortened'
-      );
-      const shortenedSnapshot = await getDocs(shortenedRef);
-      let shortened: ShortenedResult | null = null;
-      if (!shortenedSnapshot.empty) {
-        const doc = shortenedSnapshot.docs[0];
-        const s = doc.data();
-        shortened = {
-          id: doc.id,
-          shortenedContent: s.shortened_content ?? s.shortenedContent ?? '',
-          explanation: s.explanation ? {
-            lengthDecision: s.explanation.length_decision ?? '',
-            omittedTopics: s.explanation.omitted_topics ?? [],
-            preservedFocus: s.explanation.preserved_focus ?? [],
-            compressionNotes: s.explanation.compression_notes ?? '',
-          } : undefined,
-          originalLength: s.original_length ?? s.originalLength ?? 0,
-          shortenedLength: s.shortened_length ?? s.shortenedLength ?? 0,
-          usedKapitelIds: s.used_kapitel_ids ?? s.usedKapitelIds ?? [],
-          model: s.model ?? '',
-          cost: s.cost ?? 0,
-          tokensUsed: s.tokens_used ?? s.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
-          createdAt:
-            s.created_at?.toDate?.()?.toISOString() ||
-            s.createdAt?.toDate?.()?.toISOString() ||
-            new Date().toISOString(),
-        };
-      }
+        // Fetch all subcollections in parallel
+        const [
+          combinedSnapshot,
+          shortenedSnapshot,
+          leseflussSnapshot,
+          intermediateGroupsSnapshot,
+          resultsSnapshot,
+        ] = await Promise.all([
+          getDocs(combinedRef),
+          getDocs(shortenedRef),
+          getDocs(leseflussRef),
+          getDocs(intermediateGroupsRef),
+          getDocs(resultsRef),
+        ]);
 
-      // Fetch lesefluss result (single doc named 'lesefluss' if it exists)
-      const leseflussRef = collection(
-        db,
-        'users',
-        user.uid,
-        'kapitels',
-        kapitelId,
-        'runs',
-        runDoc.id,
-        'lesefluss'
-      );
-      const leseflussSnapshot = await getDocs(leseflussRef);
-      let lesefluss: LeseflussResult | null = null;
-      if (!leseflussSnapshot.empty) {
-        const doc = leseflussSnapshot.docs[0];
-        const l = doc.data();
-        lesefluss = {
-          id: doc.id,
-          leseflussContent: l.lesefluss_content ?? l.leseflussContent ?? '',
-          aufgabenstellung: l.aufgabenstellung ?? '',
-          explanation: l.explanation ?? '',
-          originalLength: l.original_length ?? l.originalLength ?? 0,
-          leseflussLength: l.lesefluss_length ?? l.leseflussLength ?? 0,
-          usedKapitelIds: l.used_kapitel_ids ?? l.usedKapitelIds ?? [],
-          model: l.model ?? '',
-          cost: l.cost ?? 0,
-          tokensUsed: l.tokens_used ?? l.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
-          createdAt:
-            l.created_at?.toDate?.()?.toISOString() ||
-            l.createdAt?.toDate?.()?.toISOString() ||
-            new Date().toISOString(),
-        };
-      }
-
-      // Fetch intermediate groups
-      const intermediateGroupsRef = collection(
-        db,
-        'users',
-        user.uid,
-        'kapitels',
-        kapitelId,
-        'runs',
-        runDoc.id,
-        'intermediate_groups'
-      );
-      const intermediateGroupsSnapshot = await getDocs(intermediateGroupsRef);
-      const intermediateGroups: IntermediateGroupResult[] = [];
-
-      if (!intermediateGroupsSnapshot.empty) {
-        for (const groupDoc of intermediateGroupsSnapshot.docs) {
-          const g = groupDoc.data();
-          intermediateGroups.push({
-            id: groupDoc.id,
-            groupNumber: g.group_number ?? 0,
-            combinedContent: g.combined_content ?? g.combinedContent ?? '',
-            sourceQuelleIds: g.source_quelle_ids ?? g.sourceQuelleIds ?? [],
-            heading: g.heading ?? '',
-            topic: g.topic ?? '',
-            modelUsed: g.model_used ?? g.modelUsed ?? '',
-            tokensUsed: g.tokens_used ?? g.tokensUsed ?? 0,
-            inputTokens: g.input_tokens ?? g.inputTokens ?? 0,
-            cachedInputTokens: g.cached_input_tokens ?? g.cachedInputTokens ?? 0,
-            outputTokens: g.output_tokens ?? g.outputTokens ?? 0,
-            reasoningTokens: g.reasoning_tokens ?? g.reasoningTokens ?? 0,
-            cost: g.cost ?? 0,
+        // Transform combined result
+        let combined: CombinedResult | null = null;
+        if (!combinedSnapshot.empty) {
+          const doc = combinedSnapshot.docs[0];
+          const c = doc.data();
+          combined = {
+            id: doc.id,
+            combinedContent: c.combined_content ?? c.combinedContent ?? '',
+            sourceQuelleIds: c.source_quelle_ids ?? c.sourceQuelleIds ?? [],
+            heading: c.heading ?? '',
+            topic: c.topic ?? '',
+            modelUsed: c.model_used ?? c.modelUsed ?? '',
+            tokensUsed: c.tokens_used ?? c.tokensUsed ?? 0,
+            inputTokens: c.input_tokens ?? c.inputTokens ?? 0,
+            cachedInputTokens: c.cached_input_tokens ?? c.cachedInputTokens ?? 0,
+            outputTokens: c.output_tokens ?? c.outputTokens ?? 0,
+            reasoningTokens: c.reasoning_tokens ?? c.reasoningTokens ?? 0,
+            cost: c.cost ?? 0,
             createdAt:
-              g.created_at?.toDate?.()?.toISOString() ||
-              g.createdAt?.toDate?.()?.toISOString() ||
+              c.created_at?.toDate?.()?.toISOString() ||
+              c.createdAt?.toDate?.()?.toISOString() ||
               new Date().toISOString(),
-          });
+          };
         }
-        // Sort by group number
-        intermediateGroups.sort((a, b) => a.groupNumber - b.groupNumber);
-      }
 
-      // Fetch results last to show combined/shortened first
-      const resultsRef = collection(
-        db,
-        'users',
-        user.uid,
-        'kapitels',
-        kapitelId,
-        'runs',
-        runDoc.id,
-        'results'
-      );
+        // Transform shortened result
+        let shortened: ShortenedResult | null = null;
+        if (!shortenedSnapshot.empty) {
+          const doc = shortenedSnapshot.docs[0];
+          const s = doc.data();
+          shortened = {
+            id: doc.id,
+            shortenedContent: s.shortened_content ?? s.shortenedContent ?? '',
+            explanation: s.explanation
+              ? {
+                  lengthDecision: s.explanation.length_decision ?? '',
+                  omittedTopics: s.explanation.omitted_topics ?? [],
+                  preservedFocus: s.explanation.preserved_focus ?? [],
+                  compressionNotes: s.explanation.compression_notes ?? '',
+                }
+              : undefined,
+            originalLength: s.original_length ?? s.originalLength ?? 0,
+            shortenedLength: s.shortened_length ?? s.shortenedLength ?? 0,
+            usedKapitelIds: s.used_kapitel_ids ?? s.usedKapitelIds ?? [],
+            model: s.model ?? '',
+            cost: s.cost ?? 0,
+            tokensUsed: s.tokens_used ?? s.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
+            createdAt:
+              s.created_at?.toDate?.()?.toISOString() ||
+              s.createdAt?.toDate?.()?.toISOString() ||
+              new Date().toISOString(),
+          };
+        }
 
-      const resultsSnapshot = await getDocs(resultsRef);
-      const results: KapitelRunResult[] = resultsSnapshot.docs.map((resDoc) => {
-        const resData = resDoc.data();
+        // Transform lesefluss result
+        let lesefluss: LeseflussResult | null = null;
+        if (!leseflussSnapshot.empty) {
+          const doc = leseflussSnapshot.docs[0];
+          const l = doc.data();
+          lesefluss = {
+            id: doc.id,
+            leseflussContent: l.lesefluss_content ?? l.leseflussContent ?? '',
+            aufgabenstellung: l.aufgabenstellung ?? '',
+            explanation: l.explanation ?? '',
+            originalLength: l.original_length ?? l.originalLength ?? 0,
+            leseflussLength: l.lesefluss_length ?? l.leseflussLength ?? 0,
+            usedKapitelIds: l.used_kapitel_ids ?? l.usedKapitelIds ?? [],
+            model: l.model ?? '',
+            cost: l.cost ?? 0,
+            tokensUsed: l.tokens_used ?? l.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
+            createdAt:
+              l.created_at?.toDate?.()?.toISOString() ||
+              l.createdAt?.toDate?.()?.toISOString() ||
+              new Date().toISOString(),
+          };
+        }
+
+        // Transform intermediate groups
+        const intermediateGroups: IntermediateGroupResult[] = [];
+        if (!intermediateGroupsSnapshot.empty) {
+          for (const groupDoc of intermediateGroupsSnapshot.docs) {
+            const g = groupDoc.data();
+            intermediateGroups.push({
+              id: groupDoc.id,
+              groupNumber: g.group_number ?? 0,
+              combinedContent: g.combined_content ?? g.combinedContent ?? '',
+              sourceQuelleIds: g.source_quelle_ids ?? g.sourceQuelleIds ?? [],
+              heading: g.heading ?? '',
+              topic: g.topic ?? '',
+              modelUsed: g.model_used ?? g.modelUsed ?? '',
+              tokensUsed: g.tokens_used ?? g.tokensUsed ?? 0,
+              inputTokens: g.input_tokens ?? g.inputTokens ?? 0,
+              cachedInputTokens: g.cached_input_tokens ?? g.cachedInputTokens ?? 0,
+              outputTokens: g.output_tokens ?? g.outputTokens ?? 0,
+              reasoningTokens: g.reasoning_tokens ?? g.reasoningTokens ?? 0,
+              cost: g.cost ?? 0,
+              createdAt:
+                g.created_at?.toDate?.()?.toISOString() ||
+                g.createdAt?.toDate?.()?.toISOString() ||
+                new Date().toISOString(),
+            });
+          }
+          // Sort by group number
+          intermediateGroups.sort((a, b) => a.groupNumber - b.groupNumber);
+        }
+
+        // Transform results
+        const results: KapitelRunResult[] = resultsSnapshot.docs.map((resDoc) => {
+          const resData = resDoc.data();
+          return {
+            quelleId: resDoc.id,
+            resultContent: resData.result_content ?? resData.resultContent ?? '',
+            hasContent: resData.has_content ?? resData.hasContent ?? true,
+            modelUsed: resData.model_used ?? resData.modelUsed ?? '',
+            tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
+            inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
+            cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
+            outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
+            reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
+            cost: resData.cost ?? 0,
+            createdAt:
+              resData.created_at?.toDate?.()?.toISOString() ||
+              resData.createdAt?.toDate?.()?.toISOString() ||
+              new Date().toISOString(),
+          };
+        });
+
+        // Return the complete run object
         return {
-          quelleId: resDoc.id,
-          resultContent: resData.result_content ?? resData.resultContent ?? '',
-          hasContent: resData.has_content ?? resData.hasContent ?? true,
-          modelUsed: resData.model_used ?? resData.modelUsed ?? '',
-          tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
-          inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
-          cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
-          outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
-          reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
-          cost: resData.cost ?? 0,
-          createdAt: resData.created_at?.toDate?.()?.toISOString()
-            || resData.createdAt?.toDate?.()?.toISOString()
-            || new Date().toISOString(),
+          id: runDoc.id,
+          index: runData.index || 0,
+          instruction: runData.instruction || '',
+          model: runData.model || '',
+          ueberschrift: runData.ueberschrift || runData.heading || '',
+          thema: runData.thema || runData.instruction || '',
+          grundlegendeInformationen: runData.grundlegendeInformationen || null,
+          promptTemplateId: runData.promptTemplateId,
+          promptPayload: runData.promptPayload,
+          autoCombine: runData.autoCombine ?? false,
+          createdAt:
+            runData.createdAt?.toDate?.()?.toISOString() ||
+            runData.created_at?.toDate?.()?.toISOString() ||
+            new Date().toISOString(),
+          results,
+          combined,
+          intermediateGroups: intermediateGroups.length > 0 ? intermediateGroups : undefined,
+          shortened: shortened ?? undefined,
+          lesefluss: lesefluss ?? undefined,
         };
-      });
-
-      runs.push({
-        id: runDoc.id,
-        index: runData.index || 0,
-        instruction: runData.instruction || '',
-        model: runData.model || '',
-        ueberschrift: runData.ueberschrift || runData.heading || '',
-        thema: runData.thema || runData.instruction || '',
-        grundlegendeInformationen: runData.grundlegendeInformationen || null,
-        promptTemplateId: runData.promptTemplateId,
-        promptPayload: runData.promptPayload,
-        autoCombine: runData.autoCombine ?? false,
-        createdAt: runData.createdAt?.toDate?.()?.toISOString()
-          || runData.created_at?.toDate?.()?.toISOString()
-          || new Date().toISOString(),
-        results,
-        combined,
-        intermediateGroups: intermediateGroups.length > 0 ? intermediateGroups : undefined,
-        shortened: shortened ?? undefined,
-        lesefluss: lesefluss ?? undefined,
-      });
-    }
+      })
+    );
 
     return runs;
   } catch (error: any) {

@@ -540,15 +540,48 @@ export function Dashboard({
     let hasData = false;
     let settledOnce = false;
 
-    const updateRunPartial = (partial: Partial<FirebaseKapitelRun>) => {
-      setFbRuns((prev) =>
-        prev.map((run) => (run.id === selectedRunId ? { ...run, ...partial } : run))
-      );
+    // Batch multiple listener updates to reduce re-renders
+    let pendingUpdate: Partial<FirebaseKapitelRun> = {};
+    let updateTimeout: NodeJS.Timeout | null = null;
+
+    // Track when all 4 listeners have fired at least once
+    let listenersSettled = 0;
+    const totalListeners = 4;
+
+    const flushBatchedUpdate = () => {
+      if (Object.keys(pendingUpdate).length > 0) {
+        setFbRuns((prev) =>
+          prev.map((run) => (run.id === selectedRunId ? { ...run, ...pendingUpdate } : run))
+        );
+        pendingUpdate = {};
+      }
     };
+
+    const updateRunBatched = (partial: Partial<FirebaseKapitelRun>) => {
+      // Accumulate updates
+      pendingUpdate = { ...pendingUpdate, ...partial };
+
+      // Clear existing timeout
+      if (updateTimeout) {
+        clearTimeout(updateTimeout);
+      }
+
+      // Schedule batched update (50ms debounce)
+      updateTimeout = setTimeout(flushBatchedUpdate, 50);
+    };
+
     const finishIfNeeded = () => {
       if (!settledOnce) {
         settledOnce = true;
         setIsKapitelLoading(false);
+      }
+    };
+
+    // Clear loading once all listeners have fired, even if no data yet
+    const checkListenerSettled = () => {
+      listenersSettled++;
+      if (listenersSettled >= totalListeners) {
+        finishIfNeeded();
       }
     };
 
@@ -576,9 +609,10 @@ export function Dashboard({
             new Date().toISOString(),
         };
       }
-      updateRunPartial({ combined });
+      updateRunBatched({ combined });
       hasData = hasData || !!combined;
       if (hasData) finishIfNeeded();
+      checkListenerSettled();
     });
 
     const shortenedUnsub = onSnapshot(shortenedRef, (shortenedSnap) => {
@@ -607,9 +641,10 @@ export function Dashboard({
             new Date().toISOString(),
         };
       }
-      updateRunPartial({ shortened });
+      updateRunBatched({ shortened });
       hasData = hasData || !!shortened;
       if (hasData) finishIfNeeded();
+      checkListenerSettled();
     });
 
     const leseflussRef = collection(
@@ -645,9 +680,10 @@ export function Dashboard({
             new Date().toISOString(),
         };
       }
-      updateRunPartial({ lesefluss });
+      updateRunBatched({ lesefluss });
       hasData = hasData || !!lesefluss;
       if (hasData) finishIfNeeded();
+      checkListenerSettled();
     });
 
     const resultsUnsub = onSnapshot(resultsRef, (resSnapshot) => {
@@ -671,15 +707,21 @@ export function Dashboard({
         };
       });
 
-      updateRunPartial({ results });
+      updateRunBatched({ results });
       hasData = hasData || results.length > 0;
       if (hasData) finishIfNeeded();
       if (!hasData && resSnapshot.empty) {
         finishIfNeeded();
       }
+      checkListenerSettled();
     });
 
     return () => {
+      // Clear pending timeout and flush any pending updates
+      if (updateTimeout) {
+        clearTimeout(updateTimeout);
+        flushBatchedUpdate();
+      }
       combinedUnsub();
       shortenedUnsub();
       leseflussUnsub();
@@ -707,71 +749,6 @@ export function Dashboard({
           return { ...k, status };
         })
       );
-    };
-
-    kapitelIds.forEach((kapitelId) => {
-      const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
-      const q = query(runsRef, orderBy('index', 'desc'), limit(1));
-
-      const runUnsub = onSnapshot(q, (runSnap) => {
-        const existing = combinedUnsubs.get(kapitelId);
-        if (existing) {
-          existing();
-          combinedUnsubs.delete(kapitelId);
-        }
-
-        if (runSnap.empty) {
-          updateKapitelStatus(kapitelId, 'nicht-verarbeitet');
-          return;
-        }
-
-        const latestRunId = runSnap.docs[0].id;
-        updateKapitelStatus(kapitelId, 'in-bearbeitung');
-
-        const combinedRef = collection(
-          db,
-          'users',
-          user.uid,
-          'kapitels',
-          kapitelId,
-          'runs',
-          latestRunId,
-          'combined'
-        );
-        const combinedUnsub = onSnapshot(combinedRef, (combinedSnap) => {
-          if (!combinedSnap.empty) {
-            updateKapitelStatus(kapitelId, 'fertig');
-          } else {
-            updateKapitelStatus(kapitelId, 'in-bearbeitung');
-          }
-        });
-
-        combinedUnsubs.set(kapitelId, combinedUnsub);
-      });
-
-      runUnsubs.push(runUnsub);
-    });
-
-    return () => {
-      runUnsubs.forEach((u) => u());
-      combinedUnsubs.forEach((u) => u());
-    };
-  }, [user?.uid, kapiteln.map((k) => k.id).join(',')]);
-
-  // Live status per Kapitel (latest run only, minimal data)
-  useEffect(() => {
-    if (!user?.uid || kapiteln.length === 0) return;
-
-    const db = getFirestore(firebaseApp);
-    const runUnsubs: Unsubscribe[] = [];
-    const combinedUnsubs: Map<string, Unsubscribe> = new Map();
-    const kapitelIds = kapiteln.map((k) => k.id);
-
-    const updateKapitelStatus = (
-      kapitelId: string,
-      status: 'nicht-verarbeitet' | 'in-bearbeitung' | 'fertig'
-    ) => {
-      setKapiteln((prev) => prev.map((k) => (k.id === kapitelId ? { ...k, status } : k)));
     };
 
     kapitelIds.forEach((kapitelId) => {
