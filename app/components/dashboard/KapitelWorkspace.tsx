@@ -148,16 +148,6 @@ export function KapitelWorkspace({
     : assignedQuellen.slice(0, MAX_VISIBLE_QUELLEN_HEADER);
   const hiddenCount = assignedQuellen.length - MAX_VISIBLE_QUELLEN_HEADER;
 
-  // Show first 5 quellen results by default in results section
-  const MAX_VISIBLE_QUELLEN = 5;
-  const hasMoreQuellen =
-    selectedRun?.quellenErgebnisse &&
-    selectedRun.quellenErgebnisse.length > MAX_VISIBLE_QUELLEN;
-  const visibleQuellenResults = selectedRun?.quellenErgebnisse?.slice(0, MAX_VISIBLE_QUELLEN) || [];
-  const hiddenResultsCount = hasMoreQuellen
-    ? (selectedRun?.quellenErgebnisse?.length || 0) - MAX_VISIBLE_QUELLEN
-    : 0;
-
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-4xl mx-auto py-12 px-8">
@@ -736,109 +726,79 @@ export function KapitelWorkspace({
           </Card>
         )}
 
-        {/* 5. Ergebnisse pro Quelle - Show first 5, "Show More" button */}
+        {/* 5. Ergebnisse pro Quelle */}
         {hasQuellenErgebnisse && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-medium text-foreground">
-                Ergebnisse pro Quelle
-              </h2>
-              <span className="text-sm text-muted-foreground">
-                {selectedRun!.quellenErgebnisse.length} Texte
-              </span>
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <BookOpen className="h-4 w-4" />
+                Ergebnisse pro Quelle ({selectedRun!.quellenErgebnisse.length})
+              </h3>
+              {!hasContent && selectedRun!.quellenErgebnisse.some((qe) => qe.status === "success") && (
+                <Button size="sm" variant="outline" onClick={onCombineTexts}>
+                  <Layers className="h-4 w-4 mr-1" />
+                  Texte kombinieren
+                </Button>
+              )}
             </div>
+
             <div className="space-y-3">
-              {visibleQuellenResults.map((ergebnis) => (
-                <Card
-                  key={ergebnis.id}
-                  className={cn(
-                    "bg-card border-border transition-colors",
-                    ergebnis.status === "success" && "hover:border-primary/30",
-                    ergebnis.status === "waiting" && "bg-muted/20",
-                    ergebnis.status === "no-content" &&
-                      "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200/50 dark:border-amber-800/50"
-                  )}
-                >
-                  <div className="p-5">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-semibold text-foreground truncate">
-                          {ergebnis.quelleName}
-                        </h3>
-                      </div>
-                      {ergebnis.status === "success" && (
-                        <div className="flex items-center gap-1 shrink-0 ml-3">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0"
-                            onClick={() =>
-                              handleCopy(ergebnis.text, ergebnis.id)
-                            }
-                          >
-                            {copiedId === ergebnis.id ? (
-                              <Check className="h-3.5 w-3.5 text-primary" />
-                            ) : (
-                              <Copy className="h-3.5 w-3.5" />
-                            )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0"
-                            onClick={() =>
-                              onOpenTextViewer({
-                                title: ergebnis.quelleName,
-                                text: ergebnis.text,
-                              })
-                            }
-                          >
-                            <Maximize2 className="h-3.5 w-3.5" />
-                          </Button>
+              {selectedRun!.quellenErgebnisse.map((ergebnis) => (
+                <Card key={ergebnis.id} className="p-4 bg-muted/10">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-semibold text-foreground mb-1">
+                        {ergebnis.quelleName}
+                      </h4>
+                      {ergebnis.status === "waiting" && (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm">Text wird generiert...</span>
                         </div>
                       )}
-                    </div>
-
-                    {ergebnis.status === "waiting" ? (
-                      <div className="flex items-center gap-3 py-4 text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span className="text-sm">Text wird generiert...</span>
-                      </div>
-                    ) : ergebnis.status === "no-content" ? (
-                      <div className="flex items-start gap-3 py-3 text-amber-700 dark:text-amber-500">
-                        <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-sm font-medium">
-                            Keine verwendbaren Inhalte
-                          </p>
-                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                            Diese Quelle enthält keine relevanten Informationen
-                            für das angegebene Thema.
-                          </p>
+                      {ergebnis.status === "no-content" && (
+                        <div className="flex items-center gap-2 text-amber-600">
+                          <AlertCircle className="h-4 w-4" />
+                          <span className="text-sm">Kein verwertbarer Inhalt</span>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="text-sm text-foreground/80 leading-relaxed line-clamp-4">
-                        {ergebnis.text}
+                      )}
+                      {ergebnis.status === "success" && ergebnis.text && (
+                        <p className="text-sm text-foreground/80 line-clamp-3">
+                          {ergebnis.text}
+                        </p>
+                      )}
+                    </div>
+                    {ergebnis.status === "success" && ergebnis.text && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCopy(ergebnis.text, ergebnis.id)}
+                        >
+                          {copiedId === ergebnis.id ? (
+                            <Check className="h-4 w-4 text-primary" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            onOpenTextViewer({
+                              title: ergebnis.quelleName,
+                              text: ergebnis.text,
+                            })
+                          }
+                        >
+                          <Maximize2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     )}
                   </div>
                 </Card>
               ))}
             </div>
-
-            {/* Show More Button */}
-            {hasMoreQuellen && !showAllQuellen && (
-              <div className="flex justify-center mt-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAllQuellen(true)}
-                >
-                  Weitere {hiddenCount} Quellen anzeigen
-                </Button>
-              </div>
-            )}
           </div>
         )}
 
