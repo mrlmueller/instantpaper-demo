@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Play, Sparkles, Settings2, FileText, Wand2, MessageSquareText } from "lucide-react"
+import { Play, Sparkles, Settings2, FileText, Wand2, MessageSquareText, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -25,10 +25,11 @@ interface ProcessingDialogProps {
   onOpenChange: (open: boolean) => void
   kapitelTitle: string
   quellenCount: number
-  onProcess: (settings: ProcessingSettings) => void
+  onProcess: (settings: ProcessingSettings) => Promise<void>
   askOnEachProcess: boolean
   promptTemplates: PromptTemplate[]
   promptActive: ActivePromptSelections
+  isProcessing: boolean
 }
 
 export function ProcessingDialog({
@@ -40,6 +41,7 @@ export function ProcessingDialog({
   askOnEachProcess,
   promptTemplates,
   promptActive,
+  isProcessing,
 }: ProcessingDialogProps) {
   const [settings, setSettings] = useState<ProcessingSettings>({
     model: "gpt-5-mini",
@@ -52,13 +54,21 @@ export function ProcessingDialog({
     process_quelle: (promptActive?.process_quelle as string | "default") || "default",
     combine: (promptActive?.combine as string | "default") || "default",
   })
+  const [localProcessing, setLocalProcessing] = useState(false)
 
   const templatesByStage = useMemo(() => {
     return (stage: PromptStage) => promptTemplates.filter((tpl) => tpl.stage === stage)
   }, [promptTemplates])
 
-  const handleProcess = () => {
-    onProcess({ ...settings, promptChoice })
+  const handleProcess = async () => {
+    if (localProcessing || isProcessing) return
+    setLocalProcessing(true)
+    onOpenChange(false)
+    try {
+      await onProcess({ ...settings, promptChoice })
+    } finally {
+      setLocalProcessing(false)
+    }
   }
 
   const handleOpenChange = (open: boolean) => {
@@ -260,8 +270,17 @@ export function ProcessingDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Abbrechen
           </Button>
-          <Button onClick={handleProcess} disabled={quellenCount === 0 || !settings.ueberschrift.trim()}>
-            <Play className="h-4 w-4 mr-2" />
+          <Button
+            onClick={handleProcess}
+            disabled={
+              quellenCount === 0 || !settings.ueberschrift.trim() || localProcessing || isProcessing
+            }
+          >
+            {localProcessing || isProcessing ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Play className="h-4 w-4 mr-2" />
+            )}
             Verarbeitung starten
           </Button>
         </DialogFooter>

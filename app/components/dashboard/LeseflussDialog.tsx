@@ -13,7 +13,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Sparkles, AlertCircle, MessageSquareText, ChevronRight } from "lucide-react"
+import { Sparkles, AlertCircle, MessageSquareText, ChevronRight, Loader2 } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import type { Kapitel } from "@/app/types/ui"
@@ -29,10 +29,11 @@ interface LeseflussDialogProps {
     aufgabenstellung: string,
     model: string,
     promptChoice?: Record<PromptStage, string | "default">
-  ) => void
+  ) => Promise<void>
   askOnEachProcess: boolean
   promptTemplates: PromptTemplate[]
   promptActive: ActivePromptSelections
+  isLeseflussLoading: boolean
 }
 
 export function LeseflussDialog({
@@ -44,6 +45,7 @@ export function LeseflussDialog({
   askOnEachProcess,
   promptTemplates,
   promptActive,
+  isLeseflussLoading,
 }: LeseflussDialogProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [aufgabenstellung, setAufgabenstellung] = useState("")
@@ -52,6 +54,7 @@ export function LeseflussDialog({
     summary: (promptActive?.summary as string | "default") || "default",
     lesefluss: (promptActive?.lesefluss as string | "default") || "default",
   })
+  const [localLeseflussLoading, setLocalLeseflussLoading] = useState(false)
 
   const sortedKapiteln = useMemo(() => {
     const list = allKapitels.filter((k) => k.id !== currentKapitelId)
@@ -77,11 +80,23 @@ export function LeseflussDialog({
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
   }
 
-  const handleSubmit = () => {
-    if (selectedIds.length === 0 || aufgabenstellung.trim().length < 10) return
-    onLesefluss(selectedIds, aufgabenstellung.trim(), model, promptChoice)
-    setSelectedIds([])
-    setAufgabenstellung("")
+  const handleSubmit = async () => {
+    if (
+      selectedIds.length === 0 ||
+      aufgabenstellung.trim().length < 10 ||
+      localLeseflussLoading ||
+      isLeseflussLoading
+    )
+      return
+    setLocalLeseflussLoading(true)
+    onOpenChange(false)
+    try {
+      await onLesefluss(selectedIds, aufgabenstellung.trim(), model, promptChoice)
+      setSelectedIds([])
+      setAufgabenstellung("")
+    } finally {
+      setLocalLeseflussLoading(false)
+    }
   }
 
   const getIndentLevel = (nummer: string) => nummer.split(".").length - 1
@@ -245,9 +260,18 @@ export function LeseflussDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={selectedIds.length === 0 || aufgabenstellung.trim().length < 10}
+            disabled={
+              selectedIds.length === 0 ||
+              aufgabenstellung.trim().length < 10 ||
+              localLeseflussLoading ||
+              isLeseflussLoading
+            }
           >
-            <Sparkles className="h-4 w-4 mr-2" />
+            {localLeseflussLoading || isLeseflussLoading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-2" />
+            )}
             Lesefluss verbessern ({selectedIds.length} Kontext)
           </Button>
         </DialogFooter>

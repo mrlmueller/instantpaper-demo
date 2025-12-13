@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Scissors, ChevronRight, AlertCircle, MessageSquareText } from "lucide-react"
+import { Scissors, ChevronRight, AlertCircle, MessageSquareText, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -23,10 +23,15 @@ interface ShortenDialogProps {
   onOpenChange: (open: boolean) => void
   allKapitels: Kapitel[]
   currentKapitelId: string
-  onShorten: (contextKapitelIds: string[], model: string, promptChoice?: Record<PromptStage, string | "default">) => void
+  onShorten: (
+    contextKapitelIds: string[],
+    model: string,
+    promptChoice?: Record<PromptStage, string | "default">
+  ) => Promise<void>
   askOnEachProcess: boolean
   promptTemplates: PromptTemplate[]
   promptActive: ActivePromptSelections
+  isShortening: boolean
 }
 
 export function ShortenDialog({
@@ -38,6 +43,7 @@ export function ShortenDialog({
   askOnEachProcess,
   promptTemplates,
   promptActive,
+  isShortening,
 }: ShortenDialogProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-mini")
@@ -45,6 +51,7 @@ export function ShortenDialog({
     summary: (promptActive?.summary as string | "default") || "default",
     shorten: (promptActive?.shorten as string | "default") || "default",
   })
+  const [localShortenLoading, setLocalShortenLoading] = useState(false)
 
   const sortedKapiteln = useMemo(() => {
     const list = allKapitels.filter((k) => k.id !== currentKapitelId)
@@ -70,10 +77,16 @@ export function ShortenDialog({
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
   }
 
-  const handleShorten = () => {
-    if (selectedIds.length === 0) return
-    onShorten(selectedIds, model, promptChoice)
-    setSelectedIds([])
+  const handleShorten = async () => {
+    if (selectedIds.length === 0 || localShortenLoading || isShortening) return
+    setLocalShortenLoading(true)
+    onOpenChange(false)
+    try {
+      await onShorten(selectedIds, model, promptChoice)
+      setSelectedIds([])
+    } finally {
+      setLocalShortenLoading(false)
+    }
   }
 
   const getIndentLevel = (nummer: string) => nummer.split(".").length - 1
@@ -223,8 +236,15 @@ export function ShortenDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Abbrechen
           </Button>
-          <Button onClick={handleShorten} disabled={selectedIds.length === 0}>
-            <Scissors className="h-4 w-4 mr-2" />
+          <Button
+            onClick={handleShorten}
+            disabled={selectedIds.length === 0 || localShortenLoading || isShortening}
+          >
+            {localShortenLoading || isShortening ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Scissors className="h-4 w-4 mr-2" />
+            )}
             Text kürzen ({selectedIds.length} Kontext)
           </Button>
         </DialogFooter>

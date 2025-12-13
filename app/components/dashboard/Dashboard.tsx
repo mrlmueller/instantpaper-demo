@@ -296,7 +296,7 @@ export function Dashboard({
   }, [handleAuthFailure, keyStatus, keyStatusLoading, router]);
 
   const notifyServerDown = useCallback(
-    (toastId = 'fastapi-down') => {
+    (toastId: string | number = 'fastapi-down') => {
       toast.error('Server nicht erreichbar', {
         description:
           'Der FastAPI-Server antwortet aktuell nicht. Das ist ein Server-Problem - du kannst nichts tun außer es später erneut zu versuchen.',
@@ -339,6 +339,17 @@ export function Dashboard({
     id: string;
     name: string;
   } | null>(null);
+  const [isAddingQuelle, setIsAddingQuelle] = useState(false);
+  const [assigningQuelleIds, setAssigningQuelleIds] = useState<string[]>([]);
+  const [unassigningQuelleIds, setUnassigningQuelleIds] = useState<string[]>([]);
+  const [deletingQuelleIds, setDeletingQuelleIds] = useState<string[]>([]);
+  const [isProcessingRun, setIsProcessingRun] = useState(false);
+  const [isCombining, setIsCombining] = useState(false);
+  const [isShortening, setIsShortening] = useState(false);
+  const [isImprovingLesefluss, setIsImprovingLesefluss] = useState(false);
+  const [isCreatingKapitel, setIsCreatingKapitel] = useState(false);
+  const [isEditingKapitel, setIsEditingKapitel] = useState(false);
+  const [isCreatingProjekt, setIsCreatingProjekt] = useState(false);
 
   const loadProjektData = useCallback(async (projektId: string) => {
     setIsKapitelLoading(true);
@@ -878,6 +889,10 @@ export function Dashboard({
 
   const handleCreateProjekt = useCallback(
     async (name: string) => {
+      if (isCreatingProjekt) return;
+      setIsCreatingProjekt(true);
+      const toastId = toast.loading('Projekt wird erstellt...');
+
       try {
         const result = await createProject(name);
         if (!result.success || !result.id) {
@@ -892,13 +907,15 @@ export function Dashboard({
         // Switch immediately using the newly created project
         setProjekt(newProjekt);
         await loadProjektData(result.id);
-        toast.success('Projekt erstellt', { description: `"${name}" wurde erstellt.` });
+        toast.success('Projekt erstellt', { description: `"${name}" wurde erstellt.`, id: toastId });
       } catch (error: any) {
         console.error('Projekt erstellen fehlgeschlagen:', error);
-        toast.error('Projekt konnte nicht erstellt werden', { description: error.message });
+        toast.error('Projekt konnte nicht erstellt werden', { description: error.message, id: toastId });
+      } finally {
+        setIsCreatingProjekt(false);
       }
     },
-    [loadProjektData]
+    [loadProjektData, isCreatingProjekt]
   );
 
   const handleDeleteProjekt = useCallback(
@@ -925,13 +942,18 @@ export function Dashboard({
   );
 
   const handleAddQuelle = useCallback(
-    async (name: string, text: string, imageFiles: File[] = []) => {
+    async (name: string, text: string, imageFiles: File[] = []): Promise<boolean> => {
+      if (isAddingQuelle) return false;
+      setIsAddingQuelle(true);
+
+      const loadingToast = toast.loading('Quelle wird hinzugefügt...');
       const uploadingToast =
         imageFiles.length > 0
           ? toast.loading(`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`)
           : undefined;
 
       let imageMetadata: ImageMetadata[] = [];
+      let success = false;
 
       try {
         // Upload images to Storage first (client-side)
@@ -946,8 +968,10 @@ export function Dashboard({
         if (uploadingToast) toast.dismiss(uploadingToast);
 
         if (result.success) {
+          success = true;
           toast.success('Quelle hinzugefügt', {
             description: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` mit ${imageFiles.length} Bild(ern)` : ''}.`,
+            id: loadingToast,
           });
           // Optimistically update UI
           const newQuelle: Quelle = {
@@ -960,53 +984,71 @@ export function Dashboard({
           };
           setQuellen((prev) => [...prev, newQuelle]);
         } else {
-          toast.error('Fehler', { description: result.error });
+          toast.error('Fehler', { description: result.error, id: loadingToast });
 
           // Cleanup uploaded images if Firestore creation failed
           if (imageMetadata.length > 0) {
             const { deleteImagesFromStorage } = await import('@/app/lib/firebase/storage');
-            await deleteImagesFromStorage(imageMetadata.map(img => img.path));
+            await deleteImagesFromStorage(imageMetadata.map((img) => img.path));
           }
         }
       } catch (error) {
         if (uploadingToast) toast.dismiss(uploadingToast);
         toast.error('Upload fehlgeschlagen', {
           description: error instanceof Error ? error.message : 'Unbekannter Fehler',
+          id: loadingToast,
         });
 
         // Cleanup uploaded images on error
         if (imageMetadata.length > 0) {
           const { deleteImagesFromStorage } = await import('@/app/lib/firebase/storage');
-          await deleteImagesFromStorage(imageMetadata.map(img => img.path));
+          await deleteImagesFromStorage(imageMetadata.map((img) => img.path));
         }
+      } finally {
+        setIsAddingQuelle(false);
       }
+
+      return success;
     },
-    [projekt.id, user]
+    [isAddingQuelle, projekt.id, user]
   );
 
   const handleDeleteQuelle = useCallback(async (id: string) => {
-    const result = await deleteQuelleAction(id);
-    if (result.success) {
-      setQuellen((prev) => prev.filter((q) => q.id !== id));
-      // Also remove from all kapitels
-      setKapiteln((prev) =>
-        prev.map((k) => ({
-          ...k,
-          assignedQuellenIds: k.assignedQuellenIds.filter((qid) => qid !== id),
-        }))
-      );
-      setDeleteConfirm(null);
-      toast.success('Quelle gelöscht');
-    } else {
-      toast.error('Fehler', { description: result.error });
+    if (deletingQuelleIds.includes(id)) return;
+    setDeletingQuelleIds((prev) => [...prev, id]);
+    const toastId = toast.loading('Quelle wird gelöscht...');
+
+    try {
+      const result = await deleteQuelleAction(id);
+      if (result.success) {
+        setQuellen((prev) => prev.filter((q) => q.id !== id));
+        // Also remove from all kapitels
+        setKapiteln((prev) =>
+          prev.map((k) => ({
+            ...k,
+            assignedQuellenIds: k.assignedQuellenIds.filter((qid) => qid !== id),
+          }))
+        );
+        setDeleteConfirm(null);
+        toast.success('Quelle gelöscht', { id: toastId });
+      } else {
+        toast.error('Fehler', { description: result.error, id: toastId });
+      }
+    } catch (error: any) {
+      toast.error('Fehler', { description: error?.message || 'Quelle konnte nicht gelöscht werden.', id: toastId });
+    } finally {
+      setDeletingQuelleIds((prev) => prev.filter((qid) => qid !== id));
     }
-  }, []);
+  }, [deletingQuelleIds]);
 
   const handleAssignQuelle = useCallback(
     async (quelleId: string) => {
       if (!activeKapitelId) return;
+      if (assigningQuelleIds.includes(quelleId) || unassigningQuelleIds.includes(quelleId)) return;
       const kapitel = kapiteln.find((k) => k.id === activeKapitelId);
       if (!kapitel) return;
+
+      setAssigningQuelleIds((prev) => [...prev, quelleId]);
 
       const prevQuelleIds = kapitel.assignedQuellenIds;
       const newQuelleIds = [...prevQuelleIds, quelleId];
@@ -1018,9 +1060,12 @@ export function Dashboard({
 
       const quelle = quellen.find((q) => q.id === quelleId);
 
+      const toastId = toast.loading('Quelle wird zugewiesen...');
+
       try {
         await persistKapitelQuellenClient(activeKapitelId, newQuelleIds);
         toast.success('Quelle zugewiesen', {
+          id: toastId,
           description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
         });
       } catch (clientErr) {
@@ -1030,22 +1075,28 @@ export function Dashboard({
           setKapiteln((prev) =>
             prev.map((k) => (k.id === activeKapitelId ? { ...k, assignedQuellenIds: prevQuelleIds } : k))
           );
-          toast.error('Fehler', { description: result.error });
+          toast.error('Fehler', { description: result.error, id: toastId });
         } else {
           toast.success('Quelle zugewiesen', {
+            id: toastId,
             description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
           });
         }
+      } finally {
+        setAssigningQuelleIds((prev) => prev.filter((id) => id !== quelleId));
       }
     },
-    [activeKapitelId, kapiteln, persistKapitelQuellenClient, quellen]
+    [activeKapitelId, kapiteln, persistKapitelQuellenClient, quellen, assigningQuelleIds, unassigningQuelleIds]
   );
 
   const handleUnassignQuelle = useCallback(
     async (quelleId: string) => {
       if (!activeKapitelId) return;
+      if (unassigningQuelleIds.includes(quelleId) || assigningQuelleIds.includes(quelleId)) return;
       const kapitel = kapiteln.find((k) => k.id === activeKapitelId);
       if (!kapitel) return;
+
+      setUnassigningQuelleIds((prev) => [...prev, quelleId]);
 
       const prevQuelleIds = kapitel.assignedQuellenIds;
       const newQuelleIds = prevQuelleIds.filter((id) => id !== quelleId);
@@ -1057,9 +1108,12 @@ export function Dashboard({
 
       const quelle = quellen.find((q) => q.id === quelleId);
 
+      const toastId = toast.loading('Quelle wird entfernt...');
+
       try {
         await persistKapitelQuellenClient(activeKapitelId, newQuelleIds);
         toast.success('Quelle entfernt', {
+          id: toastId,
           description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
         });
       } catch (clientErr) {
@@ -1068,18 +1122,25 @@ export function Dashboard({
           setKapiteln((prev) =>
             prev.map((k) => (k.id === activeKapitelId ? { ...k, assignedQuellenIds: prevQuelleIds } : k))
           );
-          toast.error('Fehler', { description: result.error });
+          toast.error('Fehler', { description: result.error, id: toastId });
         } else {
           toast.success('Quelle entfernt', {
+            id: toastId,
             description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
           });
         }
+      } finally {
+        setUnassigningQuelleIds((prev) => prev.filter((id) => id !== quelleId));
       }
     },
-    [activeKapitelId, kapiteln, persistKapitelQuellenClient, quellen]
+    [activeKapitelId, kapiteln, persistKapitelQuellenClient, quellen, unassigningQuelleIds, assigningQuelleIds]
   );
 
   const handleAddKapitel = useCallback(async (title: string, nummer: string) => {
+    if (isCreatingKapitel) return;
+    setIsCreatingKapitel(true);
+    const toastId = toast.loading('Kapitel wird erstellt...');
+
     const tempId = `temp-${Date.now()}`;
     const newKapitel: Kapitel = {
       id: tempId,
@@ -1103,6 +1164,7 @@ export function Dashboard({
       setActiveKapitelId(newId);
       toast.success('Kapitel erstellt', {
         description: `"${nummer} ${title}" wurde hinzugefügt.`,
+        id: toastId,
       });
     } catch (clientErr) {
       // Fallback to server action
@@ -1114,15 +1176,18 @@ export function Dashboard({
         setActiveKapitelId(result.id);
         toast.success('Kapitel erstellt', {
           description: `"${nummer} ${title}" wurde hinzugefügt.`,
+          id: toastId,
         });
       } else {
         // Revert on failure
         setKapiteln((prev) => prev.filter((k) => k.id !== tempId));
         setActiveKapitelId((prev) => (prev === tempId ? kapiteln[0]?.id || '' : prev));
-        toast.error('Fehler', { description: result.error || (clientErr as Error).message });
+        toast.error('Fehler', { description: result.error || (clientErr as Error).message, id: toastId });
       }
+    } finally {
+      setIsCreatingKapitel(false);
     }
-  }, [createKapitelClient, kapiteln, projekt.id]);
+  }, [createKapitelClient, kapiteln, projekt.id, isCreatingKapitel]);
 
   const handleDeleteKapitel = useCallback(
     async (id: string) => {
@@ -1153,6 +1218,10 @@ export function Dashboard({
   );
 
   const handleEditKapitel = useCallback(async (id: string, title: string, nummer: string) => {
+    if (isEditingKapitel) return;
+    setIsEditingKapitel(true);
+    const toastId = toast.loading('Kapitel wird aktualisiert...');
+
     const prevKapiteln = kapiteln;
     setKapiteln((prev) => prev.map((k) => (k.id === id ? { ...k, title, nummer } : k)));
 
@@ -1160,19 +1229,23 @@ export function Dashboard({
       await updateKapitelTitleClient(id, title, nummer);
       toast.success('Kapitel aktualisiert', {
         description: `"${nummer} ${title}" wurde gespeichert.`,
+        id: toastId,
       });
     } catch (clientErr) {
       const result = await updateKapitelTitle(id, title, nummer);
       if (!result.success) {
         setKapiteln(prevKapiteln);
-        toast.error('Fehler', { description: result.error || (clientErr as Error).message });
+        toast.error('Fehler', { description: result.error || (clientErr as Error).message, id: toastId });
       } else {
         toast.success('Kapitel aktualisiert', {
           description: `"${nummer} ${title}" wurde gespeichert.`,
+          id: toastId,
         });
       }
+    } finally {
+      setIsEditingKapitel(false);
     }
-  }, [kapiteln, updateKapitelTitleClient]);
+  }, [kapiteln, updateKapitelTitleClient, isEditingKapitel]);
 
   const renderPromptTemplate = useCallback((template: string, payload: Record<string, string>) => {
     let result = template;
@@ -1317,9 +1390,10 @@ export function Dashboard({
         grundlegende_infos: settings.grundlegendeInfos?.trim() || '',
       });
 
-      toast.loading('Verarbeitung gestartet', {
+      setIsProcessingRun(true);
+      setProcessingDialogOpen(false);
+      const processingToastId = toast.loading('Verarbeitung gestartet', {
         description: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`,
-        id: 'processing',
       });
 
       try {
@@ -1364,7 +1438,10 @@ export function Dashboard({
           ];
         });
         handleSelectRun(result.runId);
-        setProcessingDialogOpen(false);
+        toast.success('Run erstellt', {
+          description: 'Die Verarbeitung wurde gestartet...',
+          id: processingToastId,
+        });
 
         // Queue processing for all assigned Quellen (mirrors previous implementation)
         const queue = [...assignedQuellen];
@@ -1399,7 +1476,7 @@ export function Dashboard({
                   queue.length = 0;
                   toast.error('Verarbeitung abgebrochen', {
                     description: 'Bitte melde dich erneut an.',
-                    id: 'processing',
+                    id: processingToastId,
                   });
                   handleAuthFailure();
                   return;
@@ -1419,7 +1496,7 @@ export function Dashboard({
                 queue.length = 0;
                 toast.error('Verarbeitung abgebrochen', {
                   description: 'Bitte melde dich erneut an.',
-                  id: 'processing',
+                  id: processingToastId,
                 });
                 handleAuthFailure();
                 return;
@@ -1428,13 +1505,14 @@ export function Dashboard({
               if (err instanceof TypeError || (typeof status === 'number' && status >= 500)) {
                 serverUnavailable = true;
                 queue.length = 0;
-                notifyServerDown('processing');
+                notifyServerDown(processingToastId);
                 return;
               }
 
               console.error(`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`, err);
               toast.error('Fehler bei einer Quelle', {
                 description: err.message || 'Unbekannter Fehler beim Verarbeiten der Quelle',
+                id: processingToastId,
               });
             }
           }
@@ -1446,16 +1524,18 @@ export function Dashboard({
           return;
         }
 
-        toast.success('Run erstellt', {
-          description: 'Die Verarbeitung wurde gestartet...',
-          id: 'processing',
+        toast.success('Verarbeitung läuft', {
+          description: 'Die Quellen werden nacheinander verarbeitet.',
+          id: processingToastId,
         });
       } catch (error: any) {
         console.error('Fehler beim Starten der Verarbeitung:', error);
         toast.error('Fehler beim Erstellen des Runs', {
           description: error.message || 'Ein Fehler ist aufgetreten.',
-          id: 'processing',
+          id: processingToastId,
         });
+      } finally {
+        setIsProcessingRun(false);
       }
     },
     [
@@ -1472,6 +1552,7 @@ export function Dashboard({
       promptActive,
       applyActivePrompt,
       getInstructionsFor,
+      isProcessingRun,
     ]
   );
 
@@ -1498,18 +1579,21 @@ export function Dashboard({
       return;
     }
 
+    if (isCombining) return;
+    setIsCombining(true);
+
     if (askOnEachProcess) {
       const choice = await requestPromptChoice(['combine']);
       if (!choice) {
         toast.info('Aktion abgebrochen');
+        setIsCombining(false);
         return;
       }
       await applyActivePrompt('combine', choice.combine ?? 'default');
     }
 
-    toast.loading('Texte kombinieren', {
+    const combineToastId = toast.loading('Texte kombinieren', {
       description: 'Die Texte werden kombiniert...',
-      id: 'combine',
     });
 
     try {
@@ -1536,7 +1620,7 @@ export function Dashboard({
         }
 
         if (response.status >= 500) {
-          notifyServerDown('combine');
+          notifyServerDown(combineToastId);
           return;
         }
 
@@ -1548,24 +1632,28 @@ export function Dashboard({
 
       toast.success('Kombination gestartet', {
         description: 'Die Texte werden nun zusammengeführt.',
-        id: 'combine',
+        id: combineToastId,
       });
-    } catch (err: any) {
-      if (err instanceof TypeError) {
-        notifyServerDown('combine');
-        return;
-      }
+      } catch (err: any) {
+        if (err instanceof TypeError) {
+          notifyServerDown(combineToastId);
+          setIsCombining(false);
+          return;
+        }
 
-      if (err?.status === 401) {
-        handleAuthFailure();
+        if (err?.status === 401) {
+          handleAuthFailure();
+          setIsCombining(false);
         return;
       }
 
       console.error('Fehler beim Kombinieren:', err);
-      toast.error('Combine fehlgeschlagen', {
-        description: err.message || 'Unbekannter Fehler beim Kombinieren',
-        id: 'combine',
-      });
+        toast.error('Combine fehlgeschlagen', {
+          description: err.message || 'Unbekannter Fehler beim Kombinieren',
+          id: combineToastId,
+        });
+      } finally {
+      setIsCombining(false);
     }
   }, [
     activeKapitelId,
@@ -1576,6 +1664,7 @@ export function Dashboard({
     askOnEachProcess,
     requestPromptChoice,
     applyActivePrompt,
+    isCombining,
   ]);
 
   const handleShorten = useCallback(
@@ -1591,11 +1680,15 @@ export function Dashboard({
         return;
       }
 
+      if (isShortening) return;
+      setIsShortening(true);
+
       const providedChoices = promptChoice;
       if (askOnEachProcess && !providedChoices) {
         const choice = await requestPromptChoice(['shorten', 'summary']);
         if (!choice) {
           toast.info('Aktion abgebrochen');
+          setIsShortening(false);
           return;
         }
         await applyActivePrompt('shorten', choice.shorten ?? 'default');
@@ -1606,9 +1699,8 @@ export function Dashboard({
         await applyActivePrompt('summary', providedChoices.summary ?? 'default');
       }
 
-      toast.loading('Text wird gekürzt', {
+      const shortenToastId = toast.loading('Text wird gekürzt', {
         description: 'Der Text wird mit Hilfe der ausgewählten Kapitel gekürzt...',
-        id: 'shortening',
       });
 
       try {
@@ -1626,27 +1718,27 @@ export function Dashboard({
           if (lower.includes('sitzung')) {
             toast.error('Kürzung abgebrochen', {
               description: message,
-              id: 'shortening',
+              id: shortenToastId,
             });
             handleAuthFailure();
             return;
           }
 
           if (lower.includes('fastapi-server')) {
-            notifyServerDown('shortening');
+            notifyServerDown(shortenToastId);
             return;
           }
 
           toast.error('Kürzung fehlgeschlagen', {
             description: message,
-            id: 'shortening',
+            id: shortenToastId,
           });
           return;
         }
 
         toast.success('Kürzung gestartet', {
           description: 'Der Text wird nun gekürzt und entdupliziert.',
-          id: 'shortening',
+          id: shortenToastId,
         });
       } catch (err: any) {
         console.error('Fehler beim Kürzen:', err);
@@ -1655,21 +1747,23 @@ export function Dashboard({
         if (message.toLowerCase().includes('sitzung')) {
           toast.error('Kürzung abgebrochen', {
             description: message,
-            id: 'shortening',
+            id: shortenToastId,
           });
           handleAuthFailure();
           return;
         }
 
         if (message.toLowerCase().includes('fastapi-server')) {
-          notifyServerDown('shortening');
+          notifyServerDown(shortenToastId);
           return;
         }
 
         toast.error('Kürzung fehlgeschlagen', {
           description: message,
-          id: 'shortening',
+          id: shortenToastId,
         });
+      } finally {
+        setIsShortening(false);
       }
     },
     [
@@ -1682,6 +1776,7 @@ export function Dashboard({
       askOnEachProcess,
       requestPromptChoice,
       applyActivePrompt,
+      isShortening,
     ]
   );
 
@@ -1703,11 +1798,15 @@ export function Dashboard({
         return;
       }
 
+      if (isImprovingLesefluss) return;
+      setIsImprovingLesefluss(true);
+
       const providedChoices = promptChoice;
       if (askOnEachProcess && !providedChoices) {
         const choice = await requestPromptChoice(['lesefluss', 'summary']);
         if (!choice) {
           toast.info('Aktion abgebrochen');
+          setIsImprovingLesefluss(false);
           return;
         }
         await applyActivePrompt('lesefluss', choice.lesefluss ?? 'default');
@@ -1718,9 +1817,8 @@ export function Dashboard({
         await applyActivePrompt('summary', providedChoices.summary ?? 'default');
       }
 
-      toast.loading('Lese Fluss wird verbessert', {
+      const leseflussToastId = toast.loading('Lese Fluss wird verbessert', {
         description: 'Der Text wird nun mit verbessertem Lesefluss erstellt...',
-        id: 'lesefluss',
       });
 
       try {
@@ -1739,27 +1837,27 @@ export function Dashboard({
           if (lower.includes('sitzung')) {
             toast.error('Lese Fluss abgebrochen', {
               description: message,
-              id: 'lesefluss',
+              id: leseflussToastId,
             });
             handleAuthFailure();
             return;
           }
 
           if (lower.includes('fastapi-server')) {
-            notifyServerDown('lesefluss');
+            notifyServerDown(leseflussToastId);
             return;
           }
 
           toast.error('Lese Fluss fehlgeschlagen', {
             description: message,
-            id: 'lesefluss',
+            id: leseflussToastId,
           });
           return;
         }
 
         toast.success('Lese Fluss gestartet', {
           description: 'Der Text wird nun mit verbessertem Lesefluss erstellt.',
-          id: 'lesefluss',
+          id: leseflussToastId,
         });
       } catch (err: any) {
         console.error('Fehler beim Lese Fluss:', err);
@@ -1768,21 +1866,23 @@ export function Dashboard({
         if (message.toLowerCase().includes('sitzung')) {
           toast.error('Lese Fluss abgebrochen', {
             description: message,
-            id: 'lesefluss',
+            id: leseflussToastId,
           });
           handleAuthFailure();
           return;
         }
 
         if (message.toLowerCase().includes('fastapi-server')) {
-          notifyServerDown('lesefluss');
+          notifyServerDown(leseflussToastId);
           return;
         }
 
         toast.error('Lese Fluss fehlgeschlagen', {
           description: message,
-          id: 'lesefluss',
+          id: leseflussToastId,
         });
+      } finally {
+        setIsImprovingLesefluss(false);
       }
     },
     [
@@ -1795,6 +1895,7 @@ export function Dashboard({
       askOnEachProcess,
       requestPromptChoice,
       applyActivePrompt,
+      isImprovingLesefluss,
     ]
   );
 
@@ -1826,6 +1927,7 @@ export function Dashboard({
           onSwitchProjekt={handleSwitchProjekt}
           onCreateProjekt={handleCreateProjekt}
           onDeleteProjekt={(id, name) => setDeleteConfirm({ type: 'projekt', id, name })}
+          isCreatingProjekt={isCreatingProjekt}
         />
         <KapitelNavigator
           kapiteln={kapiteln}
@@ -1834,6 +1936,8 @@ export function Dashboard({
           onAddKapitel={handleAddKapitel}
           onDeleteKapitel={(id, name) => setDeleteConfirm({ type: 'kapitel', id, name })}
           onEditKapitel={handleEditKapitel}
+          addKapitelLoading={isCreatingKapitel}
+          editKapitelLoading={isEditingKapitel}
         />
       </div>
 
@@ -1859,6 +1963,7 @@ export function Dashboard({
                 onOpenTextViewer={setTextViewerContent}
                 onOpenProcessing={() => setProcessingDialogOpen(true)}
                 onCombineTexts={handleCombineTexts}
+                isCombining={isCombining}
                 onToggleQuellenPanel={handleToggleQuellenPanel}
                 onOpenShorten={() => setShortenDialogOpen(true)}
                 onOpenLesefluss={() => setLeseflussDialogOpen(true)}
@@ -1887,6 +1992,10 @@ export function Dashboard({
               onAssignQuelle={handleAssignQuelle}
               onUnassignQuelle={handleUnassignQuelle}
               onViewQuelle={(quelle) => setQuelleViewer(quelle)}
+              isAddingQuelle={isAddingQuelle}
+              assigningQuelleIds={assigningQuelleIds}
+              unassigningQuelleIds={unassigningQuelleIds}
+              deletingQuelleIds={deletingQuelleIds}
             />
           ))}
       </div>
@@ -1910,6 +2019,7 @@ export function Dashboard({
           promptTemplates={promptTemplates}
           promptActive={promptActive}
           onProcess={handleProcess}
+          isProcessing={isProcessingRun}
         />
       )}
 
@@ -1923,6 +2033,7 @@ export function Dashboard({
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
           promptActive={promptActive}
+          isShortening={isShortening}
         />
       )}
 
@@ -1936,6 +2047,7 @@ export function Dashboard({
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
           promptActive={promptActive}
+          isLeseflussLoading={isImprovingLesefluss}
         />
       )}
 

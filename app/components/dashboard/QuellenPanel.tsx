@@ -13,6 +13,7 @@ import {
   Upload,
   Link as LinkIcon,
   ImageIcon,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -35,11 +36,15 @@ interface QuellenPanelProps {
   quellen: Quelle[];
   assignedQuellenIds: string[];
   onClose: () => void;
-  onAddQuelle: (name: string, text: string, imageFiles?: File[]) => Promise<void>;
+  onAddQuelle: (name: string, text: string, imageFiles?: File[]) => Promise<boolean>;
   onDeleteQuelle: (id: string, name: string) => void;
   onAssignQuelle: (id: string) => Promise<void>;
   onUnassignQuelle: (id: string) => Promise<void>;
   onViewQuelle: (quelle: Quelle) => void;
+  isAddingQuelle: boolean;
+  assigningQuelleIds: string[];
+  unassigningQuelleIds: string[];
+  deletingQuelleIds: string[];
 }
 
 export function QuellenPanel({
@@ -51,6 +56,10 @@ export function QuellenPanel({
   onAssignQuelle,
   onUnassignQuelle,
   onViewQuelle,
+  isAddingQuelle,
+  assigningQuelleIds,
+  unassigningQuelleIds,
+  deletingQuelleIds,
 }: QuellenPanelProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newQuelleName, setNewQuelleName] = useState("");
@@ -61,16 +70,24 @@ export function QuellenPanel({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isSubmittingQuelle, setIsSubmittingQuelle] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAddQuelle = async () => {
-    if (newQuelleName.trim() && newQuelleText.trim()) {
-      await onAddQuelle(newQuelleName.trim(), newQuelleText.trim(), newQuelleImageFiles);
-      setNewQuelleName("");
-      setNewQuelleText("");
-      setNewQuelleImages([]);
-      setNewQuelleImageFiles([]);
-      setAddDialogOpen(false);
+    if (!newQuelleName.trim() || !newQuelleText.trim() || isSubmittingQuelle || isAddingQuelle) return;
+    setIsSubmittingQuelle(true);
+    setAddDialogOpen(false);
+
+    try {
+      const success = await onAddQuelle(newQuelleName.trim(), newQuelleText.trim(), newQuelleImageFiles);
+      if (success) {
+        setNewQuelleName("");
+        setNewQuelleText("");
+        setNewQuelleImages([]);
+        setNewQuelleImageFiles([]);
+      }
+    } finally {
+      setIsSubmittingQuelle(false);
     }
   };
 
@@ -184,6 +201,9 @@ export function QuellenPanel({
   const unassignedQuellen = filteredQuellen.filter(
     (q) => !assignedQuellenIds.includes(q.id)
   );
+  const isAssigningQuelle = (id: string) => assigningQuelleIds.includes(id);
+  const isUnassigningQuelle = (id: string) => unassigningQuelleIds.includes(id);
+  const isDeletingQuelle = (id: string) => deletingQuelleIds.includes(id);
 
   return (
     <>
@@ -265,17 +285,22 @@ export function QuellenPanel({
                           size="sm"
                           variant="destructive"
                           className="flex-1"
+                          disabled={isUnassigningQuelle(quelle.id)}
                           onClick={(e) => {
                             e.stopPropagation();
                             onUnassignQuelle(quelle.id);
                             setSelectedId(null);
                           }}
                         >
+                          {isUnassigningQuelle(quelle.id) ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : null}
                           Entfernen
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
+                          disabled={isUnassigningQuelle(quelle.id)}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleViewQuelle(quelle);
@@ -287,12 +312,17 @@ export function QuellenPanel({
                           size="sm"
                           variant="ghost"
                           className="text-destructive hover:text-destructive"
+                          disabled={isDeletingQuelle(quelle.id)}
                           onClick={(e) => {
                             e.stopPropagation();
                             onDeleteQuelle(quelle.id, quelle.name);
                           }}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {isDeletingQuelle(quelle.id) ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
                         </Button>
                       </div>
                     )}
@@ -352,18 +382,24 @@ export function QuellenPanel({
                         <Button
                           size="sm"
                           className="flex-1"
+                          disabled={isAssigningQuelle(quelle.id)}
                           onClick={(e) => {
                             e.stopPropagation();
                             onAssignQuelle(quelle.id);
                             setSelectedId(null);
                           }}
                         >
-                          <Plus className="h-4 w-4 mr-1" />
+                          {isAssigningQuelle(quelle.id) ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Plus className="h-4 w-4 mr-1" />
+                          )}
                           Hinzufügen
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
+                          disabled={isAssigningQuelle(quelle.id)}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleViewQuelle(quelle);
@@ -375,12 +411,17 @@ export function QuellenPanel({
                           size="sm"
                           variant="ghost"
                           className="text-destructive hover:text-destructive"
+                          disabled={isDeletingQuelle(quelle.id)}
                           onClick={(e) => {
                             e.stopPropagation();
                             onDeleteQuelle(quelle.id, quelle.name);
                           }}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {isDeletingQuelle(quelle.id) ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
                         </Button>
                       </div>
                     )}
@@ -545,8 +586,16 @@ export function QuellenPanel({
             </Button>
             <Button
               onClick={handleAddQuelle}
-              disabled={!newQuelleName.trim() || !newQuelleText.trim()}
+              disabled={
+                !newQuelleName.trim() ||
+                !newQuelleText.trim() ||
+                isSubmittingQuelle ||
+                isAddingQuelle
+              }
             >
+              {(isSubmittingQuelle || isAddingQuelle) ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
               Quelle hinzufügen
             </Button>
           </DialogFooter>

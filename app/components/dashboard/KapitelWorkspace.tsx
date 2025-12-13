@@ -52,6 +52,7 @@ interface KapitelWorkspaceProps {
   onOpenTextViewer: (content: { title: string; text: string }) => void;
   onOpenProcessing: () => void;
   onCombineTexts: () => void;
+  isCombining: boolean;
   onToggleQuellenPanel: () => void;
   onOpenShorten: () => void;
   onOpenLesefluss: () => void;
@@ -69,6 +70,7 @@ export function KapitelWorkspace({
   onOpenTextViewer,
   onOpenProcessing,
   onCombineTexts,
+  isCombining,
   onToggleQuellenPanel,
   onOpenShorten,
   onOpenLesefluss,
@@ -708,8 +710,12 @@ export function KapitelWorkspace({
                 Die Einzeltexte wurden generiert. Klicke auf den Button, um sie
                 zu einem zusammenhängenden Kapiteltext zu kombinieren.
               </p>
-              <Button onClick={onCombineTexts}>
-                <Layers className="h-4 w-4 mr-2" />
+              <Button onClick={onCombineTexts} disabled={isCombining}>
+                {isCombining ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Layers className="h-4 w-4 mr-2" />
+                )}
                 Texte kombinieren
               </Button>
             </div>
@@ -752,8 +758,12 @@ export function KapitelWorkspace({
                 Ergebnisse pro Quelle ({selectedRun!.quellenErgebnisse.length})
               </h3>
               {!hasContent && selectedRun!.quellenErgebnisse.some((qe) => qe.status === "success") && (
-                <Button size="sm" variant="outline" onClick={onCombineTexts}>
-                  <Layers className="h-4 w-4 mr-1" />
+                <Button size="sm" variant="outline" onClick={onCombineTexts} disabled={isCombining}>
+                  {isCombining ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Layers className="h-4 w-4 mr-1" />
+                  )}
                   Texte kombinieren
                 </Button>
               )}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Mail,
@@ -19,6 +19,7 @@ import {
   Settings,
   TrendingUp,
   MessageSquareText,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import Cookies from "js-cookie";
@@ -195,6 +196,7 @@ function ProfilePageSkeleton() {
 
 export default function ProfilPage() {
   const { user: authUser, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<ProfileTab>("einstellungen");
   const [stats, setStats] = useState(mockStats);
   const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
@@ -203,6 +205,7 @@ export default function ProfilPage() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [statusError, setStatusError] = useState<string | null>(null);
   const [showSavedKey, setShowSavedKey] = useState(false);
+  const [backLoading, setBackLoading] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -286,6 +289,21 @@ export default function ProfilPage() {
   const maxMonthlyRuns = Math.max(...stats.runsByMonth.map((m) => m.runs));
   const maxProjektCost = Math.max(...stats.costByProjekt.map((p) => p.cost));
 
+  const handleBack = () => {
+    if (backLoading) return;
+    setBackLoading(true);
+    const toastId = toast.loading("Zurück zum Dashboard...");
+    try {
+      router.push("/dashboard");
+      setTimeout(() => {
+        toast.success("Dashboard geöffnet", { id: toastId });
+      }, 300);
+    } catch (error: any) {
+      toast.error("Navigation fehlgeschlagen", { description: error?.message, id: toastId });
+      setBackLoading(false);
+    }
+  };
+
   if (isLoading) {
     return <ProfilePageSkeleton />;
   }
@@ -296,11 +314,19 @@ export default function ProfilPage() {
         <div className="w-72 border-r bg-muted/10 flex flex-col shrink-0">
           <div className="p-6 border-b">
             <div className="flex items-center gap-3">
-              <Link href="/dashboard">
-                <Button variant="ghost" size="icon" className="h-9 w-9">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                onClick={handleBack}
+                disabled={backLoading}
+              >
+                {backLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
                   <ArrowLeft className="h-5 w-5" />
-                </Button>
-              </Link>
+                )}
+              </Button>
               <h1 className="text-lg font-semibold text-foreground">Profil</h1>
             </div>
           </div>
