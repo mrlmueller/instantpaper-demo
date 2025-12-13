@@ -790,6 +790,40 @@ class FirebaseService:
             logger.error(f"Error deleting OpenAI secret for user {user_id}: {str(e)}")
             raise
 
+    async def get_prompt_template(self, user_id: str, template_id: str) -> Optional[dict]:
+        """Fetch a prompt template by id."""
+        try:
+            ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('promptTemplates')
+                .document(template_id)
+            )
+            doc = ref.get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Error fetching prompt template {template_id} for user {user_id}: {e}")
+            return None
+
+    async def get_active_prompt_id(self, user_id: str, stage: str) -> Optional[str]:
+        """Return active prompt id or 'default' for a stage."""
+        try:
+            ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('promptSettings')
+                .document('active')
+            )
+            doc = ref.get()
+            if not doc.exists:
+                return None
+            data = doc.to_dict() or {}
+            active = data.get('activeTemplates', {})
+            return active.get(stage)
+        except Exception as e:
+            logger.error(f"Error fetching active prompt for stage {stage}: {e}")
+            return None
+
 
 # Create singleton instance
 firebase_service = FirebaseService()

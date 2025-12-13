@@ -24,6 +24,7 @@ import {
   transformRunToUI,
   createQuellenMap,
 } from '@/app/lib/transformers/ui-data';
+import { STAGE_CONFIG } from '@/app/lib/prompts/promptConfig';
 
 // Import Server Actions
 import {
@@ -858,7 +859,7 @@ export function Dashboard({
     async (name: string, text: string, imageFiles: File[] = []) => {
       const uploadingToast =
         imageFiles.length > 0
-          ? toast.loading(`Lade ${imageFiles.length} Bild(er) hoch...`)
+          ? toast.loading(`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`)
           : undefined;
 
       let imageMetadata: ImageMetadata[] = [];
@@ -877,7 +878,7 @@ export function Dashboard({
 
         if (result.success) {
           toast.success('Quelle hinzugefügt', {
-            description: `"${name}" wurde erfolgreich erstellt${imageFiles.length > 0 ? ` mit ${imageFiles.length} Bild(ern)` : ''}.`,
+            description: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` mit ${imageFiles.length} Bild(ern)` : ''}.`,
           });
           // Optimistically update UI
           const newQuelle: Quelle = {
@@ -951,7 +952,7 @@ export function Dashboard({
       try {
         await persistKapitelQuellenClient(activeKapitelId, newQuelleIds);
         toast.success('Quelle zugewiesen', {
-          description: quelle ? `"${quelle.name}" wurde dem Kapitel hinzugefügt.` : undefined,
+          description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
         });
       } catch (clientErr) {
         // Fallback to server action
@@ -963,7 +964,7 @@ export function Dashboard({
           toast.error('Fehler', { description: result.error });
         } else {
           toast.success('Quelle zugewiesen', {
-            description: quelle ? `"${quelle.name}" wurde dem Kapitel hinzugefügt.` : undefined,
+            description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
           });
         }
       }
@@ -990,7 +991,7 @@ export function Dashboard({
       try {
         await persistKapitelQuellenClient(activeKapitelId, newQuelleIds);
         toast.success('Quelle entfernt', {
-          description: quelle ? `"${quelle.name}" wurde vom Kapitel entfernt.` : undefined,
+          description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
         });
       } catch (clientErr) {
         const result = await updateKapitelQuellen(activeKapitelId, newQuelleIds);
@@ -1001,7 +1002,7 @@ export function Dashboard({
           toast.error('Fehler', { description: result.error });
         } else {
           toast.success('Quelle entfernt', {
-            description: quelle ? `"${quelle.name}" wurde vom Kapitel entfernt.` : undefined,
+            description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
           });
         }
       }
@@ -1104,6 +1105,14 @@ export function Dashboard({
     }
   }, [kapiteln, updateKapitelTitleClient]);
 
+  const renderPromptTemplate = useCallback((template: string, payload: Record<string, string>) => {
+    let result = template;
+    Object.entries(payload).forEach(([key, value]) => {
+      result = result.replaceAll(`{${key}}`, value ?? '');
+    });
+    return result;
+  }, []);
+
   const handleProcess = useCallback(
     async (settings: ProcessingSettings) => {
       if (!activeKapitel) return;
@@ -1129,10 +1138,25 @@ export function Dashboard({
         return;
       }
 
-      const prompt = buildPrompt(settings.ueberschrift.trim(), settings.thema.trim(), settings.grundlegendeInfos);
+      let promptTemplate = STAGE_CONFIG.process_quelle.defaultInstructions;
+      try {
+        const res = await fetch('/api/prompt-templates/active?stage=process_quelle');
+        const data = await res.json();
+        if (res.ok && data.instructions) {
+          promptTemplate = data.instructions as string;
+        }
+      } catch (e) {
+        console.error('Prompt Template fetch failed, fallback to default', e);
+      }
+
+      const prompt = renderPromptTemplate(promptTemplate, {
+        heading: settings.ueberschrift.trim(),
+        topic: settings.thema.trim(),
+        grundlegende_infos: settings.grundlegendeInfos?.trim() || '',
+      });
 
       toast.loading('Verarbeitung gestartet', {
-        description: `"${settings.ueberschrift}" wird mit ${assignedQuellen.length} Quellen verarbeitet...`,
+        description: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`,
         id: 'processing',
       });
 
@@ -1246,7 +1270,7 @@ export function Dashboard({
                 return;
               }
 
-              console.error(`Error processing Quelle ${nextQuelle?.id}:`, err);
+              console.error(`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`, err);
               toast.error('Fehler bei einer Quelle', {
                 description: err.message || 'Unbekannter Fehler beim Verarbeiten der Quelle',
               });
@@ -1272,7 +1296,7 @@ export function Dashboard({
         });
       }
     },
-    [activeKapitelId, activeKapitel, ensureOpenAIAccess, handleAuthFailure, handleSelectRun, notifyServerDown, quellen]
+    [activeKapitelId, activeKapitel, ensureOpenAIAccess, handleAuthFailure, handleSelectRun, notifyServerDown, quellen, renderPromptTemplate]
   );
 
   const handleCombineTexts = useCallback(async () => {
@@ -1679,11 +1703,10 @@ export function Dashboard({
 }
 
 function buildPrompt(heading: string, topic: string, basicInfo?: string) {
-  const prompt = `### Aufgabe:
-Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz ist, schreibe keine Einleitung oder Schlussfolgerung/Zusammenfassung. Der Absatz hat die Überschrift "${heading}" und soll genauer das Thema "${topic}" behandeln. Beziehe dich beim Schreiben des Absatzes nur auf die oben gegebenen Informationen und nutze nichts aus deinem eigenen Wissen. Fokussiere dich außerdem genau auf das Thema, das ich vorgegeben habe, da andere Informationen hierzu bereits behandelt worden sind oder noch behandelt werden; kurzum, schreibe wirklich nur über das vorgegebene Thema. Wichtig ist, dass Informationen, die aus dem obigen Text übernommen werden, so umgeschrieben werden sollen, dass der obige Text nicht mehr zu erkennen ist – das Ergebnis also einzigartig ist. Der Text soll so lang sein, wie er sein muss, um alle relevanten Informationen zu integrieren; ziehe ihn nicht unnötig in die Länge, aber lasse auch nichts Relevantes weg. Sollte der Text keine sinnvollen Informationen zu dem gegebenen Thema enthalten, kannst du mir das sagen und den Text dann nicht schreiben; gib mir dann eine kurze Erklärung, warum der Text nicht zum Thema gepasst hat. Integriere außerdem die Quellen (mit Seitenzahlen, wenn diese gegeben wurden) aus dem oberen Text an den richtigen Stellen. Der gegebene Text hat sicherlich mehr Informationen zu manchen Themen und weniger zu anderen. Fokussiere dich auf die Themen, zu denen du wirklich konkrete und tiefe Einblicke geben kannst. Dieser Text ist nur einer von 10, die ich zu diesem Thema habe. Das bedeutet, wenn du eine Dimension nur wenig oder gar nicht behandelst, habe ich dennoch viele Informationen zu dieser in einem anderen Text. Genauer ausgedrückt, schreibst du gerade einen von 10 Texten, die später das Kapitel ergeben werden. Das bedeutet auch, dass du dich wirklich auf das Wichtigste beschränken kannst und nicht unnötiges schreiben musst. Schreibe keine Zusammenfassung oder Schlussfolgerung am Ende. Nur reine Informationen. Formuliere den Text ohne dass du ; verwendest, außer zwischen zwei Quellen.`;
+  const prompt = `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`;
 
   const grundInfo = basicInfo?.trim()
-    ? `\n\nGrundlegende Informationen, die durchgehend berücksichtigt werden sollen:\n${basicInfo.trim()}`
+    ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`
     : '';
 
   return `${prompt}${grundInfo}`;

@@ -2,6 +2,7 @@ from services.firebase_service import firebase_service
 from services.openai_service import openai_service
 from services.quelle_service import calculate_cost
 from services.user_key_service import user_key_service
+from services.prompt_service import prompt_service
 import logging
 import asyncio
 from datetime import datetime
@@ -145,8 +146,11 @@ class ShortenService:
 
         # Generate new summary
         logger.info(f"Generating new summary for Kapitel {source_kapitel_id}")
+        instructions = await prompt_service.get_rendered_instructions(
+            user_id, "summary", {"text": source_text}
+        )
         summary_content, usage = await self.summarize_text(
-            source_text, model, source_kapitel_id, api_key=api_key
+            source_text, model, source_kapitel_id, api_key=api_key, instructions=instructions
         )
 
         # Calculate cost
@@ -199,7 +203,8 @@ class ShortenService:
         text: str,
         model: str,
         source_kapitel_id: str = None,
-        api_key: str | None = None
+        api_key: str | None = None,
+        instructions: str | None = None
     ) -> tuple[str, dict]:
         """
         Summarize text to ~30% of original using OpenAI.
@@ -212,6 +217,8 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
 
 ### Text:
 {text}"""
+        if instructions:
+            prompt = instructions
 
         # TEMPORARY: Save prompt to file for debugging
         try:
@@ -277,6 +284,7 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
         target_kapitel_id: str = None,
         context_kapitel_ids: list = None,
         api_key: str | None = None,
+        instructions: str | None = None,
     ) -> tuple[str, dict, dict]:
         """
         Shorten and deduplicate text using OpenAI.
@@ -309,6 +317,15 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
             logger.info(f"DEBUG: Saved shorten prompt to {prompt_file}")
         except Exception as e:
             logger.error(f"DEBUG: Failed to save prompt file: {e}")
+
+        if instructions:
+            prompt = f"""{instructions}
+
+### Gliederung:
+{gliederung}
+
+### Text zum Kürzen:
+{target_text}"""
 
         return await openai_service.shorten_and_deduplicate(prompt, model, api_key=api_key)
 
@@ -398,11 +415,16 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
             # Step 3: Shorten the target text
             logger.info("Shortening target Kapitel text")
 
+            shorten_instructions = await prompt_service.get_rendered_instructions(
+                user_id, "shorten", {"ueberschrift": ueberschrift, "thema": thema}
+            )
+
             shortened_content, usage, explanation = await self.shorten_and_deduplicate(
                 ueberschrift, thema, gliederung, target_text, model,
                 target_kapitel_id=kapitel_id,
                 context_kapitel_ids=valid_context_ids,
-                api_key=api_key
+                api_key=api_key,
+                instructions=shorten_instructions
             )
 
             # Calculate cost
@@ -539,7 +561,8 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
         kapitel_nummer: str,
         target_text: str,
         model: str,
-        api_key: str | None = None
+        api_key: str | None = None,
+        instructions: str | None = None
     ) -> tuple[str, str, dict]:
         """
         Improve reading flow using OpenAI.
@@ -566,6 +589,14 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
 ### Kapitel {kapitel_nummer} (TEXT AN DEM DU ARBEITEN SOLLST)
 {target_text}
 """
+        if instructions:
+            prompt = f"""{instructions}
+
+### Gliederung:
+{gliederung}
+
+### Kapitel {kapitel_nummer} (TEXT AN DEM DU ARBEITEN SOLLST)
+{target_text}"""
 
         result = await openai_service.improve_reading_flow(prompt, model, api_key)
 
@@ -685,13 +716,25 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
             # Step 4: Call OpenAI to improve reading flow
             logger.info("Improving reading flow for target Kapitel text")
 
+            lesefluss_instructions = await prompt_service.get_rendered_instructions(
+                user_id,
+                "lesefluss",
+                {
+                    "aufgabenstellung": aufgabenstellung,
+                    "gliederung": gliederung,
+                    "kapitel_nummer": kapitel_nummer,
+                    "target_text": target_text,
+                },
+            )
+
             lesefluss_content, explanation, usage = await self.improve_reading_flow(
                 aufgabenstellung=aufgabenstellung,
                 gliederung=gliederung,
                 kapitel_nummer=kapitel_nummer,
                 target_text=target_text,
                 model=model,
-                api_key=api_key
+                api_key=api_key,
+                instructions=lesefluss_instructions,
             )
 
             # Calculate cost

@@ -23,6 +23,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { toast } from "sonner";
 import Cookies from "js-cookie";
 import { useAuth } from "@/app/components/providers/AuthProvider";
@@ -32,6 +38,7 @@ import {
   saveOpenAIKey,
   type OpenAIKeyStatus,
 } from "@/app/lib/api/openaiKeyClient";
+import { PromptManager } from "@/app/components/profile/PromptManager";
 
 // Mock data - will be replaced with real Firebase data later
 const mockUser = {
@@ -294,6 +301,14 @@ export default function ProfilPage() {
           </h1>
         </div>
 
+        <Tabs defaultValue="overview">
+          <TabsList className="mb-6">
+            <TabsTrigger value="overview">Übersicht</TabsTrigger>
+            <TabsTrigger value="prompts">Prompts</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview">
+
         {/* Profile Card */}
         <Card className="p-8 mb-10">
           <div className="flex items-start gap-6">
@@ -519,6 +534,12 @@ export default function ProfilPage() {
             ))}
           </div>
         </Card>
+        </TabsContent>
+
+        <TabsContent value="prompts">
+          <PromptManager />
+        </TabsContent>
+      </Tabs>
       </div>
     </div>
   );

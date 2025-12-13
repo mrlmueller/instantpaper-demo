@@ -11,6 +11,10 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
+    function isValidPromptStage(stage) {
+      return stage in ['process_quelle', 'combine', 'shorten', 'lesefluss', 'summary'];
+    }
+
     function hasProjekt(userId, projektId) {
       return projektId != null && exists(/databases/$(database)/documents/users/$(userId)/projects/$(projektId));
     }
@@ -39,6 +43,30 @@ service cloud.firestore {
     // Secrets subcollection - server only
     match /users/{userId}/secrets/{secretId} {
       allow read, write: if false;
+    }
+
+    // Prompt templates per user
+    match /users/{userId}/promptTemplates/{templateId} {
+      allow read: if isAuthenticated() && isOwner(userId);
+
+      allow create: if isAuthenticated()
+        && isOwner(userId)
+        && request.resource.data.keys().hasAll(['stage', 'name', 'instructions', 'createdAt', 'updatedAt'])
+        && isValidPromptStage(request.resource.data.stage);
+
+      allow update: if isAuthenticated()
+        && isOwner(userId)
+        && request.resource.data.stage == resource.data.stage
+        && isValidPromptStage(resource.data.stage);
+
+      allow delete: if isAuthenticated() && isOwner(userId);
+    }
+
+    // Prompt settings (active template selections) per user
+    match /users/{userId}/promptSettings/{settingsId} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow create, update: if isAuthenticated() && isOwner(userId);
+      allow delete: if isAuthenticated() && isOwner(userId);
     }
 
     // Projects collection per user

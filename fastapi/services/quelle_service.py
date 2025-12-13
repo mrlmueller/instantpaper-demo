@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from services.firebase_service import firebase_service
 from services.openai_service import openai_service
 from services.user_key_service import user_key_service
+from services.prompt_service import prompt_service
 import logging
 import re
 import asyncio
@@ -365,6 +366,9 @@ class QuelleService:
             model = run.get("model") or "gpt-5.2"
 
             results = await self.firebase.get_run_results(user_id, kapitel_id, run_id)
+            combine_instructions = await prompt_service.get_rendered_instructions(
+                user_id, "combine", {"heading": heading, "topic": topic}
+            )
             eligible = []
             for res in results:
                 if not res.get("has_content", True):
@@ -388,14 +392,16 @@ class QuelleService:
                 # Hierarchical combining for large sets
                 logger.info(f"Using hierarchical combining for {len(eligible)} sources")
                 return await self._hierarchical_combine(
-                    user_id, kapitel_id, run_id, eligible, heading, topic, model, api_key, key_source
+                    user_id, kapitel_id, run_id, eligible, heading, topic, model, api_key, key_source, combine_instructions
                 )
 
             # Single-level combining (existing logic for ≤5 sources)
             source_quelle_ids = [res["id"] for res in eligible]
             texts = [res["content"] for res in eligible]
 
-            openai_result = await self.openai.combine_texts(texts, heading, topic, model, api_key=api_key)
+            openai_result = await self.openai.combine_texts(
+                texts, heading, topic, model, api_key=api_key, instructions=combine_instructions
+            )
 
             cost = calculate_cost(
                 model=openai_result['model'],
@@ -463,6 +469,7 @@ class QuelleService:
         model: str,
         api_key: str,
         key_source: str,
+        instructions: str | None = None,
     ) -> dict:
         """
         Perform hierarchical combining:
@@ -492,7 +499,7 @@ class QuelleService:
 
             # Call OpenAI to combine this group
             openai_result = await self.openai.combine_texts(
-                group_texts, heading, topic, model, api_key=api_key
+                group_texts, heading, topic, model, api_key=api_key, instructions=instructions
             )
 
             # Calculate cost
@@ -538,7 +545,7 @@ class QuelleService:
         intermediate_texts = [r['content'] for r in intermediate_results]
 
         final_openai_result = await self.openai.combine_texts(
-            intermediate_texts, heading, topic, model, api_key=api_key
+            intermediate_texts, heading, topic, model, api_key=api_key, instructions=instructions
         )
 
         final_cost = calculate_cost(
