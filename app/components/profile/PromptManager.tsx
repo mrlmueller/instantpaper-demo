@@ -7,13 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -32,10 +25,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { STAGE_CONFIG } from "@/app/lib/prompts/promptConfig";
 import type { ActivePromptSelections, PromptStage, PromptTemplate } from "@/app/types/prompts";
 import { toast } from "sonner";
-import { Info } from "lucide-react";
+import { Info, Plus, Pencil, Trash2, Star, StarOff, Eye, Check, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type TemplatesResponse = { templates: PromptTemplate[]; active: ActivePromptSelections };
 
@@ -53,15 +49,25 @@ const stageOptions: { value: PromptStage; label: string }[] = [
   { value: "summary", label: STAGE_CONFIG.summary.label },
 ];
 
+const stubInstructionsByStage: Record<PromptStage, string> = {
+  process_quelle: "### Aufgabe:\nHeading: {heading}\nThema: {topic}",
+  combine: "### Aufgabe:\nHeading: {heading}\nThema: {topic}",
+  shorten: "### Aufgabe:\nUeberschrift: {ueberschrift}\nThema: {thema}",
+  lesefluss: "### Aufgabe:\nAufgabenstellung: {aufgabenstellung}\nKapitel: {kapitel_nummer}",
+  summary: "### Aufgabe:\nText: {text}",
+};
+
 export function PromptManager() {
   const [stage, setStage] = useState<PromptStage>("process_quelle");
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [active, setActive] = useState<ActivePromptSelections>({});
-  const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState>({ name: "", instructions: "" });
   const [missingPlaceholders, setMissingPlaceholders] = useState<string[]>([]);
+  const [askOnEachProcess, setAskOnEachProcess] = useState(true);
+  const [showPreview, setShowPreview] = useState(false);
+  const [copiedVar, setCopiedVar] = useState<string | null>(null);
 
   const filteredTemplates = useMemo(
     () => templates.filter((tpl) => tpl.stage === stage),
@@ -69,19 +75,11 @@ export function PromptManager() {
   );
 
   const currentConfig = STAGE_CONFIG[stage];
-  const stubInstructionsByStage: Record<PromptStage, string> = {
-    process_quelle: "### Aufgabe:\nHeading: {heading}\nThema: {topic}",
-    combine: "### Aufgabe:\nHeading: {heading}\nThema: {topic}",
-    shorten: "### Aufgabe:\nUeberschrift: {ueberschrift}\nThema: {thema}",
-    lesefluss: "### Aufgabe:\nAufgabenstellung: {aufgabenstellung}\nKapitel: {kapitel_nummer}",
-    summary: "### Aufgabe:\nText: {text}",
-  };
 
-  const computeMissing = (instructions: string) =>
-    currentConfig.requiredPlaceholders.filter((ph) => !instructions.includes(ph));
+  const computeMissing = (instructions: string, targetStage: PromptStage) =>
+    STAGE_CONFIG[targetStage].requiredPlaceholders.filter((ph) => !instructions.includes(ph));
 
   const loadData = async () => {
-    setLoading(true);
     try {
       const res = await fetch("/api/prompt-templates");
       const data: TemplatesResponse = await res.json();
@@ -90,8 +88,6 @@ export function PromptManager() {
       setActive(data.active || {});
     } catch (err: any) {
       toast.error("Prompts konnten nicht geladen werden", { description: err?.message });
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -110,12 +106,10 @@ export function PromptManager() {
       return;
     }
 
-    const missing = computeMissing(payload.instructions);
+    const missing = computeMissing(payload.instructions, stage);
     setMissingPlaceholders(missing);
     if (missing.length > 0) {
-      toast.error("Pflicht-Platzhalter fehlen", {
-        description: missing.join(", "),
-      });
+      toast.error("Pflicht-Platzhalter fehlen", { description: missing.join(", ") });
       return;
     }
 
@@ -149,17 +143,18 @@ export function PromptManager() {
     }
   };
 
-  const handleSetActive = async (templateId: string | "default") => {
+  const handleSetActive = async (templateId: string | "default", targetStage?: PromptStage) => {
+    const s = targetStage ?? stage;
     try {
       const res = await fetch("/api/prompt-templates/active", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stage, templateId }),
+        body: JSON.stringify({ stage: s, templateId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Aktiv setzen fehlgeschlagen.");
-      setActive((prev) => ({ ...prev, [stage]: templateId }));
-      toast.success("Aktives Prompt gesetzt");
+      setActive((prev) => ({ ...prev, [s]: templateId }));
+      toast.success(templateId === "default" ? "System-Standard verwendet" : "Aktives Prompt gesetzt");
     } catch (err: any) {
       toast.error("Fehler beim Setzen", { description: err?.message });
     }
@@ -175,188 +170,315 @@ export function PromptManager() {
     return text;
   };
 
+  const stageVariables = useMemo(() => {
+    const req = STAGE_CONFIG[stage].requiredPlaceholders.map((p) => ({ name: p.replace(/[{}]/g, ""), required: true }));
+    const opt = (STAGE_CONFIG[stage].optionalPlaceholders || []).map((p) => ({ name: p.replace(/[{}]/g, ""), required: false }));
+    return [...req, ...opt];
+  }, [stage]);
+
   return (
-    <Card className="p-6">
-      <div className="flex items-center justify-between gap-4 mb-4">
-        <div>
-          <p className="text-sm text-muted-foreground">Aktives Prompt pro Stage festlegen</p>
-          <h3 className="text-lg font-semibold">Prompts verwalten</h3>
-        </div>
-        <Select value={stage} onValueChange={(val) => setStage(val as PromptStage)}>
-          <SelectTrigger className="w-[240px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {stageOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Info className="h-4 w-4" />
-            </TooltipTrigger>
-            <TooltipContent className="max-w-sm text-xs">
-              <p>{currentConfig.tooltip}</p>
-              {currentConfig.optionalPlaceholders && (
-                <p className="mt-2">
-                  Optional: {currentConfig.optionalPlaceholders.join(", ")}
-                </p>
-              )}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <span>Max. {filteredTemplates.length}/10 Templates für {currentConfig.label}</span>
-      </div>
-
-      <div className="space-y-3">
-        <Card className="p-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Badge variant="outline">Default</Badge>
-            <div>
-              <p className="font-medium text-sm">Unsichtbares System-Default</p>
-              <p className="text-xs text-muted-foreground">
-                Wird verwendet, wenn kein eigenes Prompt aktiv ist.
-              </p>
-            </div>
+    <div className="space-y-6">
+      <Card className="p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label htmlFor="ask-on-process" className="text-sm font-medium cursor-pointer">
+              Prompt bei jeder Verarbeitung auswählen
+            </Label>
+            <p className="text-xs text-muted-foreground mt-1">
+              {askOnEachProcess
+                ? "Du wirst bei jedem Schritt gefragt, welchen Prompt du verwenden möchtest."
+                : "Es werden automatisch deine Standard-Prompts verwendet."}
+            </p>
           </div>
-          <Button
-            variant={active[stage] === "default" || !active[stage] ? "default" : "outline"}
-            size="sm"
-            onClick={() => handleSetActive("default")}
-          >
-            {active[stage] === "default" || !active[stage] ? "Aktiv" : "Als aktiv setzen"}
-          </Button>
-        </Card>
+          <Switch
+            id="ask-on-process"
+            checked={askOnEachProcess}
+            onCheckedChange={setAskOnEachProcess}
+          />
+        </div>
+      </Card>
 
-        {filteredTemplates.map((tpl) => (
-          <Card key={tpl.id} className="p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-medium">{tpl.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  Platzhalter: {tpl.placeholders?.length ? tpl.placeholders.join(", ") : "–"}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
+      <Tabs value={stage} onValueChange={(v) => setStage(v as PromptStage)}>
+        <TabsList className="w-full flex-wrap h-auto gap-1 p-1">
+          {stageOptions.map((opt) => {
+            const count = templates.filter((t) => t.stage === opt.value).length;
+            return (
+              <TabsTrigger
+                key={opt.value}
+                value={opt.value}
+                className="text-xs px-3 py-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              >
+                {opt.label}
+                {count > 0 && (
+                  <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-[10px]">
+                    {count}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+
+        {stageOptions.map((opt) => {
+          const stageConfig = STAGE_CONFIG[opt.value];
+          const stageTemplates = templates.filter((t) => t.stage === opt.value);
+          const activeId = active[opt.value];
+
+          return (
+            <TabsContent key={opt.value} value={opt.value} className="mt-4 space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">{stageConfig.tooltip}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Pflicht:{" "}
+                    {stageConfig.requiredPlaceholders.length
+                      ? stageConfig.requiredPlaceholders.join(", ")
+                      : "Keine"}
+                  </p>
+                </div>
                 <Button
-                  variant={active[stage] === tpl.id ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => handleSetActive(tpl.id)}
-                >
-                  {active[stage] === tpl.id ? "Aktiv" : "Aktiv setzen"}
-                </Button>
-                <Button
-                  variant="outline"
                   size="sm"
                   onClick={() => {
-                    setEditor({ id: tpl.id, name: tpl.name, instructions: tpl.instructions });
+                    setStage(opt.value);
+                    setEditor({ name: "", instructions: stubInstructionsByStage[opt.value] });
+                    setMissingPlaceholders([]);
                     setEditorOpen(true);
                   }}
                 >
-                  Bearbeiten
-                </Button>
-                <Button variant="destructive" size="sm" onClick={() => setConfirmDelete(tpl.id)}>
-                  Löschen
+                  <Plus className="h-4 w-4 mr-1" />
+                  Neuer Prompt
                 </Button>
               </div>
-            </div>
-          </Card>
-        ))}
-      </div>
 
-      <div className="mt-4 flex items-center justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            Pflicht-Platzhalter:{" "}
-            {currentConfig.requiredPlaceholders.length
-              ? currentConfig.requiredPlaceholders.join(", ")
-              : "Keine"}
-          </p>
-        </div>
-        <Button
-          onClick={() => {
-            setEditor({ name: "", instructions: stubInstructionsByStage[stage] });
-            setMissingPlaceholders([]);
-            setEditorOpen(true);
-          }}
-        >
-          Neues Prompt
-        </Button>
-      </div>
+              {stageTemplates.length === 0 ? (
+                <Card className="p-6 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Du hast noch keine eigenen Prompts für diese Stufe erstellt.
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Der System-Standard wird automatisch verwendet.</p>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {stageTemplates.map((tpl) => {
+                    const isDefault = activeId === tpl.id;
+                    return (
+                      <Card
+                        key={tpl.id}
+                        className={cn(
+                          "p-4 transition-colors",
+                          isDefault && "ring-2 ring-primary/50 bg-primary/5"
+                        )}
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-medium text-sm text-foreground">{tpl.name}</h4>
+                              {isDefault && (
+                                <Badge variant="default" className="h-5 text-[10px]">
+                                  Standard
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2 font-mono">
+                              {tpl.instructions.slice(0, 180)}...
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleSetActive(isDefault ? "default" : tpl.id, opt.value)}
+                              title={isDefault ? "Standard entfernen" : "Als Standard setzen"}
+                            >
+                              {isDefault ? <StarOff className="h-4 w-4 text-primary" /> : <Star className="h-4 w-4" />}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => {
+                                setStage(opt.value);
+                                setEditor({ id: tpl.id, name: tpl.name, instructions: tpl.instructions });
+                                setMissingPlaceholders(computeMissing(tpl.instructions, opt.value));
+                                setEditorOpen(true);
+                              }}
+                              title="Bearbeiten"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => setConfirmDelete(tpl.id)}
+                              title="Löschen"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </TabsContent>
+          );
+        })}
+      </Tabs>
 
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogContent
           className="w-auto max-w-none"
           style={{ width: "70vw", maxWidth: "70vw", maxHeight: "92vh" }}
+          showCloseButton={false}
         >
-          <DialogHeader>
-            <DialogTitle>{editor.id ? "Prompt bearbeiten" : "Neues Prompt"}</DialogTitle>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-3">
+          <DialogHeader className="pb-4 border-b">
+            <div className="flex items-start justify-between">
               <div>
-                <Label htmlFor="prompt-name">Name</Label>
+                <DialogTitle className="text-lg">{editor.id ? "Prompt bearbeiten" : "Neuer Prompt"}</DialogTitle>
+                <p className="text-sm text-muted-foreground mt-1">{STAGE_CONFIG[stage].label}</p>
+              </div>
+              <Button variant="ghost" size="icon" className="-mr-2 h-8 w-8" onClick={() => setEditorOpen(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="flex gap-6 py-5 min-h-0 flex-1 overflow-hidden">
+            {/* Variables panel on the left */}
+            <div className="w-72 shrink-0 flex flex-col min-h-0">
+              <div className="p-4 bg-muted/40 rounded-lg flex flex-col min-h-0 flex-1">
+                <p className="text-sm font-medium text-foreground shrink-0">Verfügbare Variablen</p>
+                <p className="text-xs text-muted-foreground mt-1 shrink-0">
+                  Klicke auf eine Variable, um sie zu kopieren.
+                </p>
+
+                <div className="flex flex-wrap gap-2 mt-3 shrink-0">
+                  {stageVariables.map((variable) => (
+                    <button
+                      key={variable.name}
+                      onClick={() => {
+                        navigator.clipboard.writeText(`{${variable.name}}`);
+                        setCopiedVar(variable.name);
+                        setTimeout(() => setCopiedVar(null), 1200);
+                      }}
+                      className={cn(
+                        "inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-mono transition-colors",
+                        variable.required
+                          ? "bg-primary/10 text-primary hover:bg-primary/20"
+                          : "bg-background text-muted-foreground hover:bg-muted",
+                        copiedVar === variable.name && "ring-2 ring-primary"
+                      )}
+                    >
+                      {`{${variable.name}}`}
+                      {variable.required && <span className="text-[10px] font-sans text-primary">*</span>}
+                      {copiedVar === variable.name && <Check className="h-3 w-3 ml-1" />}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-4 pt-4 border-t overflow-y-auto flex-1 min-h-0">
+                  <p className="text-xs font-medium text-foreground mb-2">Beschreibungen</p>
+                  <div className="text-xs text-muted-foreground space-y-2">
+                    {stageVariables.map((variable) => (
+                      <div key={variable.name} className="leading-relaxed">
+                        <span className="font-mono text-foreground">{`{${variable.name}}`}</span>
+                        {variable.required && <span className="text-primary ml-0.5">*</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-muted-foreground mt-4 pt-3 border-t shrink-0">
+                  <span className="text-primary">*</span> = Erforderlich
+                </p>
+              </div>
+            </div>
+
+            {/* Editor on the right */}
+            <div className="flex-1 flex flex-col min-w-0 min-h-0">
+              <div className="mb-4 shrink-0">
+                <Label htmlFor="prompt-name" className="text-sm">
+                  Name
+                </Label>
                 <Input
                   id="prompt-name"
                   value={editor.name}
                   onChange={(e) => setEditor((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="z. B. Aggressiv kürzen"
+                  placeholder="z. B. Wissenschaftlicher Stil"
+                  className="mt-1.5"
                 />
               </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="prompt-instructions">Instructions</Label>
-                  {missingPlaceholders.length > 0 && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-4 w-4 text-amber-600" />
-                        </TooltipTrigger>
-                        <TooltipContent className="text-xs max-w-xs">
-                          Fehlende Platzhalter: {missingPlaceholders.join(", ")}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
+
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="flex items-center justify-between mb-2 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="prompt-instructions" className="text-sm">
+                      Prompt-Text
+                    </Label>
+                    {missingPlaceholders.length > 0 && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-4 w-4 text-amber-600" />
+                          </TooltipTrigger>
+                          <TooltipContent className="text-xs max-w-xs">
+                            Fehlende Platzhalter: {missingPlaceholders.join(", ")}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setShowPreview(!showPreview)}
+                  >
+                    <Eye className="h-3.5 w-3.5 mr-1" />
+                    {showPreview ? "Editor" : "Vorschau"}
+                  </Button>
                 </div>
-                <Textarea
-                  id="prompt-instructions"
-                  className="h-[60vh] resize-none overflow-auto"
-                  value={editor.instructions}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setEditor((prev) => ({ ...prev, instructions: value }));
-                    setMissingPlaceholders(computeMissing(value));
-                  }}
-                />
+
+                {showPreview ? (
+                  <div className="flex-1 p-4 bg-muted/30 rounded-lg border overflow-y-auto text-sm whitespace-pre-wrap max-h-[60vh]">
+                    {renderPreview() || <span className="text-muted-foreground italic">Keine Vorschau verfügbar</span>}
+                  </div>
+                ) : (
+                  <Textarea
+                    id="prompt-instructions"
+                    className="font-mono text-sm resize-none min-h-[200px] max-h-[60vh] overflow-auto"
+                    value={editor.instructions}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setEditor((prev) => ({ ...prev, instructions: value }));
+                      setMissingPlaceholders(computeMissing(value, stage));
+                    }}
+                    placeholder="Schreibe deinen Prompt hier..."
+                  />
+                )}
+
                 {missingPlaceholders.length > 0 && (
-                  <p className="text-xs text-amber-700">
-                    Fehlende Platzhalter: {missingPlaceholders.join(", ")}
-                  </p>
+                  <div className="flex items-start gap-2 p-3 bg-destructive/10 text-destructive rounded-lg mt-3 shrink-0">
+                    <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                    <div className="text-sm">
+                      <p className="font-medium">Erforderliche Variablen fehlen:</p>
+                      <p className="mt-1">{missingPlaceholders.join(", ")}</p>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Sandbox-Preview (mit Beispielwerten)</Label>
-              <Card className="p-3 h-[60vh] overflow-y-auto bg-muted/50">
-                <pre className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/80">
-                  {renderPreview()}
-                </pre>
-              </Card>
-            </div>
           </div>
-          <DialogFooter>
+
+          <DialogFooter className="pt-4 border-t gap-2">
             <Button variant="outline" onClick={() => setEditorOpen(false)}>
               Abbrechen
             </Button>
-            <Button onClick={handleSave}>{editor.id ? "Speichern" : "Anlegen"}</Button>
+            <Button onClick={handleSave} disabled={!editor.name.trim() || !editor.instructions.trim() || missingPlaceholders.length > 0}>
+              {editor.id ? "Speichern" : "Anlegen"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -377,6 +499,6 @@ export function PromptManager() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </div>
   );
 }
