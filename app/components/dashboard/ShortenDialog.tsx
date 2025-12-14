@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Scissors, ChevronRight, AlertCircle, MessageSquareText, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -51,6 +51,7 @@ export function ShortenDialog({
     summary: (promptActive?.summary as string | "default") || "default",
     shorten: (promptActive?.shorten as string | "default") || "default",
   })
+  const [hasTouchedPromptChoice, setHasTouchedPromptChoice] = useState(false)
   const [localShortenLoading, setLocalShortenLoading] = useState(false)
 
   const sortedKapiteln = useMemo(() => {
@@ -77,6 +78,23 @@ export function ShortenDialog({
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
   }
 
+  useEffect(() => {
+    if (!open) {
+      setHasTouchedPromptChoice(false)
+      return
+    }
+    if (hasTouchedPromptChoice) return
+    setPromptChoice({
+      summary: (promptActive?.summary as string | "default") || "default",
+      shorten: (promptActive?.shorten as string | "default") || "default",
+    })
+  }, [
+    open,
+    promptActive?.summary,
+    promptActive?.shorten,
+    hasTouchedPromptChoice,
+  ])
+
   const handleShorten = async () => {
     if (selectedIds.length === 0 || localShortenLoading || isShortening) return
     setLocalShortenLoading(true)
@@ -102,10 +120,13 @@ export function ShortenDialog({
         <Select
           value={promptChoice[stage] || "default"}
           onValueChange={(val) =>
-            setPromptChoice((prev) => ({
-              ...prev,
-              [stage]: val as string | "default",
-            }))
+            setPromptChoice((prev) => {
+              setHasTouchedPromptChoice(true)
+              return {
+                ...prev,
+                [stage]: val as string | "default",
+              }
+            })
           }
         >
           <SelectTrigger className="mt-1.5">

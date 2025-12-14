@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -54,6 +54,7 @@ export function LeseflussDialog({
     summary: (promptActive?.summary as string | "default") || "default",
     lesefluss: (promptActive?.lesefluss as string | "default") || "default",
   })
+  const [hasTouchedPromptChoice, setHasTouchedPromptChoice] = useState(false)
   const [localLeseflussLoading, setLocalLeseflussLoading] = useState(false)
 
   const sortedKapiteln = useMemo(() => {
@@ -79,6 +80,23 @@ export function LeseflussDialog({
     if (!hasCombinedText(id)) return
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
   }
+
+  useEffect(() => {
+    if (!open) {
+      setHasTouchedPromptChoice(false)
+      return
+    }
+    if (hasTouchedPromptChoice) return
+    setPromptChoice({
+      summary: (promptActive?.summary as string | "default") || "default",
+      lesefluss: (promptActive?.lesefluss as string | "default") || "default",
+    })
+  }, [
+    open,
+    promptActive?.summary,
+    promptActive?.lesefluss,
+    hasTouchedPromptChoice,
+  ])
 
   const handleSubmit = async () => {
     if (
@@ -111,10 +129,13 @@ export function LeseflussDialog({
         <Select
           value={promptChoice[stage] || "default"}
           onValueChange={(val) =>
-            setPromptChoice((prev) => ({
-              ...prev,
-              [stage]: val as string | "default",
-            }))
+            setPromptChoice((prev) => {
+              setHasTouchedPromptChoice(true)
+              return {
+                ...prev,
+                [stage]: val as string | "default",
+              }
+            })
           }
         >
           <SelectTrigger className="mt-1.5">

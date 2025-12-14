@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Play, Sparkles, Settings2, FileText, Wand2, MessageSquareText, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -54,11 +54,29 @@ export function ProcessingDialog({
     process_quelle: (promptActive?.process_quelle as string | "default") || "default",
     combine: (promptActive?.combine as string | "default") || "default",
   })
+  const [hasTouchedPromptChoice, setHasTouchedPromptChoice] = useState(false)
   const [localProcessing, setLocalProcessing] = useState(false)
 
   const templatesByStage = useMemo(() => {
     return (stage: PromptStage) => promptTemplates.filter((tpl) => tpl.stage === stage)
   }, [promptTemplates])
+
+  useEffect(() => {
+    if (!open) {
+      setHasTouchedPromptChoice(false)
+      return
+    }
+    if (hasTouchedPromptChoice) return
+    setPromptChoice({
+      process_quelle: (promptActive?.process_quelle as string | "default") || "default",
+      combine: (promptActive?.combine as string | "default") || "default",
+    })
+  }, [
+    open,
+    promptActive?.process_quelle,
+    promptActive?.combine,
+    hasTouchedPromptChoice,
+  ])
 
   const handleProcess = async () => {
     if (localProcessing || isProcessing) return
@@ -100,10 +118,13 @@ export function ProcessingDialog({
         <Select
           value={value}
           onValueChange={(val) =>
-            setPromptChoice((prev) => ({
-              ...prev,
-              [stage]: val as string | "default",
-            }))
+            setPromptChoice((prev) => {
+              setHasTouchedPromptChoice(true)
+              return {
+                ...prev,
+                [stage]: val as string | "default",
+              }
+            })
           }
         >
           <SelectTrigger className="mt-1.5">
