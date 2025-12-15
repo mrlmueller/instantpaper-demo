@@ -35,6 +35,10 @@ class Config:
     # Development
     DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"
 
+    # Text refinement flow
+    TEXT_REFINEMENT_MAX_DEPTH: int = int(os.getenv("TEXT_REFINEMENT_MAX_DEPTH", "4"))
+    DUMP_REFINEMENT_PROMPTS: bool = os.getenv("DUMP_REFINEMENT_PROMPTS", "false").lower() == "true"
+
     @classmethod
     def validate(cls) -> None:
         """Validate that all required configuration is present"""

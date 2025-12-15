@@ -11,6 +11,7 @@ import { QuelleViewerModal } from './QuelleViewerModal';
 import { ProcessingDialog } from './ProcessingDialog';
 import { ShortenDialog } from './ShortenDialog';
 import { LeseflussDialog } from './LeseflussDialog';
+import { CombinedRefinementDialog } from './CombinedRefinementDialog';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import { QuellenPanelSkeleton } from './QuellenPanelSkeleton';
@@ -334,6 +335,7 @@ export function Dashboard({
   const [processingDialogOpen, setProcessingDialogOpen] = useState(false);
   const [shortenDialogOpen, setShortenDialogOpen] = useState(false);
   const [leseflussDialogOpen, setLeseflussDialogOpen] = useState(false);
+  const [combinedRefinementDialogOpen, setCombinedRefinementDialogOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     type: 'quelle' | 'kapitel' | 'projekt';
     id: string;
@@ -614,6 +616,10 @@ export function Dashboard({
           outputTokens: data.output_tokens ?? data.outputTokens ?? 0,
           reasoningTokens: data.reasoning_tokens ?? data.reasoningTokens ?? 0,
           cost: data.cost ?? 0,
+          refinementCostTotal: data.refinement_cost_total ?? data.refinementCostTotal ?? 0,
+          refinementRootVersionId: data.refinement_root_version_id ?? data.refinementRootVersionId ?? undefined,
+          refinementActiveVersionId: data.refinement_active_version_id ?? data.refinementActiveVersionId ?? undefined,
+          refinementMaxDepth: data.refinement_max_depth ?? data.refinementMaxDepth ?? undefined,
           createdAt:
             data.created_at?.toDate?.()?.toISOString() ||
             data.createdAt?.toDate?.()?.toISOString() ||
@@ -1967,6 +1973,7 @@ export function Dashboard({
                 onToggleQuellenPanel={handleToggleQuellenPanel}
                 onOpenShorten={() => setShortenDialogOpen(true)}
                 onOpenLesefluss={() => setLeseflussDialogOpen(true)}
+                onOpenCombinedRefinement={() => setCombinedRefinementDialogOpen(true)}
               />
             )
           ) : (
@@ -2048,6 +2055,20 @@ export function Dashboard({
           promptTemplates={promptTemplates}
           promptActive={promptActive}
           isLeseflussLoading={isImprovingLesefluss}
+        />
+      )}
+
+      {activeKapitel && selectedRun && (
+        <CombinedRefinementDialog
+          open={combinedRefinementDialogOpen}
+          onOpenChange={setCombinedRefinementDialogOpen}
+          kapitelId={activeKapitel.id}
+          runId={selectedRun.id}
+          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          ensureOpenAIAccess={ensureOpenAIAccess}
+          onAuthFailure={handleAuthFailure}
+          onServerDown={notifyServerDown}
+          onOpenTextViewer={setTextViewerContent}
         />
       )}
 

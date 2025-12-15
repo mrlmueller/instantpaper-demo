@@ -26,6 +26,7 @@ import {
   Scissors,
   Sparkles,
   Library,
+  MessageSquareText,
 } from "lucide-react";
 import {
   Select,
@@ -56,6 +57,7 @@ interface KapitelWorkspaceProps {
   onToggleQuellenPanel: () => void;
   onOpenShorten: () => void;
   onOpenLesefluss: () => void;
+  onOpenCombinedRefinement: () => void;
 }
 
 export function KapitelWorkspace({
@@ -74,6 +76,7 @@ export function KapitelWorkspace({
   onToggleQuellenPanel,
   onOpenShorten,
   onOpenLesefluss,
+  onOpenCombinedRefinement,
 }: KapitelWorkspaceProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] =
@@ -130,6 +133,7 @@ export function KapitelWorkspace({
   const totalCost = selectedRun
     ? selectedRun.quellenCost +
       selectedRun.combinedCost +
+      (selectedRun.combinedRefinementCost || 0) +
       (selectedRun.shortenedCost || 0) +
       (selectedRun.leseflussCost || 0) +
       summariesCost
@@ -645,6 +649,15 @@ export function KapitelWorkspace({
                   >
                     <Scissors className="h-4 w-4 mr-2" />
                     Kürzen
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onOpenCombinedRefinement}
+                    disabled={!hasContent}
+                  >
+                    <MessageSquareText className="h-4 w-4 mr-2" />
+                    Verfeinern
                   </Button>
                   <Button
                     variant="ghost"

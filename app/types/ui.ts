@@ -63,6 +63,7 @@ export interface Run {
   quellenErgebnisse: QuellenErgebnis[];
   quellenCost: number; // Cost for per-source processing in cents
   combinedCost: number; // Cost for combining in cents
+  combinedRefinementCost?: number; // Total cost for combined text refinements (in cents)
   intermediateGroups?: IntermediateGroup[]; // Optional array of intermediate groups
   shortenedText?: string | null; // Shortened and deduplicated text
   shortenedCost?: number; // Cost for shortening in cents

@@ -1,6 +1,6 @@
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
-from google.cloud.firestore_v1 import SERVER_TIMESTAMP
+from google.cloud.firestore_v1 import SERVER_TIMESTAMP, Increment
 from utils.config import config
 import logging
 from typing import Optional
@@ -256,6 +256,132 @@ class FirebaseService:
         except Exception as e:
             logger.error(f"Error fetching combined result for run {run_id}: {str(e)}")
             raise
+
+    def _combined_root_ref(self, user_id: str, kapitel_id: str, run_id: str):
+        return (
+            self.db.collection('users')
+            .document(user_id)
+            .collection('kapitels')
+            .document(kapitel_id)
+            .collection('runs')
+            .document(run_id)
+            .collection('combined')
+            .document('combined')
+        )
+
+    def _combined_refinement_version_ref(
+        self, user_id: str, kapitel_id: str, run_id: str, version_id: str
+    ):
+        return self._combined_root_ref(user_id, kapitel_id, run_id).collection('versions').document(version_id)
+
+    async def get_combined_refinement_version(
+        self, user_id: str, kapitel_id: str, run_id: str, version_id: str
+    ) -> Optional[dict]:
+        """Fetch a combined text refinement version (if it exists)."""
+        try:
+            doc_ref = self._combined_refinement_version_ref(user_id, kapitel_id, run_id, version_id)
+            doc = doc_ref.get()
+            if not doc.exists:
+                return None
+            data = doc.to_dict() or {}
+            data['id'] = doc.id
+            return data
+        except Exception as e:
+            logger.error(f"Error fetching combined refinement version {version_id}: {e}")
+            return None
+
+    async def save_combined_refinement_version(
+        self, user_id: str, kapitel_id: str, run_id: str, version_id: str, data: dict
+    ) -> None:
+        """Create/overwrite a combined refinement version doc."""
+        doc_ref = self._combined_refinement_version_ref(user_id, kapitel_id, run_id, version_id)
+        doc_ref.set(data)
+
+    async def update_combined_refinement_version(
+        self, user_id: str, kapitel_id: str, run_id: str, version_id: str, data: dict
+    ) -> None:
+        """Update a combined refinement version doc."""
+        doc_ref = self._combined_refinement_version_ref(user_id, kapitel_id, run_id, version_id)
+        doc_ref.update(data)
+
+    async def ensure_combined_refinement_root_version(
+        self, user_id: str, kapitel_id: str, run_id: str, max_depth: int
+    ) -> dict:
+        """
+        Ensure the refinement root version exists under combined/combined/versions/root.
+
+        Also ensures combined/combined has refinement metadata fields initialized.
+        """
+        combined = await self.get_combined_result(user_id, kapitel_id, run_id)
+        if not combined:
+            raise ValueError("No combined result found for this run.")
+
+        combined_content = (
+            combined.get('combined_content')
+            or combined.get('combinedContent')
+            or ''
+        )
+        if not combined_content:
+            raise ValueError("Combined content is empty.")
+
+        root_id = 'root'
+        root_doc = await self.get_combined_refinement_version(user_id, kapitel_id, run_id, root_id)
+        if not root_doc:
+            created_at = combined.get('created_at') or combined.get('createdAt') or SERVER_TIMESTAMP
+            root_data = {
+                'parent_version_id': None,
+                'depth': 0,
+                'user_message': None,
+                'assistant_text': combined_content,
+                'status': 'success',
+                'model': combined.get('model_used') or combined.get('modelUsed') or '',
+                'usage': {
+                    'input_tokens': combined.get('input_tokens') or combined.get('inputTokens') or 0,
+                    'cached_input_tokens': combined.get('cached_input_tokens') or combined.get('cachedInputTokens') or 0,
+                    'output_tokens': combined.get('output_tokens') or combined.get('outputTokens') or 0,
+                    'reasoning_tokens': combined.get('reasoning_tokens') or combined.get('reasoningTokens') or 0,
+                    'total_tokens': combined.get('tokens_used') or combined.get('tokensUsed') or 0,
+                },
+                'cost': 0.0,
+                'created_at': created_at,
+            }
+            await self.save_combined_refinement_version(user_id, kapitel_id, run_id, root_id, root_data)
+
+        # Initialize refinement metadata on combined doc (merge, idempotent)
+        combined_ref = self._combined_root_ref(user_id, kapitel_id, run_id)
+        active_id = (
+            combined.get('refinement_active_version_id')
+            or combined.get('refinementActiveVersionId')
+            or 'root'
+        )
+        combined_ref.set(
+            {
+                'refinement_root_version_id': 'root',
+                'refinement_active_version_id': active_id,
+                'refinement_cost_total': combined.get('refinement_cost_total') or combined.get('refinementCostTotal') or 0.0,
+                'refinement_max_depth': max_depth,
+                'refinement_initialized_at': SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+
+        return {
+            'root_version_id': 'root',
+            'active_version_id': active_id,
+            'max_depth': max_depth,
+        }
+
+    async def increment_combined_refinement_cost_total(
+        self, user_id: str, kapitel_id: str, run_id: str, cost_usd: float
+    ) -> None:
+        """Increment combined/combined.refinement_cost_total atomically (USD)."""
+        combined_ref = self._combined_root_ref(user_id, kapitel_id, run_id)
+        combined_ref.update(
+            {
+                'refinement_cost_total': Increment(cost_usd),
+                'refinement_updated_at': SERVER_TIMESTAMP,
+            }
+        )
 
     async def save_combined_result(
         self,

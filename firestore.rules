@@ -132,6 +132,13 @@ service cloud.firestore {
           allow read: if isAuthenticated() && isOwner(userId);
           allow create: if isAuthenticated() && isOwner(userId);
           allow update, delete: if isAuthenticated() && isOwner(userId);
+
+          // Text refinement flow (versions/branches) for a combined text
+          match /versions/{versionId} {
+            allow read: if isAuthenticated() && isOwner(userId);
+            // Backend-only writes (FastAPI uses Admin SDK)
+            allow write: if false;
+          }
         }
 
         // Intermediate groups under each run

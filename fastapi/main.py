@@ -4,11 +4,19 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from utils.config import config
 from middleware.auth import verify_firebase_token
-from models.request import ProcessQuelleRequest, CombineRunRequest, ShortenKapitelRequest, LeseflussKapitelRequest
+from models.request import (
+    ProcessQuelleRequest,
+    CombineRunRequest,
+    ShortenKapitelRequest,
+    LeseflussKapitelRequest,
+    RefineCombinedInitRequest,
+    RefineCombinedRequest,
+)
 from models.response import ProcessQuelleResponse
 from services.quelle_service import quelle_service
 from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
+from services.refinement_service import refinement_service
 from pydantic import BaseModel
 import logging
 
@@ -310,6 +318,80 @@ async def improve_lesefluss(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to queue lesefluss request: {str(e)}",
         )
+
+
+@app.post("/api/refine/combined/init")
+async def init_combined_refinement(
+    request: RefineCombinedInitRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Initialize the text refinement flow for a combined text.
+
+    Ensures:
+    - combined/combined/versions/root exists
+    - combined doc has refinement metadata fields
+    """
+    logger.info(
+        f"Initializing combined refinement for user {user_id} "
+        f"(kapitel {request.kapitel_id}, run {request.run_id})"
+    )
+    return await refinement_service.init_combined_refinement(
+        user_id=user_id,
+        kapitel_id=request.kapitel_id,
+        run_id=request.run_id,
+    )
+
+
+@app.post("/api/refine/combined", status_code=status.HTTP_202_ACCEPTED)
+async def refine_combined_text(
+    request: RefineCombinedRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Queue a combined text refinement step (text refinement flow).
+
+    Writes a pending versions/{versionId} doc and processes the OpenAI call in the background.
+    """
+    logger.info(
+        f"Queueing combined refinement for user {user_id} "
+        f"(kapitel {request.kapitel_id}, run {request.run_id}, parent {request.parent_version_id})"
+    )
+    try:
+        # Validate that an API key is available (user key or platform key)
+        await user_key_service.resolve_api_key_for_user(user_id)
+
+        queued = await refinement_service.queue_combined_refinement(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            parent_version_id=request.parent_version_id,
+            user_message=request.user_message,
+            model=request.model,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error queueing combined refinement: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to queue refinement request.") from exc
+
+    async def _run_refine() -> None:
+        await refinement_service.process_combined_refinement(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            version_id=queued["version_id"],
+            parent_version_id=request.parent_version_id,
+            user_message=request.user_message,
+            model=request.model,
+        )
+
+    background_tasks.add_task(_run_refine)
+    queued["queued_at"] = datetime.utcnow().isoformat() + "Z"
+    return queued
 
 
 if __name__ == "__main__":
