@@ -1,6 +1,7 @@
 from openai import AsyncOpenAI
 from utils.config import config
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +213,7 @@ class OpenAIService:
         model: str,
         api_key: str | None = None,
         instructions: str | None = None,
+        debug_prompt_dump_path: str | None = None,
     ) -> dict:
         """
         Combine multiple texts into one consolidated text.
@@ -226,6 +228,15 @@ class OpenAIService:
             prompt = f"{prompt_body}\n\n{combined_texts}"
 
             logger.info(f"Combining {len(texts)} texts with model {model}")
+
+            if debug_prompt_dump_path:
+                try:
+                    dump_path = Path(debug_prompt_dump_path)
+                    dump_path.parent.mkdir(parents=True, exist_ok=True)
+                    dump_path.write_text(prompt, encoding="utf-8")
+                    logger.info(f"Saved prompt dump to {dump_path}")
+                except Exception as dump_exc:
+                    logger.warning(f"Failed to write prompt dump: {dump_exc}")
 
             response = await client.responses.create(
                 model=model,

@@ -8,9 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 import { useAuth } from "@/app/components/providers/AuthProvider";
@@ -46,13 +44,18 @@ const MODEL_PRICING_USD_PER_MILLION: Record<ModelChoice, { input: number; cached
   "gpt-5-nano": { input: 0.05, cached_input: 0.005, output: 0.4 },
 };
 
+function isModelChoice(model: string): model is ModelChoice {
+  return model === "gpt-5-nano" || model === "gpt-5-mini" || model === "gpt-5.2";
+}
+
 function estimateCostUsd(
-  model: ModelChoice,
+  model: string,
   inputTokens: number,
   cachedInputTokens: number,
   outputTokens: number,
   reasoningTokens: number
 ) {
+  if (!isModelChoice(model)) return null;
   const pricing = MODEL_PRICING_USD_PER_MILLION[model];
   const nonCached = Math.max(0, inputTokens - cachedInputTokens);
   const nonCachedCost = (nonCached / 1_000_000) * pricing.input;
@@ -78,6 +81,7 @@ interface CombinedRefinementDialogProps {
   onOpenChange: (open: boolean) => void;
   kapitelId: string;
   runId: string;
+  runModel: string;
   kapitelLabel: string;
   ensureOpenAIAccess: () => Promise<boolean>;
   onAuthFailure: () => void;
@@ -90,6 +94,7 @@ export function CombinedRefinementDialog({
   onOpenChange,
   kapitelId,
   runId,
+  runModel,
   kapitelLabel,
   ensureOpenAIAccess,
   onAuthFailure,
@@ -104,7 +109,6 @@ export function CombinedRefinementDialog({
   const [refinementCostTotalUsd, setRefinementCostTotalUsd] = useState<number>(0);
 
   const [versions, setVersions] = useState<RefinementVersion[]>([]);
-  const [model, setModel] = useState<ModelChoice>("gpt-5-mini");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -244,14 +248,15 @@ export function CombinedRefinementDialog({
     // TODO(text-refinement): incorporate cached_input_tokens into estimate carefully (range/upper bound).
     const estInput = prevInput + prevOutputTotal;
     const estOutput = prevOutputTotal;
-    const estUsd = estimateCostUsd(model, estInput, 0, estOutput, 0);
+    const estUsd = estimateCostUsd(runModel, estInput, 0, estOutput, 0);
+    if (estUsd === null) return null;
 
     return {
       estUsd,
       estInput,
       estOutput,
     };
-  }, [parentForNext?.usage, model]);
+  }, [parentForNext?.usage, runModel]);
 
   useEffect(() => {
     if (!open) return;
@@ -299,7 +304,7 @@ export function CombinedRefinementDialog({
     const parentVersionId = parentForNext?.id || "root";
     setSending(true);
     try {
-      const res = await createCombinedRefinement(kapitelId, runId, parentVersionId, trimmed, model);
+      const res = await createCombinedRefinement(kapitelId, runId, parentVersionId, trimmed);
       if (!res?.success) {
         const msg = (res?.error || "Refinement konnte nicht gestartet werden.").toString();
         const lower = msg.toLowerCase();
@@ -329,7 +334,6 @@ export function CombinedRefinementDialog({
     user?.uid,
     message,
     sending,
-    model,
     maxDepth,
     nextDepth,
     parentForNext?.id,
@@ -344,7 +348,7 @@ export function CombinedRefinementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl max-h-[90vh] flex flex-col [&>button]:hidden">
+      <DialogContent className="sm:max-w-5xl h-[90vh] max-h-[90vh] overflow-hidden !flex flex-col [&>button]:hidden">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2 text-lg">
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -369,10 +373,11 @@ export function CombinedRefinementDialog({
           </div>
 
           <div className="flex items-center gap-3">
+            {/*
             <div className="min-w-[220px]">
               <Label className="text-xs text-muted-foreground">Modell</Label>
-              <Select value={model} onValueChange={(v) => setModel(v as ModelChoice)}>
-                <SelectTrigger className="h-9">
+              <Select value={runModel} disabled>
+                <SelectTrigger className="h-9" disabled>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -383,6 +388,7 @@ export function CombinedRefinementDialog({
               </Select>
             </div>
 
+            */}
             <div className="text-right">
               <div className="text-xs text-muted-foreground">Schätzung (ohne Cache)</div>
               <div className="text-sm font-medium">
@@ -397,8 +403,7 @@ export function CombinedRefinementDialog({
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden mt-4 border rounded-lg">
-          <ScrollArea className="h-full">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden mt-4 border rounded-lg">
             <div className="p-4 space-y-4">
               {initLoading && versions.length === 0 && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -481,7 +486,7 @@ export function CombinedRefinementDialog({
                           <Card className="max-w-[85%] p-4 bg-card border-border">
                             <div className="flex items-center justify-between gap-3 mb-2">
                               <div className="text-xs text-muted-foreground">
-                                ASSISTANT <span className="mx-1">·</span> {v.model || model}
+                                ASSISTANT <span className="mx-1">·</span> {v.model || runModel}
                                 {v.status === "running" && " · läuft…"}
                                 {v.status === "error" && " · Fehler"}
                               </div>
@@ -548,7 +553,6 @@ export function CombinedRefinementDialog({
 
               <div ref={scrollAnchorRef} />
             </div>
-          </ScrollArea>
         </div>
 
         <div className="pt-4 border-t mt-4 flex-shrink-0">
@@ -580,4 +584,3 @@ export function CombinedRefinementDialog({
     </Dialog>
   );
 }
-

@@ -36,7 +36,7 @@ class RefinementService:
 
     async def _get_heading_topic_and_base_texts(
         self, user_id: str, kapitel_id: str, run_id: str
-    ) -> tuple[str, str, list[dict]]:
+    ) -> tuple[str, str, str, list[dict]]:
         run = await firebase_service.get_run(user_id, kapitel_id, run_id)
         if not run:
             raise ValueError("Run not found.")
@@ -44,6 +44,7 @@ class RefinementService:
         prompt_payload = run.get("promptPayload") or run.get("prompt_payload") or {}
         heading = (prompt_payload.get("heading", "") or "").strip() or "Zusammenfassung"
         topic = (prompt_payload.get("topic", "") or "").strip() or "Thema"
+        model = (run.get("model", "") or "").strip() or "gpt-5-mini"
 
         results = await firebase_service.get_run_results(user_id, kapitel_id, run_id)
         eligible: list[dict] = []
@@ -64,7 +65,7 @@ class RefinementService:
         # Deterministic ordering (useful for caching/debugging)
         eligible.sort(key=lambda item: str(item.get("id") or ""))
 
-        return heading, topic, eligible
+        return heading, topic, model, eligible
 
     async def _get_version_path(
         self, user_id: str, kapitel_id: str, run_id: str, head_version_id: str
@@ -135,16 +136,15 @@ WICHTIG:
 - Gib ausschließlich den finalen Text aus (keine Erklärungen).
 """
 
-    def _maybe_dump_prompt(self, version_id: str, prompt: str) -> None:
+    def _get_prompt_dump_path(self, version_id: str) -> str | None:
         if not config.DUMP_REFINEMENT_PROMPTS:
-            return
+            return None
 
         # TODO(text-refinement): Remove this debug dump once prompts are validated end-to-end.
         base_dir = Path(__file__).resolve().parent.parent / ".prompt_dumps"
-        base_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         filename = f"refine_combined_{timestamp}_{version_id}.md"
-        (base_dir / filename).write_text(prompt, encoding="utf-8")
+        return str(base_dir / filename)
 
     async def queue_combined_refinement(
         self,
@@ -153,12 +153,16 @@ WICHTIG:
         run_id: str,
         parent_version_id: str,
         user_message: str,
-        model: str,
     ) -> dict:
         """
         Create a pending refinement version doc and return queued info.
         Background processing must be scheduled by the caller.
         """
+        run = await firebase_service.get_run(user_id, kapitel_id, run_id)
+        if not run:
+            raise ValueError("Run not found.")
+        run_model = (run.get("model", "") or "").strip() or "gpt-5-mini"
+
         init_state = await firebase_service.ensure_combined_refinement_root_version(
             user_id=user_id,
             kapitel_id=kapitel_id,
@@ -184,7 +188,7 @@ WICHTIG:
             "user_message": user_message,
             "assistant_text": "",
             "status": "running",
-            "model": model,
+            "model": run_model,
             "cost": 0.0,
             "created_at": SERVER_TIMESTAMP,
         }
@@ -198,6 +202,7 @@ WICHTIG:
             "parent_version_id": parent_version_id,
             "depth": next_depth,
             "max_depth": init_state["max_depth"],
+            "model": run_model,
         }
 
     async def process_combined_refinement(
@@ -209,7 +214,6 @@ WICHTIG:
         version_id: str,
         parent_version_id: str,
         user_message: str,
-        model: str,
     ) -> None:
         """
         Execute the combined text refinement and persist results into versions/{version_id}.
@@ -235,7 +239,7 @@ WICHTIG:
             if not parent_text:
                 raise ValueError("Parent text is empty.")
 
-            heading, topic, eligible = await self._get_heading_topic_and_base_texts(
+            heading, topic, model, eligible = await self._get_heading_topic_and_base_texts(
                 user_id, kapitel_id, run_id
             )
 
@@ -255,13 +259,7 @@ WICHTIG:
             )
 
             source_texts = [e["content"] for e in eligible]
-
-            # For debugging, dump the exact prompt that will be sent (includes appended source texts)
-            combined_texts = "\n\n".join(
-                [f"### Text {i+1}:\n{source_texts[i]}" for i in range(len(source_texts))]
-            )
-            full_prompt = f"{prompt_body}\n\n{combined_texts}"
-            self._maybe_dump_prompt(version_id, full_prompt)
+            debug_dump_path = self._get_prompt_dump_path(version_id)
 
             openai_result = await openai_service.combine_texts(
                 source_texts,
@@ -270,6 +268,7 @@ WICHTIG:
                 model,
                 api_key=api_key,
                 instructions=prompt_body,
+                debug_prompt_dump_path=debug_dump_path,
             )
 
             cost = calculate_cost(

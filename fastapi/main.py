@@ -368,7 +368,6 @@ async def refine_combined_text(
             run_id=request.run_id,
             parent_version_id=request.parent_version_id,
             user_message=request.user_message,
-            model=request.model,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -386,7 +385,6 @@ async def refine_combined_text(
             version_id=queued["version_id"],
             parent_version_id=request.parent_version_id,
             user_message=request.user_message,
-            model=request.model,
         )
 
     background_tasks.add_task(_run_refine)

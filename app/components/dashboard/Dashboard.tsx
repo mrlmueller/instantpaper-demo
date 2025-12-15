@@ -2064,6 +2064,7 @@ export function Dashboard({
           onOpenChange={setCombinedRefinementDialogOpen}
           kapitelId={activeKapitel.id}
           runId={selectedRun.id}
+          runModel={selectedRun.model}
           kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
           ensureOpenAIAccess={ensureOpenAIAccess}
           onAuthFailure={handleAuthFailure}

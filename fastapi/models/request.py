@@ -113,7 +113,3 @@ class RefineCombinedRequest(BaseModel):
     run_id: str = Field(..., description="Run ID that contains the combined text")
     parent_version_id: str = Field(..., description="Version ID to refine from")
     user_message: str = Field(..., description="User instruction for refinement", min_length=1)
-    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
-        default="gpt-5-mini",
-        description="OpenAI model to use for refinement",
-    )

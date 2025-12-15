@@ -1033,8 +1033,7 @@ export async function createCombinedRefinement(
   kapitelId: string,
   runId: string,
   parentVersionId: string,
-  userMessage: string,
-  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-mini'
+  userMessage: string
 ) {
   await requireAuth();
 
@@ -1061,7 +1060,6 @@ export async function createCombinedRefinement(
           run_id: runId,
           parent_version_id: parentVersionId,
           user_message: userMessage,
-          model: model,
         }),
       });
     } catch (err) {
