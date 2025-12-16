@@ -9,15 +9,24 @@ export async function getAuthenticatedAppForUser() {
   const cookieStore = await cookies();
   const authIdToken = cookieStore.get('__session')?.value;
 
-  const firebaseServerApp = initializeServerApp(
-    firebaseApp.options,
-    authIdToken ? { authIdToken } : {}
-  );
+  try {
+    const firebaseServerApp = initializeServerApp(
+      firebaseApp.options,
+      authIdToken ? { authIdToken } : {}
+    );
 
-  const auth = getAuth(firebaseServerApp);
-  await auth.authStateReady();
+    const auth = getAuth(firebaseServerApp);
+    await auth.authStateReady();
 
-  return { firebaseServerApp, currentUser: auth.currentUser };
+    return { firebaseServerApp, currentUser: auth.currentUser };
+  } catch (error) {
+    // Token might be expired - client will refresh it automatically
+    // Return unauthenticated state, let client-side handle token refresh
+    const firebaseServerApp = initializeServerApp(firebaseApp.options, {});
+    const auth = getAuth(firebaseServerApp);
+
+    return { firebaseServerApp, currentUser: null };
+  }
 }
 
 export async function getFirestoreForUser() {

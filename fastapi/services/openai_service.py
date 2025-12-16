@@ -1,6 +1,7 @@
 from openai import AsyncOpenAI
 from utils.config import config
 import logging
+from typing import Optional, List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ class OpenAIService:
         self._ensure_initialized()
         return self._client
 
-    def _get_client(self, api_key: str | None = None) -> AsyncOpenAI:
+    def _get_client(self, api_key: Optional[str] = None) -> AsyncOpenAI:
         """
         Return an AsyncOpenAI client for the given key.
         Defaults to the platform key (cached).
@@ -71,8 +72,8 @@ class OpenAIService:
         user_input: str,
         model: str,
         grundlegende_informationen: str = None,
-        api_key: str | None = None,
-        quelle_images: list[str] | None = None
+        api_key: Optional[str] = None,
+        quelle_images: Optional[List[str]] = None
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
@@ -206,12 +207,12 @@ class OpenAIService:
 
     async def combine_texts(
         self,
-        texts: list[str],
+        texts: List[str],
         heading: str,
         topic: str,
         model: str,
-        api_key: str | None = None,
-        instructions: str | None = None,
+        api_key: Optional[str] = None,
+        instructions: Optional[str] = None,
     ) -> dict:
         """
         Combine multiple texts into one consolidated text.
@@ -306,7 +307,7 @@ class OpenAIService:
             logger.error(f"OpenAI combine error: {str(e)}")
             raise
 
-    async def summarize_kapitel(self, prompt: str, model: str, api_key: str | None = None) -> tuple[str, dict]:
+    async def summarize_kapitel(self, prompt: str, model: str, api_key: Optional[str] = None) -> Tuple[str, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
             client = self._get_client(api_key)
@@ -386,8 +387,8 @@ class OpenAIService:
         self,
         prompt: str,
         model: str,
-        api_key: str | None = None
-    ) -> tuple[str, dict, dict]:
+        api_key: Optional[str] = None
+    ) -> Tuple[str, dict, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
             client = self._get_client(api_key)
@@ -488,8 +489,8 @@ class OpenAIService:
         self,
         prompt: str,
         model: str,
-        api_key: str | None = None
-    ) -> tuple[str, dict]:
+        api_key: Optional[str] = None
+    ) -> Tuple[str, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
             client = self._get_client(api_key)

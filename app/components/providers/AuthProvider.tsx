@@ -34,8 +34,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (loading) return;
+
+    // Redirect unauthenticated users to login
     if (!user && pathname !== '/login') {
       router.replace('/login');
+    }
+
+    // Redirect authenticated users away from login page
+    if (user && pathname === '/login') {
+      router.replace('/dashboard');
     }
   }, [loading, user, pathname, router]);
 

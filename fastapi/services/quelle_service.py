@@ -6,6 +6,7 @@ from services.prompt_service import prompt_service
 import logging
 import re
 import asyncio
+from typing import Optional, List
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ def calculate_cost(
     return total_cost
 
 
-def calculate_groups(num_items: int, min_group_size: int = 4, max_group_size: int = 5) -> list[list[int]]:
+def calculate_groups(num_items: int, min_group_size: int = 4, max_group_size: int = 5) -> List[List[int]]:
     """
     Optimally distribute items into groups of 4-5 each.
 
@@ -469,7 +470,7 @@ class QuelleService:
         model: str,
         api_key: str,
         key_source: str,
-        instructions: str | None = None,
+        instructions: Optional[str] = None,
     ) -> dict:
         """
         Perform hierarchical combining:

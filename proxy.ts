@@ -50,14 +50,16 @@ export async function proxy(request: NextRequest) {
   }
 
   if (!hasValidToken) {
-    const loginUrl = new URL("/login", request.url);
-    const response = NextResponse.redirect(loginUrl);
-
-    // Clear stale/invalid cookies to avoid redirect loops.
+    // If there's a token (even if expired), let the client handle refresh
+    // Firebase Auth will automatically refresh using the refresh token
     if (token) {
-      response.cookies.delete("__session");
+      // Let the request through - client-side auth will handle it
+      return NextResponse.next();
     }
-    return response;
+
+    // No token at all - redirect to login
+    const loginUrl = new URL("/login", request.url);
+    return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();
