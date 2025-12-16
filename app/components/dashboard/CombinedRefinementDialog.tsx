@@ -2,7 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { MessageSquareText, Send, CheckCircle2, Loader2, Copy } from "lucide-react";
+import {
+  MessageSquareText,
+  Send,
+  CheckCircle2,
+  Loader2,
+  Copy,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
+  X,
+  Check,
+} from "lucide-react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -109,6 +120,12 @@ export function CombinedRefinementDialog({
   const [refinementCostTotalUsd, setRefinementCostTotalUsd] = useState<number>(0);
 
   const [versions, setVersions] = useState<RefinementVersion[]>([]);
+  const [selectedChildByParentId, setSelectedChildByParentId] = useState<Record<string, string>>({});
+
+  const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
+  const [editMessage, setEditMessage] = useState("");
+  const [editSending, setEditSending] = useState(false);
+
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -125,6 +142,13 @@ export function CombinedRefinementDialog({
     if (!combinedDocRef) return null;
     return collection(combinedDocRef, "versions");
   }, [combinedDocRef]);
+
+  useEffect(() => {
+    setSelectedChildByParentId({});
+    setEditingVersionId(null);
+    setEditMessage("");
+    setMessage("");
+  }, [kapitelId, runId]);
 
   useEffect(() => {
     if (!open) return;
@@ -209,6 +233,34 @@ export function CombinedRefinementDialog({
     return () => unsub();
   }, [open, versionsRef]);
 
+  const tree = useMemo(() => {
+    const byId = new Map<string, RefinementVersion>(versions.map((v) => [v.id, v]));
+    const childrenByParentId = new Map<string, RefinementVersion[]>();
+
+    for (const v of versions) {
+      const parentId = v.parent_version_id;
+      if (!parentId) continue;
+      const arr = childrenByParentId.get(parentId) ?? [];
+      arr.push(v);
+      childrenByParentId.set(parentId, arr);
+    }
+
+    for (const arr of childrenByParentId.values()) {
+      arr.sort((a, b) => {
+        const ta = toDate(a.created_at).getTime();
+        const tb = toDate(b.created_at).getTime();
+        if (ta !== tb) return ta - tb;
+        return a.id.localeCompare(b.id);
+      });
+    }
+
+    return {
+      byId,
+      childrenByParentId,
+      root: byId.get("root") ?? null,
+    };
+  }, [versions]);
+
   const headVersion = useMemo(() => {
     if (versions.length === 0) return null;
     return versions.reduce<RefinementVersion | null>((best, current) => {
@@ -221,21 +273,53 @@ export function CombinedRefinementDialog({
   }, [versions]);
 
   const path = useMemo(() => {
-    if (!headVersion) return [];
-    const byId = new Map(versions.map((v) => [v.id, v]));
-    const chain: RefinementVersion[] = [];
-    let current: RefinementVersion | undefined = headVersion;
-    let guard = 0;
-    while (current && guard < 32) {
-      guard++;
-      chain.push(current);
-      current = current.parent_version_id ? byId.get(current.parent_version_id) : undefined;
-    }
-    return chain.reverse();
-  }, [headVersion, versions]);
+    if (!tree.root) return [];
 
-  const parentForNext = headVersion ?? versions.find((v) => v.id === "root") ?? null;
+    const chain: RefinementVersion[] = [tree.root];
+    let current: RefinementVersion = tree.root;
+    let guard = 0;
+    while (guard < 32) {
+      guard++;
+      const children = tree.childrenByParentId.get(current.id) ?? [];
+      if (children.length === 0) break;
+
+      const selectedChildId = selectedChildByParentId[current.id];
+      const selectedChild = selectedChildId ? tree.byId.get(selectedChildId) : null;
+      const next =
+        selectedChild && selectedChild.parent_version_id === current.id ? selectedChild : children[children.length - 1];
+
+      chain.push(next);
+      current = next;
+    }
+    return chain;
+  }, [tree, selectedChildByParentId]);
+
+  const hasBranchSelections = useMemo(() => Object.keys(selectedChildByParentId).length > 0, [selectedChildByParentId]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!tree.root) return;
+    if (versions.length === 0) return;
+    if (hasBranchSelections) return;
+
+    const preferredLeaf = tree.byId.get(activeVersionId) ?? headVersion ?? tree.root;
+    if (!preferredLeaf) return;
+
+    const selections: Record<string, string> = {};
+    let current: RefinementVersion | null = preferredLeaf;
+    let guard = 0;
+    while (current && current.parent_version_id && guard < 32) {
+      guard++;
+      selections[current.parent_version_id] = current.id;
+      current = tree.byId.get(current.parent_version_id) ?? null;
+    }
+
+    setSelectedChildByParentId(selections);
+  }, [open, tree, versions.length, hasBranchSelections, activeVersionId, headVersion]);
+
+  const parentForNext = path[path.length - 1] ?? tree.root ?? null;
   const nextDepth = (parentForNext?.depth ?? 0) + 1;
+  const isDepthLimitReached = nextDepth > maxDepth;
 
   const estimate = useMemo(() => {
     const usage = parentForNext?.usage;
@@ -261,7 +345,7 @@ export function CombinedRefinementDialog({
   useEffect(() => {
     if (!open) return;
     scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [open, path.length, headVersion?.status]);
+  }, [open, path.length, parentForNext?.status]);
 
   const handleUseVersion = useCallback(
     async (version: RefinementVersion) => {
@@ -320,6 +404,11 @@ export function CombinedRefinementDialog({
         return;
       }
 
+      const newVersionId = String((res as any)?.data?.version_id ?? "");
+      if (newVersionId) {
+        setSelectedChildByParentId((prev) => ({ ...prev, [parentVersionId]: newVersionId }));
+      }
+
       setMessage("");
       toast.success("Refinement gestartet", {
         description: `Iteration ${nextDepth}/${maxDepth} wird berechnet...`,
@@ -340,6 +429,100 @@ export function CombinedRefinementDialog({
     onAuthFailure,
     onServerDown,
   ]);
+
+  const handleCycleBranch = useCallback(
+    (parentId: string, delta: -1 | 1) => {
+      const children = tree.childrenByParentId.get(parentId) ?? [];
+      if (children.length < 2) return;
+
+      setSelectedChildByParentId((prev) => {
+        const currentId = prev[parentId];
+        let index = currentId ? children.findIndex((c) => c.id === currentId) : -1;
+        if (index === -1) index = children.length - 1;
+        const nextIndex = (index + delta + children.length) % children.length;
+        const nextChild = children[nextIndex];
+        return { ...prev, [parentId]: nextChild.id };
+      });
+    },
+    [tree.childrenByParentId]
+  );
+
+  const startEdit = useCallback((version: RefinementVersion) => {
+    setEditingVersionId(version.id);
+    setEditMessage(String(version.user_message ?? ""));
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setEditingVersionId(null);
+    setEditMessage("");
+  }, []);
+
+  const submitEdit = useCallback(
+    async (version: RefinementVersion) => {
+      if (!kapitelId || !runId) return;
+      if (!user?.uid) return;
+
+      const trimmed = editMessage.trim();
+      if (!trimmed) return;
+      if (editSending) return;
+
+      if (!(await ensureOpenAIAccess())) return;
+
+      const parentVersionId = version.parent_version_id || "root";
+      const parentDepth = Number(tree.byId.get(parentVersionId)?.depth ?? 0);
+      const newDepth = parentDepth + 1;
+      if (newDepth > maxDepth) {
+        toast.error("Limit erreicht", {
+          description: `Maximal ${maxDepth} Iterationen ab Root m”glich.`,
+        });
+        return;
+      }
+
+      setEditSending(true);
+      try {
+        const res = await createCombinedRefinement(kapitelId, runId, parentVersionId, trimmed);
+        if (!res?.success) {
+          const msg = (res?.error || "Refinement konnte nicht gestartet werden.").toString();
+          const lower = msg.toLowerCase();
+          if (lower.includes("sitzung")) {
+            onAuthFailure();
+            return;
+          }
+          if (lower.includes("fastapi-server")) {
+            onServerDown("refine-edit-down");
+            return;
+          }
+          toast.error("Refinement fehlgeschlagen", { description: msg });
+          return;
+        }
+
+        const newVersionId = String((res as any)?.data?.version_id ?? "");
+        if (newVersionId) {
+          setSelectedChildByParentId((prev) => ({ ...prev, [parentVersionId]: newVersionId }));
+        }
+
+        cancelEdit();
+        toast.success("Branch erstellt", {
+          description: `Iteration ${newDepth}/${maxDepth} wird berechnet...`,
+        });
+      } finally {
+        setEditSending(false);
+      }
+    },
+    [
+      ensureOpenAIAccess,
+      kapitelId,
+      runId,
+      user?.uid,
+      editMessage,
+      editSending,
+      maxDepth,
+      tree.byId,
+      cancelEdit,
+      onAuthFailure,
+      onServerDown,
+    ]
+  );
 
   const handleCopy = useCallback(async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -423,6 +606,15 @@ export function CombinedRefinementDialog({
                 const isActive = v.id === activeVersionId;
                 const assistantText = (v.assistant_text || "").trim();
 
+                const children = tree.childrenByParentId.get(v.id) ?? [];
+                const selectedChildId = selectedChildByParentId[v.id];
+                let selectedIndex = -1;
+                if (children.length > 0) {
+                  selectedIndex = selectedChildId ? children.findIndex((c) => c.id === selectedChildId) : -1;
+                  if (selectedIndex === -1) selectedIndex = children.length - 1;
+                }
+                const showBranchNav = children.length > 1;
+
                 return (
                   <div key={v.id} className="space-y-3">
                     {isRoot ? (
@@ -470,6 +662,29 @@ export function CombinedRefinementDialog({
                               </Button>
                             </div>
                           </div>
+                          {showBranchNav && (
+                            <div className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                onClick={() => handleCycleBranch(v.id, -1)}
+                                aria-label="Vorheriger Branch"
+                              >
+                                <ChevronLeft className="h-4 w-4" />
+                              </Button>
+                              <span className="px-1">
+                                Branch {selectedIndex + 1}/{children.length}
+                              </span>
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                onClick={() => handleCycleBranch(v.id, 1)}
+                                aria-label="Nächster Branch"
+                              >
+                                <ChevronRight className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          )}
                           <div className="text-sm whitespace-pre-wrap leading-relaxed line-clamp-[10]">{assistantText}</div>
                         </Card>
                       </div>

@@ -11,6 +11,8 @@ from models.request import (
     LeseflussKapitelRequest,
     RefineCombinedInitRequest,
     RefineCombinedRequest,
+    RefineShortenedInitRequest,
+    RefineShortenedRequest,
 )
 from models.response import ProcessQuelleResponse
 from services.quelle_service import quelle_service
@@ -379,6 +381,78 @@ async def refine_combined_text(
 
     async def _run_refine() -> None:
         await refinement_service.process_combined_refinement(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            version_id=queued["version_id"],
+            parent_version_id=request.parent_version_id,
+            user_message=request.user_message,
+        )
+
+    background_tasks.add_task(_run_refine)
+    queued["queued_at"] = datetime.utcnow().isoformat() + "Z"
+    return queued
+
+
+@app.post("/api/refine/shortened/init")
+async def init_shortened_refinement(
+    request: RefineShortenedInitRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Initialize the text refinement flow for a shortened text.
+
+    Ensures:
+    - shortened/shortened/versions/root exists
+    - shortened doc has refinement metadata fields
+    """
+    logger.info(
+        f"Initializing shortened refinement for user {user_id} "
+        f"(kapitel {request.kapitel_id}, run {request.run_id})"
+    )
+    return await refinement_service.init_shortened_refinement(
+        user_id=user_id,
+        kapitel_id=request.kapitel_id,
+        run_id=request.run_id,
+    )
+
+
+@app.post("/api/refine/shortened", status_code=status.HTTP_202_ACCEPTED)
+async def refine_shortened_text(
+    request: RefineShortenedRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Queue a shortened text refinement step (text refinement flow).
+
+    Writes a pending versions/{versionId} doc and processes the OpenAI call in the background.
+    """
+    logger.info(
+        f"Queueing shortened refinement for user {user_id} "
+        f"(kapitel {request.kapitel_id}, run {request.run_id}, parent {request.parent_version_id})"
+    )
+    try:
+        # Validate that an API key is available (user key or platform key)
+        await user_key_service.resolve_api_key_for_user(user_id)
+
+        queued = await refinement_service.queue_shortened_refinement(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            parent_version_id=request.parent_version_id,
+            user_message=request.user_message,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error queueing shortened refinement: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to queue refinement request.") from exc
+
+    async def _run_refine() -> None:
+        await refinement_service.process_shortened_refinement(
             user_id=user_id,
             kapitel_id=request.kapitel_id,
             run_id=request.run_id,

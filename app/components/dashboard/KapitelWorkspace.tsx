@@ -58,6 +58,7 @@ interface KapitelWorkspaceProps {
   onOpenShorten: () => void;
   onOpenLesefluss: () => void;
   onOpenCombinedRefinement: () => void;
+  onOpenShortenedRefinement: () => void;
 }
 
 export function KapitelWorkspace({
@@ -77,6 +78,7 @@ export function KapitelWorkspace({
   onOpenShorten,
   onOpenLesefluss,
   onOpenCombinedRefinement,
+  onOpenShortenedRefinement,
 }: KapitelWorkspaceProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] =
@@ -135,6 +137,7 @@ export function KapitelWorkspace({
       selectedRun.combinedCost +
       (selectedRun.combinedRefinementCost || 0) +
       (selectedRun.shortenedCost || 0) +
+      (selectedRun.shortenedRefinementCost || 0) +
       (selectedRun.leseflussCost || 0) +
       summariesCost
     : 0;
@@ -409,6 +412,14 @@ export function KapitelWorkspace({
                     </h2>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onOpenShortenedRefinement}
+                    >
+                      <MessageSquareText className="h-4 w-4 mr-2" />
+                      Verfeinern
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"

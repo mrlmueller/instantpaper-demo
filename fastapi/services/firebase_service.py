@@ -383,6 +383,145 @@ class FirebaseService:
             }
         )
 
+    def _shortened_root_ref(self, user_id: str, kapitel_id: str, run_id: str):
+        return (
+            self.db.collection('users')
+            .document(user_id)
+            .collection('kapitels')
+            .document(kapitel_id)
+            .collection('runs')
+            .document(run_id)
+            .collection('shortened')
+            .document('shortened')
+        )
+
+    def _shortened_refinement_version_ref(
+        self, user_id: str, kapitel_id: str, run_id: str, version_id: str
+    ):
+        return self._shortened_root_ref(user_id, kapitel_id, run_id).collection('versions').document(version_id)
+
+    async def get_shortened_refinement_version(
+        self, user_id: str, kapitel_id: str, run_id: str, version_id: str
+    ) -> Optional[dict]:
+        """Fetch a shortened text refinement version (if it exists)."""
+        try:
+            doc_ref = self._shortened_refinement_version_ref(user_id, kapitel_id, run_id, version_id)
+            doc = doc_ref.get()
+            if not doc.exists:
+                return None
+            data = doc.to_dict() or {}
+            data['id'] = doc.id
+            return data
+        except Exception as e:
+            logger.error(f"Error fetching shortened refinement version {version_id}: {e}")
+            return None
+
+    async def save_shortened_refinement_version(
+        self, user_id: str, kapitel_id: str, run_id: str, version_id: str, data: dict
+    ) -> None:
+        """Create/overwrite a shortened refinement version doc."""
+        doc_ref = self._shortened_refinement_version_ref(user_id, kapitel_id, run_id, version_id)
+        doc_ref.set(data)
+
+    async def update_shortened_refinement_version(
+        self, user_id: str, kapitel_id: str, run_id: str, version_id: str, data: dict
+    ) -> None:
+        """Update a shortened refinement version doc."""
+        doc_ref = self._shortened_refinement_version_ref(user_id, kapitel_id, run_id, version_id)
+        doc_ref.update(data)
+
+    async def ensure_shortened_refinement_root_version(
+        self, user_id: str, kapitel_id: str, run_id: str, max_depth: int
+    ) -> dict:
+        """
+        Ensure the refinement root version exists under shortened/shortened/versions/root.
+
+        Also ensures shortened/shortened has refinement metadata fields initialized.
+        """
+        shortened = await self.get_shortened_result(user_id, kapitel_id, run_id)
+        if not shortened:
+            raise ValueError("No shortened result found for this run.")
+
+        shortened_content = (
+            shortened.get('shortened_content')
+            or shortened.get('shortenedContent')
+            or ''
+        )
+        if not shortened_content:
+            raise ValueError("Shortened content is empty.")
+
+        root_id = 'root'
+        root_doc = await self.get_shortened_refinement_version(user_id, kapitel_id, run_id, root_id)
+        if not root_doc:
+            created_at = shortened.get('created_at') or shortened.get('createdAt') or SERVER_TIMESTAMP
+            model = shortened.get('model') or ''
+
+            tokens_used = shortened.get('tokens_used') or shortened.get('tokensUsed') or {}
+            input_tokens = tokens_used.get('input') or tokens_used.get('prompt_tokens') or 0
+            cached_input_tokens = (
+                tokens_used.get('cached_input')
+                or tokens_used.get('cachedInput')
+                or tokens_used.get('cached_tokens')
+                or 0
+            )
+            output_tokens = tokens_used.get('output') or tokens_used.get('completion_tokens') or 0
+            total_tokens = int(input_tokens) + int(output_tokens)
+
+            root_data = {
+                'parent_version_id': None,
+                'depth': 0,
+                'user_message': None,
+                'assistant_text': shortened_content,
+                'status': 'success',
+                'model': model,
+                'usage': {
+                    'input_tokens': int(input_tokens),
+                    'cached_input_tokens': int(cached_input_tokens),
+                    'output_tokens': int(output_tokens),
+                    'reasoning_tokens': 0,
+                    'total_tokens': total_tokens,
+                },
+                'cost': 0.0,
+                'created_at': created_at,
+            }
+            await self.save_shortened_refinement_version(user_id, kapitel_id, run_id, root_id, root_data)
+
+        # Initialize refinement metadata on shortened doc (merge, idempotent)
+        shortened_ref = self._shortened_root_ref(user_id, kapitel_id, run_id)
+        active_id = (
+            shortened.get('refinement_active_version_id')
+            or shortened.get('refinementActiveVersionId')
+            or 'root'
+        )
+        shortened_ref.set(
+            {
+                'refinement_root_version_id': 'root',
+                'refinement_active_version_id': active_id,
+                'refinement_cost_total': shortened.get('refinement_cost_total') or shortened.get('refinementCostTotal') or 0.0,
+                'refinement_max_depth': max_depth,
+                'refinement_initialized_at': SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+
+        return {
+            'root_version_id': 'root',
+            'active_version_id': active_id,
+            'max_depth': max_depth,
+        }
+
+    async def increment_shortened_refinement_cost_total(
+        self, user_id: str, kapitel_id: str, run_id: str, cost_usd: float
+    ) -> None:
+        """Increment shortened/shortened.refinement_cost_total atomically (USD)."""
+        shortened_ref = self._shortened_root_ref(user_id, kapitel_id, run_id)
+        shortened_ref.update(
+            {
+                'refinement_cost_total': Increment(cost_usd),
+                'refinement_updated_at': SERVER_TIMESTAMP,
+            }
+        )
+
     async def save_combined_result(
         self,
         user_id: str,

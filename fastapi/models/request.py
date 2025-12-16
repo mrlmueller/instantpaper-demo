@@ -113,3 +113,19 @@ class RefineCombinedRequest(BaseModel):
     run_id: str = Field(..., description="Run ID that contains the combined text")
     parent_version_id: str = Field(..., description="Version ID to refine from")
     user_message: str = Field(..., description="User instruction for refinement", min_length=1)
+
+
+class RefineShortenedInitRequest(BaseModel):
+    """Request model for initializing the text refinement flow for a shortened text."""
+
+    kapitel_id: str = Field(..., description="Kapitel ID")
+    run_id: str = Field(..., description="Run ID that contains the shortened text")
+
+
+class RefineShortenedRequest(BaseModel):
+    """Request model for refining a shortened text (text refinement flow)."""
+
+    kapitel_id: str = Field(..., description="Kapitel ID")
+    run_id: str = Field(..., description="Run ID that contains the shortened text")
+    parent_version_id: str = Field(..., description="Version ID to refine from")
+    user_message: str = Field(..., description="User instruction for refinement", min_length=1)

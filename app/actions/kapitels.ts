@@ -92,6 +92,10 @@ export type ShortenedResult = {
     output: number;
   };
   createdAt: string;
+  refinementCostTotal?: number;
+  refinementRootVersionId?: string;
+  refinementActiveVersionId?: string;
+  refinementMaxDepth?: number;
 };
 
 export type SummaryResult = {
@@ -671,6 +675,10 @@ export async function getKapitelRuns(
             usedKapitelIds: s.used_kapitel_ids ?? s.usedKapitelIds ?? [],
             model: s.model ?? '',
             cost: s.cost ?? 0,
+            refinementCostTotal: s.refinement_cost_total ?? s.refinementCostTotal ?? 0,
+            refinementRootVersionId: s.refinement_root_version_id ?? s.refinementRootVersionId ?? undefined,
+            refinementActiveVersionId: s.refinement_active_version_id ?? s.refinementActiveVersionId ?? undefined,
+            refinementMaxDepth: s.refinement_max_depth ?? s.refinementMaxDepth ?? undefined,
             tokensUsed: s.tokens_used ?? s.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
             createdAt:
               s.created_at?.toDate?.()?.toISOString() ||
@@ -1091,6 +1099,129 @@ export async function createCombinedRefinement(
   } catch (error: any) {
     console.error('Error creating combined refinement:', error);
     return { success: false, error: error?.message || 'Failed to create combined refinement' };
+  }
+}
+
+export async function initShortenedRefinement(kapitelId: string, runId: string) {
+  await requireAuth();
+
+  try {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('__session')?.value;
+
+    if (!authToken) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/refine/shortened/init`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+        }),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
+      };
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    if (response.status >= 500) {
+      return {
+        success: false,
+        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: errorText || 'Refinement konnte nicht initialisiert werden.' };
+    }
+
+    const result = await response.json();
+    revalidatePath('/dashboard');
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('Error initializing shortened refinement:', error);
+    return { success: false, error: error?.message || 'Failed to init shortened refinement' };
+  }
+}
+
+export async function createShortenedRefinement(
+  kapitelId: string,
+  runId: string,
+  parentVersionId: string,
+  userMessage: string
+) {
+  await requireAuth();
+
+  try {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('__session')?.value;
+
+    if (!authToken) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/refine/shortened`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+          parent_version_id: parentVersionId,
+          user_message: userMessage,
+        }),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
+      };
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    if (response.status >= 500) {
+      return {
+        success: false,
+        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: errorText || 'Refinement konnte nicht gestartet werden.' };
+    }
+
+    const result = await response.json();
+    revalidatePath('/dashboard');
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('Error creating shortened refinement:', error);
+    return { success: false, error: error?.message || 'Failed to create shortened refinement' };
   }
 }
 

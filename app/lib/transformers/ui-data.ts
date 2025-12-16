@@ -152,6 +152,9 @@ export function transformRunToUI(
   const combinedRefinementCost = fbRun.combined
     ? Math.round(((fbRun.combined as any).refinementCostTotal || 0) * 100)
     : 0;
+  const shortenedRefinementCost = fbRun.shortened
+    ? Math.round(((fbRun.shortened as any).refinementCostTotal || 0) * 100)
+    : 0;
   const shortenedCost = fbRun.shortened
     ? Math.round((fbRun.shortened.cost || 0) * 100)
     : undefined;
@@ -178,6 +181,7 @@ export function transformRunToUI(
     quellenCost,
     combinedCost,
     combinedRefinementCost,
+    shortenedRefinementCost,
     intermediateGroups,
     shortenedText: fbRun.shortened?.shortenedContent || null,
     shortenedCost,
