@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   X,
   Plus,
@@ -14,12 +14,22 @@ import {
   Link as LinkIcon,
   ImageIcon,
   Loader2,
+  Palette,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -27,16 +37,25 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 import type { Quelle } from "@/app/types/ui";
+import { ADVANCED_FIELDS, COLOR_CLASSES, QUELLE_COLORS, type QuelleColor } from "@/app/lib/quellen/fieldConfig";
+import { getQuellenModeAdvanced, setQuellenModeAdvanced } from "@/app/lib/storage/preferences";
+import { updateQuelleColor } from "@/app/actions/quellen";
 
 interface QuellenPanelProps {
   quellen: Quelle[];
   assignedQuellenIds: string[];
   onClose: () => void;
-  onAddQuelle: (name: string, text: string, imageFiles?: File[]) => Promise<boolean>;
+  onAddQuelle: (name: string, text: string, imageFiles?: File[], advancedFields?: Record<string, any>) => Promise<boolean>;
   onDeleteQuelle: (id: string, name: string) => void;
   onAssignQuelle: (id: string) => Promise<void>;
   onUnassignQuelle: (id: string) => Promise<void>;
@@ -73,21 +92,55 @@ export function QuellenPanel({
   const [isSubmittingQuelle, setIsSubmittingQuelle] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Advanced mode state
+  const [isAdvancedMode, setIsAdvancedMode] = useState(() => getQuellenModeAdvanced());
+  const [advancedFieldValues, setAdvancedFieldValues] = useState<Record<string, any>>({});
+  const [isUpdatingColor, setIsUpdatingColor] = useState(false);
+  const router = useRouter();
+
+  // Persist advanced mode preference
+  useEffect(() => {
+    setQuellenModeAdvanced(isAdvancedMode);
+  }, [isAdvancedMode]);
+
   const handleAddQuelle = async () => {
     if (!newQuelleName.trim() || !newQuelleText.trim() || isSubmittingQuelle || isAddingQuelle) return;
     setIsSubmittingQuelle(true);
     setAddDialogOpen(false);
 
     try {
-      const success = await onAddQuelle(newQuelleName.trim(), newQuelleText.trim(), newQuelleImageFiles);
+      const success = await onAddQuelle(
+        newQuelleName.trim(),
+        newQuelleText.trim(),
+        newQuelleImageFiles,
+        isAdvancedMode ? advancedFieldValues : undefined
+      );
       if (success) {
         setNewQuelleName("");
         setNewQuelleText("");
         setNewQuelleImages([]);
         setNewQuelleImageFiles([]);
+        setAdvancedFieldValues({});
       }
     } finally {
       setIsSubmittingQuelle(false);
+    }
+  };
+
+  const handleUpdateColor = async (quelleId: string, color: QuelleColor | null) => {
+    setIsUpdatingColor(true);
+    try {
+      const result = await updateQuelleColor(quelleId, color);
+      if (result.success) {
+        toast.success("Farbe aktualisiert");
+        router.refresh();
+      } else {
+        toast.error("Fehler beim Aktualisieren der Farbe");
+      }
+    } catch (error) {
+      toast.error("Fehler beim Aktualisieren der Farbe");
+    } finally {
+      setIsUpdatingColor(false);
     }
   };
 
@@ -214,9 +267,19 @@ export function QuellenPanel({
             <BookOpen className="h-5 w-5 text-muted-foreground" />
             <h2 className="font-medium">Quellen</h2>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push('/quellen-manager')}
+              title="Quellen-Manager öffnen"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {/* Search Bar */}
@@ -262,6 +325,14 @@ export function QuellenPanel({
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
+                          {quelle.color && (
+                            <div
+                              className={cn(
+                                "w-3 h-3 rounded-full shrink-0",
+                                COLOR_CLASSES[quelle.color].split(' ')[0]
+                              )}
+                            />
+                          )}
                           <p className="text-sm font-medium truncate">
                             {quelle.name}
                           </p>
@@ -308,6 +379,52 @@ export function QuellenPanel({
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isUpdatingColor}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Palette className="h-4 w-4" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-48" onClick={(e) => e.stopPropagation()}>
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium mb-2">Farbe auswählen</p>
+                              <div className="grid grid-cols-4 gap-2">
+                                {QUELLE_COLORS.map((color) => (
+                                  <button
+                                    key={color}
+                                    className={cn(
+                                      "w-8 h-8 rounded-full border-2 transition-all hover:scale-110",
+                                      COLOR_CLASSES[color].split(' ')[0],
+                                      quelle.color === color && "ring-2 ring-primary ring-offset-2"
+                                    )}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUpdateColor(quelle.id, color);
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                              {quelle.color && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="w-full mt-2"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUpdateColor(quelle.id, null);
+                                  }}
+                                >
+                                  Farbe entfernen
+                                </Button>
+                              )}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -360,6 +477,14 @@ export function QuellenPanel({
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
+                          {quelle.color && (
+                            <div
+                              className={cn(
+                                "w-3 h-3 rounded-full shrink-0",
+                                COLOR_CLASSES[quelle.color].split(' ')[0]
+                              )}
+                            />
+                          )}
                           <p className="text-sm font-medium truncate">
                             {quelle.name}
                           </p>
@@ -407,6 +532,52 @@ export function QuellenPanel({
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isUpdatingColor}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Palette className="h-4 w-4" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-48" onClick={(e) => e.stopPropagation()}>
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium mb-2">Farbe auswählen</p>
+                              <div className="grid grid-cols-4 gap-2">
+                                {QUELLE_COLORS.map((color) => (
+                                  <button
+                                    key={color}
+                                    className={cn(
+                                      "w-8 h-8 rounded-full border-2 transition-all hover:scale-110",
+                                      COLOR_CLASSES[color].split(' ')[0],
+                                      quelle.color === color && "ring-2 ring-primary ring-offset-2"
+                                    )}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUpdateColor(quelle.id, color);
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                              {quelle.color && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="w-full mt-2"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUpdateColor(quelle.id, null);
+                                  }}
+                                >
+                                  Farbe entfernen
+                                </Button>
+                              )}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -445,9 +616,18 @@ export function QuellenPanel({
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="sm:max-w-2xl [&>button]:hidden">
           <DialogHeader>
-            <DialogTitle>Neue Quelle hinzufügen</DialogTitle>
+            <DialogTitle className="flex items-center justify-between">
+              Neue Quelle hinzufügen
+              <div className="flex items-center gap-2 text-sm font-normal">
+                <span className="text-muted-foreground">Erweitert</span>
+                <Switch
+                  checked={isAdvancedMode}
+                  onCheckedChange={setIsAdvancedMode}
+                />
+              </div>
+            </DialogTitle>
           </DialogHeader>
-          <div className="py-4 space-y-4">
+          <div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto">
             <div>
               <Label className="text-sm text-muted-foreground">
                 Bilder{" "}
@@ -579,6 +759,85 @@ export function QuellenPanel({
                 {newQuelleText.split(/\s+/).filter(Boolean).length} Wörter
               </div>
             </div>
+
+            {/* Advanced fields section */}
+            {isAdvancedMode && (
+              <div className="space-y-3 pt-3 border-t">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                  Erweiterte Felder (optional)
+                </p>
+                {ADVANCED_FIELDS.map((field) => (
+                  <div key={field.key}>
+                    <Label htmlFor={field.key} className="text-sm text-muted-foreground">
+                      {field.label}
+                    </Label>
+                    {field.type === 'text' || field.type === 'url' ? (
+                      <Input
+                        id={field.key}
+                        type={field.type}
+                        placeholder={field.placeholder}
+                        value={advancedFieldValues[field.key] || ''}
+                        onChange={(e) =>
+                          setAdvancedFieldValues((prev) => ({
+                            ...prev,
+                            [field.key]: e.target.value,
+                          }))
+                        }
+                        className="mt-1"
+                      />
+                    ) : field.type === 'number' ? (
+                      <Input
+                        id={field.key}
+                        type="number"
+                        placeholder={field.placeholder}
+                        value={advancedFieldValues[field.key] || ''}
+                        onChange={(e) =>
+                          setAdvancedFieldValues((prev) => ({
+                            ...prev,
+                            [field.key]: e.target.value ? parseInt(e.target.value) : undefined,
+                          }))
+                        }
+                        className="mt-1"
+                      />
+                    ) : field.type === 'date' ? (
+                      <Input
+                        id={field.key}
+                        type="date"
+                        value={advancedFieldValues[field.key] || ''}
+                        onChange={(e) =>
+                          setAdvancedFieldValues((prev) => ({
+                            ...prev,
+                            [field.key]: e.target.value,
+                          }))
+                        }
+                        className="mt-1"
+                      />
+                    ) : field.type === 'select' && field.options ? (
+                      <Select
+                        value={advancedFieldValues[field.key] || ''}
+                        onValueChange={(val) =>
+                          setAdvancedFieldValues((prev) => ({
+                            ...prev,
+                            [field.key]: val,
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder={`${field.label} auswählen`} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {field.options.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>

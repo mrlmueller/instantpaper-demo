@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { ChevronDown, FolderOpen, Plus, LogOut, User, Loader2 } from "lucide-react"
+import { ChevronDown, FolderOpen, Plus, LogOut, User, Loader2, BookOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -93,6 +93,12 @@ export function ProjektHeader({
                 <Link href="/profil" className="flex items-center cursor-pointer">
                   <User className="mr-2 h-4 w-4" />
                   Profil
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/quellen-manager" className="flex items-center cursor-pointer">
+                  <BookOpen className="mr-2 h-4 w-4" />
+                  Quellen-Manager
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
