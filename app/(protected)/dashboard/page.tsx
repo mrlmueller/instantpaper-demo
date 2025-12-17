@@ -5,6 +5,8 @@ import { getUserQuellen } from '@/app/actions/quellen';
 import { getUserKapitels } from '@/app/actions/kapitels';
 import { getOrCreateDefaultProject, getProjects } from '@/app/actions/projects';
 import { Dashboard } from '@/app/components/dashboard/Dashboard';
+import { DashboardSkeleton } from '@/app/components/dashboard/DashboardSkeleton';
+import { DashboardAuthWrapper } from './DashboardAuthWrapper';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +14,13 @@ const INITIAL_RUN_LIMIT = 10;
 
 export default async function DashboardPage() {
   const user = await requireAuth();
+
+  // If user is null, cookie exists but token is expired
+  // Show loading skeleton while client-side refreshes token
+  if (!user) {
+    return <DashboardAuthWrapper />;
+  }
+
   const db = await getFirestoreForUser();
 
   // Do not block render on user upsert
