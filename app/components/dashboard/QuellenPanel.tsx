@@ -40,11 +40,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import type { Quelle } from "@/app/types/ui";
 import {
-  ADVANCED_FIELDS,
   colorMap,
   colorLabels,
   QUELLE_COLORS,
