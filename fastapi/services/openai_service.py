@@ -231,6 +231,7 @@ class OpenAIService:
         heading: str,
         topic: str,
         model: str,
+        instructions: Optional[str] = None,
 
       api_key: Optional[str] = None,
       quelle_images: Optional[List[str]] = None,
