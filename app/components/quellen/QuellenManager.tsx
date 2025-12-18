@@ -75,6 +75,17 @@ interface QuellenManagerProps {
 type SortField = "name" | "typ" | "jahr" | "color";
 type SortDirection = "asc" | "desc";
 
+function compareKapitelNummer(a: string, b: string) {
+  const partsA = a.split(".").map(Number);
+  const partsB = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+    const numA = partsA[i] || 0;
+    const numB = partsB[i] || 0;
+    if (numA !== numB) return numA - numB;
+  }
+  return 0;
+}
+
 const typLabels: Record<string, string> = {
   Book: "Buch",
   Article: "Artikel",
@@ -627,7 +638,9 @@ export function QuellenManager({
               </TableHeader>
               <TableBody>
                 {filteredQuellen.map((quelle) => {
-                  const linkedKapiteln = getLinkedKapiteln(quelle.id);
+                  const linkedKapiteln = [...getLinkedKapiteln(quelle.id)].sort(
+                    (a, b) => compareKapitelNummer(a.nummer || "", b.nummer || "")
+                  );
                   return (
                     <TableRow key={quelle.id} className="group">
                       <TableCell>
