@@ -287,6 +287,9 @@ export async function createKapitel(
 ) {
   try {
     const user = await requireAuth();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
     const db = await getFirestoreForUser();
 
     // Validate parentId if provided
@@ -333,6 +336,9 @@ export async function createKapitel(
 export async function updateKapitelQuellen(kapitelId: string, quelleIds: string[]) {
   try {
     const user = await requireAuth();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
     const db = await getFirestoreForUser();
 
     const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
@@ -360,6 +366,9 @@ export async function updateKapitelParent(
 ) {
   try {
     const user = await requireAuth();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
     const db = await getFirestoreForUser();
 
     const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
@@ -425,6 +434,9 @@ export async function updateKapitelTitle(
 ) {
   try {
     const user = await requireAuth();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
     const db = await getFirestoreForUser();
 
     const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
@@ -453,6 +465,9 @@ export async function deleteKapitel(
 ) {
   try {
     const user = await requireAuth();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
     const db = await getFirestoreForUser();
 
     const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
@@ -512,6 +527,9 @@ export async function createKapitelRun(
 ) {
   try {
     const user = await requireAuth();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
     const db = await getFirestoreForUser();
 
     const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
@@ -557,6 +575,9 @@ export async function getKapitelRuns(
 ): Promise<KapitelRun[]> {
   try {
     const { user, db } = await getContext(ctx);
+    if (!user) {
+      throw new Error('Not authenticated');
+    }
 
     const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
     const runsSnapshot = await getDocs(query(runsRef, orderBy('index', 'desc'), limit(runLimit)));
@@ -816,6 +837,9 @@ export async function getUserKapitels(
 ): Promise<Kapitel[]> {
   try {
     const { user, db } = await getContext(ctx);
+    if (!user) {
+      throw new Error('Not authenticated');
+    }
 
     const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
     const snapshot = await getDocs(
@@ -861,6 +885,9 @@ export async function createShortenRun(
   model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano'
 ) {
   const user = await requireAuth();
+  if (!user) {
+    return { success: false, error: 'Not authenticated' };
+  }
 
   try {
     const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
@@ -933,6 +960,9 @@ export async function createLeseflussRun(
   model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano'
 ) {
   const user = await requireAuth();
+  if (!user) {
+    return { success: false, error: 'Not authenticated' };
+  }
 
   try {
     const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
@@ -1498,6 +1528,9 @@ export async function getShortenedResult(
   runId: string
 ): Promise<ShortenedResult | null> {
   const user = await requireAuth();
+  if (!user) {
+    return null;
+  }
 
   try {
     const db = await getFirestoreForUser();
@@ -1547,6 +1580,9 @@ export async function getSummaries(
   runId: string
 ): Promise<SummaryResult[]> {
   const user = await requireAuth();
+  if (!user) {
+    return [];
+  }
 
   try {
     const db = await getFirestoreForUser();

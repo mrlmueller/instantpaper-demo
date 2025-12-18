@@ -32,6 +32,13 @@ export function transformQuelleToUI(
     projektId,
     createdAt: new Date(fbQuelle.createdAt),
     images: fbQuelle.images?.map((img) => img.url),
+    // Advanced metadata fields
+    autor: fbQuelle.autor,
+    jahr: fbQuelle.jahr,
+    typ: fbQuelle.typ,
+    url: fbQuelle.url,
+    zugriffAm: fbQuelle.zugriffAm,
+    color: fbQuelle.color,
   };
 }
 

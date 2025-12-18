@@ -292,14 +292,9 @@ export default function ProfilPage() {
   const handleBack = () => {
     if (backLoading) return;
     setBackLoading(true);
-    const toastId = toast.loading("Zurück zum Dashboard...");
     try {
       router.push("/dashboard");
-      setTimeout(() => {
-        toast.success("Dashboard geöffnet", { id: toastId });
-      }, 300);
     } catch (error: any) {
-      toast.error("Navigation fehlgeschlagen", { description: error?.message, id: toastId });
       setBackLoading(false);
     }
   };

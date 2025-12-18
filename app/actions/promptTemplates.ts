@@ -47,6 +47,9 @@ export async function listPromptTemplates(): Promise<{
   askOnEachProcess: boolean;
 }> {
   const user = await requireAuth();
+  if (!user) {
+    throw new Error('Not authenticated');
+  }
   const db = await getFirestoreForUser();
 
   const templatesRef = collection(db, 'users', user.uid, 'promptTemplates');
@@ -75,6 +78,9 @@ export async function listPromptTemplates(): Promise<{
 
 export async function createPromptTemplate(payload: PromptTemplatePayload) {
   const user = await requireAuth();
+  if (!user) {
+    throw new Error('Not authenticated');
+  }
   const db = await getFirestoreForUser();
 
   if (payload.name.length < MIN_NAME_LENGTH || payload.name.length > MAX_NAME_LENGTH) {
@@ -102,6 +108,9 @@ export async function createPromptTemplate(payload: PromptTemplatePayload) {
 
 export async function updatePromptTemplate(id: string, payload: Omit<PromptTemplatePayload, 'stage'>) {
   const user = await requireAuth();
+  if (!user) {
+    throw new Error('Not authenticated');
+  }
   const db = await getFirestoreForUser();
 
   if (payload.name.length < MIN_NAME_LENGTH || payload.name.length > MAX_NAME_LENGTH) {
@@ -128,6 +137,9 @@ export async function updatePromptTemplate(id: string, payload: Omit<PromptTempl
 
 export async function deletePromptTemplate(id: string) {
   const user = await requireAuth();
+  if (!user) {
+    throw new Error('Not authenticated');
+  }
   const db = await getFirestoreForUser();
 
   const ref = doc(db, 'users', user.uid, 'promptTemplates', id);
@@ -158,6 +170,9 @@ export async function deletePromptTemplate(id: string) {
 
 export async function setActivePrompt(stage: PromptStage, templateId: string | 'default') {
   const user = await requireAuth();
+  if (!user) {
+    throw new Error('Not authenticated');
+  }
   const db = await getFirestoreForUser();
   const settingsRef = doc(db, 'users', user.uid, 'promptSettings', 'active');
   const existing = await getDoc(settingsRef);
@@ -176,6 +191,9 @@ export async function setActivePrompt(stage: PromptStage, templateId: string | '
 
 export async function setAskOnEachProcess(value: boolean) {
   const user = await requireAuth();
+  if (!user) {
+    throw new Error('Not authenticated');
+  }
   const db = await getFirestoreForUser();
   const settingsRef = doc(db, 'users', user.uid, 'promptSettings', 'active');
   await setDoc(
@@ -191,6 +209,9 @@ export async function setAskOnEachProcess(value: boolean) {
 
 export async function getActivePromptInstructions(stage: PromptStage): Promise<string> {
   const user = await requireAuth();
+  if (!user) {
+    throw new Error('Not authenticated');
+  }
   const db = await getFirestoreForUser();
   const settingsRef = doc(db, 'users', user.uid, 'promptSettings', 'active');
   const settingsSnap = await getDoc(settingsRef);

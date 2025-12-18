@@ -38,6 +38,9 @@ async function getContext(ctx?: ActionContext) {
 
 export async function getOrCreateDefaultProject(ctx?: ActionContext): Promise<Project> {
   const { user, db } = await getContext(ctx);
+  if (!user) {
+    throw new Error('Not authenticated');
+  }
 
   const projectRef = doc(db, 'users', user.uid, 'projects', DEFAULT_PROJECT_ID);
   const projectSnap = await getDoc(projectRef);
@@ -68,6 +71,9 @@ export async function getOrCreateDefaultProject(ctx?: ActionContext): Promise<Pr
 
 export async function getProjects(ctx?: ActionContext): Promise<Project[]> {
   const { user, db } = await getContext(ctx);
+  if (!user) {
+    throw new Error('Not authenticated');
+  }
 
   const projectsRef = collection(db, 'users', user.uid, 'projects');
   const snapshot = await getDocs(query(projectsRef, orderBy('createdAt', 'desc')));
@@ -86,6 +92,9 @@ export async function getProjects(ctx?: ActionContext): Promise<Project[]> {
 export async function createProject(name: string): Promise<{ success: boolean; id?: string; error?: string }> {
   try {
     const user = await requireAuth();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
     const db = await getFirestoreForUser();
 
     const projectsRef = collection(db, 'users', user.uid, 'projects');
@@ -107,6 +116,9 @@ export async function createProject(name: string): Promise<{ success: boolean; i
 export async function renameProject(projectId: string, name: string) {
   try {
     const user = await requireAuth();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
     const db = await getFirestoreForUser();
 
     const projectRef = doc(db, 'users', user.uid, 'projects', projectId);
@@ -134,6 +146,9 @@ export async function renameProject(projectId: string, name: string) {
 export async function deleteProject(projectId: string) {
   try {
     const user = await requireAuth();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
     const db = await getFirestoreForUser();
 
     const projectRef = doc(db, 'users', user.uid, 'projects', projectId);

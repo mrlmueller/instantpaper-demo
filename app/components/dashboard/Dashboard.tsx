@@ -19,6 +19,7 @@ import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import { QuellenPanelSkeleton } from './QuellenPanelSkeleton';
 import { KapitelWorkspaceSkeleton } from './KapitelWorkspaceSkeleton';
+import { ViewportWarning } from '@/app/components/viewport-warning';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -77,6 +78,7 @@ import {
 } from 'firebase/firestore';
 import Cookies from 'js-cookie';
 import { fetchOpenAIKeyStatus, type OpenAIKeyStatus } from '@/app/lib/api/openaiKeyClient';
+import { getQuellenPanelState, setQuellenPanelState } from '@/app/lib/storage/preferences';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
 const RUN_HISTORY_LIMIT = 10;
@@ -329,13 +331,18 @@ export function Dashboard({
     setSelectedRunId(id);
   }, []);
 
-  const [showQuellenPanel, setShowQuellenPanel] = useState(false);
+  const [showQuellenPanel, setShowQuellenPanel] = useState(() => getQuellenPanelState());
   const [textViewerContent, setTextViewerContent] = useState<{
     title: string;
     text: string;
   } | null>(null);
   const [quelleViewer, setQuelleViewer] = useState<Quelle | null>(null);
   const [processingDialogOpen, setProcessingDialogOpen] = useState(false);
+
+  // Persist Quellen panel state to localStorage
+  useEffect(() => {
+    setQuellenPanelState(showQuellenPanel);
+  }, [showQuellenPanel]);
   const [shortenDialogOpen, setShortenDialogOpen] = useState(false);
   const [leseflussDialogOpen, setLeseflussDialogOpen] = useState(false);
   const [combinedRefinementDialogOpen, setCombinedRefinementDialogOpen] = useState(false);
@@ -959,7 +966,7 @@ export function Dashboard({
   );
 
   const handleAddQuelle = useCallback(
-    async (name: string, text: string, imageFiles: File[] = []): Promise<boolean> => {
+    async (name: string, text: string, imageFiles: File[] = [], advancedFields?: Record<string, any>): Promise<boolean> => {
       if (isAddingQuelle) return false;
       setIsAddingQuelle(true);
 
@@ -979,8 +986,8 @@ export function Dashboard({
           imageMetadata = await uploadImagesToStorage(user!.uid, imageFiles);
         }
 
-        // Create Quelle with image metadata (not files)
-        const result = await createQuelle(name, text, projekt.id, imageMetadata);
+        // Create Quelle with image metadata (not files) and advanced fields
+        const result = await createQuelle(name, text, projekt.id, imageMetadata, advancedFields);
 
         if (uploadingToast) toast.dismiss(uploadingToast);
 
@@ -998,6 +1005,8 @@ export function Dashboard({
             projektId: projekt.id,
             createdAt: new Date(),
             images: result.imageUrls || [],
+            // Include advanced fields in optimistic update
+            ...advancedFields,
           };
           setQuellen((prev) => [...prev, newQuelle]);
         } else {
@@ -2169,6 +2178,9 @@ export function Dashboard({
           }
         }}
       />
+
+      {/* Viewport Warning */}
+      <ViewportWarning />
     </div>
   );
 }

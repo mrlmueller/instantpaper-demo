@@ -14,6 +14,13 @@ export interface Quelle {
   projektId: string;
   createdAt: Date;
   images?: string[]; // Optional array of image URLs/data
+  // Advanced metadata fields
+  autor?: string;
+  jahr?: number;
+  typ?: 'Book' | 'Article' | 'Website' | 'Thesis' | 'Report';
+  url?: string;
+  zugriffAm?: string;
+  color?: 'blue' | 'green' | 'teal' | 'lavender' | 'cream' | 'peach' | 'rose' | null;
 }
 
 export interface Kapitel {
