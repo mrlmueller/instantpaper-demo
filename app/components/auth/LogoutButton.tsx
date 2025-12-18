@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { signOut } from '@/app/lib/firebase/auth';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
+import { signOut } from "@/app/lib/firebase/auth";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 
 export function LogoutButton() {
   const router = useRouter();
@@ -11,9 +11,9 @@ export function LogoutButton() {
     try {
       await signOut();
       // Reload to sync server and client after auth state change
-      window.location.href = '/login';
+      window.location.href = "/login";
     } catch (error) {
-      console.error('Logout failed:', error);
+      console.error("Logout failed:", error);
     }
   };
 
