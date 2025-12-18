@@ -1,7 +1,19 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { X, Plus, Eye, Trash2, CheckCircle2, Circle, Search, Palette, Settings, Check, ImageIcon } from "lucide-react";
+import {
+  X,
+  Plus,
+  Eye,
+  Trash2,
+  CheckCircle2,
+  Circle,
+  Search,
+  Palette,
+  Settings,
+  Check,
+  ImageIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,15 +43,30 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import type { Quelle } from "@/app/types/ui";
-import { ADVANCED_FIELDS, colorMap, colorLabels, QUELLE_COLORS, type QuelleColor } from "@/app/lib/quellen/fieldConfig";
-import { getQuellenModeAdvanced, setQuellenModeAdvanced } from "@/app/lib/storage/preferences";
+import {
+  ADVANCED_FIELDS,
+  colorMap,
+  colorLabels,
+  QUELLE_COLORS,
+  QUELLE_TYPES,
+  type QuelleColor,
+} from "@/app/lib/quellen/fieldConfig";
+import {
+  getQuellenModeAdvanced,
+  setQuellenModeAdvanced,
+} from "@/app/lib/storage/preferences";
 import { updateQuelleColor } from "@/app/actions/quellen";
 
 interface QuellenPanelProps {
   quellen: Quelle[];
   assignedQuellenIds: string[];
   onClose: () => void;
-  onAddQuelle: (name: string, text: string, imageFiles?: File[], advancedFields?: Record<string, any>) => Promise<boolean>;
+  onAddQuelle: (
+    name: string,
+    text: string,
+    imageFiles?: File[],
+    advancedFields?: Record<string, any>
+  ) => Promise<boolean>;
   onDeleteQuelle: (id: string, name: string) => void;
   onAssignQuelle: (id: string) => Promise<void>;
   onUnassignQuelle: (id: string) => Promise<void>;
@@ -51,11 +78,11 @@ interface QuellenPanelProps {
 }
 
 const typLabels: Record<string, string> = {
-  'Book': 'Buch',
-  'Article': 'Artikel',
-  'Website': 'Website',
-  'Thesis': 'Thesis',
-  'Report': 'Report',
+  Book: "Buch",
+  Article: "Artikel",
+  Website: "Website",
+  Thesis: "Thesis",
+  Report: "Report",
 };
 
 export function QuellenPanel({
@@ -78,22 +105,63 @@ export function QuellenPanel({
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isUpdatingColor, setIsUpdatingColor] = useState(false);
 
+  // Optimistic color updates - track local color changes
+  const [colorUpdates, setColorUpdates] = useState<
+    Map<string, QuelleColor | null>
+  >(new Map());
+
   // Advanced mode state
-  const [isAdvancedMode, setIsAdvancedMode] = useState(() => getQuellenModeAdvanced());
-  const [advancedFieldValues, setAdvancedFieldValues] = useState<Record<string, any>>({});
+  const [isAdvancedMode, setIsAdvancedMode] = useState(() =>
+    getQuellenModeAdvanced()
+  );
+  const [advancedFieldValues, setAdvancedFieldValues] = useState<
+    Record<string, any>
+  >({});
 
   // New quelle form state
   const [newQuelleName, setNewQuelleName] = useState("");
   const [newQuelleText, setNewQuelleText] = useState("");
   const [newQuelleImages, setNewQuelleImages] = useState<File[]>([]);
+  const [newQuelleColor, setNewQuelleColor] = useState<QuelleColor | null>(
+    null
+  );
+
+  // Image upload state
+  const [imageUploadMode, setImageUploadMode] = useState<"upload" | "url">(
+    "upload"
+  );
+  const [imageUrl, setImageUrl] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Persist advanced mode preference
   useEffect(() => {
     setQuellenModeAdvanced(isAdvancedMode);
   }, [isAdvancedMode]);
 
+  // Clear optimistic updates when props update (server data arrives)
+  useEffect(() => {
+    setColorUpdates((prev) => {
+      const next = new Map(prev);
+      // Remove updates that match the current server state
+      quellen.forEach((q) => {
+        const optimisticColor = prev.get(q.id);
+        if (optimisticColor !== undefined && optimisticColor === q.color) {
+          next.delete(q.id);
+        }
+      });
+      return next;
+    });
+  }, [quellen]);
+
+  // Apply optimistic color updates to quellen
+  const quellenWithOptimisticColors = quellen.map((q) => {
+    const optimisticColor = colorUpdates.get(q.id);
+    return optimisticColor !== undefined ? { ...q, color: optimisticColor } : q;
+  });
+
   // Filter and sort quellen
-  const filteredQuellen = quellen.filter(
+  const filteredQuellen = quellenWithOptimisticColors.filter(
     (q) =>
       q.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       q.text.toLowerCase().includes(searchQuery.toLowerCase())
@@ -105,45 +173,114 @@ export function QuellenPanel({
     const bAssigned = assignedQuellenIds.includes(b.id);
     if (aAssigned !== bAssigned) return aAssigned ? -1 : 1;
     // Then by color
-    const colorOrder = ["blue", "green", "teal", "lavender", "cream", "peach", "rose", null];
+    const colorOrder = [
+      "blue",
+      "green",
+      "teal",
+      "lavender",
+      "cream",
+      "peach",
+      "rose",
+      null,
+    ];
     const aColorIndex = colorOrder.indexOf(a.color || null);
     const bColorIndex = colorOrder.indexOf(b.color || null);
     return aColorIndex - bColorIndex;
   });
 
   // Separate assigned and unassigned
-  const assignedQuellen = sortedQuellen.filter((q) => assignedQuellenIds.includes(q.id));
-  const unassignedQuellen = sortedQuellen.filter((q) => !assignedQuellenIds.includes(q.id));
+  const assignedQuellen = sortedQuellen.filter((q) =>
+    assignedQuellenIds.includes(q.id)
+  );
+  const unassignedQuellen = sortedQuellen.filter(
+    (q) => !assignedQuellenIds.includes(q.id)
+  );
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files).filter((file) =>
+      file.type.startsWith("image/")
+    );
+    handleFiles(files);
+  };
+
+  const handleFiles = (files: File[]) => {
+    const remainingSlots = 9 - newQuelleImages.length;
+    const filesToProcess = files.slice(0, remainingSlots);
+    setNewQuelleImages((prev) => [...prev, ...filesToProcess]);
+  };
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      handleFiles(Array.from(e.target.files));
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setNewQuelleImages((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const handleAddQuelle = async () => {
     if (newQuelleName && newQuelleText) {
+      // Combine advanced field values with color
+      const allAdvancedFields = isAdvancedMode
+        ? { ...advancedFieldValues, color: newQuelleColor }
+        : newQuelleColor
+        ? { color: newQuelleColor }
+        : undefined;
+
       const success = await onAddQuelle(
         newQuelleName,
         newQuelleText,
         newQuelleImages.length > 0 ? newQuelleImages : undefined,
-        isAdvancedMode ? advancedFieldValues : undefined
+        allAdvancedFields
       );
 
       if (success) {
         setNewQuelleName("");
         setNewQuelleText("");
         setNewQuelleImages([]);
+        setNewQuelleColor(null);
         setAdvancedFieldValues({});
+        setImageUrl("");
         setIsAddDialogOpen(false);
       }
     }
   };
 
-  const handleUpdateColor = async (quelleId: string, color: QuelleColor | null) => {
-    // Optimistic update - refresh immediately, update in background
-    router.refresh();
+  const handleUpdateColor = async (
+    quelleId: string,
+    color: QuelleColor | null
+  ) => {
+    // Optimistic update - update local state immediately
+    setColorUpdates((prev) => {
+      const next = new Map(prev);
+      next.set(quelleId, color);
+      return next;
+    });
 
     setIsUpdatingColor(true);
     try {
       await updateQuelleColor(quelleId, color);
+      // Don't refresh immediately - keep the optimistic update
+      // The next time the parent component refreshes, it will get the updated data
     } catch (error) {
-      // Silently handle error, refresh again to revert
-      router.refresh();
+      // Error - revert optimistic update
+      setColorUpdates((prev) => {
+        const next = new Map(prev);
+        next.delete(quelleId);
+        return next;
+      });
     } finally {
       setIsUpdatingColor(false);
     }
@@ -158,19 +295,24 @@ export function QuellenPanel({
         key={quelle.id}
         className={cn(
           "p-3 cursor-pointer transition-all relative overflow-hidden border",
-          isAssigned ? "shadow-md border-border" : "shadow-none border-border/50 bg-muted/30"
+          isAssigned
+            ? "shadow-md border-border"
+            : "shadow-none border-border/50 bg-muted/30"
         )}
         style={{
-          borderColor: isSelected ? cardColor || "hsl(var(--primary))" : undefined,
+          borderColor: isSelected
+            ? cardColor || "hsl(var(--primary))"
+            : undefined,
           boxShadow: isSelected
             ? `0 0 0 2px ${cardColor || "hsl(var(--primary))"}`
             : isAssigned
-              ? "0 2px 8px rgba(0,0,0,0.08)"
-              : undefined,
+            ? "0 2px 8px rgba(0,0,0,0.08)"
+            : undefined,
         }}
         onMouseEnter={(e) => {
           if (!isSelected) {
-            e.currentTarget.style.borderColor = cardColor || "hsl(var(--primary) / 0.5)";
+            e.currentTarget.style.borderColor =
+              cardColor || "hsl(var(--primary) / 0.5)";
           }
         }}
         onMouseLeave={(e) => {
@@ -182,7 +324,10 @@ export function QuellenPanel({
       >
         {/* Color bar at top */}
         {quelle.color && (
-          <div className="absolute top-0 left-0 right-0 h-1.5" style={{ backgroundColor: cardColor || undefined }} />
+          <div
+            className="absolute top-0 left-0 right-0 h-1.5"
+            style={{ backgroundColor: cardColor || undefined }}
+          />
         )}
 
         {/* Card content */}
@@ -192,11 +337,22 @@ export function QuellenPanel({
               <div className="flex items-center gap-2">
                 <p className="text-sm font-medium truncate">{quelle.name}</p>
                 {quelle.images && quelle.images.length > 0 && (
-                  <ImageIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    {quelle.images.length > 1 && (
+                      <span className="text-[10px] text-muted-foreground font-medium">
+                        +{quelle.images.length - 1}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                {quelle.text.split(/\s+/).filter(Boolean).length.toLocaleString("de-DE")} Wörter
+                {quelle.text
+                  .split(/\s+/)
+                  .filter(Boolean)
+                  .length.toLocaleString("de-DE")}{" "}
+                Wörter
                 {quelle.typ && ` · ${typLabels[quelle.typ]}`}
                 {quelle.jahr && ` · ${quelle.jahr}`}
               </p>
@@ -215,17 +371,28 @@ export function QuellenPanel({
               <div className="flex items-center gap-2 mb-2">
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button size="sm" variant="ghost" className="h-7 px-2" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Palette className="h-4 w-4 text-muted-foreground shrink-0" />
                       <span className="text-xs ml-1.5">Farbe</span>
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-2" align="start" onClick={(e) => e.stopPropagation()}>
+                  <PopoverContent
+                    className="w-auto p-2"
+                    align="start"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <div className="flex flex-wrap gap-1.5 max-w-[160px]">
                       <button
                         className={cn(
                           "w-6 h-6 rounded-full border-2 flex items-center justify-center",
-                          !quelle.color ? "border-primary" : "border-border hover:border-muted-foreground"
+                          !quelle.color
+                            ? "border-primary"
+                            : "border-border hover:border-muted-foreground"
                         )}
                         onClick={() => handleUpdateColor(quelle.id, null)}
                       >
@@ -236,12 +403,16 @@ export function QuellenPanel({
                           key={color}
                           className={cn(
                             "w-6 h-6 rounded-full border-2 flex items-center justify-center",
-                            quelle.color === color ? "border-primary" : "border-transparent hover:border-muted-foreground"
+                            quelle.color === color
+                              ? "border-primary"
+                              : "border-transparent hover:border-muted-foreground"
                           )}
                           style={{ backgroundColor: colorMap[color] }}
                           onClick={() => handleUpdateColor(quelle.id, color)}
                         >
-                          {quelle.color === color && <Check className="h-3.5 w-3.5 text-foreground/70" />}
+                          {quelle.color === color && (
+                            <Check className="h-3.5 w-3.5 text-foreground/70" />
+                          )}
                         </button>
                       ))}
                     </div>
@@ -318,18 +489,25 @@ export function QuellenPanel({
           <div className="flex items-center justify-between mb-3">
             <div>
               <h3 className="font-semibold">Quellen</h3>
-              <p className="text-xs text-muted-foreground">{quellen.length} gesamt</p>
+              <p className="text-xs text-muted-foreground">
+                {quellen.length} gesamt
+              </p>
             </div>
             <div className="flex items-center gap-1">
               <Button
                 size="icon"
                 variant="ghost"
                 className="h-8 w-8"
-                onClick={() => router.push('/quellen-manager')}
+                onClick={() => router.push("/quellen-manager")}
               >
                 <Settings className="h-4 w-4" />
               </Button>
-              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onClose}>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={onClose}
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -359,7 +537,9 @@ export function QuellenPanel({
                 </span>
               </div>
               <div className="space-y-2">
-                {assignedQuellen.map((quelle) => renderQuelleCard(quelle, true))}
+                {assignedQuellen.map((quelle) =>
+                  renderQuelleCard(quelle, true)
+                )}
               </div>
             </div>
           )}
@@ -374,7 +554,9 @@ export function QuellenPanel({
                 </span>
               </div>
               <div className="space-y-2">
-                {unassignedQuellen.map((quelle) => renderQuelleCard(quelle, false))}
+                {unassignedQuellen.map((quelle) =>
+                  renderQuelleCard(quelle, false)
+                )}
               </div>
             </div>
           )}
@@ -397,87 +579,347 @@ export function QuellenPanel({
 
       {/* Add Quelle Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              Neue Quelle hinzufügen
-              <div className="flex items-center gap-2 text-sm font-normal">
-                <span className="text-muted-foreground">Erweitert</span>
-                <Switch checked={isAdvancedMode} onCheckedChange={setIsAdvancedMode} />
-              </div>
-            </DialogTitle>
+        <DialogContent className="!w-[80vw] !max-w-[1100px] !h-[50vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 shrink-0">
+            <DialogTitle>Neue Quelle hinzufügen</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={newQuelleName}
-                onChange={(e) => setNewQuelleName(e.target.value)}
-                placeholder="z.B. Müller (2023)"
-              />
+          <div className="grid grid-cols-[380px_1fr] gap-6 px-6 flex-1 min-h-0">
+            {/* Left Column */}
+            <div className="space-y-4 overflow-y-auto pr-2">
+              {/* Image Upload Section */}
+              <div className="space-y-3">
+                <Label>Bilder (optional, max. 9)</Label>
+
+                {/* Upload Mode Tabs */}
+                <div className="inline-flex gap-0 border rounded-md overflow-hidden w-full">
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex-1 px-3 py-2 text-sm font-medium transition-colors",
+                      imageUploadMode === "upload"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background hover:bg-muted"
+                    )}
+                    onClick={() => setImageUploadMode("upload")}
+                  >
+                    <svg
+                      className="h-4 w-4 inline-block mr-1.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                      />
+                    </svg>
+                    Hochladen
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex-1 px-3 py-2 text-sm font-medium transition-colors border-l",
+                      imageUploadMode === "url"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background hover:bg-muted"
+                    )}
+                    onClick={() => setImageUploadMode("url")}
+                  >
+                    <svg
+                      className="h-4 w-4 inline-block mr-1.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                      />
+                    </svg>
+                    URL
+                  </button>
+                </div>
+
+                {/* File Upload */}
+                {imageUploadMode === "upload" && (
+                  <div
+                    className={cn(
+                      "border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer",
+                      isDragging
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                    )}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <svg
+                      className="h-10 w-10 mx-auto mb-2 text-muted-foreground"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                      />
+                    </svg>
+                    <p className="text-sm text-muted-foreground">
+                      Klicken oder Dateien hierher ziehen
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Noch 9 Bilder möglich
+                    </p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleFileInput}
+                    />
+                  </div>
+                )}
+
+                {/* URL Input */}
+                {imageUploadMode === "url" && (
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Bild-URL eingeben..."
+                      value={imageUrl}
+                      onChange={(e) => setImageUrl(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          if (imageUrl) {
+                            // For URL mode, we would need to fetch and convert to File
+                            // For now, just add to images array
+                            alert("URL-Modus ist in Entwicklung");
+                          }
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        if (imageUrl) {
+                          alert("URL-Modus ist in Entwicklung");
+                        }
+                      }}
+                      disabled={!imageUrl || newQuelleImages.length >= 9}
+                    >
+                      Hinzufügen
+                    </Button>
+                  </div>
+                )}
+
+                {/* Image Preview Grid */}
+                {newQuelleImages.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {newQuelleImages.map((file, index) => (
+                      <div
+                        key={index}
+                        className="relative group aspect-square rounded-md overflow-hidden border bg-muted"
+                      >
+                        <img
+                          src={URL.createObjectURL(file)}
+                          alt={`Bild ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => removeImage(index)}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Advanced Fields Toggle */}
+              <div className="flex items-center justify-between">
+                <Label>Erweiterte Felder anzeigen</Label>
+                <Switch
+                  checked={isAdvancedMode}
+                  onCheckedChange={setIsAdvancedMode}
+                />
+              </div>
+
+              {/* Name Field */}
+              <div>
+                <Label htmlFor="name">Name</Label>
+                <Input
+                  id="name"
+                  value={newQuelleName}
+                  onChange={(e) => setNewQuelleName(e.target.value)}
+                  placeholder="z.B. Schmidt (2023) - Kapitel 3"
+                />
+              </div>
+
+              {/* Advanced fields - Typ, Jahr, Autor */}
+              {isAdvancedMode && (
+                <>
+                  <div>
+                    <Label>Typ</Label>
+                    <Select
+                      value={advancedFieldValues.typ || ""}
+                      onValueChange={(value) =>
+                        setAdvancedFieldValues({
+                          ...advancedFieldValues,
+                          typ: value,
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Auswählen..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {QUELLE_TYPES.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {option}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label>Jahr</Label>
+                    <Input
+                      type="number"
+                      placeholder="z.B. 2023"
+                      value={advancedFieldValues.jahr || ""}
+                      onChange={(e) =>
+                        setAdvancedFieldValues({
+                          ...advancedFieldValues,
+                          jahr: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Autor</Label>
+                    <Input
+                      type="text"
+                      placeholder="z.B. Schmidt, M."
+                      value={advancedFieldValues.autor || ""}
+                      onChange={(e) =>
+                        setAdvancedFieldValues({
+                          ...advancedFieldValues,
+                          autor: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+
+                  {/* URL and Zugriff am - only if advanced */}
+                  <div>
+                    <Label>URL</Label>
+                    <Input
+                      type="url"
+                      placeholder="https://..."
+                      value={advancedFieldValues.url || ""}
+                      onChange={(e) =>
+                        setAdvancedFieldValues({
+                          ...advancedFieldValues,
+                          url: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Zugriff am</Label>
+                    <Input
+                      type="date"
+                      value={advancedFieldValues.zugriffAm || ""}
+                      onChange={(e) =>
+                        setAdvancedFieldValues({
+                          ...advancedFieldValues,
+                          zugriffAm: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Color picker */}
+              <div>
+                <Label>Farbe</Label>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <button
+                    type="button"
+                    className={cn(
+                      "w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors",
+                      !newQuelleColor
+                        ? "border-primary bg-muted"
+                        : "border-border hover:border-muted-foreground"
+                    )}
+                    onClick={() => setNewQuelleColor(null)}
+                    title="Keine Farbe"
+                  >
+                    <X className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                  {QUELLE_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      className={cn(
+                        "w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors",
+                        newQuelleColor === color
+                          ? "border-primary ring-2 ring-primary/20"
+                          : "border-transparent hover:border-muted-foreground"
+                      )}
+                      style={{ backgroundColor: colorMap[color] }}
+                      onClick={() => setNewQuelleColor(color)}
+                      title={colorLabels[color]}
+                    >
+                      {newQuelleColor === color && (
+                        <Check className="h-4 w-4 text-foreground/70" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            <div>
-              <Label htmlFor="text">Text</Label>
+            {/* Right Column - Text */}
+            <div className="flex flex-col h-full">
+              <Label htmlFor="text" className="mb-2">
+                Text
+              </Label>
               <Textarea
                 id="text"
                 value={newQuelleText}
                 onChange={(e) => setNewQuelleText(e.target.value)}
-                rows={6}
-                placeholder="Inhalt der Quelle..."
+                className="resize-none flex-1 min-h-0 overflow-y-auto"
+                placeholder="Füge hier den relevanten Text aus deiner Quelle ein..."
               />
             </div>
-
-            {/* Advanced fields */}
-            {isAdvancedMode && (
-              <div className="space-y-3 pt-3 border-t">
-                {ADVANCED_FIELDS.map((field) => (
-                  <div key={field.key}>
-                    <Label>{field.label}</Label>
-                    {field.type === 'select' && field.options ? (
-                      <Select
-                        value={advancedFieldValues[field.key] || ""}
-                        onValueChange={(value) =>
-                          setAdvancedFieldValues({ ...advancedFieldValues, [field.key]: value })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder={`${field.label} auswählen...`} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {field.options.map((option) => (
-                            <SelectItem key={option} value={option}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        type={field.type}
-                        placeholder={field.placeholder}
-                        value={advancedFieldValues[field.key] || ""}
-                        onChange={(e) =>
-                          setAdvancedFieldValues({
-                            ...advancedFieldValues,
-                            [field.key]: field.type === 'number' ? Number(e.target.value) : e.target.value,
-                          })
-                        }
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="px-6 py-4 border-t shrink-0">
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
               Abbrechen
             </Button>
-            <Button onClick={handleAddQuelle} disabled={!newQuelleName || !newQuelleText || isAddingQuelle}>
+            <Button
+              onClick={handleAddQuelle}
+              disabled={!newQuelleName || !newQuelleText || isAddingQuelle}
+            >
               {isAddingQuelle ? "Wird hinzugefügt..." : "Hinzufügen"}
             </Button>
           </DialogFooter>

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -24,6 +25,7 @@ interface QuellenManagerProps {
   initialQuellen: any[];
   initialKapitels: FirebaseKapitel[];
   projektId: string;
+  isLoading?: boolean;
 }
 
 type SortField = 'name' | 'typ' | 'jahr' | 'color';
@@ -37,7 +39,7 @@ const typLabels: Record<string, string> = {
   'Report': 'Report',
 };
 
-export function QuellenManager({ initialQuellen, initialKapitels, projektId }: QuellenManagerProps) {
+export function QuellenManager({ initialQuellen, initialKapitels, projektId, isLoading = false }: QuellenManagerProps) {
   const router = useRouter();
   const [quellen, setQuellen] = useState<Quelle[]>(
     initialQuellen.map((q) => transformQuelleToUI(q, projektId))
@@ -67,6 +69,16 @@ export function QuellenManager({ initialQuellen, initialKapitels, projektId }: Q
     }
 
     result.sort((a, b) => {
+      // First, group by color (colors first, then no-color)
+      const colorOrder = ['blue', 'green', 'teal', 'lavender', 'cream', 'peach', 'rose'];
+      const aColorIndex = a.color ? colorOrder.indexOf(a.color) : 999;
+      const bColorIndex = b.color ? colorOrder.indexOf(b.color) : 999;
+
+      if (aColorIndex !== bColorIndex) {
+        return aColorIndex - bColorIndex;
+      }
+
+      // Then sort within color group by the selected field
       let comparison = 0;
       switch (sortField) {
         case 'name':
@@ -79,7 +91,8 @@ export function QuellenManager({ initialQuellen, initialKapitels, projektId }: Q
           comparison = (a.jahr || 0) - (b.jahr || 0);
           break;
         case 'color':
-          comparison = (a.color || 'zzz').localeCompare(b.color || 'zzz');
+          // Already grouped by color above
+          comparison = a.name.localeCompare(b.name);
           break;
       }
       return sortDirection === 'asc' ? comparison : -comparison;
@@ -160,16 +173,17 @@ export function QuellenManager({ initialQuellen, initialKapitels, projektId }: Q
   };
 
   const handleDelete = async () => {
-    const quelleId = Array.from(selectedIds)[0];
+    const selectedQuelleIds = Array.from(selectedIds);
     try {
-      await deleteQuelle(quelleId);
-      setQuellen((prev) => prev.filter((q) => q.id !== quelleId));
+      // Delete all selected quellen
+      await Promise.all(selectedQuelleIds.map(id => deleteQuelle(id)));
+      setQuellen((prev) => prev.filter((q) => !selectedIds.has(q.id)));
       setSelectedIds(new Set());
       setDeleteConfirmOpen(false);
-      toast.success('Quelle gelöscht');
+      toast.success(`${selectedQuelleIds.length} Quelle(n) gelöscht`);
       router.refresh();
     } catch (error) {
-      toast.error('Fehler beim Löschen der Quelle');
+      toast.error('Fehler beim Löschen der Quellen');
     }
   };
 
@@ -210,6 +224,34 @@ export function QuellenManager({ initialQuellen, initialKapitels, projektId }: Q
       )}
     </Button>
   );
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="border-b border-border px-6 py-4 flex items-center gap-4">
+          <Skeleton className="h-9 w-9" />
+          <div>
+            <Skeleton className="h-6 w-40 mb-1" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        </div>
+        <div className="border-b border-border px-6 py-3 flex items-center gap-4">
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-9 w-32" />
+          <Skeleton className="h-9 w-32" />
+        </div>
+        <div className="px-6 py-4">
+          <Card className="p-4">
+            <div className="space-y-3">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -291,17 +333,15 @@ export function QuellenManager({ initialQuellen, initialKapitels, projektId }: Q
                 {selectedIds.size} ausgewählt
               </Badge>
               {selectedIds.size === 1 && (
-                <>
-                  <Button size="sm" variant="outline" onClick={openAssignDialog}>
-                    <FolderPlus className="h-4 w-4 mr-2" />
-                    Zu Kapitel
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setDeleteConfirmOpen(true)}>
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Löschen
-                  </Button>
-                </>
+                <Button size="sm" variant="outline" onClick={openAssignDialog}>
+                  <FolderPlus className="h-4 w-4 mr-2" />
+                  Zu Kapitel
+                </Button>
               )}
+              <Button size="sm" variant="destructive" onClick={() => setDeleteConfirmOpen(true)}>
+                <Trash2 className="h-4 w-4 mr-2" />
+                Löschen
+              </Button>
             </div>
           )}
         </div>
@@ -479,11 +519,11 @@ export function QuellenManager({ initialQuellen, initialKapitels, projektId }: Q
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Quelle löschen</DialogTitle>
+            <DialogTitle>{selectedIds.size === 1 ? 'Quelle löschen' : `${selectedIds.size} Quellen löschen`}</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             <p className="text-sm text-muted-foreground">
-              Möchten Sie diese Quelle wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.
+              Möchten Sie {selectedIds.size === 1 ? 'diese Quelle' : `diese ${selectedIds.size} Quellen`} wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.
             </p>
           </div>
           <DialogFooter>
