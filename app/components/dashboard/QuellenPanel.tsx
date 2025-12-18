@@ -758,7 +758,7 @@ export function QuellenPanel({
               </div>
 
               {/* Name Field */}
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="name">Name</Label>
                 <Input
                   id="name"
@@ -771,7 +771,7 @@ export function QuellenPanel({
               {/* Advanced fields - Typ, Jahr, Autor */}
               {isAdvancedMode && (
                 <>
-                  <div>
+                  <div className="space-y-2">
                     <Label>Typ</Label>
                     <Select
                       value={advancedFieldValues.typ || ""}
@@ -795,7 +795,7 @@ export function QuellenPanel({
                     </Select>
                   </div>
 
-                  <div>
+                  <div className="space-y-2">
                     <Label>Jahr</Label>
                     <Input
                       type="number"
@@ -810,7 +810,7 @@ export function QuellenPanel({
                     />
                   </div>
 
-                  <div>
+                  <div className="space-y-2">
                     <Label>Autor</Label>
                     <Input
                       type="text"
@@ -826,7 +826,7 @@ export function QuellenPanel({
                   </div>
 
                   {/* URL and Zugriff am - only if advanced */}
-                  <div>
+                  <div className="space-y-2">
                     <Label>URL</Label>
                     <Input
                       type="url"
@@ -841,7 +841,7 @@ export function QuellenPanel({
                     />
                   </div>
 
-                  <div>
+                  <div className="space-y-2">
                     <Label>Zugriff am</Label>
                     <Input
                       type="date"
