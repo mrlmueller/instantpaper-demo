@@ -1,25 +1,30 @@
 "use client";
 
+import type React from "react";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  MessageSquareText,
   Send,
-  CheckCircle2,
-  Loader2,
-  Copy,
   ChevronLeft,
   ChevronRight,
-  Pencil,
-  X,
   Check,
+  X,
+  Sparkles,
+  FileText,
+  Copy,
+  Loader2,
+  Star,
+  Expand,
+  Zap,
+  CheckCircle2,
+  Edit2,
 } from "lucide-react";
 
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 import { useAuth } from "@/app/components/providers/AuthProvider";
@@ -134,7 +139,11 @@ export function ResultRefinementDialog(_props: ResultRefinementDialogProps) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
 
-  const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [viewingFullText, setViewingFullText] = useState<{ title: string; text: string } | null>(null);
+
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const db = useMemo(() => getFirestore(firebaseApp), []);
 
@@ -339,7 +348,7 @@ export function ResultRefinementDialog(_props: ResultRefinementDialogProps) {
 
   useEffect(() => {
     if (!open) return;
-    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [open, path.length, parentForNext?.status, parentForNext?.id]);
 
   const handleUseVersion = useCallback(
@@ -366,9 +375,10 @@ export function ResultRefinementDialog(_props: ResultRefinementDialogProps) {
     [resultDocRef]
   );
 
-  const handleCopy = useCallback(async (text: string) => {
+  const handleCopy = useCallback(async (text: string, id: string) => {
     await navigator.clipboard.writeText(text);
-    toast.success("Kopiert", { description: "Text wurde in die Zwischenablage kopiert." });
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   }, []);
 
   const handleCycleBranch = useCallback(
@@ -530,47 +540,51 @@ export function ResultRefinementDialog(_props: ResultRefinementDialogProps) {
 
   const canSend = !sending && !isDepthLimitReached && !isSelectedBranchRunning && message.trim().length > 0;
 
+  const formatCost = (cents: number) => `${(cents / 100).toFixed(2)} €`;
+  const PREVIEW_LENGTH = 300;
+
+  const originalText = (tree.root?.assistant_text || "").toString();
+  const isOriginalActive = activeVersionId === "root";
+
+  const userMessageCount = Math.max(0, path.length - 1);
+  const canSendMore = userMessageCount < maxDepth;
+  const roundsRemaining = Math.max(0, maxDepth - userMessageCount);
+
+  const estimatedCostCents = estimate ? Math.round(estimate.estUsd * 100) : 0;
+  const showProcessingIndicator = sending || isSelectedBranchRunning;
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (!canSendMore) return;
+        if (isSelectedBranchRunning || sending) return;
+        handleSend();
+      }
+    },
+    [canSendMore, handleSend, isSelectedBranchRunning, sending]
+  );
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl h-[90vh] max-h-[90vh] overflow-hidden !flex flex-col [&>button]:hidden">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle className="flex items-center gap-2 text-lg">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-              <MessageSquareText className="h-4 w-4 text-primary" />
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="!w-[80vw] !max-w-[80vw] h-[85vh] flex flex-col p-0">
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                <Sparkles className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg">Text verfeinern (Quelle)</DialogTitle>
+                <p className="text-sm text-muted-foreground">Text verfeinern und anpassen</p>
+              </div>
             </div>
-            Text verfeinern (Quelle)
-          </DialogTitle>
-          <DialogDescription>
-            Verfeinere den Text iterativ. Der Einzeltext wird erst aktualisiert, wenn du eine Version \u00fcbernimmst.
-          </DialogDescription>
+          </div>
         </DialogHeader>
 
-        <div className="flex items-center justify-between gap-4 mt-2">
-          <div className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{kapitelLabel}</span>
-            <span className="mx-2">·</span>
-            <span className="font-medium text-foreground">{quelleName}</span>
-            <span className="mx-2">·</span>
-            <span>Max. Tiefe: {maxDepth}</span>
-            <span className="mx-2">·</span>
-            <span>Aktiv: {activeVersionId}</span>
-            <span className="mx-2">·</span>
-            <span>Refinement-Kosten: {formatEurFromUsd(refinementCostTotalUsd)}</span>
-          </div>
-
-          <div className="text-right">
-            <div className="text-xs text-muted-foreground">Sch\u00e4tzung (ohne Cache)</div>
-            <div className="text-sm font-medium">{estimate ? `~ ${formatEurFromUsd(estimate.estUsd)}` : "-"}</div>
-            {estimate && (
-              <div className="text-[11px] text-muted-foreground">
-                In: ~{estimate.estInput.toLocaleString()} · Out: ~{estimate.estOutput.toLocaleString()}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden mt-4 border rounded-lg">
-          <div className="p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="space-y-4">
             {initLoading && versions.length === 0 && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -584,7 +598,7 @@ export function ResultRefinementDialog(_props: ResultRefinementDialogProps) {
               </div>
             )}
 
-            {path.map((v) => {
+            {/*
               const isRoot = v.id === "root";
               const isActive = v.id === activeVersionId;
               const assistantText = (v.assistant_text || "").trim();
@@ -845,40 +859,348 @@ export function ResultRefinementDialog(_props: ResultRefinementDialogProps) {
               );
             })}
 
-            <div ref={scrollAnchorRef} />
+            */}
+
+            <Card
+              className={cn(
+                "mb-6 border-2 transition-all !py-0 !gap-0",
+                isOriginalActive
+                  ? "bg-primary/5 border-primary"
+                  : "bg-muted/30 border-dashed border-muted-foreground/30 hover:border-muted-foreground/50"
+              )}
+            >
+              <div className="px-4 py-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium text-muted-foreground">Originaltext</span>
+                    {isOriginalActive && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-xs font-medium">
+                        <Star className="h-3 w-3 fill-current" />
+                        Aktiv
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <p className="text-sm text-foreground/80 line-clamp-4 leading-relaxed">{originalText}</p>
+              </div>
+              <div className="flex items-center gap-1 px-4 py-2 border-t border-muted bg-muted/20">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => handleCopy(originalText || "", "original")}
+                  disabled={!originalText}
+                >
+                  {copiedId === "original" ? (
+                    <Check className="h-3.5 w-3.5 text-primary mr-1" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Kopieren
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setViewingFullText({ title: "Originaltext", text: originalText || "" })}
+                  disabled={!originalText}
+                >
+                  <Expand className="h-3.5 w-3.5 mr-1" />
+                  Vollständig anzeigen
+                </Button>
+                {!isOriginalActive && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-muted-foreground hover:text-foreground"
+                    onClick={() => tree.root && handleUseVersion(tree.root)}
+                  >
+                    <Star className="h-3.5 w-3.5 mr-1" />
+                    Als aktiv setzen
+                  </Button>
+                )}
+              </div>
+            </Card>
+
+            {path.slice(1).map((v) => {
+              const parentId = v.parent_version_id || "root";
+              const siblings = tree.childrenByParentId.get(parentId) ?? [];
+              let branchIndex = siblings.findIndex((c) => c.id === v.id);
+              if (branchIndex === -1) branchIndex = Math.max(0, siblings.length - 1);
+              const showBranchNav = siblings.length > 1;
+
+              const isActiveMessage = activeVersionId === v.id && !isOriginalActive;
+              const userText = String(v.user_message ?? "");
+              const assistantText = String(v.assistant_text ?? "").trim();
+              const needsExpand = assistantText.length > PREVIEW_LENGTH;
+
+              return (
+                <div key={v.id} className="space-y-4">
+                  {showBranchNav && (
+                    <div className="flex items-center justify-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => handleCycleBranch(parentId, -1)}
+                        disabled={branchIndex === 0}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-xs text-muted-foreground">
+                        {branchIndex + 1} / {siblings.length}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => handleCycleBranch(parentId, 1)}
+                        disabled={branchIndex === siblings.length - 1}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end">
+                    <div className="max-w-[80%]">
+                      {editingVersionId === v.id ? (
+                        <div className="space-y-3">
+                          <div className="text-xs text-muted-foreground mb-1">Nachricht bearbeiten</div>
+                          <Textarea
+                            value={editMessage}
+                            onChange={(e) => setEditMessage(e.target.value)}
+                            className="min-h-[100px] bg-background text-foreground border-border focus:border-primary resize-none"
+                            autoFocus
+                            disabled={editSending}
+                          />
+                          <div className="text-xs text-muted-foreground">
+                            Das Bearbeiten erstellt einen neuen Zweig ab diesem Punkt.
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={cancelEdit}
+                              className="h-8 bg-transparent"
+                              disabled={editSending}
+                            >
+                              Abbrechen
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => submitEdit(v)}
+                              className="h-8"
+                              disabled={editSending || editMessage.trim().length === 0}
+                            >
+                              <Check className="h-3.5 w-3.5 mr-1.5" />
+                              Speichern & Senden
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3">
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{userText}</p>
+                          </div>
+                          <div className="flex justify-end mt-1.5">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-xs bg-transparent"
+                              onClick={() => startEdit(v)}
+                              disabled={editSending || isSelectedBranchRunning || sending}
+                            >
+                              <Edit2 className="h-3 w-3 mr-1" />
+                              Bearbeiten
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {v.status !== "running" && (
+                    <div className="flex justify-start">
+                      <Card
+                        className={cn(
+                          "max-w-[85%] border-2 transition-all overflow-hidden !py-0 !gap-0",
+                          isActiveMessage
+                            ? "bg-primary/5 border-primary"
+                            : "bg-background border-muted hover:border-muted-foreground/30"
+                        )}
+                      >
+                        <div className="px-4 py-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs text-muted-foreground font-medium">Revision {v.depth}</span>
+                            {isActiveMessage && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-xs font-medium">
+                                <Star className="h-3 w-3 fill-current" />
+                                Aktiv
+                              </span>
+                            )}
+                          </div>
+                          {v.status === "error" ? (
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap text-destructive">
+                              {v.error_message || "Unbekannter Fehler"}
+                            </p>
+                          ) : (
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                              {needsExpand ? `${assistantText.substring(0, PREVIEW_LENGTH)}...` : assistantText}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 px-4 py-2 border-t border-muted bg-muted/20">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-muted-foreground hover:text-foreground"
+                            onClick={() => handleCopy(assistantText, v.id)}
+                            disabled={v.status !== "success" || !assistantText || v.has_content === false}
+                          >
+                            {copiedId === v.id ? (
+                              <Check className="h-3.5 w-3.5 text-primary mr-1" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5 mr-1" />
+                            )}
+                            Kopieren
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-muted-foreground hover:text-foreground"
+                            onClick={() => setViewingFullText({ title: `Revision ${v.depth}`, text: assistantText })}
+                            disabled={v.status !== "success" || !assistantText || v.has_content === false}
+                          >
+                            <Expand className="h-3.5 w-3.5 mr-1" />
+                            Vollständig anzeigen
+                          </Button>
+                          {!isActiveMessage &&
+                            v.status === "success" &&
+                            !!assistantText &&
+                            v.has_content !== false && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-muted-foreground hover:text-foreground"
+                                onClick={() => handleUseVersion(v)}
+                              >
+                                <Star className="h-3.5 w-3.5 mr-1" />
+                                Als aktiv setzen
+                              </Button>
+                            )}
+                        </div>
+                      </Card>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {showProcessingIndicator && (
+              <div className="flex justify-start">
+                <Card className="bg-background border-muted !py-0 !gap-0">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground p-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Text wird generiert...
+                  </div>
+                </Card>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
           </div>
         </div>
 
-        <div className="pt-4 border-t mt-4 flex-shrink-0">
-          <div className="flex items-end gap-3">
-            <div className="flex-1">
-              <Label className="text-xs text-muted-foreground">Deine Anweisung</Label>
-              <Textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder='z.B. "Schreibe das nochmal, aber fokussiere dich mehr auf X."'
-                className="mt-1.5 min-h-[80px] max-h-[220px] overflow-y-auto resize-none"
-                disabled={sending || isDepthLimitReached || isSelectedBranchRunning}
-              />
-              <div className="mt-1.5 text-[11px] text-muted-foreground flex items-center justify-between">
-                <span>
-                  {isDepthLimitReached ? `Max. ${maxDepth} Iterationen erreicht.` : `N\u00e4chste Iteration: ${nextDepth}/${maxDepth}`}
-                </span>
-                {isSelectedBranchRunning && <span>Antwort wird generiert... Bitte warten.</span>}
+        <div className="px-6 py-4 border-t bg-background shrink-0">
+          {!canSendMore ? (
+            <div className="text-center py-3">
+              <p className="text-sm text-muted-foreground">
+                Maximale Anzahl an Verfeinerungen ({maxDepth}) für diesen Pfad erreicht.
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Bearbeite eine vorherige Nachricht, um einen neuen Pfad zu starten.
+              </p>
+            </div>
+          ) : (
+            <div className="flex items-stretch gap-3">
+              <div className="flex-1 relative">
+                <Textarea
+                  ref={textareaRef}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Beschreibe, wie der Text angepasst werden soll..."
+                  className="h-[88px] resize-none pr-12"
+                  disabled={sending || initLoading || isSelectedBranchRunning}
+                />
+                <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
+                  {roundsRemaining} {roundsRemaining === 1 ? "Runde" : "Runden"} übrig
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 justify-between">
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/40 h-10">
+                  <div className="flex items-center gap-1.5">
+                    <Zap className="h-4 w-4 text-amber-500" />
+                    <span className="text-sm font-medium">{formatCost(estimatedCostCents)}</span>
+                  </div>
+                  <div className="h-4 w-px bg-border" />
+                  <span className="text-xs text-muted-foreground">ca. Kosten</span>
+                </div>
+                <Button
+                  onClick={handleSend}
+                  disabled={!message.trim() || sending || initLoading || isSelectedBranchRunning || isDepthLimitReached}
+                  className="h-10 px-6"
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Senden
+                </Button>
               </div>
             </div>
-
-            <Button onClick={handleSend} disabled={!canSend} className={cn("min-w-[120px]", sending && "opacity-80")}>
-              {sending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4 mr-2" />
-              )}
-              Senden
-            </Button>
-          </div>
+          )}
         </div>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+
+      {viewingFullText && (
+        <Dialog open={true} onOpenChange={() => setViewingFullText(null)}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col [&>button]:hidden">
+            <DialogHeader className="flex-shrink-0 pr-0">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0 pr-2">
+                  <DialogTitle className="text-xl leading-tight text-balance">{viewingFullText.title}</DialogTitle>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    {viewingFullText.text.split(/\\s+/).filter(Boolean).length.toLocaleString("de-DE")} Wörter
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button variant="outline" size="sm" onClick={() => handleCopy(viewingFullText.text, "fulltext")}>
+                    {copiedId === "fulltext" ? (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 mr-2 text-primary" />
+                        Kopiert
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4 mr-2" />
+                        Kopieren
+                      </>
+                    )}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setViewingFullText(null)} className="h-8 w-8 p-0">
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">Schließen</span>
+                  </Button>
+                </div>
+              </div>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto mt-4 pr-2">
+              <div className="text-foreground/90 leading-relaxed whitespace-pre-wrap text-sm">{viewingFullText.text}</div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   );
 }

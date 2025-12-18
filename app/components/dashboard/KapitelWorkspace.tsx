@@ -26,7 +26,7 @@ import {
   Scissors,
   Sparkles,
   Library,
-  MessageSquareText,
+  Pencil,
 } from "lucide-react";
 import {
   Select,
@@ -303,13 +303,8 @@ export function KapitelWorkspace({
                     </h2>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={onOpenLeseflussRefinement}
-                    >
-                      <MessageSquareText className="h-4 w-4 mr-2" />
-                      Verfeinern
+                    <Button variant="ghost" size="sm" onClick={onOpenLeseflussRefinement} title="Text verfeinern">
+                      <Pencil className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -425,13 +420,8 @@ export function KapitelWorkspace({
                     </h2>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={onOpenShortenedRefinement}
-                    >
-                      <MessageSquareText className="h-4 w-4 mr-2" />
-                      Verfeinern
+                    <Button variant="ghost" size="sm" onClick={onOpenShortenedRefinement} title="Text verfeinern">
+                      <Pencil className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="outline"
@@ -675,13 +665,13 @@ export function KapitelWorkspace({
                     Kürzen
                   </Button>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
                     onClick={onOpenCombinedRefinement}
                     disabled={!hasContent}
+                    title="Text verfeinern"
                   >
-                    <MessageSquareText className="h-4 w-4 mr-2" />
-                    Verfeinern
+                    <Pencil className="h-4 w-4" />
                   </Button>
                   <Button
                     variant="ghost"
@@ -832,44 +822,37 @@ export function KapitelWorkspace({
                       </p>
                     )}
                   </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onOpenResultRefinement(ergebnis.quelleId, ergebnis.quelleName)}
-                        disabled={ergebnis.status === "waiting"}
-                      >
-                        <MessageSquareText className="h-4 w-4 mr-2" />
-                        Verfeinern
-                      </Button>
-                      {ergebnis.status === "success" && ergebnis.text && (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleCopy(ergebnis.text, ergebnis.id)}
-                          >
-                            {copiedId === ergebnis.id ? (
-                              <Check className="h-4 w-4 text-primary" />
-                            ) : (
-                              <Copy className="h-4 w-4" />
-                            )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              onOpenTextViewer({
-                                title: ergebnis.quelleName,
-                                text: ergebnis.text,
-                              })
-                            }
-                          >
-                            <Maximize2 className="h-4 w-4" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
+                    {ergebnis.status === "success" && ergebnis.text && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onOpenResultRefinement(ergebnis.quelleId, ergebnis.quelleName)}
+                          title="Text verfeinern"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleCopy(ergebnis.text, ergebnis.id)}>
+                          {copiedId === ergebnis.id ? (
+                            <Check className="h-4 w-4 text-primary" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            onOpenTextViewer({
+                              title: ergebnis.quelleName,
+                              text: ergebnis.text,
+                            })
+                          }
+                        >
+                          <Maximize2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </Card>
               ))}
