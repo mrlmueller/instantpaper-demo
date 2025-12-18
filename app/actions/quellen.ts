@@ -41,7 +41,7 @@ export type Quelle = {
   typ?: 'Book' | 'Article' | 'Website' | 'Thesis' | 'Report';
   url?: string;
   zugriffAm?: string; // ISO date string
-  color?: 'light-blue' | 'mint' | 'peach' | 'lavender' | 'pink' | 'yellow' | 'coral';
+  color?: 'blue' | 'green' | 'teal' | 'lavender' | 'cream' | 'peach' | 'rose';
 };
 
 type ActionContext = {
@@ -74,12 +74,15 @@ export async function createQuelle(
     typ?: 'Book' | 'Article' | 'Website' | 'Thesis' | 'Report';
     url?: string;
     zugriffAm?: string;
-    color?: 'light-blue' | 'mint' | 'peach' | 'lavender' | 'pink' | 'yellow' | 'coral';
+    color?: 'blue' | 'green' | 'teal' | 'lavender' | 'cream' | 'peach' | 'rose';
   },
   ctx?: ActionContext
 ) {
   try {
     const { user, db } = await getContext(ctx);
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
 
     // Create Firestore document
     const quellenRef = collection(db, 'users', user.uid, 'quellen');
@@ -122,6 +125,9 @@ export async function createQuelle(
 export async function updateQuelle(quelleId: string, title: string, content: string, ctx?: ActionContext) {
   try {
     const { user, db } = await getContext(ctx);
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
 
     const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
     const quelleDoc = await getDoc(quelleRef);
@@ -146,6 +152,9 @@ export async function updateQuelle(quelleId: string, title: string, content: str
 export async function deleteQuelle(quelleId: string, ctx?: ActionContext) {
   try {
     const { user, db } = await getContext(ctx);
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
 
     const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
     const quelleDoc = await getDoc(quelleRef);
@@ -186,6 +195,9 @@ export async function deleteQuelle(quelleId: string, ctx?: ActionContext) {
 export async function getQuelle(quelleId: string, ctx?: ActionContext): Promise<Quelle | null> {
   try {
     const { user, db } = await getContext(ctx);
+    if (!user) {
+      return null;
+    }
 
     const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
     const quelleDoc = await getDoc(quelleRef);
@@ -214,6 +226,9 @@ export async function getQuelle(quelleId: string, ctx?: ActionContext): Promise<
 export async function getUserQuellen(projektId: string, ctx?: ActionContext): Promise<Quelle[]> {
   try {
     const { user, db } = await getContext(ctx);
+    if (!user) {
+      return [];
+    }
 
     const quellenRef = collection(db, 'users', user.uid, 'quellen');
     const q = query(quellenRef, where('projektId', '==', projektId), orderBy('createdAt', 'desc'));
@@ -252,11 +267,14 @@ export async function getUserQuellen(projektId: string, ctx?: ActionContext): Pr
 // Update Quelle color
 export async function updateQuelleColor(
   quelleId: string,
-  color: 'light-blue' | 'mint' | 'peach' | 'lavender' | 'pink' | 'yellow' | 'coral' | null,
+  color: 'blue' | 'green' | 'teal' | 'lavender' | 'cream' | 'peach' | 'rose' | null,
   ctx?: ActionContext
 ) {
   try {
     const { user, db } = await getContext(ctx);
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
 
     const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
     const quelleDoc = await getDoc(quelleRef);
@@ -294,6 +312,9 @@ export async function bulkAssignQuellen(
 ) {
   try {
     const { user, db } = await getContext(ctx);
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
 
     // Fetch all Kapitels
     const kapitelRefs = kapitelIds.map((id) =>
@@ -334,6 +355,9 @@ export async function getKapitelsForQuelle(
 ): Promise<{ id: string; title: string }[]> {
   try {
     const { user, db } = await getContext(ctx);
+    if (!user) {
+      return [];
+    }
 
     const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
     const q = query(

@@ -20,7 +20,7 @@ export interface Quelle {
   typ?: 'Book' | 'Article' | 'Website' | 'Thesis' | 'Report';
   url?: string;
   zugriffAm?: string;
-  color?: 'light-blue' | 'mint' | 'peach' | 'lavender' | 'pink' | 'yellow' | 'coral';
+  color?: 'blue' | 'green' | 'teal' | 'lavender' | 'cream' | 'peach' | 'rose' | null;
 }
 
 export interface Kapitel {

@@ -18,6 +18,9 @@ async function getContext(ctx?: ActionContext) {
 
 export async function createOrUpdateUser(ctx?: ActionContext) {
   const { user, db } = await getContext(ctx);
+  if (!user) {
+    return { success: false, error: 'Not authenticated' };
+  }
 
   const userRef = doc(db, 'users', user.uid);
   const userDoc = await getDoc(userRef);

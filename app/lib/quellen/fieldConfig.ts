@@ -9,26 +9,37 @@ export const QUELLE_TYPES = [
 export type QuelleType = typeof QUELLE_TYPES[number];
 
 export const QUELLE_COLORS = [
-  'light-blue',
-  'mint',
-  'peach',
+  'blue',
+  'green',
+  'teal',
   'lavender',
-  'pink',
-  'yellow',
-  'coral',
+  'cream',
+  'peach',
+  'rose',
 ] as const;
 
 export type QuelleColor = typeof QUELLE_COLORS[number];
 
-// Color to Tailwind class mapping (pastel palette)
-export const COLOR_CLASSES: Record<QuelleColor, string> = {
-  'light-blue': 'bg-blue-100 border-blue-300 text-blue-900',
-  'mint': 'bg-emerald-100 border-emerald-300 text-emerald-900',
-  'peach': 'bg-orange-100 border-orange-300 text-orange-900',
-  'lavender': 'bg-purple-100 border-purple-300 text-purple-900',
-  'pink': 'bg-pink-100 border-pink-300 text-pink-900',
-  'yellow': 'bg-yellow-100 border-yellow-300 text-yellow-900',
-  'coral': 'bg-red-100 border-red-300 text-red-900',
+// Color to hex code mapping (specific colors for better consistency)
+export const colorMap: Record<QuelleColor, string> = {
+  blue: "#64A9D2",
+  green: "#91DC96",
+  teal: "#95D1C4",
+  lavender: "#DEBBF4",
+  cream: "#DEDE8E",
+  peach: "#E4A882",
+  rose: "#E58283",
+};
+
+// German color labels for UI
+export const colorLabels: Record<QuelleColor, string> = {
+  blue: "Blau",
+  green: "Grün",
+  teal: "Türkis",
+  lavender: "Lavendel",
+  cream: "Creme",
+  peach: "Pfirsich",
+  rose: "Rosa",
 };
 
 // Advanced field definitions (easily extensible)

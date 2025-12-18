@@ -15,6 +15,7 @@ import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import { QuellenPanelSkeleton } from './QuellenPanelSkeleton';
 import { KapitelWorkspaceSkeleton } from './KapitelWorkspaceSkeleton';
+import { ViewportWarning } from '@/app/components/viewport-warning';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -2091,6 +2092,9 @@ export function Dashboard({
           }
         }}
       />
+
+      {/* Viewport Warning */}
+      <ViewportWarning />
     </div>
   );
 }
