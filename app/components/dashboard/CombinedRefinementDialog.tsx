@@ -151,6 +151,13 @@ export function CombinedRefinementDialog({
   }, [kapitelId, runId]);
 
   useEffect(() => {
+    if (open) return;
+    setEditingVersionId(null);
+    setEditMessage("");
+    setEditSending(false);
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return;
     if (!kapitelId || !runId) return;
     if (!user?.uid) return;
@@ -261,17 +268,6 @@ export function CombinedRefinementDialog({
     };
   }, [versions]);
 
-  const headVersion = useMemo(() => {
-    if (versions.length === 0) return null;
-    return versions.reduce<RefinementVersion | null>((best, current) => {
-      if (!best) return current;
-      const bestDepth = best.depth ?? 0;
-      const currentDepth = current.depth ?? 0;
-      if (currentDepth !== bestDepth) return currentDepth > bestDepth ? current : best;
-      return toDate(current.created_at) > toDate(best.created_at) ? current : best;
-    }, null);
-  }, [versions]);
-
   const path = useMemo(() => {
     if (!tree.root) return [];
 
@@ -294,32 +290,27 @@ export function CombinedRefinementDialog({
     return chain;
   }, [tree, selectedChildByParentId]);
 
-  const hasBranchSelections = useMemo(() => Object.keys(selectedChildByParentId).length > 0, [selectedChildByParentId]);
-
   useEffect(() => {
-    if (!open) return;
-    if (!tree.root) return;
-    if (versions.length === 0) return;
-    if (hasBranchSelections) return;
-
-    const preferredLeaf = tree.byId.get(activeVersionId) ?? headVersion ?? tree.root;
-    if (!preferredLeaf) return;
-
-    const selections: Record<string, string> = {};
-    let current: RefinementVersion | null = preferredLeaf;
-    let guard = 0;
-    while (current && current.parent_version_id && guard < 32) {
-      guard++;
-      selections[current.parent_version_id] = current.id;
-      current = tree.byId.get(current.parent_version_id) ?? null;
-    }
-
-    setSelectedChildByParentId(selections);
-  }, [open, tree, versions.length, hasBranchSelections, activeVersionId, headVersion]);
+    if (!editingVersionId) return;
+    const stillVisible = path.some((v) => v.id === editingVersionId);
+    if (stillVisible) return;
+    setEditingVersionId(null);
+    setEditMessage("");
+  }, [editingVersionId, path]);
 
   const parentForNext = path[path.length - 1] ?? tree.root ?? null;
   const nextDepth = (parentForNext?.depth ?? 0) + 1;
   const isDepthLimitReached = nextDepth > maxDepth;
+
+  const isOptimisticallyWaitingOnSelectedPath = useMemo(() => {
+    for (const node of path) {
+      const selectedChildId = selectedChildByParentId[node.id];
+      if (selectedChildId && !tree.byId.has(selectedChildId)) return true;
+    }
+    return false;
+  }, [path, selectedChildByParentId, tree.byId]);
+
+  const isSelectedBranchRunning = parentForNext?.status === "running" || isOptimisticallyWaitingOnSelectedPath;
 
   const estimate = useMemo(() => {
     const usage = parentForNext?.usage;
@@ -345,7 +336,7 @@ export function CombinedRefinementDialog({
   useEffect(() => {
     if (!open) return;
     scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [open, path.length, parentForNext?.status]);
+  }, [open, path.length, parentForNext?.status, parentForNext?.id]);
 
   const handleUseVersion = useCallback(
     async (version: RefinementVersion) => {
@@ -692,8 +683,63 @@ export function CombinedRefinementDialog({
                       <>
                         <div className="flex justify-end">
                           <Card className="max-w-[85%] p-4 bg-primary text-primary-foreground border-primary/20">
-                            <div className="text-xs opacity-80 mb-2">USER · Iteration {v.depth}</div>
-                            <div className="text-sm whitespace-pre-wrap leading-relaxed">{v.user_message}</div>
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <div className="text-xs opacity-80">USER · Iteration {v.depth}</div>
+                              {editingVersionId === v.id ? (
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={cancelEdit}
+                                    className="h-7 px-2 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                                    disabled={editSending}
+                                  >
+                                    <X className="h-4 w-4 mr-1" />
+                                    Abbrechen
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => submitEdit(v)}
+                                    className="h-7 px-2"
+                                    disabled={editSending || editMessage.trim().length === 0}
+                                  >
+                                    {editSending ? (
+                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                    ) : (
+                                      <Check className="h-4 w-4 mr-1" />
+                                    )}
+                                    Neu berechnen
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => startEdit(v)}
+                                  className="h-7 px-2 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                                >
+                                  <Pencil className="h-4 w-4 mr-1" />
+                                  Edit
+                                </Button>
+                              )}
+                            </div>
+
+                            {editingVersionId === v.id ? (
+                              <>
+                                <Textarea
+                                  value={editMessage}
+                                  onChange={(e) => setEditMessage(e.target.value)}
+                                  className="min-h-[80px] max-h-[220px] overflow-y-auto resize-none bg-primary-foreground/10 text-primary-foreground placeholder:text-primary-foreground/70 border-primary-foreground/20 focus-visible:ring-primary-foreground/20"
+                                  disabled={editSending}
+                                />
+                                <div className="mt-1 text-[11px] opacity-80">
+                                  Erstellt einen neuen Branch (alte Version bleibt erhalten).
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-sm whitespace-pre-wrap leading-relaxed">{v.user_message}</div>
+                            )}
                           </Card>
                         </div>
 
@@ -744,6 +790,30 @@ export function CombinedRefinementDialog({
                               </div>
                             </div>
 
+                            {showBranchNav && (
+                              <div className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
+                                <Button
+                                  size="icon-sm"
+                                  variant="ghost"
+                                  onClick={() => handleCycleBranch(v.id, -1)}
+                                  aria-label="Vorheriger Branch"
+                                >
+                                  <ChevronLeft className="h-4 w-4" />
+                                </Button>
+                                <span className="px-1">
+                                  Branch {selectedIndex + 1}/{children.length}
+                                </span>
+                                <Button
+                                  size="icon-sm"
+                                  variant="ghost"
+                                  onClick={() => handleCycleBranch(v.id, 1)}
+                                  aria-label="Naechster Branch"
+                                >
+                                  <ChevronRight className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            )}
+
                             {v.status === "running" ? (
                               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -778,16 +848,26 @@ export function CombinedRefinementDialog({
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder='z.B. "Schreibe das nochmal, aber ohne Wiederholungen und mit klareren Übergängen."'
-                className="mt-1.5 min-h-[80px] resize-none"
-                disabled={sending}
+                className="mt-1.5 min-h-[80px] max-h-[220px] overflow-y-auto resize-none"
+                disabled={sending || initLoading || isDepthLimitReached || isSelectedBranchRunning}
               />
               <div className="mt-1 text-[11px] text-muted-foreground">
                 Nächste Iteration: {nextDepth}/{maxDepth}
               </div>
+              {isSelectedBranchRunning && (
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  Antwort wird noch generiert… Bitte warten oder wechsle den Branch.
+                </div>
+              )}
+              {isDepthLimitReached && (
+                <div className="mt-1 text-[11px] text-destructive">Max. {maxDepth} Iterationen erreicht</div>
+              )}
             </div>
             <Button
               onClick={handleSend}
-              disabled={sending || initLoading || message.trim().length === 0 || nextDepth > maxDepth}
+              disabled={
+                sending || initLoading || message.trim().length === 0 || isDepthLimitReached || isSelectedBranchRunning
+              }
               className="h-10"
             >
               {sending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
