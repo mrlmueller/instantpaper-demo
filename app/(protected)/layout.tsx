@@ -8,6 +8,8 @@ export default async function ProtectedLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Check auth - will return null if cookie exists but token expired
+  // Client-side will handle token refresh
   await requireAuth();
 
   return (

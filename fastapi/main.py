@@ -23,8 +23,12 @@ from services.quelle_service import quelle_service
 from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
 from services.refinement_service import refinement_service
+from services.firebase_service import firebase_service
+from firebase_admin import auth
 from pydantic import BaseModel
 import logging
+import base64
+import json
 
 # Configure logging
 logging.basicConfig(
@@ -41,6 +45,14 @@ logger = logging.getLogger(__name__)
 
 class SaveOpenAIKeyRequest(BaseModel):
     key: str
+
+
+class CreateSessionRequest(BaseModel):
+    idToken: str
+
+
+class RevokeSessionRequest(BaseModel):
+    sessionCookie: str
 
 
 @asynccontextmanager
@@ -96,6 +108,59 @@ async def health_check():
         "firebase": "connected" if config.FIREBASE_PROJECT_ID else "not configured",
         "openai": "connected" if config.OPENAI_API_KEY else "not configured"
     }
+
+
+@app.post("/api/auth/session")
+async def create_session(request: CreateSessionRequest):
+    """
+    Exchange Firebase ID token for a session cookie.
+
+    Returns session cookie and expiration time in seconds.
+    """
+    try:
+        # Verify ID token first
+        decoded_token = await firebase_service.verify_token(request.idToken)
+
+        # Create session cookie (14 days)
+        session_cookie = await firebase_service.create_session_cookie(request.idToken, expires_in_days=14)
+
+        return {
+            "sessionCookie": session_cookie,
+            "expiresIn": 14 * 24 * 60 * 60  # 14 days in seconds
+        }
+    except Exception as e:
+        logger.error(f"Failed to create session cookie: {str(e)}")
+        raise HTTPException(
+            status_code=401,
+            detail=f"Failed to create session: {str(e)}"
+        )
+
+
+@app.post("/api/auth/revoke")
+async def revoke_session(request: RevokeSessionRequest):
+    """
+    Revoke a session by revoking all refresh tokens for the user.
+    """
+    try:
+        # Decode session cookie to get user ID (don't verify, just decode)
+        # We decode without verification since we just need the UID
+        parts = request.sessionCookie.split('.')
+        if len(parts) >= 2:
+            payload = json.loads(base64.urlsafe_b64decode(parts[1] + '=='))
+            user_id = payload.get('uid')
+
+            if user_id:
+                # Revoke all refresh tokens for this user
+                auth.revoke_refresh_tokens(user_id)
+                logger.info(f"Revoked refresh tokens for user {user_id}")
+
+        return {"status": "revoked"}
+    except Exception as e:
+        logger.error(f"Failed to revoke session: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to revoke session: {str(e)}"
+        )
 
 
 @app.get("/test/auth")

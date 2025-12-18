@@ -34,9 +34,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (loading) return;
-    if (!user && pathname !== '/login') {
-      router.replace('/login');
+
+    // Redirect authenticated users away from login page
+    if (user && pathname === '/login') {
+      router.replace('/dashboard');
     }
+
+    // Note: We don't redirect unauthenticated users here anymore
+    // Protected pages handle their own auth checks via requireAuth() and show loading skeletons
   }, [loading, user, pathname, router]);
 
   return (

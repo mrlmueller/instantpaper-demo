@@ -21,7 +21,8 @@ googleProvider.setCustomParameters({
 export const signInWithGoogle = async () => {
   try {
     const result = await signInWithPopup(auth, googleProvider);
-    // Cookie will be set by onIdTokenChanged listener
+
+    // ID token will be set in cookie by onAuthStateChange listener
     return result.user;
   } catch (error) {
     console.error('Sign in error:', error);
@@ -39,19 +40,19 @@ export const signOut = async () => {
   }
 };
 
-// Subscribe to ID token changes and sync with cookie
+// Subscribe to auth state changes and keep ID token fresh
 export const onAuthStateChange = (callback: (user: User | null) => void) => {
   return onIdTokenChanged(auth, async (user) => {
     if (user) {
-      // User is signed in, set cookie with ID token
+      // User is signed in - store fresh ID token
       const idToken = await user.getIdToken();
       Cookies.set('__session', idToken, {
-        expires: 14, // Firebase session cookies expire after 14 days
+        expires: 14, // Cookie lasts 14 days, but token auto-refreshes
         sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production'
       });
     } else {
-      // User is signed out, remove cookie
+      // User signed out - clean up cookie
       Cookies.remove('__session');
     }
     callback(user);

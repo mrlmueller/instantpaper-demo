@@ -3,7 +3,7 @@ from firebase_admin import credentials, auth, firestore
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP, Increment
 from utils.config import config
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +87,54 @@ class FirebaseService:
             return decoded_token
         except Exception as e:
             logger.error(f"Token verification failed: {str(e)}")
+            raise
+
+    async def create_session_cookie(self, id_token: str, expires_in_days: int = 14) -> str:
+        """
+        Create a Firebase session cookie from an ID token.
+
+        Args:
+            id_token: Valid Firebase ID token
+            expires_in_days: Session duration (max 14 days)
+
+        Returns:
+            str: Session cookie string
+
+        Raises:
+            Exception: If session cookie creation fails
+        """
+        from datetime import timedelta
+
+        try:
+            self._ensure_initialized()
+            expires_in = timedelta(days=expires_in_days)
+            session_cookie = auth.create_session_cookie(id_token, expires_in=expires_in)
+            logger.info(f"Created session cookie with {expires_in_days} days expiration")
+            return session_cookie
+        except Exception as e:
+            logger.error(f"Session cookie creation failed: {str(e)}")
+            raise
+
+    async def verify_session_cookie(self, session_cookie: str, check_revoked: bool = True) -> dict:
+        """
+        Verify a Firebase session cookie.
+
+        Args:
+            session_cookie: Session cookie to verify
+            check_revoked: Whether to check if token was revoked
+
+        Returns:
+            dict: Decoded token with user information
+
+        Raises:
+            Exception: If verification fails
+        """
+        try:
+            self._ensure_initialized()
+            decoded_token = auth.verify_session_cookie(session_cookie, check_revoked=check_revoked)
+            return decoded_token
+        except Exception as e:
+            logger.error(f"Session cookie verification failed: {str(e)}")
             raise
 
     async def get_quelle(self, user_id: str, quelle_id: str) -> Optional[dict]:
@@ -976,7 +1024,7 @@ class FirebaseService:
         user_id: str,
         kapitel_id: str,
         run_id: str
-    ) -> tuple[bool, int]:
+    ) -> Tuple[bool, int]:
         """
         Check if all Quellen in a Kapitel have been processed for a specific run.
 
@@ -1079,7 +1127,7 @@ class FirebaseService:
 
     async def get_lesefluss_result(
         self, user_id: str, kapitel_id: str, run_id: str
-    ) -> dict | None:
+    ) -> Optional[dict]:
         """Get lesefluss result for a specific run."""
         try:
             doc_ref = (

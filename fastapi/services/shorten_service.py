@@ -7,6 +7,7 @@ import logging
 import asyncio
 from datetime import datetime
 import services.openai_service as openai_module
+from typing import Optional, List, Tuple, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class ShortenService:
         self,
         user_id: str,
         kapitel_id: str,
-    ) -> tuple[str, str, str]:
+    ) -> Tuple[str, str, str]:
         """
         Get the latest text for a Kapitel.
         Priority: lesefluss > shortened > combined
@@ -195,9 +196,9 @@ class ShortenService:
         text: str,
         model: str,
         source_kapitel_id: str = None,
-        api_key: str | None = None,
-        instructions: str | None = None
-    ) -> tuple[str, dict]:
+        api_key: Optional[str] = None,
+        instructions: Optional[str] = None
+    ) -> Tuple[str, dict]:
         """
         Summarize text to ~30% of original using OpenAI.
 
@@ -218,8 +219,8 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
         self,
         user_id: str,
         target_kapitel_id: str,
-        context_kapitels: list[dict],
-        summaries: dict[str, str],
+        context_kapitels: List[dict],
+        summaries: Dict[str, str],
     ) -> str:
         """
         Build the Gliederung section with numbered Kapitels and summaries.
@@ -260,9 +261,9 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
         model: str,
         target_kapitel_id: str = None,
         context_kapitel_ids: list = None,
-        api_key: str | None = None,
-        instructions: str | None = None,
-    ) -> tuple[str, dict, dict]:
+        api_key: Optional[str] = None,
+        instructions: Optional[str] = None,
+    ) -> Tuple[str, dict, dict]:
         """
         Shorten and deduplicate text using OpenAI.
 
@@ -296,7 +297,7 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
         user_id: str,
         kapitel_id: str,
         run_id: str,
-        context_kapitel_ids: list[str],
+        context_kapitel_ids: List[str],
         model: str,
     ) -> None:
         """
@@ -451,8 +452,8 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
         self,
         user_id: str,
         target_kapitel_id: str,
-        context_kapitels: list[dict],
-        summaries: dict[str, str],
+        context_kapitels: List[dict],
+        summaries: Dict[str, str],
     ) -> str:
         """
         Build the Gliederung with chapter descriptions.
@@ -523,9 +524,9 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
         kapitel_nummer: str,
         target_text: str,
         model: str,
-        api_key: str | None = None,
-        instructions: str | None = None
-    ) -> tuple[str, str, dict]:
+        api_key: Optional[str] = None,
+        instructions: Optional[str] = None
+    ) -> Tuple[str, str, dict]:
         """
         Improve reading flow using OpenAI.
 
@@ -597,10 +598,10 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
         user_id: str,
         kapitel_id: str,
         run_id: str,
-        context_kapitel_ids: list[str],
+        context_kapitel_ids: List[str],
         aufgabenstellung: str,
         model: str,
-        api_key: str | None = None,
+        api_key: Optional[str] = None,
         key_source: str = "backend"
     ) -> None:
         """

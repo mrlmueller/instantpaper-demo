@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Literal, List
 
 
 class ProcessQuelleRequest(BaseModel):
@@ -46,7 +46,7 @@ class ShortenKapitelRequest(BaseModel):
 
     kapitel_id: str = Field(..., description="ID of the Kapitel to shorten")
     run_id: str = Field(..., description="Run ID that contains the text to shorten")
-    context_kapitel_ids: list[str] = Field(
+    context_kapitel_ids: List[str] = Field(
         ...,
         description="IDs of other Kapitels to use for context (will be summarized)",
         min_length=1
@@ -72,7 +72,7 @@ class LeseflussKapitelRequest(BaseModel):
 
     kapitel_id: str = Field(..., description="ID of the Kapitel to improve reading flow for")
     run_id: str = Field(..., description="Run ID that contains the shortened text")
-    context_kapitel_ids: list[str] = Field(
+    context_kapitel_ids: List[str] = Field(
         ...,
         description="IDs of other Kapitels to use for context (will be summarized)",
         min_length=1
