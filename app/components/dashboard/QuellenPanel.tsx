@@ -579,7 +579,7 @@ export function QuellenPanel({
 
       {/* Add Quelle Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="!w-[80vw] !max-w-[1100px] !h-[50vh] flex flex-col p-0">
+        <DialogContent className="!w-[80vw] !max-w-[1100px] !h-[70vh] flex flex-col p-0">
           <DialogHeader className="px-6 pt-6 pb-4 shrink-0">
             <DialogTitle>Neue Quelle hinzufügen</DialogTitle>
           </DialogHeader>
