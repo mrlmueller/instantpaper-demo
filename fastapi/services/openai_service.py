@@ -1,6 +1,7 @@
 from openai import AsyncOpenAI
 from utils.config import config
 import logging
+from pathlib import Path
 from typing import Optional, List, Tuple
 
 logger = logging.getLogger(__name__)
@@ -72,8 +73,13 @@ class OpenAIService:
         user_input: str,
         model: str,
         grundlegende_informationen: str = None,
-        api_key: Optional[str] = None,
-        quelle_images: Optional[List[str]] = None
+
+      api_key: Optional[str] = None,
+      quelle_images: Optional[List[str]] = None,
+      debug_prompt_dump_path: Optional[str] = None,
+
+      
+      
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
@@ -95,6 +101,20 @@ class OpenAIService:
             logger.debug(f"Prompt length: {len(prompt)} characters")
             if quelle_images:
                 logger.info(f"Including {len(quelle_images)} image(s) in request")
+
+            if debug_prompt_dump_path:
+                try:
+                    dump_path = Path(debug_prompt_dump_path)
+                    dump_path.parent.mkdir(parents=True, exist_ok=True)
+                    dump_text = prompt
+                    if quelle_images:
+                        dump_text += "\n\n---\n\n### Images\n" + "\n".join(
+                            [f"- {u}" for u in quelle_images]
+                        )
+                    dump_path.write_text(dump_text, encoding="utf-8")
+                    logger.info(f"Saved prompt dump to {dump_path}")
+                except Exception as dump_exc:
+                    logger.warning(f"Failed to write prompt dump: {dump_exc}")
 
             # Build user message content (multimodal format)
             user_message_content = [
@@ -211,8 +231,14 @@ class OpenAIService:
         heading: str,
         topic: str,
         model: str,
-        api_key: Optional[str] = None,
-        instructions: Optional[str] = None,
+
+      api_key: Optional[str] = None,
+      quelle_images: Optional[List[str]] = None,
+      debug_prompt_dump_path: Optional[str] = None,
+
+      
+
+      
     ) -> dict:
         """
         Combine multiple texts into one consolidated text.
@@ -227,6 +253,15 @@ class OpenAIService:
             prompt = f"{prompt_body}\n\n{combined_texts}"
 
             logger.info(f"Combining {len(texts)} texts with model {model}")
+
+            if debug_prompt_dump_path:
+                try:
+                    dump_path = Path(debug_prompt_dump_path)
+                    dump_path.parent.mkdir(parents=True, exist_ok=True)
+                    dump_path.write_text(prompt, encoding="utf-8")
+                    logger.info(f"Saved prompt dump to {dump_path}")
+                except Exception as dump_exc:
+                    logger.warning(f"Failed to write prompt dump: {dump_exc}")
 
             response = await client.responses.create(
                 model=model,
@@ -489,12 +524,25 @@ class OpenAIService:
         self,
         prompt: str,
         model: str,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        debug_prompt_dump_path: Optional[str] = None,
     ) -> Tuple[str, dict]:
+
+
+
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
             client = self._get_client(api_key)
             logger.info(f"Improving reading flow with model {model}")
+
+            if debug_prompt_dump_path:
+                try:
+                    dump_path = Path(debug_prompt_dump_path)
+                    dump_path.parent.mkdir(parents=True, exist_ok=True)
+                    dump_path.write_text(prompt, encoding="utf-8")
+                    logger.info(f"Saved prompt dump to {dump_path}")
+                except Exception as dump_exc:
+                    logger.warning(f"Failed to write prompt dump: {dump_exc}")
 
             response = await client.responses.create(
                 model=model,

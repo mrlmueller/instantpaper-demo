@@ -26,6 +26,7 @@ import {
   Scissors,
   Sparkles,
   Library,
+  Pencil,
 } from "lucide-react";
 import {
   Select,
@@ -56,6 +57,10 @@ interface KapitelWorkspaceProps {
   onToggleQuellenPanel: () => void;
   onOpenShorten: () => void;
   onOpenLesefluss: () => void;
+  onOpenLeseflussRefinement: () => void;
+  onOpenCombinedRefinement: () => void;
+  onOpenShortenedRefinement: () => void;
+  onOpenResultRefinement: (quelleId: string, quelleName: string) => void;
 }
 
 export function KapitelWorkspace({
@@ -74,6 +79,10 @@ export function KapitelWorkspace({
   onToggleQuellenPanel,
   onOpenShorten,
   onOpenLesefluss,
+  onOpenLeseflussRefinement,
+  onOpenCombinedRefinement,
+  onOpenShortenedRefinement,
+  onOpenResultRefinement,
 }: KapitelWorkspaceProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] =
@@ -130,8 +139,11 @@ export function KapitelWorkspace({
   const totalCost = selectedRun
     ? selectedRun.quellenCost +
       selectedRun.combinedCost +
+      (selectedRun.combinedRefinementCost || 0) +
       (selectedRun.shortenedCost || 0) +
+      (selectedRun.shortenedRefinementCost || 0) +
       (selectedRun.leseflussCost || 0) +
+      (selectedRun.leseflussRefinementCost || 0) +
       summariesCost
     : 0;
 
@@ -291,6 +303,9 @@ export function KapitelWorkspace({
                     </h2>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={onOpenLeseflussRefinement} title="Text verfeinern">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -405,6 +420,9 @@ export function KapitelWorkspace({
                     </h2>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={onOpenShortenedRefinement} title="Text verfeinern">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -649,6 +667,15 @@ export function KapitelWorkspace({
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={onOpenCombinedRefinement}
+                    disabled={!hasContent}
+                    title="Text verfeinern"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() =>
                       handleCopy(selectedRun!.combinedText, "kombiniert")
                     }
@@ -789,19 +816,23 @@ export function KapitelWorkspace({
                           <span className="text-sm">Kein verwertbarer Inhalt</span>
                         </div>
                       )}
-                      {ergebnis.status === "success" && ergebnis.text && (
-                        <p className="text-sm text-foreground/80 line-clamp-3">
-                          {ergebnis.text}
-                        </p>
-                      )}
-                    </div>
+                    {ergebnis.status === "success" && ergebnis.text && (
+                      <p className="text-sm text-foreground/80 line-clamp-3">
+                        {ergebnis.text}
+                      </p>
+                    )}
+                  </div>
                     {ergebnis.status === "success" && ergebnis.text && (
                       <div className="flex items-center gap-1 shrink-0">
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleCopy(ergebnis.text, ergebnis.id)}
+                          onClick={() => onOpenResultRefinement(ergebnis.quelleId, ergebnis.quelleName)}
+                          title="Text verfeinern"
                         >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleCopy(ergebnis.text, ergebnis.id)}>
                           {copiedId === ergebnis.id ? (
                             <Check className="h-4 w-4 text-primary" />
                           ) : (

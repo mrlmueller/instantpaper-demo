@@ -49,6 +49,9 @@ Thumbs.db
 *.log
 fastapi.log
 
+# Debug dumps (text refinement flow)
+.prompt_dumps/
+
 # Testing
 .pytest_cache/
 .coverage

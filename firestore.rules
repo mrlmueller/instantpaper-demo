@@ -125,6 +125,14 @@ service cloud.firestore {
         match /results/{resultId} {
           allow read: if isAuthenticated() && isOwner(userId);
           allow create: if isAuthenticated() && isOwner(userId);
+          allow update: if isAuthenticated() && isOwner(userId);
+
+          // Text refinement flow (versions/branches) for a Quellen-result text
+          match /versions/{versionId} {
+            allow read: if isAuthenticated() && isOwner(userId);
+            // Backend-only writes (FastAPI uses Admin SDK)
+            allow write: if false;
+          }
         }
 
         // Combined results under each run
@@ -132,6 +140,13 @@ service cloud.firestore {
           allow read: if isAuthenticated() && isOwner(userId);
           allow create: if isAuthenticated() && isOwner(userId);
           allow update, delete: if isAuthenticated() && isOwner(userId);
+
+          // Text refinement flow (versions/branches) for a combined text
+          match /versions/{versionId} {
+            allow read: if isAuthenticated() && isOwner(userId);
+            // Backend-only writes (FastAPI uses Admin SDK)
+            allow write: if false;
+          }
         }
 
         // Intermediate groups under each run
@@ -146,6 +161,13 @@ service cloud.firestore {
           allow read: if isAuthenticated() && isOwner(userId);
           allow create: if isAuthenticated() && isOwner(userId);
           allow update, delete: if isAuthenticated() && isOwner(userId);
+
+          // Text refinement flow (versions/branches) for a shortened text
+          match /versions/{versionId} {
+            allow read: if isAuthenticated() && isOwner(userId);
+            // Backend-only writes (FastAPI uses Admin SDK)
+            allow write: if false;
+          }
         }
 
         // Summaries under each run
@@ -160,6 +182,13 @@ service cloud.firestore {
           allow read: if isAuthenticated() && isOwner(userId);
           allow create: if isAuthenticated() && isOwner(userId);
           allow update, delete: if isAuthenticated() && isOwner(userId);
+
+          // Text refinement flow (versions/branches) for a lesefluss text
+          match /versions/{versionId} {
+            allow read: if isAuthenticated() && isOwner(userId);
+            // Backend-only writes (FastAPI uses Admin SDK)
+            allow write: if false;
+          }
         }
       }
     }

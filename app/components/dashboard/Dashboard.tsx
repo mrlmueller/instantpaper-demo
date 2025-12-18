@@ -11,6 +11,10 @@ import { QuelleViewerModal } from './QuelleViewerModal';
 import { ProcessingDialog } from './ProcessingDialog';
 import { ShortenDialog } from './ShortenDialog';
 import { LeseflussDialog } from './LeseflussDialog';
+import { CombinedRefinementDialog } from './CombinedRefinementDialog';
+import { ShortenedRefinementDialog } from './ShortenedRefinementDialog';
+import { LeseflussRefinementDialog } from './LeseflussRefinementDialog';
+import { ResultRefinementDialog } from './ResultRefinementDialog';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import { QuellenPanelSkeleton } from './QuellenPanelSkeleton';
@@ -334,6 +338,11 @@ export function Dashboard({
   const [processingDialogOpen, setProcessingDialogOpen] = useState(false);
   const [shortenDialogOpen, setShortenDialogOpen] = useState(false);
   const [leseflussDialogOpen, setLeseflussDialogOpen] = useState(false);
+  const [combinedRefinementDialogOpen, setCombinedRefinementDialogOpen] = useState(false);
+  const [shortenedRefinementDialogOpen, setShortenedRefinementDialogOpen] = useState(false);
+  const [leseflussRefinementDialogOpen, setLeseflussRefinementDialogOpen] = useState(false);
+  const [resultRefinementDialogOpen, setResultRefinementDialogOpen] = useState(false);
+  const [resultRefinementTarget, setResultRefinementTarget] = useState<{ quelleId: string; quelleName: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     type: 'quelle' | 'kapitel' | 'projekt';
     id: string;
@@ -614,6 +623,10 @@ export function Dashboard({
           outputTokens: data.output_tokens ?? data.outputTokens ?? 0,
           reasoningTokens: data.reasoning_tokens ?? data.reasoningTokens ?? 0,
           cost: data.cost ?? 0,
+          refinementCostTotal: data.refinement_cost_total ?? data.refinementCostTotal ?? 0,
+          refinementRootVersionId: data.refinement_root_version_id ?? data.refinementRootVersionId ?? undefined,
+          refinementActiveVersionId: data.refinement_active_version_id ?? data.refinementActiveVersionId ?? undefined,
+          refinementMaxDepth: data.refinement_max_depth ?? data.refinementMaxDepth ?? undefined,
           createdAt:
             data.created_at?.toDate?.()?.toISOString() ||
             data.createdAt?.toDate?.()?.toISOString() ||
@@ -628,27 +641,31 @@ export function Dashboard({
 
     const shortenedUnsub = onSnapshot(shortenedRef, (shortenedSnap) => {
       let shortened: any = null;
-      if (!shortenedSnap.empty) {
-        const doc = shortenedSnap.docs[0];
-        const data: any = doc.data();
-        shortened = {
-          id: doc.id,
-          shortenedContent: data.shortened_content ?? data.shortenedContent ?? '',
-          explanation: data.explanation ? {
-            lengthDecision: data.explanation.length_decision ?? '',
-            omittedTopics: data.explanation.omitted_topics ?? [],
-            preservedFocus: data.explanation.preserved_focus ?? [],
-            compressionNotes: data.explanation.compression_notes ?? '',
-          } : undefined,
-          originalLength: data.original_length ?? data.originalLength ?? 0,
-          shortenedLength: data.shortened_length ?? data.shortenedLength ?? 0,
-          usedKapitelIds: data.used_kapitel_ids ?? data.usedKapitelIds ?? [],
-          model: data.model ?? '',
-          cost: data.cost ?? 0,
-          tokensUsed: data.tokens_used ?? data.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
-          createdAt:
-            data.created_at?.toDate?.()?.toISOString() ||
-            data.createdAt?.toDate?.()?.toISOString() ||
+        if (!shortenedSnap.empty) {
+          const doc = shortenedSnap.docs[0];
+          const data: any = doc.data();
+          shortened = {
+            id: doc.id,
+            shortenedContent: data.shortened_content ?? data.shortenedContent ?? '',
+            explanation: data.explanation ? {
+              lengthDecision: data.explanation.length_decision ?? '',
+              omittedTopics: data.explanation.omitted_topics ?? [],
+              preservedFocus: data.explanation.preserved_focus ?? [],
+              compressionNotes: data.explanation.compression_notes ?? '',
+            } : undefined,
+            originalLength: data.original_length ?? data.originalLength ?? 0,
+            shortenedLength: data.shortened_length ?? data.shortenedLength ?? 0,
+            usedKapitelIds: data.used_kapitel_ids ?? data.usedKapitelIds ?? [],
+            model: data.model ?? '',
+            cost: data.cost ?? 0,
+            refinementCostTotal: data.refinement_cost_total ?? data.refinementCostTotal ?? 0,
+            refinementRootVersionId: data.refinement_root_version_id ?? data.refinementRootVersionId ?? undefined,
+            refinementActiveVersionId: data.refinement_active_version_id ?? data.refinementActiveVersionId ?? undefined,
+            refinementMaxDepth: data.refinement_max_depth ?? data.refinementMaxDepth ?? undefined,
+            tokensUsed: data.tokens_used ?? data.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
+            createdAt:
+              data.created_at?.toDate?.()?.toISOString() ||
+              data.createdAt?.toDate?.()?.toISOString() ||
             new Date().toISOString(),
         };
       }
@@ -1967,6 +1984,13 @@ export function Dashboard({
                 onToggleQuellenPanel={handleToggleQuellenPanel}
                 onOpenShorten={() => setShortenDialogOpen(true)}
                 onOpenLesefluss={() => setLeseflussDialogOpen(true)}
+                onOpenLeseflussRefinement={() => setLeseflussRefinementDialogOpen(true)}
+                onOpenCombinedRefinement={() => setCombinedRefinementDialogOpen(true)}
+                onOpenShortenedRefinement={() => setShortenedRefinementDialogOpen(true)}
+                onOpenResultRefinement={(quelleId, quelleName) => {
+                  setResultRefinementTarget({ quelleId, quelleName });
+                  setResultRefinementDialogOpen(true);
+                }}
               />
             )
           ) : (
@@ -2048,6 +2072,68 @@ export function Dashboard({
           promptTemplates={promptTemplates}
           promptActive={promptActive}
           isLeseflussLoading={isImprovingLesefluss}
+        />
+      )}
+
+      {activeKapitel && selectedRun && (
+        <CombinedRefinementDialog
+          open={combinedRefinementDialogOpen}
+          onOpenChange={setCombinedRefinementDialogOpen}
+          kapitelId={activeKapitel.id}
+          runId={selectedRun.id}
+          runModel={selectedRun.model}
+          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          ensureOpenAIAccess={ensureOpenAIAccess}
+          onAuthFailure={handleAuthFailure}
+          onServerDown={notifyServerDown}
+          onOpenTextViewer={setTextViewerContent}
+        />
+      )}
+
+      {activeKapitel && selectedRun && (
+        <ShortenedRefinementDialog
+          open={shortenedRefinementDialogOpen}
+          onOpenChange={setShortenedRefinementDialogOpen}
+          kapitelId={activeKapitel.id}
+          runId={selectedRun.id}
+          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          ensureOpenAIAccess={ensureOpenAIAccess}
+          onAuthFailure={handleAuthFailure}
+          onServerDown={notifyServerDown}
+          onOpenTextViewer={setTextViewerContent}
+        />
+      )}
+
+      {activeKapitel && selectedRun && (
+        <LeseflussRefinementDialog
+          open={leseflussRefinementDialogOpen}
+          onOpenChange={setLeseflussRefinementDialogOpen}
+          kapitelId={activeKapitel.id}
+          runId={selectedRun.id}
+          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          ensureOpenAIAccess={ensureOpenAIAccess}
+          onAuthFailure={handleAuthFailure}
+          onServerDown={notifyServerDown}
+          onOpenTextViewer={setTextViewerContent}
+        />
+      )}
+
+      {activeKapitel && selectedRun && resultRefinementTarget && (
+        <ResultRefinementDialog
+          open={resultRefinementDialogOpen}
+          onOpenChange={(open) => {
+            setResultRefinementDialogOpen(open);
+            if (!open) setResultRefinementTarget(null);
+          }}
+          kapitelId={activeKapitel.id}
+          runId={selectedRun.id}
+          quelleId={resultRefinementTarget.quelleId}
+          quelleName={resultRefinementTarget.quelleName}
+          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          ensureOpenAIAccess={ensureOpenAIAccess}
+          onAuthFailure={handleAuthFailure}
+          onServerDown={notifyServerDown}
+          onOpenTextViewer={setTextViewerContent}
         />
       )}
 

@@ -32,6 +32,10 @@ export type KapitelRunResult = {
   outputTokens: number;
   reasoningTokens: number;
   cost: number;
+  refinementCostTotal?: number;
+  refinementRootVersionId?: string;
+  refinementActiveVersionId?: string;
+  refinementMaxDepth?: number;
   createdAt: string;
 };
 
@@ -49,6 +53,10 @@ export type CombinedResult = {
   reasoningTokens: number;
   cost: number;
   createdAt: string;
+  refinementCostTotal?: number;
+  refinementRootVersionId?: string;
+  refinementActiveVersionId?: string;
+  refinementMaxDepth?: number;
 };
 
 export type IntermediateGroupResult = {
@@ -88,6 +96,10 @@ export type ShortenedResult = {
     output: number;
   };
   createdAt: string;
+  refinementCostTotal?: number;
+  refinementRootVersionId?: string;
+  refinementActiveVersionId?: string;
+  refinementMaxDepth?: number;
 };
 
 export type SummaryResult = {
@@ -123,6 +135,10 @@ export type LeseflussResult = {
     output: number;
   };
   createdAt: string;
+  refinementCostTotal?: number;
+  refinementRootVersionId?: string;
+  refinementActiveVersionId?: string;
+  refinementMaxDepth?: number;
 };
 
 export type KapitelRun = {
@@ -635,6 +651,10 @@ export async function getKapitelRuns(
             outputTokens: c.output_tokens ?? c.outputTokens ?? 0,
             reasoningTokens: c.reasoning_tokens ?? c.reasoningTokens ?? 0,
             cost: c.cost ?? 0,
+            refinementCostTotal: c.refinement_cost_total ?? c.refinementCostTotal ?? 0,
+            refinementRootVersionId: c.refinement_root_version_id ?? c.refinementRootVersionId ?? undefined,
+            refinementActiveVersionId: c.refinement_active_version_id ?? c.refinementActiveVersionId ?? undefined,
+            refinementMaxDepth: c.refinement_max_depth ?? c.refinementMaxDepth ?? undefined,
             createdAt:
               c.created_at?.toDate?.()?.toISOString() ||
               c.createdAt?.toDate?.()?.toISOString() ||
@@ -663,6 +683,10 @@ export async function getKapitelRuns(
             usedKapitelIds: s.used_kapitel_ids ?? s.usedKapitelIds ?? [],
             model: s.model ?? '',
             cost: s.cost ?? 0,
+            refinementCostTotal: s.refinement_cost_total ?? s.refinementCostTotal ?? 0,
+            refinementRootVersionId: s.refinement_root_version_id ?? s.refinementRootVersionId ?? undefined,
+            refinementActiveVersionId: s.refinement_active_version_id ?? s.refinementActiveVersionId ?? undefined,
+            refinementMaxDepth: s.refinement_max_depth ?? s.refinementMaxDepth ?? undefined,
             tokensUsed: s.tokens_used ?? s.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
             createdAt:
               s.created_at?.toDate?.()?.toISOString() ||
@@ -686,6 +710,10 @@ export async function getKapitelRuns(
             usedKapitelIds: l.used_kapitel_ids ?? l.usedKapitelIds ?? [],
             model: l.model ?? '',
             cost: l.cost ?? 0,
+            refinementCostTotal: l.refinement_cost_total ?? l.refinementCostTotal ?? 0,
+            refinementRootVersionId: l.refinement_root_version_id ?? l.refinementRootVersionId ?? undefined,
+            refinementActiveVersionId: l.refinement_active_version_id ?? l.refinementActiveVersionId ?? undefined,
+            refinementMaxDepth: l.refinement_max_depth ?? l.refinementMaxDepth ?? undefined,
             tokensUsed: l.tokens_used ?? l.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
             createdAt:
               l.created_at?.toDate?.()?.toISOString() ||
@@ -737,6 +765,10 @@ export async function getKapitelRuns(
             outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
             reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
             cost: resData.cost ?? 0,
+            refinementCostTotal: resData.refinement_cost_total ?? resData.refinementCostTotal ?? 0,
+            refinementRootVersionId: resData.refinement_root_version_id ?? resData.refinementRootVersionId ?? undefined,
+            refinementActiveVersionId: resData.refinement_active_version_id ?? resData.refinementActiveVersionId ?? undefined,
+            refinementMaxDepth: resData.refinement_max_depth ?? resData.refinementMaxDepth ?? undefined,
             createdAt:
               resData.created_at?.toDate?.()?.toISOString() ||
               resData.createdAt?.toDate?.()?.toISOString() ||
@@ -960,6 +992,501 @@ export async function createLeseflussRun(
   } catch (error: any) {
     console.error('Error creating lesefluss run:', error);
     return { success: false, error: error?.message || 'Failed to create lesefluss run' };
+  }
+}
+
+export async function initCombinedRefinement(kapitelId: string, runId: string) {
+  await requireAuth();
+
+  try {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('__session')?.value;
+
+    if (!authToken) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/refine/combined/init`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+        }),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte spдer erneut versuchen.',
+      };
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    if (response.status >= 500) {
+      return {
+        success: false,
+        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es spдer erneut.',
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: errorText || 'Refinement konnte nicht initialisiert werden.' };
+    }
+
+    const result = await response.json();
+    revalidatePath('/dashboard');
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('Error initializing combined refinement:', error);
+    return { success: false, error: error?.message || 'Failed to init combined refinement' };
+  }
+}
+
+export async function createCombinedRefinement(
+  kapitelId: string,
+  runId: string,
+  parentVersionId: string,
+  userMessage: string
+) {
+  await requireAuth();
+
+  try {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('__session')?.value;
+
+    if (!authToken) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/refine/combined`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+          parent_version_id: parentVersionId,
+          user_message: userMessage,
+        }),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte spдer erneut versuchen.',
+      };
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    if (response.status >= 500) {
+      return {
+        success: false,
+        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es spдer erneut.',
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: errorText || 'Refinement konnte nicht gestartet werden.' };
+    }
+
+    const result = await response.json();
+    revalidatePath('/dashboard');
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('Error creating combined refinement:', error);
+    return { success: false, error: error?.message || 'Failed to create combined refinement' };
+  }
+}
+
+export async function initShortenedRefinement(kapitelId: string, runId: string) {
+  await requireAuth();
+
+  try {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('__session')?.value;
+
+    if (!authToken) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/refine/shortened/init`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+        }),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
+      };
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    if (response.status >= 500) {
+      return {
+        success: false,
+        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: errorText || 'Refinement konnte nicht initialisiert werden.' };
+    }
+
+    const result = await response.json();
+    revalidatePath('/dashboard');
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('Error initializing shortened refinement:', error);
+    return { success: false, error: error?.message || 'Failed to init shortened refinement' };
+  }
+}
+
+export async function createShortenedRefinement(
+  kapitelId: string,
+  runId: string,
+  parentVersionId: string,
+  userMessage: string
+) {
+  await requireAuth();
+
+  try {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('__session')?.value;
+
+    if (!authToken) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/refine/shortened`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+          parent_version_id: parentVersionId,
+          user_message: userMessage,
+        }),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
+      };
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    if (response.status >= 500) {
+      return {
+        success: false,
+        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: errorText || 'Refinement konnte nicht gestartet werden.' };
+    }
+
+    const result = await response.json();
+    revalidatePath('/dashboard');
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('Error creating shortened refinement:', error);
+    return { success: false, error: error?.message || 'Failed to create shortened refinement' };
+  }
+}
+
+export async function initLeseflussRefinement(kapitelId: string, runId: string) {
+  await requireAuth();
+
+  try {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('__session')?.value;
+
+    if (!authToken) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/refine/lesefluss/init`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+        }),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
+      };
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    if (response.status >= 500) {
+      return {
+        success: false,
+        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: errorText || 'Refinement konnte nicht initialisiert werden.' };
+    }
+
+    const result = await response.json();
+    revalidatePath('/dashboard');
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('Error initializing lesefluss refinement:', error);
+    return { success: false, error: error?.message || 'Failed to init lesefluss refinement' };
+  }
+}
+
+export async function createLeseflussRefinement(
+  kapitelId: string,
+  runId: string,
+  parentVersionId: string,
+  userMessage: string
+) {
+  await requireAuth();
+
+  try {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('__session')?.value;
+
+    if (!authToken) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/refine/lesefluss`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+          parent_version_id: parentVersionId,
+          user_message: userMessage,
+        }),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
+      };
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    if (response.status >= 500) {
+      return {
+        success: false,
+        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: errorText || 'Refinement konnte nicht gestartet werden.' };
+    }
+
+    const result = await response.json();
+    revalidatePath('/dashboard');
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('Error creating lesefluss refinement:', error);
+    return { success: false, error: error?.message || 'Failed to create lesefluss refinement' };
+  }
+}
+
+export async function initResultRefinement(kapitelId: string, runId: string, quelleId: string) {
+  await requireAuth();
+
+  try {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('__session')?.value;
+
+    if (!authToken) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/refine/result/init`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+          quelle_id: quelleId,
+        }),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
+      };
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    if (response.status >= 500) {
+      return {
+        success: false,
+        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: errorText || 'Refinement konnte nicht initialisiert werden.' };
+    }
+
+    const result = await response.json();
+    revalidatePath('/dashboard');
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('Error initializing result refinement:', error);
+    return { success: false, error: error?.message || 'Failed to init result refinement' };
+  }
+}
+
+export async function createResultRefinement(
+  kapitelId: string,
+  runId: string,
+  quelleId: string,
+  parentVersionId: string,
+  userMessage: string
+) {
+  await requireAuth();
+
+  try {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('__session')?.value;
+
+    if (!authToken) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiBaseUrl}/api/refine/result`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          kapitel_id: kapitelId,
+          run_id: runId,
+          quelle_id: quelleId,
+          parent_version_id: parentVersionId,
+          user_message: userMessage,
+        }),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
+      };
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+    }
+
+    if (response.status >= 500) {
+      return {
+        success: false,
+        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
+      };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: errorText || 'Refinement konnte nicht gestartet werden.' };
+    }
+
+    const result = await response.json();
+    revalidatePath('/dashboard');
+    return { success: true, data: result };
+  } catch (error: any) {
+    console.error('Error creating result refinement:', error);
+    return { success: false, error: error?.message || 'Failed to create result refinement' };
   }
 }
 
