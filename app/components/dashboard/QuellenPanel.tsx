@@ -424,7 +424,7 @@ export function QuellenPanel({
                   <Button
                     size="sm"
                     variant="secondary"
-                    className="flex-1"
+                    className="flex-1 hover:bg-primary/10 hover:text-primary"
                     onClick={(e) => {
                       e.stopPropagation();
                       onUnassignQuelle(quelle.id);
