@@ -13,6 +13,10 @@ from models.request import (
     RefineCombinedRequest,
     RefineShortenedInitRequest,
     RefineShortenedRequest,
+    RefineLeseflussInitRequest,
+    RefineLeseflussRequest,
+    RefineResultInitRequest,
+    RefineResultRequest,
 )
 from models.response import ProcessQuelleResponse
 from services.quelle_service import quelle_service
@@ -456,6 +460,153 @@ async def refine_shortened_text(
             user_id=user_id,
             kapitel_id=request.kapitel_id,
             run_id=request.run_id,
+            version_id=queued["version_id"],
+            parent_version_id=request.parent_version_id,
+            user_message=request.user_message,
+        )
+
+    background_tasks.add_task(_run_refine)
+    queued["queued_at"] = datetime.utcnow().isoformat() + "Z"
+    return queued
+
+
+@app.post("/api/refine/lesefluss/init")
+async def init_lesefluss_refinement(
+    request: RefineLeseflussInitRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Initialize the text refinement flow for a lesefluss text.
+
+    Ensures:
+    - lesefluss/lesefluss/versions/root exists
+    - lesefluss doc has refinement metadata fields
+    """
+    logger.info(
+        f"Initializing lesefluss refinement for user {user_id} "
+        f"(kapitel {request.kapitel_id}, run {request.run_id})"
+    )
+    return await refinement_service.init_lesefluss_refinement(
+        user_id=user_id,
+        kapitel_id=request.kapitel_id,
+        run_id=request.run_id,
+    )
+
+
+@app.post("/api/refine/lesefluss", status_code=status.HTTP_202_ACCEPTED)
+async def refine_lesefluss_text(
+    request: RefineLeseflussRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Queue a lesefluss text refinement step (text refinement flow).
+
+    Writes a pending versions/{versionId} doc and processes the OpenAI call in the background.
+    """
+    logger.info(
+        f"Queueing lesefluss refinement for user {user_id} "
+        f"(kapitel {request.kapitel_id}, run {request.run_id}, parent {request.parent_version_id})"
+    )
+    try:
+        # Validate that an API key is available (user key or platform key)
+        await user_key_service.resolve_api_key_for_user(user_id)
+
+        queued = await refinement_service.queue_lesefluss_refinement(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            parent_version_id=request.parent_version_id,
+            user_message=request.user_message,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error queueing lesefluss refinement: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to queue refinement request.") from exc
+
+    async def _run_refine() -> None:
+        await refinement_service.process_lesefluss_refinement(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            version_id=queued["version_id"],
+            parent_version_id=request.parent_version_id,
+            user_message=request.user_message,
+        )
+
+    background_tasks.add_task(_run_refine)
+    queued["queued_at"] = datetime.utcnow().isoformat() + "Z"
+    return queued
+
+
+@app.post("/api/refine/result/init")
+async def init_result_refinement(
+    request: RefineResultInitRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Initialize the text refinement flow for a Quelle result text.
+
+    Ensures:
+    - results/{quelleId}/versions/root exists
+    - result doc has refinement metadata fields
+    """
+    logger.info(
+        f"Initializing result refinement for user {user_id} "
+        f"(kapitel {request.kapitel_id}, run {request.run_id}, quelle {request.quelle_id})"
+    )
+    return await refinement_service.init_result_refinement(
+        user_id=user_id,
+        kapitel_id=request.kapitel_id,
+        run_id=request.run_id,
+        quelle_id=request.quelle_id,
+    )
+
+
+@app.post("/api/refine/result", status_code=status.HTTP_202_ACCEPTED)
+async def refine_result_text(
+    request: RefineResultRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Queue a Quelle result text refinement step (text refinement flow).
+
+    Writes a pending results/{quelleId}/versions/{versionId} doc and processes the OpenAI call in the background.
+    """
+    logger.info(
+        f"Queueing result refinement for user {user_id} "
+        f"(kapitel {request.kapitel_id}, run {request.run_id}, quelle {request.quelle_id}, parent {request.parent_version_id})"
+    )
+    try:
+        # Validate that an API key is available (user key or platform key)
+        await user_key_service.resolve_api_key_for_user(user_id)
+
+        queued = await refinement_service.queue_result_refinement(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            quelle_id=request.quelle_id,
+            parent_version_id=request.parent_version_id,
+            user_message=request.user_message,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error queueing result refinement: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to queue refinement request.") from exc
+
+    async def _run_refine() -> None:
+        await refinement_service.process_result_refinement(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            quelle_id=request.quelle_id,
             version_id=queued["version_id"],
             parent_version_id=request.parent_version_id,
             user_message=request.user_message,

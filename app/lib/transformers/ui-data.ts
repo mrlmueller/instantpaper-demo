@@ -88,7 +88,9 @@ export function transformResultToUI(
   // Convert cost from dollars to cents (EUR)
   // Note: Firebase stores in USD, UI expects cents in EUR
   // For now, just convert to cents (multiply by 100)
-  const costInCents = Math.round((fbResult.cost || 0) * 100);
+  const baseCost = fbResult.cost || 0;
+  const refinementCost = (fbResult as any).refinementCostTotal || 0;
+  const costInCents = Math.round((baseCost + refinementCost) * 100);
 
   return {
     id: fbResult.quelleId,
@@ -158,6 +160,9 @@ export function transformRunToUI(
   const shortenedCost = fbRun.shortened
     ? Math.round((fbRun.shortened.cost || 0) * 100)
     : undefined;
+  const leseflussRefinementCost = fbRun.lesefluss
+    ? Math.round(((fbRun.lesefluss as any).refinementCostTotal || 0) * 100)
+    : 0;
 
   // Determine status
   // For now, simplified: if we have a combined result, it's success
@@ -196,6 +201,7 @@ export function transformRunToUI(
     leseflussCost: fbRun.lesefluss
       ? Math.round((fbRun.lesefluss.cost || 0) * 100)
       : undefined,
+    leseflussRefinementCost,
   };
 }
 

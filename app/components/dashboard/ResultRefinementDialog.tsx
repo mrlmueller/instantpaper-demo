@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/app/components/providers/AuthProvider";
 import { firebaseApp } from "@/app/lib/firebase/config";
 import { getFirestore, collection, doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
-import { createShortenedRefinement, initShortenedRefinement } from "@/app/actions/kapitels";
+import { createResultRefinement, initResultRefinement } from "@/app/actions/kapitels";
 
 type ModelChoice = "gpt-5-nano" | "gpt-5-mini" | "gpt-5.2";
 
@@ -35,6 +35,7 @@ type RefinementVersion = {
   depth: number;
   user_message?: string | null;
   assistant_text?: string;
+  has_content?: boolean;
   status: "running" | "success" | "error";
   model?: string;
   usage?: {
@@ -87,15 +88,13 @@ function toDate(value: any): Date {
   return new Date(0);
 }
 
-function countWords(text: string) {
-  return (text || "").trim().split(/\s+/).filter(Boolean).length;
-}
-
-interface ShortenedRefinementDialogProps {
+interface ResultRefinementDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   kapitelId: string;
   runId: string;
+  quelleId: string;
+  quelleName: string;
   kapitelLabel: string;
   ensureOpenAIAccess: () => Promise<boolean>;
   onAuthFailure: () => void;
@@ -103,12 +102,14 @@ interface ShortenedRefinementDialogProps {
   onOpenTextViewer: (content: { title: string; text: string }) => void;
 }
 
-export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps) {
+export function ResultRefinementDialog(_props: ResultRefinementDialogProps) {
   const {
     open,
     onOpenChange,
     kapitelId,
     runId,
+    quelleId,
+    quelleName,
     kapitelLabel,
     ensureOpenAIAccess,
     onAuthFailure,
@@ -137,22 +138,23 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
 
   const db = useMemo(() => getFirestore(firebaseApp), []);
 
-  const shortenedDocRef = useMemo(() => {
+  const resultDocRef = useMemo(() => {
     if (!user?.uid) return null;
-    return doc(db, "users", user.uid, "kapitels", kapitelId, "runs", runId, "shortened", "shortened");
-  }, [db, user?.uid, kapitelId, runId]);
+    if (!quelleId) return null;
+    return doc(db, "users", user.uid, "kapitels", kapitelId, "runs", runId, "results", quelleId);
+  }, [db, user?.uid, kapitelId, runId, quelleId]);
 
   const versionsRef = useMemo(() => {
-    if (!shortenedDocRef) return null;
-    return collection(shortenedDocRef, "versions");
-  }, [shortenedDocRef]);
+    if (!resultDocRef) return null;
+    return collection(resultDocRef, "versions");
+  }, [resultDocRef]);
 
   useEffect(() => {
     setSelectedChildByParentId({});
     setEditingVersionId(null);
     setEditMessage("");
     setMessage("");
-  }, [kapitelId, runId]);
+  }, [kapitelId, runId, quelleId]);
 
   useEffect(() => {
     if (open) return;
@@ -163,12 +165,12 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
 
   useEffect(() => {
     if (!open) return;
-    if (!kapitelId || !runId) return;
+    if (!kapitelId || !runId || !quelleId) return;
     if (!user?.uid) return;
     if (initLoading) return;
 
     setInitLoading(true);
-    initShortenedRefinement(kapitelId, runId)
+    initResultRefinement(kapitelId, runId, quelleId)
       .then((res) => {
         if (!res?.success) {
           const msg = (res?.error || "Initialisierung fehlgeschlagen.").toString();
@@ -178,7 +180,7 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
             return;
           }
           if (lower.includes("fastapi-server")) {
-            onServerDown("refine-shortened-init-down");
+            onServerDown("refine-result-init-down");
             return;
           }
           toast.error("Refinement nicht verf\u00fcgbar", { description: msg });
@@ -190,14 +192,14 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
       })
       .finally(() => setInitLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, kapitelId, runId, user?.uid]);
+  }, [open, kapitelId, runId, quelleId, user?.uid]);
 
   useEffect(() => {
     if (!open) return;
-    if (!shortenedDocRef) return;
+    if (!resultDocRef) return;
 
     const unsub = onSnapshot(
-      shortenedDocRef,
+      resultDocRef,
       (snap) => {
         const data: any = snap.data();
         if (!data) return;
@@ -205,12 +207,12 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
         setRefinementCostTotalUsd(Number(data.refinement_cost_total ?? 0));
       },
       (err) => {
-        console.error("Shortened refinement doc listen failed:", err);
+        console.error("Result refinement doc listen failed:", err);
       }
     );
 
     return () => unsub();
-  }, [open, shortenedDocRef]);
+  }, [open, resultDocRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -227,6 +229,7 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
             depth: Number(data.depth ?? 0),
             user_message: data.user_message ?? null,
             assistant_text: data.assistant_text ?? "",
+            has_content: typeof data.has_content === "boolean" ? data.has_content : undefined,
             status: data.status ?? "success",
             model: data.model ?? "",
             usage: data.usage ?? null,
@@ -238,7 +241,7 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
         setVersions(items);
       },
       (err) => {
-        console.error("Shortened refinement versions listen failed:", err);
+        console.error("Result refinement versions listen failed:", err);
       }
     );
 
@@ -266,18 +269,15 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
       });
     }
 
-    return {
-      byId,
-      childrenByParentId,
-      root: byId.get("root") ?? null,
-    };
+    const root = byId.get("root") ?? null;
+    return { byId, childrenByParentId, root };
   }, [versions]);
 
   const path = useMemo(() => {
     if (!tree.root) return [];
-
     const chain: RefinementVersion[] = [tree.root];
-    let current: RefinementVersion = tree.root;
+    let current = tree.root;
+
     let guard = 0;
     while (guard < 32) {
       guard++;
@@ -344,95 +344,32 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
 
   const handleUseVersion = useCallback(
     async (version: RefinementVersion) => {
-      if (!shortenedDocRef) return;
+      if (!resultDocRef) return;
       if (!version.assistant_text || version.status !== "success") return;
+      if (version.has_content === false) return;
 
       try {
-        const wordCount = countWords(version.assistant_text);
-        await updateDoc(shortenedDocRef, {
-          shortened_content: version.assistant_text,
-          shortened_length: wordCount,
+        await updateDoc(resultDocRef, {
+          result_content: version.assistant_text,
+          has_content: true,
           refinement_active_version_id: version.id,
           refinement_selected_at: serverTimestamp(),
         });
-        toast.success("Version \u00fcbernommen", { description: "Der gek\u00fcrzte Text wurde aktualisiert." });
+        toast.success("Version \u00fcbernommen", { description: "Der Einzeltext wurde aktualisiert." });
       } catch (err: any) {
-        console.error("Failed to set active shortened refinement version:", err);
+        console.error("Failed to set active result refinement version:", err);
         toast.error("Konnte Version nicht \u00fcbernehmen", {
           description: err?.message || "Unbekannter Fehler",
         });
       }
     },
-    [shortenedDocRef]
+    [resultDocRef]
   );
 
   const handleCopy = useCallback(async (text: string) => {
     await navigator.clipboard.writeText(text);
-    toast.success("Kopiert");
+    toast.success("Kopiert", { description: "Text wurde in die Zwischenablage kopiert." });
   }, []);
-
-  const handleSend = useCallback(async () => {
-    if (!kapitelId || !runId) return;
-    if (!user?.uid) return;
-    const trimmed = message.trim();
-    if (!trimmed) return;
-    if (sending) return;
-    if (isSelectedBranchRunning) return;
-
-    if (!(await ensureOpenAIAccess())) return;
-
-    if (nextDepth > maxDepth) {
-      toast.error("Limit erreicht", {
-        description: `Maximal ${maxDepth} Iterationen ab Root m\u00f6glich. Bitte w\u00e4hle eine andere Version oder starte neu.`,
-      });
-      return;
-    }
-
-    const parentVersionId = parentForNext?.id || "root";
-    setSending(true);
-    try {
-      const res = await createShortenedRefinement(kapitelId, runId, parentVersionId, trimmed);
-      if (!res?.success) {
-        const msg = (res?.error || "Refinement konnte nicht gestartet werden.").toString();
-        const lower = msg.toLowerCase();
-        if (lower.includes("sitzung")) {
-          onAuthFailure();
-          return;
-        }
-        if (lower.includes("fastapi-server")) {
-          onServerDown("refine-shortened-down");
-          return;
-        }
-        toast.error("Refinement fehlgeschlagen", { description: msg });
-        return;
-      }
-
-      const newVersionId = String((res as any)?.data?.version_id ?? "");
-      if (newVersionId) {
-        setSelectedChildByParentId((prev) => ({ ...prev, [parentVersionId]: newVersionId }));
-      }
-
-      setMessage("");
-      toast.success("Refinement gestartet", {
-        description: `Iteration ${nextDepth}/${maxDepth} wird berechnet...`,
-      });
-    } finally {
-      setSending(false);
-    }
-  }, [
-    ensureOpenAIAccess,
-    isSelectedBranchRunning,
-    kapitelId,
-    maxDepth,
-    message,
-    nextDepth,
-    onAuthFailure,
-    onServerDown,
-    parentForNext?.id,
-    runId,
-    sending,
-    user?.uid,
-  ]);
 
   const handleCycleBranch = useCallback(
     (parentId: string, delta: -1 | 1) => {
@@ -463,27 +400,28 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
 
   const submitEdit = useCallback(
     async (version: RefinementVersion) => {
-      if (!kapitelId || !runId) return;
+      if (!kapitelId || !runId || !quelleId) return;
       if (!user?.uid) return;
-      if (editSending) return;
 
       const trimmed = editMessage.trim();
       if (!trimmed) return;
+      if (editSending) return;
 
       if (!(await ensureOpenAIAccess())) return;
 
-      const parentId = version.parent_version_id || "root";
-      const editedDepth = version.depth ?? 1;
-      if (editedDepth > maxDepth) {
+      const parentVersionId = version.parent_version_id || "root";
+      const parentDepth = Number(tree.byId.get(parentVersionId)?.depth ?? 0);
+      const newDepth = parentDepth + 1;
+      if (newDepth > maxDepth) {
         toast.error("Limit erreicht", {
-          description: `Maximal ${maxDepth} Iterationen ab Root m\u00f6glich. Bitte w\u00e4hle eine andere Version.`,
+          description: `Maximal ${maxDepth} Iterationen ab Root m\"glich.`,
         });
         return;
       }
 
       setEditSending(true);
       try {
-        const res = await createShortenedRefinement(kapitelId, runId, parentId, trimmed);
+        const res = await createResultRefinement(kapitelId, runId, quelleId, parentVersionId, trimmed);
         if (!res?.success) {
           const msg = (res?.error || "Refinement konnte nicht gestartet werden.").toString();
           const lower = msg.toLowerCase();
@@ -492,7 +430,7 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
             return;
           }
           if (lower.includes("fastapi-server")) {
-            onServerDown("refine-shortened-down");
+            onServerDown("refine-result-edit-down");
             return;
           }
           toast.error("Refinement fehlgeschlagen", { description: msg });
@@ -501,30 +439,96 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
 
         const newVersionId = String((res as any)?.data?.version_id ?? "");
         if (newVersionId) {
-          setSelectedChildByParentId((prev) => ({ ...prev, [parentId]: newVersionId }));
+          setSelectedChildByParentId((prev) => ({ ...prev, [parentVersionId]: newVersionId }));
         }
 
         cancelEdit();
         toast.success("Branch erstellt", {
-          description: "Die ge\u00e4nderte Nachricht wurde als neuer Branch gespeichert.",
+          description: `Iteration ${newDepth}/${maxDepth} wird berechnet...`,
         });
       } finally {
         setEditSending(false);
       }
     },
     [
-      cancelEdit,
-      editMessage,
-      editSending,
       ensureOpenAIAccess,
       kapitelId,
+      runId,
+      quelleId,
+      user?.uid,
+      editMessage,
+      editSending,
       maxDepth,
+      tree.byId,
       onAuthFailure,
       onServerDown,
-      runId,
-      user?.uid,
+      cancelEdit,
     ]
   );
+
+  const handleSend = useCallback(async () => {
+    if (!kapitelId || !runId || !quelleId) return;
+    if (!user?.uid) return;
+    const trimmed = message.trim();
+    if (!trimmed) return;
+    if (sending) return;
+
+    if (!(await ensureOpenAIAccess())) return;
+
+    if (nextDepth > maxDepth) {
+      toast.error("Limit erreicht", {
+        description: `Maximal ${maxDepth} Iterationen ab Root m”glich. Bitte w„hle eine andere Version oder starte neu.`,
+      });
+      return;
+    }
+
+    const parentVersionId = parentForNext?.id || "root";
+    setSending(true);
+    try {
+      const res = await createResultRefinement(kapitelId, runId, quelleId, parentVersionId, trimmed);
+      if (!res?.success) {
+        const msg = (res?.error || "Refinement konnte nicht gestartet werden.").toString();
+        const lower = msg.toLowerCase();
+        if (lower.includes("sitzung")) {
+          onAuthFailure();
+          return;
+        }
+        if (lower.includes("fastapi-server")) {
+          onServerDown("refine-result-down");
+          return;
+        }
+        toast.error("Refinement fehlgeschlagen", { description: msg });
+        return;
+      }
+
+      const newVersionId = String((res as any)?.data?.version_id ?? "");
+      if (newVersionId) {
+        setSelectedChildByParentId((prev) => ({ ...prev, [parentVersionId]: newVersionId }));
+      }
+
+      setMessage("");
+      toast.success("Refinement gestartet", {
+        description: `Iteration ${nextDepth}/${maxDepth} wird berechnet...`,
+      });
+    } finally {
+      setSending(false);
+    }
+  }, [
+    ensureOpenAIAccess,
+    kapitelId,
+    runId,
+    quelleId,
+    user?.uid,
+    message,
+    sending,
+    maxDepth,
+    nextDepth,
+    parentForNext?.id,
+    onAuthFailure,
+    onServerDown,
+  ]);
+
+  const canSend = !sending && !isDepthLimitReached && !isSelectedBranchRunning && message.trim().length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -534,21 +538,23 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
               <MessageSquareText className="h-4 w-4 text-primary" />
             </div>
-            Text verfeinern (Gek\u00fcrzter Text)
+            Text verfeinern (Quelle)
           </DialogTitle>
           <DialogDescription>
-            Verfeinere den Text iterativ. Der Haupttext wird erst aktualisiert, wenn du eine Version \u00fcbernimmst.
+            Verfeinere den Text iterativ. Der Einzeltext wird erst aktualisiert, wenn du eine Version \u00fcbernimmst.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center justify-between gap-4 mt-2">
           <div className="text-xs text-muted-foreground">
             <span className="font-medium text-foreground">{kapitelLabel}</span>
-            <span className="mx-2">\u00b7</span>
+            <span className="mx-2">·</span>
+            <span className="font-medium text-foreground">{quelleName}</span>
+            <span className="mx-2">·</span>
             <span>Max. Tiefe: {maxDepth}</span>
-            <span className="mx-2">\u00b7</span>
+            <span className="mx-2">·</span>
             <span>Aktiv: {activeVersionId}</span>
-            <span className="mx-2">\u00b7</span>
+            <span className="mx-2">·</span>
             <span>Refinement-Kosten: {formatEurFromUsd(refinementCostTotalUsd)}</span>
           </div>
 
@@ -557,7 +563,7 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
             <div className="text-sm font-medium">{estimate ? `~ ${formatEurFromUsd(estimate.estUsd)}` : "-"}</div>
             {estimate && (
               <div className="text-[11px] text-muted-foreground">
-                In: ~{estimate.estInput.toLocaleString()} \u00b7 Out: ~{estimate.estOutput.toLocaleString()}
+                In: ~{estimate.estInput.toLocaleString()} · Out: ~{estimate.estOutput.toLocaleString()}
               </div>
             )}
           </div>
@@ -565,16 +571,6 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
 
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden mt-4 border rounded-lg">
           <div className="p-4 space-y-4">
-            <div className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{kapitelLabel}</span>
-              <span className="mx-2">·</span>
-              <span>Max. Tiefe: {maxDepth}</span>
-              <span className="mx-2">·</span>
-              <span>Aktiv: {activeVersionId}</span>
-              <span className="mx-2">·</span>
-              <span>Refinement-Kosten: {formatEurFromUsd(refinementCostTotalUsd)}</span>
-            </div>
-
             {initLoading && versions.length === 0 && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -592,6 +588,7 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
               const isRoot = v.id === "root";
               const isActive = v.id === activeVersionId;
               const assistantText = (v.assistant_text || "").trim();
+              const hasContent = v.has_content !== false;
 
               const children = tree.childrenByParentId.get(v.id) ?? [];
               const selectedChildId = selectedChildByParentId[v.id];
@@ -608,7 +605,9 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
                     <div className="flex justify-start">
                       <Card className="max-w-[85%] p-4 bg-muted/30 border-border">
                         <div className="flex items-center justify-between gap-3 mb-2">
-                          <div className="text-xs text-muted-foreground">ASSISTANT \u00b7 Ausgangstext</div>
+                          <div className="text-xs text-muted-foreground">
+                            ASSISTANT \u00b7 Ausgangstext{!hasContent ? " \u00b7 kein Inhalt" : ""}
+                          </div>
                           <div className="flex items-center gap-2">
                             {isActive && (
                               <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary">
@@ -646,7 +645,7 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
                               variant="outline"
                               onClick={() =>
                                 onOpenTextViewer({
-                                  title: `${kapitelLabel} - Refinement (Root)`,
+                                  title: `${kapitelLabel} - ${quelleName} - Refinement (Root)`,
                                   text: assistantText,
                                 })
                               }
@@ -654,14 +653,26 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
                             >
                               Volltext
                             </Button>
-                            <Button size="sm" variant="default" onClick={() => handleUseVersion(v)} disabled={isActive || !assistantText}>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => handleUseVersion(v)}
+                              disabled={isActive || !assistantText || !hasContent}
+                            >
                               <CheckCircle2 className="h-4 w-4 mr-2" />
                               \u00dcbernehmen
                             </Button>
                           </div>
                         </div>
 
-                        <div className={cn("text-sm whitespace-pre-wrap leading-relaxed", "line-clamp-[12]")}>{assistantText}</div>
+                        <div className={cn("text-sm whitespace-pre-wrap leading-relaxed", "line-clamp-[12]")}>
+                          {assistantText}
+                        </div>
+                        {!hasContent && (
+                          <div className="mt-2 text-xs text-amber-700 dark:text-amber-500">
+                            Kein verwertbarer Inhalt (nicht \u00fcbernehmbar).
+                          </div>
+                        )}
                       </Card>
                     </div>
                   ) : (
@@ -688,62 +699,60 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
                                     size="sm"
                                     variant="ghost"
                                     onClick={() => handleCycleBranch(v.id, 1)}
-                                    aria-label="Naechster Branch"
+                                    aria-label="N\u00e4chster Branch"
                                   >
                                     <ChevronRight className="h-4 w-4" />
                                   </Button>
                                 </div>
                               )}
-                              <Button size="sm" variant="ghost" onClick={() => handleCopy(v.user_message || "")} disabled={!v.user_message}>
-                                <Copy className="h-4 w-4" />
-                              </Button>
-                              <Button size="sm" variant="secondary" onClick={() => startEdit(v)} disabled={!v.user_message}>
-                                <Pencil className="h-4 w-4 mr-1" />
-                                Edit
-                              </Button>
+                              {editingVersionId === v.id ? (
+                                <>
+                                  <Button size="sm" variant="ghost" onClick={cancelEdit} disabled={editSending}>
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => submitEdit(v)}
+                                    disabled={editSending}
+                                  >
+                                    {editSending ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Check className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button size="sm" variant="ghost" onClick={() => startEdit(v)} disabled={v.status === "running"}>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                           </div>
 
                           {editingVersionId === v.id ? (
-                            <div className="space-y-3">
-                              <div className="text-xs text-primary-foreground/70">
-                                Bearbeiten: Erstellt einen neuen Branch (alte Version bleibt erhalten).
-                              </div>
-                              <Textarea
-                                value={editMessage}
-                                onChange={(e) => setEditMessage(e.target.value)}
-                                className="min-h-[80px] max-h-[220px] overflow-y-auto resize-none bg-primary-foreground/10 text-primary-foreground placeholder:text-primary-foreground/70 border-primary-foreground/20 focus-visible:ring-primary-foreground/20"
-                                disabled={editSending}
-                              />
-                              <div className="flex items-center gap-2 justify-end">
-                                <Button size="sm" variant="ghost" onClick={cancelEdit} disabled={editSending}>
-                                  <X className="h-4 w-4 mr-1" />
-                                  Abbrechen
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => submitEdit(v)}
-                                  disabled={editSending || editMessage.trim().length === 0}
-                                >
-                                  {editSending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Check className="h-4 w-4 mr-1" />}
-                                  Speichern
-                                </Button>
-                              </div>
-                            </div>
+                            <Textarea
+                              value={editMessage}
+                              onChange={(e) => setEditMessage(e.target.value)}
+                              className="min-h-[80px] max-h-[220px] overflow-y-auto resize-none bg-background/10 text-primary-foreground placeholder:text-primary-foreground/50"
+                              placeholder="Nachricht bearbeiten..."
+                              disabled={editSending}
+                            />
                           ) : (
-                            <div className="text-sm whitespace-pre-wrap leading-relaxed">{v.user_message}</div>
+                            <div className="text-sm whitespace-pre-wrap leading-relaxed">{v.user_message || ""}</div>
                           )}
                         </Card>
                       </div>
 
                       <div className="flex justify-start">
-                        <Card className="max-w-[85%] p-4 bg-card border-border">
+                        <Card className="max-w-[85%] p-4 bg-muted/30 border-border">
                           <div className="flex items-center justify-between gap-3 mb-2">
                             <div className="text-xs text-muted-foreground">
-                              ASSISTANT
-                              {v.status === "running" && " \u00b7 l\u00e4uft."}
-                              {v.status === "error" && " \u00b7 Fehler"}
+                              ASSISTANT <span className="mx-1">·</span> Iteration {v.depth}
+                              {v.status === "running" && " · läuft."}
+                              {v.status === "error" && " · Fehler"}
+                              {v.status === "success" && !hasContent && " · kein Inhalt"}
                             </div>
                             <div className="flex items-center gap-2">
                               {isActive && (
@@ -787,7 +796,7 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
                                 variant="outline"
                                 onClick={() =>
                                   onOpenTextViewer({
-                                    title: `${kapitelLabel} - Refinement (Iteration ${v.depth})`,
+                                    title: `${kapitelLabel} - ${quelleName} - Refinement (Iteration ${v.depth})`,
                                     text: assistantText,
                                   })
                                 }
@@ -799,7 +808,7 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
                                 size="sm"
                                 variant="default"
                                 onClick={() => handleUseVersion(v)}
-                                disabled={v.status !== "success" || isActive || !assistantText}
+                                disabled={v.status !== "success" || isActive || !assistantText || !hasContent}
                               >
                                 <CheckCircle2 className="h-4 w-4 mr-2" />
                                 \u00dcbernehmen
@@ -813,9 +822,20 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
                               Antwort wird generiert.
                             </div>
                           ) : v.status === "error" ? (
-                            <div className="text-sm text-destructive whitespace-pre-wrap">{v.error_message || "Unbekannter Fehler"}</div>
+                            <div className="text-sm text-destructive whitespace-pre-wrap">
+                              {v.error_message || "Unbekannter Fehler"}
+                            </div>
                           ) : (
-                            <div className={cn("text-sm whitespace-pre-wrap leading-relaxed", "line-clamp-[12]")}>{assistantText}</div>
+                            <>
+                              <div className={cn("text-sm whitespace-pre-wrap leading-relaxed", "line-clamp-[12]")}>
+                                {assistantText}
+                              </div>
+                              {!hasContent && (
+                                <div className="mt-2 text-xs text-amber-700 dark:text-amber-500">
+                                  Kein verwertbarer Inhalt (nicht \u00fcbernehmbar).
+                                </div>
+                              )}
+                            </>
                           )}
                         </Card>
                       </div>
@@ -836,25 +856,24 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
               <Textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder='z.B. "Schreibe das nochmal, aber ohne Wiederholungen und mit klareren Übergängen."'
+                placeholder='z.B. "Schreibe das nochmal, aber fokussiere dich mehr auf X."'
                 className="mt-1.5 min-h-[80px] max-h-[220px] overflow-y-auto resize-none"
-                disabled={sending || initLoading || isDepthLimitReached || isSelectedBranchRunning}
+                disabled={sending || isDepthLimitReached || isSelectedBranchRunning}
               />
-              <div className="mt-1 text-[11px] text-muted-foreground">
-                N\u00e4chste Iteration: {nextDepth}/{maxDepth}
+              <div className="mt-1.5 text-[11px] text-muted-foreground flex items-center justify-between">
+                <span>
+                  {isDepthLimitReached ? `Max. ${maxDepth} Iterationen erreicht.` : `N\u00e4chste Iteration: ${nextDepth}/${maxDepth}`}
+                </span>
+                {isSelectedBranchRunning && <span>Antwort wird generiert... Bitte warten.</span>}
               </div>
-              {isSelectedBranchRunning && (
-                <div className="mt-1 text-[11px] text-muted-foreground">
-                  Antwort wird noch generiert… Bitte warten oder wechsle den Branch.
-                </div>
-              )}
             </div>
-            <Button
-              onClick={handleSend}
-              disabled={sending || initLoading || message.trim().length === 0 || isDepthLimitReached || isSelectedBranchRunning}
-              className="h-10"
-            >
-              {sending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+
+            <Button onClick={handleSend} disabled={!canSend} className={cn("min-w-[120px]", sending && "opacity-80")}>
+              {sending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4 mr-2" />
+              )}
               Senden
             </Button>
           </div>

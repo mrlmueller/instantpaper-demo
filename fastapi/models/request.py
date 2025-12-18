@@ -129,3 +129,37 @@ class RefineShortenedRequest(BaseModel):
     run_id: str = Field(..., description="Run ID that contains the shortened text")
     parent_version_id: str = Field(..., description="Version ID to refine from")
     user_message: str = Field(..., description="User instruction for refinement", min_length=1)
+
+
+class RefineLeseflussInitRequest(BaseModel):
+    """Request model for initializing the text refinement flow for a lesefluss text."""
+
+    kapitel_id: str = Field(..., description="Kapitel ID")
+    run_id: str = Field(..., description="Run ID that contains the lesefluss text")
+
+
+class RefineLeseflussRequest(BaseModel):
+    """Request model for refining a lesefluss text (text refinement flow)."""
+
+    kapitel_id: str = Field(..., description="Kapitel ID")
+    run_id: str = Field(..., description="Run ID that contains the lesefluss text")
+    parent_version_id: str = Field(..., description="Version ID to refine from")
+    user_message: str = Field(..., description="User instruction for refinement", min_length=1)
+
+
+class RefineResultInitRequest(BaseModel):
+    """Request model for initializing the text refinement flow for a Quelle result text."""
+
+    kapitel_id: str = Field(..., description="Kapitel ID")
+    run_id: str = Field(..., description="Run ID that contains the Quelle results")
+    quelle_id: str = Field(..., description="Quelle ID / result document ID to refine")
+
+
+class RefineResultRequest(BaseModel):
+    """Request model for refining a Quelle result text (text refinement flow)."""
+
+    kapitel_id: str = Field(..., description="Kapitel ID")
+    run_id: str = Field(..., description="Run ID that contains the Quelle results")
+    quelle_id: str = Field(..., description="Quelle ID / result document ID to refine")
+    parent_version_id: str = Field(..., description="Version ID to refine from")
+    user_message: str = Field(..., description="User instruction for refinement", min_length=1)

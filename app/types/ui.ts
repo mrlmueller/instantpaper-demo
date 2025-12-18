@@ -82,6 +82,7 @@ export interface Run {
   leseflussOriginalLength?: number;
   leseflussLength?: number;
   leseflussCost?: number;
+  leseflussRefinementCost?: number; // Total cost for lesefluss text refinements (in cents)
 }
 
 export interface ProcessingSettings {

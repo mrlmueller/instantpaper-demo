@@ -57,8 +57,10 @@ interface KapitelWorkspaceProps {
   onToggleQuellenPanel: () => void;
   onOpenShorten: () => void;
   onOpenLesefluss: () => void;
+  onOpenLeseflussRefinement: () => void;
   onOpenCombinedRefinement: () => void;
   onOpenShortenedRefinement: () => void;
+  onOpenResultRefinement: (quelleId: string, quelleName: string) => void;
 }
 
 export function KapitelWorkspace({
@@ -77,8 +79,10 @@ export function KapitelWorkspace({
   onToggleQuellenPanel,
   onOpenShorten,
   onOpenLesefluss,
+  onOpenLeseflussRefinement,
   onOpenCombinedRefinement,
   onOpenShortenedRefinement,
+  onOpenResultRefinement,
 }: KapitelWorkspaceProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] =
@@ -139,6 +143,7 @@ export function KapitelWorkspace({
       (selectedRun.shortenedCost || 0) +
       (selectedRun.shortenedRefinementCost || 0) +
       (selectedRun.leseflussCost || 0) +
+      (selectedRun.leseflussRefinementCost || 0) +
       summariesCost
     : 0;
 
@@ -298,6 +303,14 @@ export function KapitelWorkspace({
                     </h2>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onOpenLeseflussRefinement}
+                    >
+                      <MessageSquareText className="h-4 w-4 mr-2" />
+                      Verfeinern
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -813,39 +826,50 @@ export function KapitelWorkspace({
                           <span className="text-sm">Kein verwertbarer Inhalt</span>
                         </div>
                       )}
+                    {ergebnis.status === "success" && ergebnis.text && (
+                      <p className="text-sm text-foreground/80 line-clamp-3">
+                        {ergebnis.text}
+                      </p>
+                    )}
+                  </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onOpenResultRefinement(ergebnis.quelleId, ergebnis.quelleName)}
+                        disabled={ergebnis.status === "waiting"}
+                      >
+                        <MessageSquareText className="h-4 w-4 mr-2" />
+                        Verfeinern
+                      </Button>
                       {ergebnis.status === "success" && ergebnis.text && (
-                        <p className="text-sm text-foreground/80 line-clamp-3">
-                          {ergebnis.text}
-                        </p>
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleCopy(ergebnis.text, ergebnis.id)}
+                          >
+                            {copiedId === ergebnis.id ? (
+                              <Check className="h-4 w-4 text-primary" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              onOpenTextViewer({
+                                title: ergebnis.quelleName,
+                                text: ergebnis.text,
+                              })
+                            }
+                          >
+                            <Maximize2 className="h-4 w-4" />
+                          </Button>
+                        </>
                       )}
                     </div>
-                    {ergebnis.status === "success" && ergebnis.text && (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleCopy(ergebnis.text, ergebnis.id)}
-                        >
-                          {copiedId === ergebnis.id ? (
-                            <Check className="h-4 w-4 text-primary" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            onOpenTextViewer({
-                              title: ergebnis.quelleName,
-                              text: ergebnis.text,
-                            })
-                          }
-                        >
-                          <Maximize2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    )}
                   </div>
                 </Card>
               ))}

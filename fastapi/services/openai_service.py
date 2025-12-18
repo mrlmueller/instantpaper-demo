@@ -73,7 +73,8 @@ class OpenAIService:
         model: str,
         grundlegende_informationen: str = None,
         api_key: str | None = None,
-        quelle_images: list[str] | None = None
+        quelle_images: list[str] | None = None,
+        debug_prompt_dump_path: str | None = None,
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
@@ -95,6 +96,20 @@ class OpenAIService:
             logger.debug(f"Prompt length: {len(prompt)} characters")
             if quelle_images:
                 logger.info(f"Including {len(quelle_images)} image(s) in request")
+
+            if debug_prompt_dump_path:
+                try:
+                    dump_path = Path(debug_prompt_dump_path)
+                    dump_path.parent.mkdir(parents=True, exist_ok=True)
+                    dump_text = prompt
+                    if quelle_images:
+                        dump_text += "\n\n---\n\n### Images\n" + "\n".join(
+                            [f"- {u}" for u in quelle_images]
+                        )
+                    dump_path.write_text(dump_text, encoding="utf-8")
+                    logger.info(f"Saved prompt dump to {dump_path}")
+                except Exception as dump_exc:
+                    logger.warning(f"Failed to write prompt dump: {dump_exc}")
 
             # Build user message content (multimodal format)
             user_message_content = [
@@ -499,12 +514,22 @@ class OpenAIService:
         self,
         prompt: str,
         model: str,
-        api_key: str | None = None
+        api_key: str | None = None,
+        debug_prompt_dump_path: str | None = None,
     ) -> tuple[str, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
             client = self._get_client(api_key)
             logger.info(f"Improving reading flow with model {model}")
+
+            if debug_prompt_dump_path:
+                try:
+                    dump_path = Path(debug_prompt_dump_path)
+                    dump_path.parent.mkdir(parents=True, exist_ok=True)
+                    dump_path.write_text(prompt, encoding="utf-8")
+                    logger.info(f"Saved prompt dump to {dump_path}")
+                except Exception as dump_exc:
+                    logger.warning(f"Failed to write prompt dump: {dump_exc}")
 
             response = await client.responses.create(
                 model=model,

@@ -13,6 +13,8 @@ import { ShortenDialog } from './ShortenDialog';
 import { LeseflussDialog } from './LeseflussDialog';
 import { CombinedRefinementDialog } from './CombinedRefinementDialog';
 import { ShortenedRefinementDialog } from './ShortenedRefinementDialog';
+import { LeseflussRefinementDialog } from './LeseflussRefinementDialog';
+import { ResultRefinementDialog } from './ResultRefinementDialog';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import { QuellenPanelSkeleton } from './QuellenPanelSkeleton';
@@ -338,6 +340,9 @@ export function Dashboard({
   const [leseflussDialogOpen, setLeseflussDialogOpen] = useState(false);
   const [combinedRefinementDialogOpen, setCombinedRefinementDialogOpen] = useState(false);
   const [shortenedRefinementDialogOpen, setShortenedRefinementDialogOpen] = useState(false);
+  const [leseflussRefinementDialogOpen, setLeseflussRefinementDialogOpen] = useState(false);
+  const [resultRefinementDialogOpen, setResultRefinementDialogOpen] = useState(false);
+  const [resultRefinementTarget, setResultRefinementTarget] = useState<{ quelleId: string; quelleName: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     type: 'quelle' | 'kapitel' | 'projekt';
     id: string;
@@ -1979,8 +1984,13 @@ export function Dashboard({
                 onToggleQuellenPanel={handleToggleQuellenPanel}
                 onOpenShorten={() => setShortenDialogOpen(true)}
                 onOpenLesefluss={() => setLeseflussDialogOpen(true)}
+                onOpenLeseflussRefinement={() => setLeseflussRefinementDialogOpen(true)}
                 onOpenCombinedRefinement={() => setCombinedRefinementDialogOpen(true)}
                 onOpenShortenedRefinement={() => setShortenedRefinementDialogOpen(true)}
+                onOpenResultRefinement={(quelleId, quelleName) => {
+                  setResultRefinementTarget({ quelleId, quelleName });
+                  setResultRefinementDialogOpen(true);
+                }}
               />
             )
           ) : (
@@ -2086,6 +2096,39 @@ export function Dashboard({
           onOpenChange={setShortenedRefinementDialogOpen}
           kapitelId={activeKapitel.id}
           runId={selectedRun.id}
+          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          ensureOpenAIAccess={ensureOpenAIAccess}
+          onAuthFailure={handleAuthFailure}
+          onServerDown={notifyServerDown}
+          onOpenTextViewer={setTextViewerContent}
+        />
+      )}
+
+      {activeKapitel && selectedRun && (
+        <LeseflussRefinementDialog
+          open={leseflussRefinementDialogOpen}
+          onOpenChange={setLeseflussRefinementDialogOpen}
+          kapitelId={activeKapitel.id}
+          runId={selectedRun.id}
+          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          ensureOpenAIAccess={ensureOpenAIAccess}
+          onAuthFailure={handleAuthFailure}
+          onServerDown={notifyServerDown}
+          onOpenTextViewer={setTextViewerContent}
+        />
+      )}
+
+      {activeKapitel && selectedRun && resultRefinementTarget && (
+        <ResultRefinementDialog
+          open={resultRefinementDialogOpen}
+          onOpenChange={(open) => {
+            setResultRefinementDialogOpen(open);
+            if (!open) setResultRefinementTarget(null);
+          }}
+          kapitelId={activeKapitel.id}
+          runId={selectedRun.id}
+          quelleId={resultRefinementTarget.quelleId}
+          quelleName={resultRefinementTarget.quelleName}
           kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
           ensureOpenAIAccess={ensureOpenAIAccess}
           onAuthFailure={handleAuthFailure}
