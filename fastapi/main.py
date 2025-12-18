@@ -80,7 +80,7 @@ app = FastAPI(
 # Configure CORS to allow Next.js frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[config.ALLOWED_ORIGINS],
+    allow_origins=config.ALLOWED_ORIGINS,
     allow_credentials=True,
     # Allow all methods so the frontend can preflight DELETE for removing API keys
     allow_methods=["*"],

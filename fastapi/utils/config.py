@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 import logging
+from typing import List
 
 # Load environment variables from .env file
 # override=True ensures .env file takes precedence over system environment variables
@@ -29,8 +30,16 @@ class Config:
 
     # Server
     PORT: int = int(os.getenv("PORT", "8000"))
-    # Strip whitespace/newlines to avoid CORS origin mismatches
-    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").strip()
+
+    # CORS
+    # Supports either a single origin (`https://example.com`) or a comma-separated list
+    # (`https://example.com,https://www.example.com,http://localhost:3000`).
+    _ALLOWED_ORIGINS_RAW: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").strip()
+    ALLOWED_ORIGINS: List[str] = [
+        origin.strip().rstrip("/")
+        for origin in _ALLOWED_ORIGINS_RAW.split(",")
+        if origin.strip()
+    ]
 
     # Development
     DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"

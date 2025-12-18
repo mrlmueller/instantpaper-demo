@@ -85,7 +85,7 @@ USER_KEY_ENCRYPTION_KEY=base64-encoded-aes-key
 
 ```env
 PORT=8000
-ALLOWED_ORIGINS=http://localhost:3000
+ALLOWED_ORIGINS=http://localhost:3000,https://instantpaper.vercel.app,https://www.instantpaper.de
 DEBUG=true
 ```
 
