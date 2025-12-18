@@ -14,6 +14,7 @@ import {
   Check,
   Loader2,
   Plus,
+  ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -616,6 +617,7 @@ export function QuellenManager({
                   <TableHead className="w-28">
                     <SortButton field="typ">Typ</SortButton>
                   </TableHead>
+                  <TableHead className="w-20">Bilder</TableHead>
                   <TableHead className="w-20">
                     <SortButton field="jahr">Jahr</SortButton>
                   </TableHead>
@@ -694,29 +696,47 @@ export function QuellenManager({
                       <TableCell className="text-muted-foreground text-sm">
                         {quelle.typ ? typLabels[quelle.typ] || quelle.typ : "-"}
                       </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {quelle.images && quelle.images.length > 0 ? (
+                          <div className="flex items-center gap-1">
+                            <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                            {quelle.images.length > 1 && (
+                              <span className="text-xs font-medium text-muted-foreground">
+                                +{quelle.images.length - 1}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          "-"
+                        )}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">
                         {quelle.jahr || "-"}
                       </TableCell>
-                      <TableCell
-                        className="cursor-pointer hover:bg-muted/50 transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openAssignDialogForQuelle(quelle.id);
-                        }}
-                      >
+                      <TableCell>
                         {linkedKapiteln.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
                             {linkedKapiteln.slice(0, 2).map((k) => (
                               <Badge
                                 key={k.id}
                                 variant="outline"
-                                className="text-xs px-1.5 py-0"
+                                className="text-xs px-1.5 py-0 cursor-pointer hover:bg-muted transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openAssignDialogForQuelle(quelle.id);
+                                }}
                               >
                                 {k.nummer}
                               </Badge>
                             ))}
                             {linkedKapiteln.length > 2 && (
-                              <span className="text-xs text-muted-foreground">
+                              <span
+                                className="text-xs text-muted-foreground cursor-pointer hover:underline"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openAssignDialogForQuelle(quelle.id);
+                                }}
+                              >
                                 +{linkedKapiteln.length - 2}
                               </span>
                             )}
@@ -726,6 +746,10 @@ export function QuellenManager({
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs text-muted-foreground hover:text-primary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openAssignDialogForQuelle(quelle.id);
+                            }}
                           >
                             <Plus className="h-3 w-3 mr-1" />
                             Zuweisen
@@ -748,7 +772,7 @@ export function QuellenManager({
                 {filteredQuellen.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="h-24 text-center text-muted-foreground"
                     >
                       Keine Quellen gefunden
