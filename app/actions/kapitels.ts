@@ -749,6 +749,20 @@ export async function getCombinedGroups(kapitelId: string, runId: string): Promi
   }
 }
 
+export async function hasCombinedGroups(kapitelId: string, runId: string): Promise<boolean> {
+  const user = await requireAuth();
+  if (!user) return false;
+
+  try {
+    const db = await getFirestoreForUser();
+    const snap = await getDocs(query(combinedGroupsCol(db, user.uid, kapitelId, runId), limit(1)));
+    return !snap.empty;
+  } catch (error: unknown) {
+    console.error('Error checking combined groups existence:', error);
+    return false;
+  }
+}
+
 export async function createShortenRun(
   kapitelId: string,
   runId: string,

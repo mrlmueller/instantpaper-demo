@@ -38,7 +38,7 @@ import {
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import type { Kapitel, Quelle, Run, IntermediateGroup } from "@/app/types/ui";
-import { getCombinedGroups, getSummaries, type SummaryResult } from "@/app/actions/kapitels";
+import { getCombinedGroups, getSummaries, hasCombinedGroups, type SummaryResult } from "@/app/actions/kapitels";
 import { ProcessingStepper } from "./ProcessingStepper";
 
 interface KapitelWorkspaceProps {
@@ -86,6 +86,8 @@ export function KapitelWorkspace({
 }: KapitelWorkspaceProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showFullAnweisung, setShowFullAnweisung] = useState(false);
+  const [hasIntermediateGroups, setHasIntermediateGroups] = useState<boolean | null>(null);
+  const [hasIntermediateGroupsLoading, setHasIntermediateGroupsLoading] = useState(false);
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] =
     useState(false);
   const [intermediateGroupsLoading, setIntermediateGroupsLoading] = useState(false);
@@ -111,10 +113,39 @@ export function KapitelWorkspace({
   // Reset intermediate groups when selected run changes
   useEffect(() => {
     setShowFullAnweisung(false);
+    setHasIntermediateGroups(null);
+    setHasIntermediateGroupsLoading(false);
     setIntermediateGroupsExpanded(false);
     setIntermediateGroupsLoading(false);
     setIntermediateGroups(null);
   }, [selectedRun?.id]);
+
+  // Only show Zwischengruppen when there are actually group docs.
+  useEffect(() => {
+    if (!selectedRun) return;
+    if (!canShowIntermediateGroups) return;
+
+    let cancelled = false;
+    setHasIntermediateGroupsLoading(true);
+    hasCombinedGroups(kapitel.id, selectedRun.id)
+      .then((exists) => {
+        if (cancelled) return;
+        setHasIntermediateGroups(Boolean(exists));
+      })
+      .catch((err) => {
+        console.error("Error checking intermediate groups existence:", err);
+        if (cancelled) return;
+        setHasIntermediateGroups(false);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setHasIntermediateGroupsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRun?.id, kapitel.id, canShowIntermediateGroups]);
 
   // Lazy-load intermediate groups only when expanded
   useEffect(() => {
@@ -598,7 +629,7 @@ export function KapitelWorkspace({
         )}
 
         {/* 3. Intermediate Groups - IMPROVED STYLING */}
-        {canShowIntermediateGroups && (
+        {false && (
           <Card className="mb-8 bg-card border-border shadow-sm">
             <Collapsible
               open={intermediateGroupsExpanded}
@@ -616,7 +647,7 @@ export function KapitelWorkspace({
                         {intermediateGroupsLoading
                           ? "(lädt...)"
                           : intermediateGroups
-                          ? `(${intermediateGroups.length} Gruppen)`
+                          ? `(${(intermediateGroups?.length ?? 0)} Gruppen)`
                           : "(0 Gruppen)"}
                       </span>
                     </div>
@@ -774,6 +805,92 @@ export function KapitelWorkspace({
                 </Button>
               )}
             </div>
+          </Card>
+        )}
+
+        {/* Zwischengruppen (only show when there is actually data) */}
+        {hasContent && hasIntermediateGroups === true && !hasIntermediateGroupsLoading && (
+          <Card className="mb-8 bg-card border-border shadow-sm">
+            <Collapsible open={intermediateGroupsExpanded} onOpenChange={setIntermediateGroupsExpanded}>
+              <div className="p-6 pb-4">
+                <CollapsibleTrigger asChild>
+                  <button className="flex items-center justify-between w-full group">
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-5 w-5 text-muted-foreground" />
+                      <h3 className="text-lg font-medium text-foreground">Zwischengruppen</h3>
+                      {intermediateGroups && (
+                        <span className="text-sm text-muted-foreground">({intermediateGroups.length} Gruppen)</span>
+                      )}
+                    </div>
+                    <ChevronDown
+                      className={cn(
+                        "h-5 w-5 text-muted-foreground group-hover:text-foreground transition-all",
+                        intermediateGroupsExpanded && "rotate-180"
+                      )}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+              </div>
+
+              <CollapsibleContent>
+                <div className="px-6 pb-6 space-y-4">
+                  {intermediateGroupsLoading && (
+                    <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Zwischengruppen werden geladen...
+                    </div>
+                  )}
+
+                  {(intermediateGroups ?? []).map((group) => (
+                    <Card key={group.id} className="p-4 bg-muted/30">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-medium text-muted-foreground">Gruppe {group.groupNumber}</span>
+                            <span className="text-xs text-muted-foreground">{group.sourceCount} Quellen</span>
+                          </div>
+                          <h4 className="font-medium">{group.heading}</h4>
+                          {group.topic && <p className="text-sm text-muted-foreground mt-1">{group.topic}</p>}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleCopy(group.combinedContent, `group-${group.id}`)}
+                          >
+                            {copiedId === `group-${group.id}` ? (
+                              <Check className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              onOpenTextViewer({
+                                title: `Gruppe ${group.groupNumber}: ${group.heading}`,
+                                text: group.combinedContent,
+                              })
+                            }
+                          >
+                            <Maximize2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">{group.combinedContent}</p>
+                      <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>{group.modelUsed}</span>
+                        <span>·</span>
+                        <span>{group.tokensUsed.toLocaleString()} tokens</span>
+                        <span>·</span>
+                        <span>{formatCost(group.cost)}</span>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           </Card>
         )}
 
