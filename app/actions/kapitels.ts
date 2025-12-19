@@ -202,11 +202,17 @@ async function getContext(ctx?: ActionContext) {
 }
 
 function toIso(value: unknown): string {
-  if (!value || typeof value !== 'object') return new Date().toISOString();
-  const candidate = value as Record<string, unknown>;
-  const toDate = candidate.toDate;
-  if (typeof toDate !== 'function') return new Date().toISOString();
-  return (toDate as () => Date)().toISOString();
+  if (!value) return new Date().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  }
+  if (typeof value === 'object' && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    const d = (value as { toDate: () => Date }).toDate();
+    return d instanceof Date ? d.toISOString() : new Date().toISOString();
+  }
+  return new Date().toISOString();
 }
 
 function normalizeUsage(u: unknown): Usage {

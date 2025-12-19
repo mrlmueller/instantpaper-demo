@@ -28,8 +28,8 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 import { useAuth } from "@/app/components/providers/AuthProvider";
-import { firebaseApp } from "@/app/lib/firebase/config";
-import { getFirestore, collection, doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
+import { firestoreClient } from "@/app/lib/firebase/firestoreClient";
+import { collection, doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
 import { createShortenedRefinement, initShortenedRefinement } from "@/app/actions/kapitels";
 
 type ModelChoice = "gpt-5-nano" | "gpt-5-mini" | "gpt-5.2";
@@ -146,7 +146,7 @@ export function ShortenedRefinementDialog(_props: ShortenedRefinementDialogProps
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const db = useMemo(() => getFirestore(firebaseApp), []);
+  const db = useMemo(() => firestoreClient, []);
 
   const shortenedDocRef = useMemo(() => {
     if (!user?.uid) return null;

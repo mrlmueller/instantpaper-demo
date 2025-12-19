@@ -62,9 +62,8 @@ import { createProject, deleteProject, type Project as FirebaseProject } from '@
 
 // Firebase real-time
 import { useAuth } from '@/app/components/providers/AuthProvider';
-import { firebaseApp } from '@/app/lib/firebase/config';
+import { firestoreClient } from '@/app/lib/firebase/firestoreClient';
 import {
-  getFirestore,
   collection,
   onSnapshot,
   query,
@@ -393,7 +392,7 @@ export function Dashboard({
 
   const persistKapitelQuellenClient = useCallback(async (kapitelId: string, quelleIds: string[]) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
-    const db = getFirestore(firebaseApp);
+    const db = firestoreClient;
     const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
     await updateDoc(kapitelRef, {
       quelleIds,
@@ -403,7 +402,7 @@ export function Dashboard({
 
   const createKapitelClient = useCallback(async (title: string, nummer: string, parentId: string | null = null) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
-    const db = getFirestore(firebaseApp);
+    const db = firestoreClient;
     const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
     const docRef = await addDoc(kapitelsRef, {
       title,
@@ -421,7 +420,7 @@ export function Dashboard({
 
   const updateKapitelTitleClient = useCallback(async (kapitelId: string, title: string, nummer: string) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
-    const db = getFirestore(firebaseApp);
+    const db = firestoreClient;
     const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
     await updateDoc(kapitelRef, {
       title,
@@ -433,7 +432,7 @@ export function Dashboard({
   const deleteKapitelClient = useCallback(
     async (kapitelId: string, deleteStrategy: 'promote' | 'cascade' = 'promote') => {
       if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
-      const db = getFirestore(firebaseApp);
+      const db = firestoreClient;
 
       const archiveRec = async (id: string, strategy: 'promote' | 'cascade') => {
         const kapitelRef = doc(db, 'users', user.uid, 'kapitels', id);
@@ -505,7 +504,7 @@ export function Dashboard({
       return;
     }
 
-    const db = getFirestore(firebaseApp);
+    const db = firestoreClient;
     const runsRef = collection(db, 'users', user.uid, 'kapitels', activeKapitelId, 'runs');
     const q = query(runsRef, where('archived', '==', false), orderBy('index', 'desc'), limit(runListLimit));
 
@@ -568,7 +567,7 @@ export function Dashboard({
       return;
     }
 
-    const db = getFirestore(firebaseApp);
+    const db = firestoreClient;
 
     const artifactsRef = collection(
       db,
@@ -782,7 +781,7 @@ export function Dashboard({
   useEffect(() => {
     if (!user?.uid || !projekt?.id) return;
 
-    const db = getFirestore(firebaseApp);
+    const db = firestoreClient;
     const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
     const q = query(
       kapitelsRef,
