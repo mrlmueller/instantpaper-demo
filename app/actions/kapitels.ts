@@ -53,6 +53,7 @@ export type KapitelRunResult = {
   userInput: string;
   content: string;
   hasContent: boolean;
+  status?: 'running' | 'success' | 'error' | 'no-content';
   model: string;
   usage: Usage;
   costUsd: number;
@@ -64,6 +65,7 @@ export type KapitelRunResult = {
 export type CombinedResult = {
   id: 'combined';
   content: string;
+  status?: 'running' | 'success' | 'error';
   sourceQuelleIds: string[];
   heading: string;
   topic: string;
@@ -92,6 +94,7 @@ export type IntermediateGroupResult = {
 export type ShortenedResult = {
   id: 'shortened';
   content: string;
+  status?: 'running' | 'success' | 'error';
   explanation?: {
     lengthDecision: string;
     omittedTopics: string[];
@@ -126,6 +129,7 @@ export type SummaryResult = {
 export type LeseflussResult = {
   id: 'lesefluss';
   content: string;
+  status?: 'running' | 'success' | 'error';
   aufgabenstellung: string;
   explanation?: string;
   originalLength?: number;
@@ -250,6 +254,14 @@ function normalizeSummarySourceType(sourceType: unknown): 'combined' | 'shortene
 function normalizeRunModel(model: unknown): 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' {
   const m = String(model ?? '').trim();
   return m === 'gpt-5-nano' || m === 'gpt-5-mini' || m === 'gpt-5.2' ? m : 'gpt-5-nano';
+}
+
+function normalizeResultDocStatus(status: unknown): KapitelRunResult['status'] {
+  return status === 'running' || status === 'success' || status === 'error' || status === 'no-content' ? status : undefined;
+}
+
+function normalizeArtifactDocStatus(status: unknown): 'running' | 'success' | 'error' | undefined {
+  return status === 'running' || status === 'success' || status === 'error' ? status : undefined;
 }
 
 async function fetchFastApi(path: string, payload: unknown) {
@@ -516,7 +528,13 @@ export async function createKapitelRun(
       resultsExpectedCount: quelleIds.length,
       resultsCompletedCount: 0,
       resultsWithContentCount: 0,
-      artifactsStatus: { combined: 'empty', shortened: 'empty', lesefluss: 'empty' },
+      // If auto-combine is enabled, show the combined stage as "running" immediately,
+      // even while Quellen results are still processing (the server will flip to success/error later).
+      artifactsStatus: {
+        combined: options?.autoCombine ? 'running' : 'empty',
+        shortened: 'empty',
+        lesefluss: 'empty',
+      },
       lastActivityAt: serverTimestamp(),
     });
 
@@ -558,6 +576,7 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10, ctx?: Act
             userInput: String(r.userInput ?? ''),
             content: String(r.content ?? ''),
             hasContent: Boolean(r.hasContent),
+            status: normalizeResultDocStatus(r.status),
             model: String(r.model ?? ''),
             usage: normalizeUsage(r.usage),
             costUsd: Number(r.costUsd ?? 0),
@@ -574,29 +593,31 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10, ctx?: Act
         for (const d of artifactsSnapshot.docs) {
           const a = d.data() as DocumentData;
           const artifactId = String(a.artifactId ?? d.id);
-          if (artifactId === 'combined') {
-            combined = {
-              id: 'combined',
-              content: String(a.content ?? ''),
-              sourceQuelleIds: Array.isArray(a.sourceQuelleIds) ? a.sourceQuelleIds : [],
-              heading: String(a.heading ?? ''),
-              topic: String(a.topic ?? ''),
-              model: String(a.model ?? ''),
-              usage: normalizeUsage(a.usage),
+           if (artifactId === 'combined') {
+             combined = {
+               id: 'combined',
+               content: String(a.content ?? ''),
+               status: normalizeArtifactDocStatus(a.status),
+               sourceQuelleIds: Array.isArray(a.sourceQuelleIds) ? a.sourceQuelleIds : [],
+               heading: String(a.heading ?? ''),
+               topic: String(a.topic ?? ''),
+               model: String(a.model ?? ''),
+               usage: normalizeUsage(a.usage),
               costUsd: Number(a.costUsd ?? 0),
               refinement: normalizeRefinement(a.refinement),
               createdAt: toIso(a.createdAt),
               updatedAt: a.updatedAt ? toIso(a.updatedAt) : undefined,
             };
-          } else if (artifactId === 'shortened') {
-            shortened = {
-              id: 'shortened',
-              content: String(a.content ?? ''),
-              explanation: a.explanation
-                ? {
-                    lengthDecision: String(a.explanation.lengthDecision ?? ''),
-                    omittedTopics: Array.isArray(a.explanation.omittedTopics) ? a.explanation.omittedTopics : [],
-                    preservedFocus: Array.isArray(a.explanation.preservedFocus) ? a.explanation.preservedFocus : [],
+           } else if (artifactId === 'shortened') {
+             shortened = {
+               id: 'shortened',
+               content: String(a.content ?? ''),
+               status: normalizeArtifactDocStatus(a.status),
+               explanation: a.explanation
+                 ? {
+                     lengthDecision: String(a.explanation.lengthDecision ?? ''),
+                     omittedTopics: Array.isArray(a.explanation.omittedTopics) ? a.explanation.omittedTopics : [],
+                     preservedFocus: Array.isArray(a.explanation.preservedFocus) ? a.explanation.preservedFocus : [],
                     compressionNotes: String(a.explanation.compressionNotes ?? ''),
                   }
                 : undefined,
@@ -610,14 +631,15 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10, ctx?: Act
               createdAt: toIso(a.createdAt),
               updatedAt: a.updatedAt ? toIso(a.updatedAt) : undefined,
             };
-          } else if (artifactId === 'lesefluss') {
-            lesefluss = {
-              id: 'lesefluss',
-              content: String(a.content ?? ''),
-              aufgabenstellung: String(a.aufgabenstellung ?? ''),
-              explanation: typeof a.explanation === 'string' ? a.explanation : undefined,
-              originalLength: typeof a.originalLength === 'number' ? a.originalLength : undefined,
-              leseflussLength: Number(a.leseflussLength ?? 0),
+           } else if (artifactId === 'lesefluss') {
+             lesefluss = {
+               id: 'lesefluss',
+               content: String(a.content ?? ''),
+               status: normalizeArtifactDocStatus(a.status),
+               aufgabenstellung: String(a.aufgabenstellung ?? ''),
+               explanation: typeof a.explanation === 'string' ? a.explanation : undefined,
+               originalLength: typeof a.originalLength === 'number' ? a.originalLength : undefined,
+               leseflussLength: Number(a.leseflussLength ?? 0),
               usedKapitelIds: Array.isArray(a.usedKapitelIds) ? a.usedKapitelIds : [],
               model: String(a.model ?? ''),
               usage: normalizeUsage(a.usage),

@@ -145,113 +145,133 @@ class ShortenService:
 
         # Generate new summary
         logger.info(f"Generating new summary for Kapitel {source_kapitel_id}")
-        instructions = await prompt_service.get_rendered_instructions(
-            user_id, "summary", {"text": source_text}
-        )
-        summary_content, usage = await self.summarize_text(
-            source_text, model, source_kapitel_id, api_key=api_key, instructions=instructions
-        )
-
-        input_tokens = int(usage.get("prompt_tokens", 0))
-        cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
-        output_tokens = int(usage.get("completion_tokens", 0))
-
-        # Calculate cost and log immutable operation (costMetrics)
-        cost_service = get_cost_service(firebase_service)
-        usage_obj = TokenUsage.from_any(input_tokens, cached_input_tokens, output_tokens)
-        cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+        await firebase_service.mark_summary_running(
+            user_id,
+            target_kapitel_id,
+            target_run_id,
+            source_kapitel_id,
+            source_run_id=source_run_id,
+            source_type=source_type,
             model=model,
-            usage=usage_obj,
+            key_source=key_source,
         )
 
-        target_kapitel = await firebase_service.get_kapitel(user_id, target_kapitel_id)
-        projekt_id = (target_kapitel or {}).get("projektId")
+        try:
+            instructions = await prompt_service.get_rendered_instructions(
+                user_id, "summary", {"text": source_text}
+            )
+            summary_content, usage = await self.summarize_text(
+                source_text, model, source_kapitel_id, api_key=api_key, instructions=instructions
+            )
+            input_tokens = int(usage.get("prompt_tokens", 0))
+            cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
+            output_tokens = int(usage.get("completion_tokens", 0))
 
-        projekt_snapshot = None
-        if projekt_id:
-            project = await firebase_service.get_project(user_id, projekt_id)
-            if project:
-                projekt_snapshot = {
-                    "id": projekt_id,
-                    "name": project.get("name"),
-                    "archived": bool(project.get("archived", False)),
+            # Calculate cost and log immutable operation (costMetrics)
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(input_tokens, cached_input_tokens, output_tokens)
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=model,
+                usage=usage_obj,
+            )
+
+            target_kapitel = await firebase_service.get_kapitel(user_id, target_kapitel_id)
+            projekt_id = (target_kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": target_kapitel_id,
+                    "nummer": (target_kapitel or {}).get("nummer", "?"),
+                    "title": (target_kapitel or {}).get("title", "Untitled"),
                 }
+                if target_kapitel
+                else None
+            )
 
-        kapitel_snapshot = (
-            {
-                "id": target_kapitel_id,
-                "nummer": (target_kapitel or {}).get("nummer", "?"),
-                "title": (target_kapitel or {}).get("title", "Untitled"),
+            run_snapshot = {
+                "id": target_run_id,
+                "index": None,
             }
-            if target_kapitel
-            else None
-        )
 
-        run_snapshot = {
-            "id": target_run_id,
-            "index": None,
-        }
+            await cost_service.log_operation(
+                operation_type="summary",
+                user_id=user_id,
+                user_action_id=user_action_id,
+                operation_details={
+                    "sourceKapitelId": source_kapitel_id,
+                    "sourceRunId": source_run_id,
+                    "sourceType": source_type,
+                },
+                model=model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=target_kapitel_id,
+                run_id=target_run_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+            )
 
-        await cost_service.log_operation(
-            operation_type="summary",
-            user_id=user_id,
-            user_action_id=user_action_id,
-            operation_details={
+            cost = float(cost_breakdown.total_cost_usd)
+
+            # Count words
+            original_length = len(source_text.split())
+            summary_length = len(summary_content.split())
+
+            # Save the summary
+            summary_data = {
+                "content": summary_content,
                 "sourceKapitelId": source_kapitel_id,
                 "sourceRunId": source_run_id,
                 "sourceType": source_type,
-            },
-            model=model,
-            usage=usage_obj,
-            cost_breakdown=cost_breakdown,
-            matched_model_key=matched_model,
-            pricing=pricing,
-            key_source=key_source,
-            projekt_id=projekt_id,
-            kapitel_id=target_kapitel_id,
-            run_id=target_run_id,
-            projekt_snapshot=projekt_snapshot,
-            kapitel_snapshot=kapitel_snapshot,
-            run_snapshot=run_snapshot,
-        )
+                "originalLength": original_length,
+                "summaryLength": summary_length,
+                "model": model,
+                "usage": {
+                    "inputTokens": input_tokens,
+                    "cachedInputTokens": cached_input_tokens,
+                    "outputTokens": output_tokens,
+                    "reasoningTokens": 0,
+                    "totalTokens": input_tokens + output_tokens,
+                },
+                "costUsd": float(cost),
+                "keySource": key_source,
+            }
 
-        cost = float(cost_breakdown.total_cost_usd)
+            await firebase_service.save_summary_result(
+                user_id, target_kapitel_id, target_run_id, source_kapitel_id, summary_data
+            )
 
-        # Count words
-        original_length = len(source_text.split())
-        summary_length = len(summary_content.split())
+            logger.info(
+                f"Summary created for Kapitel {source_kapitel_id}: "
+                f"{original_length} -> {summary_length} words ({summary_length/original_length*100:.1f}%), "
+                f"cost: ${cost:.4f}"
+            )
 
-        # Save the summary
-        summary_data = {
-            "content": summary_content,
-            "sourceKapitelId": source_kapitel_id,
-            "sourceRunId": source_run_id,
-            "sourceType": source_type,
-            "originalLength": original_length,
-            "summaryLength": summary_length,
-            "model": model,
-            "usage": {
-                "inputTokens": input_tokens,
-                "cachedInputTokens": cached_input_tokens,
-                "outputTokens": output_tokens,
-                "reasoningTokens": 0,
-                "totalTokens": input_tokens + output_tokens,
-            },
-            "costUsd": float(cost),
-            "keySource": key_source,
-        }
-
-        await firebase_service.save_summary_result(
-            user_id, target_kapitel_id, target_run_id, source_kapitel_id, summary_data
-        )
-
-        logger.info(
-            f"Summary created for Kapitel {source_kapitel_id}: "
-            f"{original_length} -> {summary_length} words ({summary_length/original_length*100:.1f}%), "
-            f"cost: ${cost:.4f}"
-        )
-
-        return summary_content
+            return summary_content
+        except Exception:
+            await firebase_service.mark_summary_error(
+                user_id,
+                target_kapitel_id,
+                target_run_id,
+                source_kapitel_id,
+                key_source=key_source,
+            )
+            raise
 
     async def summarize_text(
         self,

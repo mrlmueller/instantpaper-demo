@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
-from services.firebase_service import firebase_service
+from services.firebase_service import firebase_service, AI_GENERIC_ERROR_MESSAGE
 from services.openai_service import openai_service
 from services.prompt_service import prompt_service
 from services.cost_service import get_cost_service, TokenUsage
@@ -682,7 +682,7 @@ WICHTIG:
                     version_id,
                     {
                         "status": "error",
-                        "errorMessage": str(e),
+                        "errorMessage": AI_GENERIC_ERROR_MESSAGE,
                         "updatedAt": SERVER_TIMESTAMP,
                     },
                 )
@@ -931,7 +931,7 @@ WICHTIG:
                     version_id,
                     {
                         "status": "error",
-                        "errorMessage": str(e),
+                        "errorMessage": AI_GENERIC_ERROR_MESSAGE,
                         "updatedAt": SERVER_TIMESTAMP,
                     },
                 )
@@ -1250,7 +1250,7 @@ WICHTIG:
                     version_id,
                     {
                         "status": "error",
-                        "errorMessage": str(e),
+                        "errorMessage": AI_GENERIC_ERROR_MESSAGE,
                         "updatedAt": SERVER_TIMESTAMP,
                     },
                 )
@@ -1521,7 +1521,7 @@ WICHTIG:
                     version_id,
                     {
                         "status": "error",
-                        "errorMessage": str(e),
+                        "errorMessage": AI_GENERIC_ERROR_MESSAGE,
                         "updatedAt": SERVER_TIMESTAMP,
                     },
                 )

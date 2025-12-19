@@ -108,6 +108,14 @@ class QuelleService:
             # Step 1.5: Fetch run to get grundlegendeInformationen
             run = await self.firebase.get_run(user_id, kapitel_id, run_id)
             grundlegende_informationen = run.get('grundlegendeInformationen') if run else None
+            run_model = (run.get("model") or "").strip() if run else ""
+            if run_model:
+                if model and model != run_model:
+                    logger.info(
+                        f"Overriding requested model '{model}' with run model '{run_model}' "
+                        f"(Kapitel {kapitel_id}, run {run_id})"
+                    )
+                model = run_model
 
             # Step 1.6: Extract image URLs from Quelle (if any)
             quelle_images = None
@@ -318,6 +326,10 @@ class QuelleService:
         """
         Combine multiple Quelle results for a run into a single text.
         """
+        api_key: Optional[str] = None
+        key_source: Optional[str] = None
+        marked_running = False
+
         try:
             run = await self.firebase.get_run(user_id, kapitel_id, run_id)
             if not run:
@@ -327,7 +339,12 @@ class QuelleService:
 
             existing_combined = await self.firebase.get_combined_result(user_id, kapitel_id, run_id)
             if existing_combined:
-                raise HTTPException(status_code=400, detail="Combined result already exists for this run.")
+                existing_status = (existing_combined.get("status") or "").strip()
+                existing_content = (existing_combined.get("content") or "").strip()
+                # Allow if a placeholder exists (status=running) or a previous attempt errored.
+                # Block only if we already have a finished combined text.
+                if existing_content and (existing_status == "success" or not existing_status):
+                    raise HTTPException(status_code=400, detail="Combined result already exists for this run.")
 
             prompt_payload = run.get("promptPayload") or run.get("prompt_payload") or {}
             heading = prompt_payload.get("heading", "").strip() or "Zusammenfassung"
@@ -351,6 +368,19 @@ class QuelleService:
                     status_code=400,
                     detail="Not enough eligible texts to combine (need at least 2 with content)."
                 )
+
+            # Mark combined artifact as running (auto-combine path calls this method directly).
+            # This creates/merges the target doc and updates runs/{runId}.artifactsStatus.combined
+            # so the UI can show an in-progress state immediately.
+            await self.firebase.mark_artifact_running(
+                user_id=user_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                artifact_id="combined",
+                model=model,
+                key_source=key_source,
+            )
+            marked_running = True
 
             # DECISION POINT: Single-level vs Hierarchical combining
             if len(eligible) > 5:
@@ -472,6 +502,14 @@ class QuelleService:
             raise
         except Exception as e:
             logger.error(f"Error combining run results: {str(e)}")
+            if marked_running:
+                await self.firebase.mark_artifact_error(
+                    user_id=user_id,
+                    kapitel_id=kapitel_id,
+                    run_id=run_id,
+                    artifact_id="combined",
+                    key_source=key_source,
+                )
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to combine run results: {str(e)}"

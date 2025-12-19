@@ -79,10 +79,11 @@ export function transformResultToUI(
   quelleName: string = ""
 ): UIQuellenErgebnis {
   // Determine status
-  let status: "waiting" | "success" | "no-content" = "success";
-  if (fbResult.hasContent === false) {
-    status = "no-content";
-  }
+  let status: "waiting" | "success" | "no-content" | "error" = "success";
+  if (fbResult.status === "running") status = "waiting";
+  else if (fbResult.status === "error") status = "error";
+  else if (fbResult.status === "no-content") status = "no-content";
+  else if (fbResult.hasContent === false) status = "no-content";
 
   // UI uses cents, Firestore stores USD float.
   const baseCostUsd = fbResult.costUsd || 0;
@@ -121,6 +122,13 @@ export function transformRunToUI(
   const combined = fbRun.artifacts?.combined ?? null;
   const shortened = fbRun.artifacts?.shortened ?? null;
   const lesefluss = fbRun.artifacts?.lesefluss ?? null;
+
+  const combinedStatus: "empty" | "running" | "success" | "error" =
+    combined?.status ?? fbRun.artifactsStatus?.combined ?? (combined && combined.content ? "success" : "empty");
+  const shortenedStatus: "empty" | "running" | "success" | "error" =
+    shortened?.status ?? fbRun.artifactsStatus?.shortened ?? (shortened && shortened.content ? "success" : "empty");
+  const leseflussStatus: "empty" | "running" | "success" | "error" =
+    lesefluss?.status ?? fbRun.artifactsStatus?.lesefluss ?? (lesefluss && lesefluss.content ? "success" : "empty");
 
   const combinedCost = combined ? Math.round((combined.costUsd || 0) * 100) : 0;
   const combinedCostUsd = combined ? Number(combined.costUsd || 0) : 0;
@@ -166,6 +174,7 @@ export function transformRunToUI(
     quellenCostUsd,
     combinedCost,
     combinedCostUsd,
+    combinedStatus,
     combinedRefinementCost,
     combinedRefinementCostUsd,
     shortenedRefinementCost,
@@ -173,6 +182,7 @@ export function transformRunToUI(
     shortenedText: shortened?.content || null,
     shortenedCost,
     shortenedCostUsd,
+    shortenedStatus,
     shortenedOriginalLength: shortened?.originalLength,
     shortenedLength: shortened?.shortenedLength,
     explanation: shortened?.explanation,
@@ -183,6 +193,7 @@ export function transformRunToUI(
     leseflussLength: lesefluss?.leseflussLength,
     leseflussCost,
     leseflussCostUsd,
+    leseflussStatus,
     leseflussRefinementCost,
     leseflussRefinementCostUsd,
   };

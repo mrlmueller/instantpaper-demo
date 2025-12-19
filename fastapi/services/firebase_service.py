@@ -7,6 +7,8 @@ from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+AI_GENERIC_ERROR_MESSAGE = "Fehler bei der Verarbeitung. Wenn es weiterhin passiert, bitte melde dich."
+
 
 class FirebaseService:
     """Service for Firebase Admin SDK operations"""
@@ -243,6 +245,11 @@ class FirebaseService:
             is_new = not existing.exists
 
             created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
             existing_refinement = existing_data.get("refinement") if isinstance(existing_data, dict) else None
             refinement_value = (
                 existing_refinement
@@ -256,11 +263,20 @@ class FirebaseService:
                 }
             )
 
+            status_value = (
+                "success"
+                if bool(has_content) and (result_content or "").strip()
+                else "no-content"
+            )
+
             result_data = {
                 "quelleId": quelle_id,
                 "userInput": user_input,
                 "content": result_content,
                 "hasContent": bool(has_content),
+                "status": status_value,
+                "errorMessage": None,
+                "errorAt": None,
                 "model": model_used,
                 "usage": {
                     "inputTokens": int(input_tokens),
@@ -272,7 +288,9 @@ class FirebaseService:
                 "costUsd": float(cost),
                 "keySource": key_source,
                 "createdAt": created_at_value,
+                "startedAt": started_at_value,
                 "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
                 "refinement": refinement_value,
             }
 
@@ -293,7 +311,9 @@ class FirebaseService:
                 "lastActivityAt": SERVER_TIMESTAMP,
                 "updatedAt": SERVER_TIMESTAMP,
             }
-            if is_new:
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
+            should_count_completion = is_new or prev_status == "running"
+            if should_count_completion:
                 run_update["resultsCompletedCount"] = Increment(1)
                 if bool(has_content) and (result_content or "").strip():
                     run_update["resultsWithContentCount"] = Increment(1)
@@ -322,6 +342,147 @@ class FirebaseService:
             .collection('results')
             .document(quelle_id)
         )
+
+    async def mark_result_running(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        quelle_id: str,
+        user_input: str,
+        model: str,
+        key_source: Optional[str] = None,
+    ) -> None:
+        """
+        Create/merge a placeholder result doc (status=running) so the UI can show progress and avoid infinite spinners.
+        """
+        try:
+            result_ref = self._run_result_ref(user_id, kapitel_id, run_id, quelle_id)
+            existing = result_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else SERVER_TIMESTAMP
+            )
+
+            existing_refinement = existing_data.get("refinement") if isinstance(existing_data, dict) else None
+            refinement_value = (
+                existing_refinement
+                if isinstance(existing_refinement, dict) and existing_refinement.get("rootVersionId") == "root"
+                else {
+                    "rootVersionId": "root",
+                    "activeVersionId": "root",
+                    "maxDepth": int(config.TEXT_REFINEMENT_MAX_DEPTH),
+                    "costTotalUsd": 0.0,
+                    "initializedAt": SERVER_TIMESTAMP,
+                }
+            )
+
+            placeholder = {
+                "quelleId": quelle_id,
+                "userInput": user_input,
+                "content": "",
+                "hasContent": True,
+                "status": "running",
+                "errorMessage": None,
+                "errorAt": None,
+                "model": model or "",
+                "usage": {
+                    "inputTokens": 0,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 0,
+                    "reasoningTokens": 0,
+                    "totalTokens": 0,
+                },
+                "costUsd": 0.0,
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": None,
+                "refinement": refinement_value,
+            }
+
+            batch = self.db.batch()
+            batch.set(result_ref, placeholder, merge=True)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            batch.set(
+                run_ref,
+                {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP},
+                merge=True,
+            )
+            batch.commit()
+        except Exception as e:
+            logger.error(f"Error marking result running: {e}")
+
+    async def mark_result_error(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        quelle_id: str,
+        *,
+        key_source: Optional[str] = None,
+    ) -> None:
+        """Mark a result doc as errored (status=error) with a generic message."""
+        try:
+            result_ref = self._run_result_ref(user_id, kapitel_id, run_id, quelle_id)
+            existing = result_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else SERVER_TIMESTAMP
+            )
+
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
+            should_count_completion = (not existing.exists) or prev_status == "running"
+
+            update = {
+                "quelleId": quelle_id,
+                "content": "",
+                "hasContent": True,
+                "status": "error",
+                "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                "errorAt": SERVER_TIMESTAMP,
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
+            }
+
+            batch = self.db.batch()
+            batch.set(result_ref, update, merge=True)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            run_update: dict = {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP}
+            if should_count_completion:
+                run_update["resultsCompletedCount"] = Increment(1)
+            batch.set(run_ref, run_update, merge=True)
+            batch.commit()
+        except Exception as e:
+            logger.error(f"Error marking result error: {e}")
 
     def _run_result_refinement_version_ref(
         self, user_id: str, kapitel_id: str, run_id: str, quelle_id: str, version_id: str
@@ -501,6 +662,205 @@ class FirebaseService:
         except Exception as e:
             logger.error(f"Error fetching combined result for run {run_id}: {str(e)}")
             raise
+
+    async def mark_artifact_running(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        artifact_id: str,
+        *,
+        model: Optional[str] = None,
+        key_source: Optional[str] = None,
+        used_kapitel_ids: Optional[list] = None,
+        aufgabenstellung: Optional[str] = None,
+    ) -> None:
+        """
+        Create/merge a placeholder artifact doc (status=running) so the UI can show progress and avoid infinite spinners.
+        Also updates runs/{runId}.artifactsStatus.{artifactId} = "running".
+        """
+        try:
+            doc_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('artifacts')
+                .document(artifact_id)
+            )
+
+            existing = doc_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else SERVER_TIMESTAMP
+            )
+
+            existing_refinement = existing_data.get("refinement") if isinstance(existing_data, dict) else None
+            refinement_value = (
+                existing_refinement
+                if isinstance(existing_refinement, dict) and existing_refinement.get("rootVersionId") == "root"
+                else {
+                    "rootVersionId": "root",
+                    "activeVersionId": "root",
+                    "maxDepth": int(config.TEXT_REFINEMENT_MAX_DEPTH),
+                    "costTotalUsd": 0.0,
+                    "initializedAt": SERVER_TIMESTAMP,
+                }
+            )
+
+            model_value = (model or "").strip() or (existing_data.get("model") or "")
+
+            placeholder: dict = {
+                "artifactId": artifact_id,
+                "status": "running",
+                "errorMessage": None,
+                "errorAt": None,
+                "model": model_value,
+                "usage": {
+                    "inputTokens": 0,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 0,
+                    "reasoningTokens": 0,
+                    "totalTokens": 0,
+                },
+                "costUsd": 0.0,
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": None,
+                "refinement": refinement_value,
+            }
+
+            if artifact_id == "combined":
+                placeholder.update(
+                    {
+                        "content": "",
+                        "heading": existing_data.get("heading") or "",
+                        "topic": existing_data.get("topic") or "",
+                        "sourceQuelleIds": [],
+                    }
+                )
+            elif artifact_id == "shortened":
+                placeholder.update(
+                    {
+                        "content": "",
+                        "originalLength": 0,
+                        "shortenedLength": 0,
+                        "compressionRatio": 0.0,
+                        "usedKapitelIds": used_kapitel_ids or [],
+                        "explanation": None,
+                    }
+                )
+            elif artifact_id == "lesefluss":
+                placeholder.update(
+                    {
+                        "content": "",
+                        "aufgabenstellung": aufgabenstellung or (existing_data.get("aufgabenstellung") or ""),
+                        "explanation": "",
+                        "originalLength": 0,
+                        "leseflussLength": 0,
+                        "usedKapitelIds": used_kapitel_ids or [],
+                    }
+                )
+
+            batch = self.db.batch()
+            batch.set(doc_ref, placeholder, merge=True)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            batch.set(
+                run_ref,
+                {
+                    f"artifactsStatus.{artifact_id}": "running",
+                    "lastActivityAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            batch.commit()
+        except Exception as e:
+            logger.error(f"Error marking artifact running ({artifact_id}): {e}")
+
+    async def mark_artifact_error(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        artifact_id: str,
+        *,
+        key_source: Optional[str] = None,
+    ) -> None:
+        """Mark an artifact doc as errored (status=error) with a generic message."""
+        try:
+            doc_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('artifacts')
+                .document(artifact_id)
+            )
+
+            existing = doc_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else SERVER_TIMESTAMP
+            )
+
+            update = {
+                "artifactId": artifact_id,
+                "status": "error",
+                "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                "errorAt": SERVER_TIMESTAMP,
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
+            }
+
+            batch = self.db.batch()
+            batch.set(doc_ref, update, merge=True)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            batch.set(
+                run_ref,
+                {
+                    f"artifactsStatus.{artifact_id}": "error",
+                    "lastActivityAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            batch.commit()
+        except Exception as e:
+            logger.error(f"Error marking artifact error ({artifact_id}): {e}")
 
     def _combined_root_ref(self, user_id: str, kapitel_id: str, run_id: str):
         return (
@@ -908,6 +1268,11 @@ class FirebaseService:
             existing_data = existing.to_dict() if existing.exists else {}
 
             created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
             existing_refinement = existing_data.get("refinement") if isinstance(existing_data, dict) else None
             refinement_value = (
                 existing_refinement
@@ -923,6 +1288,9 @@ class FirebaseService:
 
             combined_data = {
                 "artifactId": "combined",
+                "status": "success",
+                "errorMessage": None,
+                "errorAt": None,
                 "content": combined_content,
                 "heading": heading,
                 "topic": topic,
@@ -938,7 +1306,9 @@ class FirebaseService:
                 "costUsd": float(cost),
                 "keySource": key_source,
                 "createdAt": created_at_value,
+                "startedAt": started_at_value,
                 "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
                 "refinement": refinement_value,
             }
 
@@ -1037,6 +1407,9 @@ class FirebaseService:
             )
 
             group_data = {
+                "status": "success",
+                "errorMessage": None,
+                "errorAt": None,
                 "groupNumber": int(group_number),
                 "content": combined_content,
                 "heading": heading,
@@ -1053,6 +1426,8 @@ class FirebaseService:
                 "costUsd": float(cost),
                 "keySource": key_source,
                 "createdAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
             }
 
             batch = self.db.batch()
@@ -1178,10 +1553,18 @@ class FirebaseService:
 
             # Get all results for this run
             results = await self.get_run_results(user_id, kapitel_id, run_id)
-            result_ids = {r['id'] for r in results}
+            results_by_id = {r["id"]: r for r in results}
+            result_ids = set(results_by_id.keys())
 
             # Check if all Quellen have results
-            all_processed = all(quelle_id in result_ids for quelle_id in quelle_ids)
+            all_present = all(quelle_id in result_ids for quelle_id in quelle_ids)
+            all_finished = False
+            if all_present:
+                all_finished = all(
+                    (str(results_by_id[quelle_id].get("status") or "").strip() != "running")
+                    for quelle_id in quelle_ids
+                )
+            all_processed = all_present and all_finished
 
             # Count results with usable content
             content_count = sum(
@@ -1192,7 +1575,8 @@ class FirebaseService:
 
             logger.info(
                 f"Kapitel {kapitel_id} run {run_id}: "
-                f"{len(result_ids)}/{len(quelle_ids)} processed, "
+                f"{len(result_ids)}/{len(quelle_ids)} result docs, "
+                f"all_present={all_present}, all_finished={all_finished}, "
                 f"{content_count} with content"
             )
 
@@ -1247,6 +1631,11 @@ class FirebaseService:
             existing_data = existing.to_dict() if existing.exists else {}
 
             created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
             existing_refinement = existing_data.get("refinement") if isinstance(existing_data, dict) else None
             refinement_value = (
                 existing_refinement
@@ -1263,6 +1652,9 @@ class FirebaseService:
             usage = shortened_data.get("usage") if isinstance(shortened_data.get("usage"), dict) else {}
             v2_doc = {
                 "artifactId": "shortened",
+                "status": "success",
+                "errorMessage": None,
+                "errorAt": None,
                 "content": shortened_data.get("content") or "",
                 "originalLength": int(shortened_data.get("originalLength") or 0),
                 "shortenedLength": int(shortened_data.get("shortenedLength") or 0),
@@ -1280,7 +1672,9 @@ class FirebaseService:
                 "costUsd": float(shortened_data.get("costUsd") or 0.0),
                 "keySource": shortened_data.get("keySource"),
                 "createdAt": created_at_value,
+                "startedAt": started_at_value,
                 "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
                 "refinement": refinement_value,
             }
 
@@ -1364,6 +1758,11 @@ class FirebaseService:
             existing_data = existing.to_dict() if existing.exists else {}
 
             created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
             existing_refinement = existing_data.get("refinement") if isinstance(existing_data, dict) else None
             refinement_value = (
                 existing_refinement
@@ -1380,6 +1779,9 @@ class FirebaseService:
             usage = lesefluss_data.get("usage") if isinstance(lesefluss_data.get("usage"), dict) else {}
             v2_doc = {
                 "artifactId": "lesefluss",
+                "status": "success",
+                "errorMessage": None,
+                "errorAt": None,
                 "content": lesefluss_data.get("content") or "",
                 "aufgabenstellung": lesefluss_data.get("aufgabenstellung") or "",
                 "explanation": lesefluss_data.get("explanation") or "",
@@ -1397,7 +1799,9 @@ class FirebaseService:
                 "costUsd": float(lesefluss_data.get("costUsd") or 0.0),
                 "keySource": lesefluss_data.get("keySource"),
                 "createdAt": created_at_value,
+                "startedAt": started_at_value,
                 "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
                 "refinement": refinement_value,
             }
 
@@ -1456,6 +1860,136 @@ class FirebaseService:
             )
             raise
 
+    async def mark_summary_running(
+        self,
+        user_id: str,
+        target_kapitel_id: str,
+        target_run_id: str,
+        source_kapitel_id: str,
+        *,
+        source_run_id: str,
+        source_type: str,
+        model: str,
+        key_source: Optional[str] = None,
+    ) -> None:
+        """Create/merge a placeholder summary doc (status=running)."""
+        try:
+            summary_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(target_kapitel_id)
+                .collection('runs')
+                .document(target_run_id)
+                .collection('summaries')
+                .document(source_kapitel_id)
+            )
+
+            existing = summary_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else SERVER_TIMESTAMP
+            )
+
+            placeholder = {
+                "status": "running",
+                "errorMessage": None,
+                "errorAt": None,
+                "sourceKapitelId": source_kapitel_id,
+                "sourceRunId": source_run_id,
+                "sourceType": source_type,
+                "content": "",
+                "originalLength": 0,
+                "summaryLength": 0,
+                "model": model or "",
+                "usage": {
+                    "inputTokens": 0,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 0,
+                    "reasoningTokens": 0,
+                    "totalTokens": 0,
+                },
+                "costUsd": 0.0,
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": None,
+            }
+
+            batch = self.db.batch()
+            batch.set(summary_ref, placeholder, merge=True)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(target_kapitel_id)
+                .collection("runs")
+                .document(target_run_id)
+            )
+            batch.set(
+                run_ref,
+                {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP},
+                merge=True,
+            )
+            batch.commit()
+        except Exception as e:
+            logger.error(f"Error marking summary running ({source_kapitel_id}): {e}")
+
+    async def mark_summary_error(
+        self,
+        user_id: str,
+        target_kapitel_id: str,
+        target_run_id: str,
+        source_kapitel_id: str,
+        *,
+        key_source: Optional[str] = None,
+    ) -> None:
+        """Mark a summary doc as errored (status=error) with a generic message."""
+        try:
+            summary_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(target_kapitel_id)
+                .collection('runs')
+                .document(target_run_id)
+                .collection('summaries')
+                .document(source_kapitel_id)
+            )
+
+            existing = summary_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else SERVER_TIMESTAMP
+            )
+
+            update = {
+                "status": "error",
+                "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                "errorAt": SERVER_TIMESTAMP,
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
+            }
+            summary_ref.set(update, merge=True)
+        except Exception as e:
+            logger.error(f"Error marking summary error ({source_kapitel_id}): {e}")
+
     async def save_summary_result(
         self,
         user_id: str,
@@ -1491,6 +2025,9 @@ class FirebaseService:
             total_tokens = int(usage.get("totalTokens", input_tokens + output_tokens))
 
             v2_doc = {
+                "status": "success",
+                "errorMessage": None,
+                "errorAt": None,
                 "sourceKapitelId": summary_data.get("sourceKapitelId") or source_kapitel_id,
                 "sourceRunId": summary_data.get("sourceRunId") or "",
                 "sourceType": summary_data.get("sourceType") or "",
@@ -1508,7 +2045,9 @@ class FirebaseService:
                 "costUsd": float(summary_data.get("costUsd") or 0.0),
                 "keySource": summary_data.get("keySource"),
                 "createdAt": created_at_value,
+                "startedAt": started_at_value,
                 "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
             }
 
             batch = self.db.batch()

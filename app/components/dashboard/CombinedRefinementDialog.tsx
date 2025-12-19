@@ -28,6 +28,7 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 import { useAuth } from "@/app/components/providers/AuthProvider";
+import { AI_GENERIC_ERROR_MESSAGE } from "@/app/lib/ai/messages";
 import { firestoreClient } from "@/app/lib/firebase/firestoreClient";
 import { collection, doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
 import { createCombinedRefinement, initCombinedRefinement } from "@/app/actions/kapitels";
@@ -773,7 +774,7 @@ export function CombinedRefinementDialog({
                             </div>
                             {v.status === "error" ? (
                               <p className="text-sm leading-relaxed whitespace-pre-wrap text-destructive">
-                                {v.errorMessage || "Unbekannter Fehler"}
+                                {AI_GENERIC_ERROR_MESSAGE}
                               </p>
                             ) : (
                               <p className="text-sm leading-relaxed whitespace-pre-wrap">

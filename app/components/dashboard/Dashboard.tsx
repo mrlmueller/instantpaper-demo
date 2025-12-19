@@ -693,6 +693,7 @@ export function Dashboard({
             artifacts.combined = {
               id: 'combined',
               content: data.content ?? '',
+              status: data.status,
               sourceQuelleIds: data.sourceQuelleIds ?? [],
               heading: data.heading ?? '',
               topic: data.topic ?? '',
@@ -707,6 +708,7 @@ export function Dashboard({
             artifacts.shortened = {
               id: 'shortened',
               content: data.content ?? '',
+              status: data.status,
               explanation: data.explanation,
               originalLength: data.originalLength ?? 0,
               shortenedLength: data.shortenedLength ?? 0,
@@ -722,6 +724,7 @@ export function Dashboard({
             artifacts.lesefluss = {
               id: 'lesefluss',
               content: data.content ?? '',
+              status: data.status,
               aufgabenstellung: data.aufgabenstellung ?? '',
               explanation: data.explanation,
               originalLength: data.originalLength,
@@ -759,6 +762,7 @@ export function Dashboard({
             userInput: resData.userInput ?? '',
             content: resData.content ?? '',
             hasContent: typeof resData.hasContent === 'boolean' ? resData.hasContent : true,
+            status: resData.status,
             model: resData.model ?? '',
             usage: normalizeUsage(resData.usage),
             costUsd: resData.costUsd ?? 0,
@@ -1470,6 +1474,7 @@ export function Dashboard({
         // Optimistically show the new run while Firestore listeners update
         setFbRuns((prev) => {
           if (prev.some((r) => r.id === result.runId)) return prev;
+          const combinedStatus = settings.directCombine ? 'running' : 'empty';
           return [
             {
               id: result.runId!,
@@ -1477,6 +1482,7 @@ export function Dashboard({
               instruction: prompt,
               model: settings.model,
               createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
               promptTemplateId: processChoice,
               promptPayload: {
                 heading: settings.ueberschrift.trim(),
@@ -1485,8 +1491,15 @@ export function Dashboard({
               autoCombine: settings.directCombine,
               results: [],
               artifacts: { combined: null, shortened: null, lesefluss: null },
+              artifactsStatus: { combined: combinedStatus, shortened: 'empty', lesefluss: 'empty' },
+              resultsExpectedCount: assignedQuellen.length,
+              resultsCompletedCount: 0,
+              resultsWithContentCount: 0,
+              lastResultAt: null,
+              lastActivityAt: new Date().toISOString(),
               ueberschrift: settings.ueberschrift.trim(),
               thema: settings.thema.trim(),
+              grundlegendeInformationen: settings.grundlegendeInfos?.trim() || null,
             },
             ...prev,
           ];
@@ -1616,6 +1629,13 @@ export function Dashboard({
       return;
     }
 
+    if (selectedRun.combinedStatus === 'running') {
+      toast.info('Kombination laeuft bereits', {
+        description: 'Bitte warte, bis die Kombination abgeschlossen ist.',
+      });
+      return;
+    }
+
     if (!(await ensureOpenAIAccess())) return;
 
     const readyResults =
@@ -1724,6 +1744,13 @@ export function Dashboard({
   const handleShorten = useCallback(
     async (contextKapitelIds: string[], promptChoice?: Partial<Record<PromptStage, string | 'default'>>) => {
       if (!activeKapitel || !selectedRun) return;
+
+      if (selectedRun.shortenedStatus === 'running') {
+        toast.info('Kuerzung laeuft bereits', {
+          description: 'Bitte warte, bis die Kuerzung abgeschlossen ist.',
+        });
+        return;
+      }
 
       if (!(await ensureOpenAIAccess())) return;
 
@@ -1836,6 +1863,13 @@ export function Dashboard({
       promptChoice?: Partial<Record<PromptStage, string | 'default'>>
     ) => {
       if (!activeKapitel || !selectedRun) return;
+
+      if (selectedRun.leseflussStatus === 'running') {
+        toast.info('Lesefluss laeuft bereits', {
+          description: 'Bitte warte, bis der Lesefluss abgeschlossen ist.',
+        });
+        return;
+      }
 
       if (!(await ensureOpenAIAccess())) return;
 

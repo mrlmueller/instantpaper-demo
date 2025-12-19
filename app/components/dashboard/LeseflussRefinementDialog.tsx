@@ -28,6 +28,7 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 import { useAuth } from "@/app/components/providers/AuthProvider";
+import { AI_GENERIC_ERROR_MESSAGE } from "@/app/lib/ai/messages";
 import { firestoreClient } from "@/app/lib/firebase/firestoreClient";
 import { collection, doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
 import { createLeseflussRefinement, initLeseflussRefinement } from "@/app/actions/kapitels";
@@ -833,7 +834,7 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
                             </div>
                           ) : v.status === "error" ? (
                             <div className="text-sm text-destructive whitespace-pre-wrap">
-                              {v.errorMessage || "Unbekannter Fehler"}
+                              {AI_GENERIC_ERROR_MESSAGE}
                             </div>
                           ) : (
                             <>
@@ -1040,7 +1041,7 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
                           </div>
                           {v.status === "error" ? (
                             <p className="text-sm leading-relaxed whitespace-pre-wrap text-destructive">
-                              {v.errorMessage || "Unbekannter Fehler"}
+                              {AI_GENERIC_ERROR_MESSAGE}
                             </p>
                           ) : (
                             <p className="text-sm leading-relaxed whitespace-pre-wrap">

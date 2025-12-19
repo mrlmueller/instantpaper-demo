@@ -45,6 +45,7 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Kapitel, Quelle, Run, IntermediateGroup } from "@/app/types/ui";
 import { getCombinedGroups, getSummaries, hasCombinedGroups, type SummaryResult } from "@/app/actions/kapitels";
+import { AI_GENERIC_ERROR_MESSAGE } from "@/app/lib/ai/messages";
 import { ProcessingStepper } from "./ProcessingStepper";
 
 interface KapitelWorkspaceProps {
@@ -116,6 +117,10 @@ export function KapitelWorkspace({
     selectedRun?.shortenedText && selectedRun.shortenedText.length > 0;
   const hasVerbessert =
     selectedRun?.leseflussText && selectedRun.leseflussText.length > 0;
+
+  const combinedStatus = selectedRun?.combinedStatus ?? (hasContent ? "success" : "empty");
+  const shortenedStatus = selectedRun?.shortenedStatus ?? (hasGekuerzt ? "success" : "empty");
+  const leseflussStatus = selectedRun?.leseflussStatus ?? (hasVerbessert ? "success" : "empty");
   const canShowIntermediateGroups = Boolean(selectedRun?.combinedText && selectedRun.combinedText.length > 0);
 
   // Reset intermediate groups when selected run changes
@@ -520,7 +525,35 @@ export function KapitelWorkspace({
         {/* NEW ORDER: Verbessert → Gekürzt → Intermediate Groups → Kombiniert → Quellen */}
 
         {/* 1. Verbesserter Text (Lesefluss) - PRIMARY STYLING */}
-        {hasVerbessert && (
+        {selectedRun && leseflussStatus === "running" && (
+          <Card className="mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Verbesserter Text</h2>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Text wird generiert...</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {selectedRun && leseflussStatus === "error" && (
+          <Card className="mb-8 bg-card border-destructive/30 shadow-sm">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Verbesserter Text</h2>
+              </div>
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {hasVerbessert && leseflussStatus === "success" && (
           <>
             {/* Explanation Card */}
             {selectedRun.leseflussExplanation && (
@@ -655,7 +688,35 @@ export function KapitelWorkspace({
         )}
 
         {/* 2. Gekürzter Text (Shortened) */}
-        {hasGekuerzt && (
+        {selectedRun && shortenedStatus === "running" && (
+          <Card className="mb-8 bg-card border-border shadow-sm">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Gekürzter Text</h2>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Text wird gekürzt...</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {selectedRun && shortenedStatus === "error" && (
+          <Card className="mb-8 bg-card border-destructive/30 shadow-sm">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Gekürzter Text</h2>
+              </div>
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {hasGekuerzt && shortenedStatus === "success" && (
           <>
             <Card className="mb-8 bg-card border-border shadow-sm">
               <div className="p-8">
@@ -897,7 +958,35 @@ export function KapitelWorkspace({
         )}
 
         {/* 4. Kombinierter Text (Combined) */}
-        {hasContent && (
+        {selectedRun && combinedStatus === "running" && (
+          <Card className="mb-8 bg-card border-border shadow-sm">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Kombinierter Text</h2>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Texte werden kombiniert...</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {selectedRun && combinedStatus === "error" && (
+          <Card className="mb-8 bg-card border-destructive/30 shadow-sm">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Kombinierter Text</h2>
+              </div>
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {hasContent && combinedStatus === "success" && (
           <Card className="mb-8 bg-card border-border shadow-sm">
             <div className="p-8">
               <div className="flex items-center justify-between mb-6">
@@ -1060,7 +1149,7 @@ export function KapitelWorkspace({
         )}
 
         {/* Combine Button (if only quellen exist) */}
-        {hasQuellenErgebnisse && !hasContent && (
+        {hasQuellenErgebnisse && !hasContent && combinedStatus !== "running" && (
           <Card className="mb-8 bg-accent/30 border-border border-dashed">
             <div className="p-8 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
@@ -1120,9 +1209,16 @@ export function KapitelWorkspace({
                 <BookOpen className="h-4 w-4" />
                 Ergebnisse pro Quelle ({selectedRun!.quellenErgebnisse.length})
               </h3>
-              {!hasContent && selectedRun!.quellenErgebnisse.some((qe) => qe.status === "success") && (
-                <Button size="sm" variant="outline" onClick={onCombineTexts} disabled={isCombining}>
-                  {isCombining ? (
+              {!hasContent &&
+                combinedStatus !== "running" &&
+                selectedRun!.quellenErgebnisse.some((qe) => qe.status === "success") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onCombineTexts}
+                  disabled={isCombining || combinedStatus === "running"}
+                >
+                  {combinedStatus === "running" || isCombining ? (
                     <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                   ) : (
                     <Layers className="h-4 w-4 mr-1" />
@@ -1150,6 +1246,12 @@ export function KapitelWorkspace({
                         <div className="flex items-center gap-2 text-amber-600">
                           <AlertCircle className="h-4 w-4" />
                           <span className="text-sm">Kein verwertbarer Inhalt</span>
+                        </div>
+                      )}
+                      {ergebnis.status === "error" && (
+                        <div className="flex items-center gap-2 text-destructive">
+                          <AlertCircle className="h-4 w-4" />
+                          <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
                         </div>
                       )}
                     {ergebnis.status === "success" && ergebnis.text && (
