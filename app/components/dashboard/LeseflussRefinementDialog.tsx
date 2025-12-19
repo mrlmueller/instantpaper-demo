@@ -538,7 +538,7 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
 
   const canSend = !sending && !isDepthLimitReached && !isSelectedBranchRunning && message.trim().length > 0;
 
-  const formatCost = (cents: number) => `${(cents / 100).toFixed(2)} €`;
+  const formatCost = (cents: number) => `$${(cents / 100).toFixed(2)}`;
   const PREVIEW_LENGTH = 300;
 
   const originalText = (tree.root?.assistantText || "").toString();

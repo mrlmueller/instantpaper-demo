@@ -41,7 +41,7 @@ export interface QuellenErgebnis {
   quelleName: string;
   text: string;
   status: "waiting" | "success" | "no-content";
-  cost: number; // Cost in cents (EUR) - Firebase stores in dollars (USD)
+  cost: number; // Cost in cents (USD)
 }
 
 export interface IntermediateGroup {
@@ -54,7 +54,7 @@ export interface IntermediateGroup {
   topic: string;
   modelUsed: string;
   tokensUsed: number;
-  cost: number; // Cost in cents (EUR)
+  cost: number; // Cost in cents (USD)
   createdAt: Date;
 }
 
@@ -104,7 +104,7 @@ export interface ProcessingSettings {
 
 // User and stats types for profile page (currently using mock data)
 export interface UserStats {
-  totalCost: number; // in cents
+  totalCost: number; // in cents (USD)
   totalRuns: number;
   totalProjekte: number;
   totalKapitel: number;

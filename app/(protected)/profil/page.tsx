@@ -283,7 +283,7 @@ export default function ProfilPage() {
     .toUpperCase()
     .slice(0, 2);
 
-  const formatCost = (cents: number) => `${(cents / 100).toFixed(2)} €`;
+  const formatCost = (cents: number) => `$${(cents / 100).toFixed(2)}`;
   const formatNumber = (num: number) => num.toLocaleString("de-DE");
   const maskedSavedKey = `sk-**************************************${keyStatus?.last4 || "****"}`;
   const maxMonthlyRuns = Math.max(...stats.runsByMonth.map((m) => m.runs));

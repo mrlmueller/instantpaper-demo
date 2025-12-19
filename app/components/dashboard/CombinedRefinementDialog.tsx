@@ -80,9 +80,8 @@ function estimateCostUsd(
   return nonCachedCost + cachedCost + outputCost;
 }
 
-function formatEurFromUsd(usd: number) {
-  const euros = usd;
-  return `${euros.toFixed(2)} €`;
+function formatUsd(usd: number) {
+  return `$${usd.toFixed(2)}`;
 }
 
 function toDate(value: unknown): Date {
@@ -534,7 +533,7 @@ export function CombinedRefinementDialog({
     setTimeout(() => setCopiedId(null), 2000);
   }, []);
 
-  const formatCost = (cents: number) => `${(cents / 100).toFixed(2)} €`;
+  const formatCost = (cents: number) => `$${(cents / 100).toFixed(2)}`;
   const PREVIEW_LENGTH = 300;
 
   const originalText = (tree.root?.assistantText || "").toString();

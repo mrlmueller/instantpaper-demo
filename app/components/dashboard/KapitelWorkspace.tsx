@@ -35,7 +35,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState, useEffect } from "react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Kapitel, Quelle, Run, IntermediateGroup } from "@/app/types/ui";
 import { getCombinedGroups, getSummaries, hasCombinedGroups, type SummaryResult } from "@/app/actions/kapitels";
@@ -86,6 +92,8 @@ export function KapitelWorkspace({
 }: KapitelWorkspaceProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showFullAnweisung, setShowFullAnweisung] = useState(false);
+  const [costPopoverOpen, setCostPopoverOpen] = useState(false);
+  const costPopoverCloseTimer = useRef<number | null>(null);
   const [hasIntermediateGroups, setHasIntermediateGroups] = useState<boolean | null>(null);
   const [hasIntermediateGroupsLoading, setHasIntermediateGroupsLoading] = useState(false);
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] =
@@ -214,9 +222,119 @@ export function KapitelWorkspace({
     : 0;
 
   const formatCost = (cents: number) => {
-    const euros = cents / 100;
-    return `${euros.toFixed(2)} €`;
+    const usd = cents / 100;
+    return `$${usd.toFixed(2)}`;
   };
+
+  const openCostPopover = () => {
+    if (costPopoverCloseTimer.current) {
+      window.clearTimeout(costPopoverCloseTimer.current);
+      costPopoverCloseTimer.current = null;
+    }
+    setCostPopoverOpen(true);
+  };
+
+  const scheduleCloseCostPopover = () => {
+    if (costPopoverCloseTimer.current) {
+      window.clearTimeout(costPopoverCloseTimer.current);
+    }
+    costPopoverCloseTimer.current = window.setTimeout(() => {
+      setCostPopoverOpen(false);
+      costPopoverCloseTimer.current = null;
+    }, 120);
+  };
+
+  const costBreakdownItems: Array<{
+    key: string;
+    label: string;
+    hint?: string;
+    cents: number;
+  }> = (() => {
+    if (!selectedRun) return [];
+
+    const items: Array<{
+      key: string;
+      label: string;
+      hint?: string;
+      cents: number;
+    }> = [];
+
+    const results = selectedRun.quellenErgebnisse || [];
+    const resultsSuccess = results.filter((r) => r.status === "success").length;
+    const resultsNoContent = results.filter((r) => r.status === "no-content").length;
+
+    if (selectedRun.quellenCost > 0) {
+      const hintParts: string[] = [];
+      if (results.length > 0) hintParts.push(`${resultsSuccess}/${results.length} Quellen`);
+      if (resultsNoContent > 0) hintParts.push(`${resultsNoContent} ohne Inhalt`);
+      items.push({
+        key: "results",
+        label: "Ergebnisse pro Quelle",
+        hint: hintParts.length > 0 ? hintParts.join(" · ") : undefined,
+        cents: selectedRun.quellenCost,
+      });
+    }
+
+    if (selectedRun.combinedCost > 0) {
+      items.push({
+        key: "combined",
+        label: "Kombiniert",
+        hint: hasIntermediateGroups === true ? "inkl. Zwischengruppen" : undefined,
+        cents: selectedRun.combinedCost,
+      });
+    }
+
+    if ((selectedRun.combinedRefinementCost || 0) > 0) {
+      items.push({
+        key: "combinedRefine",
+        label: "Verfeinerung (Kombiniert)",
+        cents: selectedRun.combinedRefinementCost || 0,
+      });
+    }
+
+    if ((selectedRun.shortenedCost || 0) > 0) {
+      items.push({
+        key: "shorten",
+        label: "Text kürzen",
+        cents: selectedRun.shortenedCost || 0,
+      });
+    }
+
+    if ((selectedRun.shortenedRefinementCost || 0) > 0) {
+      items.push({
+        key: "shortenRefine",
+        label: "Verfeinerung (Gekürzt)",
+        cents: selectedRun.shortenedRefinementCost || 0,
+      });
+    }
+
+    if ((selectedRun.leseflussCost || 0) > 0) {
+      items.push({
+        key: "lesefluss",
+        label: "Lesefluss verbessern",
+        cents: selectedRun.leseflussCost || 0,
+      });
+    }
+
+    if ((selectedRun.leseflussRefinementCost || 0) > 0) {
+      items.push({
+        key: "leseflussRefine",
+        label: "Verfeinerung (Lesefluss)",
+        cents: selectedRun.leseflussRefinementCost || 0,
+      });
+    }
+
+    if (summariesLoading || summariesCost > 0 || summaries.length > 0) {
+      items.push({
+        key: "summaries",
+        label: "Kapitel-Summaries (Kontext)",
+        hint: summariesLoading ? "lädt…" : `${summaries.length} Kapitel`,
+        cents: summariesCost,
+      });
+    }
+
+    return items;
+  })();
 
   const themaIsLong = selectedRun?.thema && selectedRun.thema.length > 80;
 
@@ -300,9 +418,53 @@ export function KapitelWorkspace({
 
             <div className="flex items-center gap-3">
               <span className="text-sm text-muted-foreground">{selectedRun.model}</span>
-              <span className="text-sm font-medium px-2.5 py-1 bg-muted rounded-md">
-                Kosten: {formatCost(totalCost)}
-              </span>
+              <Popover open={costPopoverOpen} onOpenChange={setCostPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <span
+                    className="text-sm font-medium px-2.5 py-1 bg-background border border-border shadow-sm rounded-md cursor-default select-none"
+                    onMouseEnter={openCostPopover}
+                    onMouseLeave={scheduleCloseCostPopover}
+                    onFocus={openCostPopover}
+                    onBlur={scheduleCloseCostPopover}
+                  >
+                    Kosten: {formatCost(totalCost)}
+                  </span>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="bottom"
+                  align="end"
+                  className="w-[340px] p-3"
+                  onMouseEnter={openCostPopover}
+                  onMouseLeave={scheduleCloseCostPopover}
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-medium">Kostenübersicht</span>
+                      <span className="text-xs font-medium tabular-nums">{formatCost(totalCost)}</span>
+                    </div>
+
+                    <Separator />
+
+                    {costBreakdownItems.length > 0 ? (
+                      <div className="space-y-1">
+                        {costBreakdownItems.map((item) => (
+                          <div key={item.key} className="flex items-start justify-between gap-3 text-xs">
+                            <div className="min-w-0">
+                              <div className="text-muted-foreground">{item.label}</div>
+                              {item.hint && (
+                                <div className="text-muted-foreground/70">{item.hint}</div>
+                              )}
+                            </div>
+                            <span className="tabular-nums">{formatCost(item.cents)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground">Noch keine Kosten erfasst.</div>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         )}
