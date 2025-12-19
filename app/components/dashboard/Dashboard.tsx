@@ -601,7 +601,7 @@ export function Dashboard({
 
     // Track when both listeners have fired at least once
     let listenersSettled = 0;
-    const totalListeners = 2;
+    const totalListeners = 4;
 
     const flushBatchedUpdate = () => {
       if (Object.keys(pendingUpdate).length > 0) {
@@ -664,14 +664,21 @@ export function Dashboard({
           }
         : { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 };
 
-    const artifactsUnsub = onSnapshot(
-      artifactsRef,
-      (artifactSnap) => {
-        const artifacts: any = { combined: null, shortened: null, lesefluss: null };
+    // Listen to fixed artifact docs individually so we don't fail if legacy/unknown docs exist in the collection.
+    const artifacts: any = { combined: null, shortened: null, lesefluss: null };
 
-        artifactSnap.docs.forEach((d) => {
-          const data: any = d.data();
-          const artifactId = d.id;
+    const listenArtifact = (artifactId: 'combined' | 'shortened' | 'lesefluss') =>
+      onSnapshot(
+        doc(artifactsRef, artifactId),
+        (snap) => {
+          if (!snap.exists()) {
+            artifacts[artifactId] = null;
+            updateRunBatched({ artifacts: { ...artifacts } });
+            checkListenerSettled();
+            return;
+          }
+
+          const data: any = snap.data();
           const refinement = normalizeRefinement(data.refinement);
           const usage = normalizeUsage(data.usage);
 
@@ -721,18 +728,19 @@ export function Dashboard({
               updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
             };
           }
-        });
 
-        updateRunBatched({ artifacts });
-        hasData = hasData || Boolean(artifacts.combined || artifacts.shortened || artifacts.lesefluss);
-        if (hasData) finishIfNeeded();
-        checkListenerSettled();
-      },
-      (err) => {
-        console.error('Artifacts listen failed:', err);
-        checkListenerSettled();
-      }
-    );
+          updateRunBatched({ artifacts: { ...artifacts } });
+          hasData = hasData || Boolean(artifacts.combined || artifacts.shortened || artifacts.lesefluss);
+          if (hasData) finishIfNeeded();
+          checkListenerSettled();
+        },
+        (err) => {
+          console.error(`Artifact listen failed (${artifactId}):`, err);
+          checkListenerSettled();
+        }
+      );
+
+    const artifactsUnsubs = [listenArtifact('combined'), listenArtifact('shortened'), listenArtifact('lesefluss')];
 
     const resultsUnsub = onSnapshot(
       resultsRef,
@@ -772,7 +780,7 @@ export function Dashboard({
         clearTimeout(updateTimeout);
         flushBatchedUpdate();
       }
-      artifactsUnsub();
+      artifactsUnsubs.forEach((fn) => fn());
       resultsUnsub();
     };
   }, [user?.uid, activeKapitelId, selectedRunId]);
@@ -973,7 +981,7 @@ export function Dashboard({
       const loadingToast = toast.loading('Quelle wird hinzugefügt...');
       const uploadingToast =
         imageFiles.length > 0
-          ? toast.loading(`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`)
+          ? toast.loading(`Lade ${imageFiles.length} Bild(er) hoch...`)
           : undefined;
 
       let imageMetadata: ImageMetadata[] = [];
@@ -994,7 +1002,7 @@ export function Dashboard({
         if (result.success) {
           success = true;
           toast.success('Quelle hinzugefügt', {
-            description: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` mit ${imageFiles.length} Bild(ern)` : ''}.`,
+            description: `"${name}" wurde erfolgreich erstellt${imageFiles.length > 0 ? ` mit ${imageFiles.length} Bild(ern)` : ''}.`,
             id: loadingToast,
           });
           // Optimistically update UI
@@ -1105,7 +1113,7 @@ export function Dashboard({
         await persistKapitelQuellenClient(activeKapitelId, newQuelleIds);
         toast.success('Quelle zugewiesen', {
           id: toastId,
-          description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
+          description: quelle ? `"${quelle.name}" wurde dem Kapitel hinzugefügt.` : undefined,
         });
       } catch (clientErr) {
         // Fallback to server action
@@ -1118,7 +1126,7 @@ export function Dashboard({
         } else {
           toast.success('Quelle zugewiesen', {
             id: toastId,
-            description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
+            description: quelle ? `"${quelle.name}" wurde dem Kapitel hinzugefügt.` : undefined,
           });
         }
       } finally {
@@ -1153,7 +1161,7 @@ export function Dashboard({
         await persistKapitelQuellenClient(activeKapitelId, newQuelleIds);
         toast.success('Quelle entfernt', {
           id: toastId,
-          description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
+          description: quelle ? `"${quelle.name}" wurde vom Kapitel entfernt.` : undefined,
         });
       } catch (clientErr) {
         const result = await updateKapitelQuellen(activeKapitelId, newQuelleIds);
@@ -1165,7 +1173,7 @@ export function Dashboard({
         } else {
           toast.success('Quelle entfernt', {
             id: toastId,
-            description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
+            description: quelle ? `"${quelle.name}" wurde vom Kapitel entfernt.` : undefined,
           });
         }
       } finally {
@@ -1432,7 +1440,7 @@ export function Dashboard({
       setIsProcessingRun(true);
       setProcessingDialogOpen(false);
       const processingToastId = toast.loading('Verarbeitung gestartet', {
-        description: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`,
+        description: `"${settings.ueberschrift}" wird mit ${assignedQuellen.length} Quellen verarbeitet...`,
       });
 
       try {
@@ -1548,7 +1556,7 @@ export function Dashboard({
                 return;
               }
 
-              console.error(`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`, err);
+              console.error(`Error processing Quelle ${nextQuelle?.id}:`, err);
               toast.error('Fehler bei einer Quelle', {
                 description: err.message || 'Unbekannter Fehler beim Verarbeiten der Quelle',
                 id: processingToastId,
@@ -2105,7 +2113,7 @@ export function Dashboard({
           kapitelId={activeKapitel.id}
           runId={selectedRun.id}
           runModel={selectedRun.model}
-          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          kapitelLabel={`${activeKapitel.nummer} ${activeKapitel.title}`}
           ensureOpenAIAccess={ensureOpenAIAccess}
           onAuthFailure={handleAuthFailure}
           onServerDown={notifyServerDown}
@@ -2119,7 +2127,7 @@ export function Dashboard({
           onOpenChange={setShortenedRefinementDialogOpen}
           kapitelId={activeKapitel.id}
           runId={selectedRun.id}
-          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          kapitelLabel={`${activeKapitel.nummer} ${activeKapitel.title}`}
           ensureOpenAIAccess={ensureOpenAIAccess}
           onAuthFailure={handleAuthFailure}
           onServerDown={notifyServerDown}
@@ -2133,7 +2141,7 @@ export function Dashboard({
           onOpenChange={setLeseflussRefinementDialogOpen}
           kapitelId={activeKapitel.id}
           runId={selectedRun.id}
-          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          kapitelLabel={`${activeKapitel.nummer} ${activeKapitel.title}`}
           ensureOpenAIAccess={ensureOpenAIAccess}
           onAuthFailure={handleAuthFailure}
           onServerDown={notifyServerDown}
@@ -2152,7 +2160,7 @@ export function Dashboard({
           runId={selectedRun.id}
           quelleId={resultRefinementTarget.quelleId}
           quelleName={resultRefinementTarget.quelleName}
-          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          kapitelLabel={`${activeKapitel.nummer} ${activeKapitel.title}`}
           ensureOpenAIAccess={ensureOpenAIAccess}
           onAuthFailure={handleAuthFailure}
           onServerDown={notifyServerDown}
@@ -2200,10 +2208,11 @@ export function Dashboard({
 }
 
 function buildPrompt(heading: string, topic: string, basicInfo?: string) {
-  const prompt = `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`;
+  const prompt = `### Aufgabe:
+Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz ist, schreibe keine Einleitung oder Schlussfolgerung/Zusammenfassung. Der Absatz hat die Überschrift "${heading}" und soll genauer das Thema "${topic}" behandeln. Beziehe dich beim Schreiben des Absatzes nur auf die oben gegebenen Informationen und nutze nichts aus deinem eigenen Wissen. Fokussiere dich außerdem genau auf das Thema, das ich vorgegeben habe, da andere Informationen hierzu bereits behandelt worden sind oder noch behandelt werden; kurzum, schreibe wirklich nur über das vorgegebene Thema. Wichtig ist, dass Informationen, die aus dem obigen Text übernommen werden, so umgeschrieben werden sollen, dass der obige Text nicht mehr zu erkennen ist – das Ergebnis also einzigartig ist. Der Text soll so lang sein, wie er sein muss, um alle relevanten Informationen zu integrieren; ziehe ihn nicht unnötig in die Länge, aber lasse auch nichts Relevantes weg. Sollte der Text keine sinnvollen Informationen zu dem gegebenen Thema enthalten, kannst du mir das sagen und den Text dann nicht schreiben; gib mir dann eine kurze Erklärung, warum der Text nicht zum Thema gepasst hat. Integriere außerdem die Quellen (mit Seitenzahlen, wenn diese gegeben wurden) aus dem oberen Text an den richtigen Stellen. Der gegebene Text hat sicherlich mehr Informationen zu manchen Themen und weniger zu anderen. Fokussiere dich auf die Themen, zu denen du wirklich konkrete und tiefe Einblicke geben kannst. Dieser Text ist nur einer von 10, die ich zu diesem Thema habe. Das bedeutet, wenn du eine Dimension nur wenig oder gar nicht behandelst, habe ich dennoch viele Informationen zu dieser in einem anderen Text. Genauer ausgedrückt, schreibst du gerade einen von 10 Texten, die später das Kapitel ergeben werden. Das bedeutet auch, dass du dich wirklich auf das Wichtigste beschränken kannst und nicht unnötiges schreiben musst. Schreibe keine Zusammenfassung oder Schlussfolgerung am Ende. Nur reine Informationen. Formuliere den Text ohne dass du ; verwendest, außer zwischen zwei Quellen.`;
 
   const grundInfo = basicInfo?.trim()
-    ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`
+    ? `\n\nGrundlegende Informationen, die durchgehend berücksichtigt werden sollen:\n${basicInfo.trim()}`
     : '';
 
   return `${prompt}${grundInfo}`;
