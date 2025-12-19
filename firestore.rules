@@ -2,191 +2,429 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // ---------------------------------------------------------------------
+    // V2 helper functions (single-user namespace: users/{uid}/...)
+    // ---------------------------------------------------------------------
+
     function isAuthenticated() {
       return request.auth != null;
     }
 
     function isOwner(userId) {
-      return request.auth.uid == userId;
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isValidPromptStage(stage) {
+    function isTs(x) {
+      return x is timestamp;
+    }
+
+    function isNonEmptyString(s, maxSize) {
+      return s is string && s.size() > 0 && s.size() <= maxSize;
+    }
+
+    function isString(s, maxSize) {
+      return s is string && s.size() <= maxSize;
+    }
+
+    function isValidStage(stage) {
       return stage in ['process_quelle', 'combine', 'shorten', 'lesefluss', 'summary'];
     }
 
-    function hasProjekt(userId, projektId) {
-      return projektId != null && exists(/databases/$(database)/documents/users/$(userId)/projects/$(projektId));
+    function projectExists(userId, projectId) {
+      return projectId is string
+        && exists(/databases/$(database)/documents/users/$(userId)/projects/$(projectId));
     }
 
-    // User documents - users can only access their own data
-    match /users/{userId} {
-      allow read: if isAuthenticated() && isOwner(userId);
+    function kapitelExists(userId, kapitelId) {
+      return kapitelId is string
+        && exists(/databases/$(database)/documents/users/$(userId)/kapitels/$(kapitelId));
+    }
 
-      // Users can create their doc but cannot grant themselves platform access
-      allow create: if isAuthenticated()
-        && isOwner(userId)
+    function isValidArtifactId(artifactId) {
+      return artifactId in ['combined', 'shortened', 'lesefluss'];
+    }
+
+    function isValidArchiveState(data) {
+      return data.archived is bool
+        && (
+          (data.archived == false && (!data.keys().hasAny(['archivedAt']) || data.archivedAt == null))
+          || (data.archived == true && data.keys().hasAny(['archivedAt']) && isTs(data.archivedAt))
+        );
+    }
+
+    function isLatestRunMap(x) {
+      return x is map
+        && x.keys().hasOnly(['runId', 'index', 'status', 'updatedAt'])
+        && x.runId is string
+        && x.index is int
+        && x.status in ['none', 'running', 'done']
+        && isTs(x.updatedAt);
+    }
+
+    function isUsageMap(u) {
+      return u is map
+        && u.keys().hasOnly(['inputTokens', 'cachedInputTokens', 'outputTokens', 'reasoningTokens', 'totalTokens'])
+        && u.inputTokens is int
+        && u.cachedInputTokens is int
+        && u.outputTokens is int
+        && u.reasoningTokens is int
+        && u.totalTokens is int;
+    }
+
+    function isRefinementMeta(r) {
+      return r is map
+        && r.keys().hasOnly(['rootVersionId', 'activeVersionId', 'maxDepth', 'costTotalUsd', 'initializedAt', 'selectedAt'])
+        && r.rootVersionId == 'root'
+        && r.activeVersionId is string
+        && r.maxDepth is int
+        && r.costTotalUsd is number
+        && isTs(r.initializedAt)
+        && (!r.keys().hasAny(['selectedAt']) || r.selectedAt == null || isTs(r.selectedAt));
+    }
+
+    function isArtifactsStatusMap(s) {
+      return s is map
+        && s.keys().hasOnly(['combined', 'shortened', 'lesefluss'])
+        && s.combined in ['empty', 'running', 'success', 'error']
+        && s.shortened in ['empty', 'running', 'success', 'error']
+        && s.lesefluss in ['empty', 'running', 'success', 'error'];
+    }
+
+    // ---------------------------------------------------------------------
+    // users/{uid}
+    // ---------------------------------------------------------------------
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+
+      // Users may create their profile doc, but cannot grant themselves platform access.
+      allow create: if isOwner(userId)
         && (
           !request.resource.data.keys().hasAny(['allowPlatformKey'])
           || request.resource.data.allowPlatformKey == false
         );
 
-      // Users may update their profile but not change allowPlatformKey
-      allow update: if isAuthenticated()
-        && isOwner(userId)
+      // Users may update their profile, but not change allowPlatformKey.
+      allow update: if isOwner(userId)
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['allowPlatformKey']);
 
-      // Users can delete their profile
-      allow delete: if isAuthenticated() && isOwner(userId);
-    }
+      allow delete: if isOwner(userId);
 
-    // Secrets subcollection - server only
-    match /users/{userId}/secrets/{secretId} {
-      allow read, write: if false;
-    }
+      // -------------------------------------------------------------------
+      // Server-only collections
+      // -------------------------------------------------------------------
 
-    // Prompt templates per user
-    match /users/{userId}/promptTemplates/{templateId} {
-      allow read: if isAuthenticated() && isOwner(userId);
+      match /secrets/{secretId} {
+        allow read, write: if false;
+      }
 
-      allow create: if isAuthenticated()
-        && isOwner(userId)
-        && request.resource.data.keys().hasAll(['stage', 'name', 'instructions', 'createdAt', 'updatedAt'])
-        && isValidPromptStage(request.resource.data.stage);
+      // -------------------------------------------------------------------
+      // Prompt templates (per-user)
+      // -------------------------------------------------------------------
 
-      allow update: if isAuthenticated()
-        && isOwner(userId)
-        && request.resource.data.stage == resource.data.stage
-        && isValidPromptStage(resource.data.stage);
+      match /promptTemplates/{templateId} {
+        allow read: if isOwner(userId);
 
-      allow delete: if isAuthenticated() && isOwner(userId);
-    }
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['stage', 'name', 'instructions', 'createdAt', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['stage', 'name', 'instructions', 'placeholders', 'createdAt', 'updatedAt'])
+          && isValidStage(request.resource.data.stage)
+          && isNonEmptyString(request.resource.data.name, 200)
+          && isString(request.resource.data.instructions, 50000)
+          && isTs(request.resource.data.createdAt)
+          && isTs(request.resource.data.updatedAt);
 
-    // Prompt settings (active template selections) per user
-    match /users/{userId}/promptSettings/{settingsId} {
-      allow read: if isAuthenticated() && isOwner(userId);
-      allow create, update: if isAuthenticated() && isOwner(userId);
-      allow delete: if isAuthenticated() && isOwner(userId);
-    }
+        allow update: if isOwner(userId)
+          && request.resource.data.stage == resource.data.stage
+          && isValidStage(resource.data.stage)
+          && isNonEmptyString(request.resource.data.name, 200)
+          && isString(request.resource.data.instructions, 50000)
+          && isTs(request.resource.data.updatedAt)
+          && request.resource.data.keys().hasOnly(['stage', 'name', 'instructions', 'placeholders', 'createdAt', 'updatedAt'])
+          && request.resource.data.createdAt == resource.data.createdAt;
 
-    // Projects collection per user
-    match /users/{userId}/projects/{projektId} {
-      // Read any project owned by the user
-      allow read: if isAuthenticated() && isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
 
-      // Create requires ownership + required fields
-      allow create: if isAuthenticated()
-        && isOwner(userId)
-        && request.resource.data.keys().hasAll(['name', 'ownerId', 'createdAt'])
-        && request.resource.data.ownerId == userId;
+      // Active prompt selections per user (single doc: promptSettings/active)
+      match /promptSettings/{settingsId} {
+        allow read: if isOwner(userId);
+        allow create, update, delete: if isOwner(userId) && settingsId == 'active';
+      }
 
-      // Updates/deletes limited to owner
-      allow update, delete: if isAuthenticated() && isOwner(userId);
-    }
+      // -------------------------------------------------------------------
+      // projects/{projectId}
+      // -------------------------------------------------------------------
 
-    // Quellen subcollection - under each user document
-    match /users/{userId}/quellen/{quelleId} {
-      allow read: if isAuthenticated() && isOwner(userId);
+      match /projects/{projectId} {
+        allow read: if isOwner(userId);
 
-      // Create Quelle
-      allow create: if isAuthenticated()
-        && isOwner(userId)
-        && request.resource.data.keys().hasAll(['title', 'content', 'projektId', 'createdAt']);
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['name', 'ownerId', 'createdAt', 'updatedAt', 'archived'])
+          && request.resource.data.keys().hasOnly(['name', 'ownerId', 'createdAt', 'updatedAt', 'archived', 'archivedAt'])
+          && isNonEmptyString(request.resource.data.name, 200)
+          && request.resource.data.ownerId == userId
+          && isTs(request.resource.data.createdAt)
+          && isTs(request.resource.data.updatedAt)
+          && isValidArchiveState(request.resource.data);
 
-      // Update/delete Quelle
-      allow update, delete: if isAuthenticated()
-        && isOwner(userId);
-    }
+        allow update: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['name', 'ownerId', 'createdAt', 'updatedAt', 'archived'])
+          && request.resource.data.keys().hasOnly(['name', 'ownerId', 'createdAt', 'updatedAt', 'archived', 'archivedAt'])
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.ownerId == userId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && isNonEmptyString(request.resource.data.name, 200)
+          && isTs(request.resource.data.updatedAt)
+          && isValidArchiveState(request.resource.data);
 
-    // Kapitels subcollection
-    match /users/{userId}/kapitels/{kapitelId} {
-      allow read: if isAuthenticated() && isOwner(userId);
+        // Project deletion is an archive transition (client delete denied).
+        allow delete: if false;
+      }
 
-      // Create Kapitel with title + quelleIds + createdAt + projektId
-      allow create: if isAuthenticated()
-        && isOwner(userId)
-        && request.resource.data.keys().hasAll(['title', 'quelleIds', 'projektId', 'createdAt']);
+      // -------------------------------------------------------------------
+      // quellen/{quelleId} (metadata) + quellen/{quelleId}/content/main (blob)
+      // -------------------------------------------------------------------
 
-      allow update, delete: if isAuthenticated()
-        && isOwner(userId);
+      match /quellen/{quelleId} {
+        allow read: if isOwner(userId);
 
-      // Runs under each Kapitel
-      match /runs/{runId} {
-        allow read: if isAuthenticated() && isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['projektId', 'title', 'createdAt', 'updatedAt', 'archived'])
+          && request.resource.data.keys().hasOnly([
+            'projektId', 'title', 'createdAt', 'updatedAt', 'archived', 'archivedAt',
+            'wordCount', 'images', 'autor', 'jahr', 'typ', 'url', 'zugriffAm', 'color'
+          ])
+          && projectExists(userId, request.resource.data.projektId)
+          && isNonEmptyString(request.resource.data.title, 500)
+          && isTs(request.resource.data.createdAt)
+          && isTs(request.resource.data.updatedAt)
+          && isValidArchiveState(request.resource.data)
+          && (!request.resource.data.keys().hasAny(['wordCount']) || (request.resource.data.wordCount is int && request.resource.data.wordCount <= 7000));
 
-        // Create run with required fields
-        allow create: if isAuthenticated()
-          && isOwner(userId)
-          && request.resource.data.keys().hasAll(['instruction', 'model', 'index', 'projektId', 'createdAt']);
+        allow update: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['projektId', 'title', 'createdAt', 'updatedAt', 'archived'])
+          && request.resource.data.keys().hasOnly([
+            'projektId', 'title', 'createdAt', 'updatedAt', 'archived', 'archivedAt',
+            'wordCount', 'images', 'autor', 'jahr', 'typ', 'url', 'zugriffAm', 'color'
+          ])
+          && projectExists(userId, request.resource.data.projektId)
+          && isNonEmptyString(request.resource.data.title, 500)
+          && request.resource.data.createdAt == resource.data.createdAt
+          && isTs(request.resource.data.updatedAt)
+          && isValidArchiveState(request.resource.data)
+          && (!request.resource.data.keys().hasAny(['wordCount']) || (request.resource.data.wordCount is int && request.resource.data.wordCount <= 7000));
 
-        allow update, delete: if isAuthenticated() && isOwner(userId);
+        // Client hard-deletes are denied; use archive fields instead.
+        allow delete: if false;
 
-        // Results under each run
-        match /results/{resultId} {
-          allow read: if isAuthenticated() && isOwner(userId);
-          allow create: if isAuthenticated() && isOwner(userId);
-          allow update: if isAuthenticated() && isOwner(userId);
+        match /content/{contentId} {
+          allow read: if isOwner(userId) && contentId == 'main';
 
-          // Text refinement flow (versions/branches) for a Quellen-result text
-          match /versions/{versionId} {
-            allow read: if isAuthenticated() && isOwner(userId);
-            // Backend-only writes (FastAPI uses Admin SDK)
-            allow write: if false;
+          // Rules cannot count words; enforce true 7000-word limit in app code.
+          // Here we enforce a safe character cap + require/stabilize stored wordCount.
+          allow create: if isOwner(userId)
+            && contentId == 'main'
+            && request.resource.data.keys().hasAll(['text', 'wordCount', 'createdAt', 'updatedAt'])
+            && request.resource.data.keys().hasOnly(['text', 'wordCount', 'createdAt', 'updatedAt'])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() <= 140000
+            && request.resource.data.wordCount is int
+            && request.resource.data.wordCount <= 7000
+            && isTs(request.resource.data.createdAt)
+            && isTs(request.resource.data.updatedAt);
+
+          allow update: if isOwner(userId)
+            && contentId == 'main'
+            && request.resource.data.keys().hasAll(['text', 'wordCount', 'createdAt', 'updatedAt'])
+            && request.resource.data.keys().hasOnly(['text', 'wordCount', 'createdAt', 'updatedAt'])
+            && request.resource.data.createdAt == resource.data.createdAt
+            && request.resource.data.text is string
+            && request.resource.data.text.size() <= 140000
+            && request.resource.data.wordCount is int
+            && request.resource.data.wordCount <= 7000
+            && isTs(request.resource.data.updatedAt);
+
+          allow delete: if false;
+        }
+      }
+
+      // -------------------------------------------------------------------
+      // kapitels/{kapitelId} + runs/{runId} subtree
+      // -------------------------------------------------------------------
+
+      match /kapitels/{kapitelId} {
+        allow read: if isOwner(userId);
+
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasAll([
+            'projektId', 'title', 'nummer', 'parentId', 'order', 'quelleIds', 'createdAt', 'updatedAt', 'archived'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'projektId', 'title', 'nummer', 'parentId', 'order', 'quelleIds',
+            'createdAt', 'updatedAt', 'archived', 'archivedAt', 'latestRun'
+          ])
+          && projectExists(userId, request.resource.data.projektId)
+          && isNonEmptyString(request.resource.data.title, 500)
+          && isString(request.resource.data.nummer, 50)
+          && (request.resource.data.parentId == null || kapitelExists(userId, request.resource.data.parentId))
+          && request.resource.data.order is int
+          && request.resource.data.quelleIds is list
+          && request.resource.data.quelleIds.size() <= 250
+          && isTs(request.resource.data.createdAt)
+          && isTs(request.resource.data.updatedAt)
+          && isValidArchiveState(request.resource.data)
+          && (!request.resource.data.keys().hasAny(['latestRun']) || isLatestRunMap(request.resource.data.latestRun));
+
+        allow update: if isOwner(userId)
+          && request.resource.data.keys().hasAll([
+            'projektId', 'title', 'nummer', 'parentId', 'order', 'quelleIds', 'createdAt', 'updatedAt', 'archived'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'projektId', 'title', 'nummer', 'parentId', 'order', 'quelleIds',
+            'createdAt', 'updatedAt', 'archived', 'archivedAt', 'latestRun'
+          ])
+          && projectExists(userId, request.resource.data.projektId)
+          && isNonEmptyString(request.resource.data.title, 500)
+          && isString(request.resource.data.nummer, 50)
+          && (request.resource.data.parentId == null || kapitelExists(userId, request.resource.data.parentId))
+          && request.resource.data.order is int
+          && request.resource.data.quelleIds is list
+          && request.resource.data.quelleIds.size() <= 250
+          && request.resource.data.createdAt == resource.data.createdAt
+          && isTs(request.resource.data.updatedAt)
+          && isValidArchiveState(request.resource.data)
+          && (!request.resource.data.keys().hasAny(['latestRun']) || isLatestRunMap(request.resource.data.latestRun));
+
+        // Client hard-deletes are denied; use archive fields instead.
+        allow delete: if false;
+
+        match /runs/{runId} {
+          allow read: if isOwner(userId);
+
+          allow create: if isOwner(userId)
+            && request.resource.data.keys().hasAll(['projektId', 'index', 'instruction', 'model', 'createdAt', 'updatedAt', 'archived', 'autoCombine'])
+            && request.resource.data.keys().hasOnly([
+              'projektId', 'index', 'instruction', 'model', 'createdAt', 'updatedAt', 'archived', 'archivedAt',
+              'promptTemplateId', 'promptPayload', 'autoCombine', 'grundlegendeInformationen', 'ueberschrift', 'thema',
+              'resultsExpectedCount', 'resultsCompletedCount', 'resultsWithContentCount', 'lastResultAt',
+              'artifactsStatus', 'lastActivityAt'
+            ])
+            && projectExists(userId, request.resource.data.projektId)
+            && request.resource.data.index is int
+            && isNonEmptyString(request.resource.data.instruction, 50000)
+            && isNonEmptyString(request.resource.data.model, 100)
+            && isTs(request.resource.data.createdAt)
+            && isTs(request.resource.data.updatedAt)
+            && isValidArchiveState(request.resource.data)
+            && request.resource.data.autoCombine is bool
+            && (!request.resource.data.keys().hasAny(['resultsExpectedCount']) || request.resource.data.resultsExpectedCount is int)
+            && (!request.resource.data.keys().hasAny(['resultsCompletedCount']) || request.resource.data.resultsCompletedCount is int)
+            && (!request.resource.data.keys().hasAny(['resultsWithContentCount']) || request.resource.data.resultsWithContentCount is int)
+            && (!request.resource.data.keys().hasAny(['artifactsStatus']) || isArtifactsStatusMap(request.resource.data.artifactsStatus));
+
+          // Client updates are limited to "settings-like" fields + archiving.
+          allow update: if isOwner(userId)
+            && request.resource.data.keys().hasOnly([
+              'projektId', 'index', 'instruction', 'model', 'createdAt', 'updatedAt', 'archived', 'archivedAt',
+              'promptTemplateId', 'promptPayload', 'autoCombine', 'grundlegendeInformationen', 'ueberschrift', 'thema',
+              'resultsExpectedCount', 'resultsCompletedCount', 'resultsWithContentCount', 'lastResultAt',
+              'artifactsStatus', 'lastActivityAt'
+            ])
+            && request.resource.data.createdAt == resource.data.createdAt
+            && request.resource.data.projektId == resource.data.projektId
+            && request.resource.data.index == resource.data.index
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'instruction', 'model', 'updatedAt', 'archived', 'archivedAt',
+              'promptTemplateId', 'promptPayload', 'autoCombine', 'grundlegendeInformationen', 'ueberschrift', 'thema'
+            ])
+            && isNonEmptyString(request.resource.data.instruction, 50000)
+            && isNonEmptyString(request.resource.data.model, 100)
+            && isTs(request.resource.data.updatedAt)
+            && isValidArchiveState(request.resource.data)
+            && request.resource.data.autoCombine is bool;
+
+          allow delete: if false;
+
+          // Results (server-owned; client can only adopt refinement versions).
+          match /results/{quelleId} {
+            allow read: if isOwner(userId);
+            allow create, delete: if false;
+
+            allow update: if isOwner(userId)
+              && request.resource.data.keys().hasOnly([
+                'quelleId', 'userInput', 'content', 'hasContent', 'model', 'usage', 'costUsd',
+                'keySource', 'createdAt', 'updatedAt', 'refinement'
+              ])
+              && request.resource.data.quelleId == quelleId
+              && request.resource.data.createdAt == resource.data.createdAt
+              && request.resource.data.userInput == resource.data.userInput
+              && request.resource.data.model == resource.data.model
+              && request.resource.data.usage == resource.data.usage
+              && request.resource.data.costUsd == resource.data.costUsd
+              && request.resource.data.keySource == resource.data.keySource
+              && isUsageMap(request.resource.data.usage)
+              && request.resource.data.content is string
+              && request.resource.data.content.size() <= 140000
+              && request.resource.data.hasContent is bool
+              && isTs(request.resource.data.updatedAt)
+              && isRefinementMeta(request.resource.data.refinement)
+              && resource.data.refinement.rootVersionId == request.resource.data.refinement.rootVersionId
+              && resource.data.refinement.maxDepth == request.resource.data.refinement.maxDepth
+              && resource.data.refinement.costTotalUsd == request.resource.data.refinement.costTotalUsd
+              && resource.data.refinement.initializedAt == request.resource.data.refinement.initializedAt
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'hasContent', 'updatedAt', 'refinement']);
+
+            match /versions/{versionId} {
+              allow read: if isOwner(userId);
+              allow write: if false;
+            }
           }
-        }
 
-        // Combined results under each run
-        match /combined/{combinedId} {
-          allow read: if isAuthenticated() && isOwner(userId);
-          allow create: if isAuthenticated() && isOwner(userId);
-          allow update, delete: if isAuthenticated() && isOwner(userId);
+          // Artifacts (server-owned; client can only adopt refinement versions).
+          match /artifacts/{artifactId} {
+            allow read: if isOwner(userId) && isValidArtifactId(artifactId);
+            allow create, delete: if false;
 
-          // Text refinement flow (versions/branches) for a combined text
-          match /versions/{versionId} {
-            allow read: if isAuthenticated() && isOwner(userId);
-            // Backend-only writes (FastAPI uses Admin SDK)
-            allow write: if false;
+            allow update: if isOwner(userId)
+              && isValidArtifactId(artifactId)
+              && request.resource.data.keys().hasOnly([
+                'artifactId', 'content', 'model', 'usage', 'costUsd', 'keySource', 'createdAt', 'updatedAt', 'refinement',
+                'heading', 'topic', 'sourceQuelleIds',
+                'originalLength', 'shortenedLength', 'compressionRatio', 'usedKapitelIds', 'explanation',
+                'aufgabenstellung', 'leseflussLength'
+              ])
+              && request.resource.data.artifactId == artifactId
+              && request.resource.data.createdAt == resource.data.createdAt
+              && request.resource.data.model == resource.data.model
+              && request.resource.data.usage == resource.data.usage
+              && request.resource.data.costUsd == resource.data.costUsd
+              && request.resource.data.keySource == resource.data.keySource
+              && isUsageMap(request.resource.data.usage)
+              && request.resource.data.content is string
+              && request.resource.data.content.size() <= 140000
+              && isTs(request.resource.data.updatedAt)
+              && isRefinementMeta(request.resource.data.refinement)
+              && resource.data.refinement.rootVersionId == request.resource.data.refinement.rootVersionId
+              && resource.data.refinement.maxDepth == request.resource.data.refinement.maxDepth
+              && resource.data.refinement.costTotalUsd == request.resource.data.refinement.costTotalUsd
+              && resource.data.refinement.initializedAt == request.resource.data.refinement.initializedAt
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'updatedAt', 'refinement']);
+
+            match /versions/{versionId} {
+              allow read: if isOwner(userId);
+              allow write: if false;
+            }
+
+            match /groups/{groupId} {
+              allow read: if isOwner(userId) && artifactId == 'combined';
+              allow write: if false;
+            }
           }
-        }
 
-        // Intermediate groups under each run
-        match /intermediate_groups/{groupId} {
-          allow read: if isAuthenticated() && isOwner(userId);
-          allow create: if isAuthenticated() && isOwner(userId);
-          allow update, delete: if isAuthenticated() && isOwner(userId);
-        }
-
-        // Shortened results under each run
-        match /shortened/{shortenedId} {
-          allow read: if isAuthenticated() && isOwner(userId);
-          allow create: if isAuthenticated() && isOwner(userId);
-          allow update, delete: if isAuthenticated() && isOwner(userId);
-
-          // Text refinement flow (versions/branches) for a shortened text
-          match /versions/{versionId} {
-            allow read: if isAuthenticated() && isOwner(userId);
-            // Backend-only writes (FastAPI uses Admin SDK)
-            allow write: if false;
-          }
-        }
-
-        // Summaries under each run
-        match /summaries/{summaryId} {
-          allow read: if isAuthenticated() && isOwner(userId);
-          allow create: if isAuthenticated() && isOwner(userId);
-          allow update, delete: if isAuthenticated() && isOwner(userId);
-        }
-
-        // Lesefluss results under each run
-        match /lesefluss/{leseflussId} {
-          allow read: if isAuthenticated() && isOwner(userId);
-          allow create: if isAuthenticated() && isOwner(userId);
-          allow update, delete: if isAuthenticated() && isOwner(userId);
-
-          // Text refinement flow (versions/branches) for a lesefluss text
-          match /versions/{versionId} {
-            allow read: if isAuthenticated() && isOwner(userId);
-            // Backend-only writes (FastAPI uses Admin SDK)
+          // Summaries are server-only writes.
+          match /summaries/{summaryId} {
+            allow read: if isOwner(userId);
             allow write: if false;
           }
         }

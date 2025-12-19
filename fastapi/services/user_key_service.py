@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from typing import Optional, Tuple
 
 from fastapi import HTTPException
@@ -48,7 +47,6 @@ class UserKeyService:
         payload = {
             **encrypted,
             "last4": normalized[-4:] if len(normalized) >= 4 else normalized,
-            "updated_at": datetime.utcnow().isoformat() + "Z",
         }
 
         await firebase_service.save_user_openai_secret(user_id, payload)

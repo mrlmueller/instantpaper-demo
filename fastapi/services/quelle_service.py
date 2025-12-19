@@ -189,15 +189,21 @@ class QuelleService:
                     detail="kapitel_id and run_id are required to save results"
                 )
 
-            # Step 1: Fetch Quelle from Firestore (verifies ownership)
+            # Step 1: Fetch Quelle meta + content (V2 stores content separately)
             logger.info(f"Fetching Quelle {quelle_id} for user {user_id}")
-            quelle = await self.firebase.get_quelle(user_id, quelle_id)
-
-            if not quelle:
+            quelle_meta = await self.firebase.get_quelle_meta(user_id, quelle_id)
+            if not quelle_meta:
                 logger.warning(f"Quelle {quelle_id} not found for user {user_id}")
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Quelle {quelle_id} not found or you don't have access to it"
+                    detail=f"Quelle {quelle_id} not found or you don't have access to it",
+                )
+
+            quelle_content_doc = await self.firebase.get_quelle_content(user_id, quelle_id)
+            if not quelle_content_doc or not (quelle_content_doc.get("text") or "").strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Quelle {quelle_id} has no content. Please open/edit the Quelle first.",
                 )
 
             # Step 1.5: Fetch run to get grundlegendeInformationen
@@ -206,15 +212,15 @@ class QuelleService:
 
             # Step 1.6: Extract image URLs from Quelle (if any)
             quelle_images = None
-            if 'images' in quelle and isinstance(quelle['images'], list):
-                quelle_images = [img['url'] for img in quelle['images'] if 'url' in img]
+            if "images" in quelle_meta and isinstance(quelle_meta["images"], list):
+                quelle_images = [img["url"] for img in quelle_meta["images"] if "url" in img]
                 logger.info(f"Quelle has {len(quelle_images)} image(s)")
 
             # Step 2: Process with OpenAI
             api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
             logger.info(f"Processing Quelle {quelle_id} with OpenAI model {model}")
             openai_result = await self.openai.process_quelle(
-                quelle['content'],
+                quelle_content_doc.get("text") or "",
                 user_input,
                 model,
                 grundlegende_informationen,
@@ -372,13 +378,9 @@ class QuelleService:
             )
             eligible = []
             for res in results:
-                if not res.get("has_content", True):
+                if not res.get("hasContent", True):
                     continue
-                content = (
-                    res.get("result_content")
-                    or res.get("resultContent")
-                    or res.get("content")
-                )
+                content = res.get("content")
                 if content:
                     eligible.append({"id": res["id"], "content": content})
 
