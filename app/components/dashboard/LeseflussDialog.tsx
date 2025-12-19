@@ -302,15 +302,7 @@ export function LeseflussDialog({
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label>Modell</Label>
-            <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-foreground">
-              {runModel}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Dieses Kapitel-Run ist fix auf dieses Modell gesetzt.
-            </p>
-          </div>
+          {/* Model is fixed per run; don't show it in the dialog. */}
         </div>
 
         <DialogFooter className="pt-4 border-t gap-2">
