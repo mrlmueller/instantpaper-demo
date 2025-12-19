@@ -88,10 +88,8 @@ function formatEurFromUsd(usd: number) {
 function toDate(value: unknown): Date {
   if (!value) return new Date(0);
   if (typeof value === "string") return new Date(value);
-  if (typeof value === "object") {
-    const candidate = value as Record<string, unknown>;
-    const toDateFn = candidate.toDate;
-    if (typeof toDateFn === "function") return (toDateFn as () => Date)();
+  if (typeof value === "object" && "toDate" in value && typeof (value as { toDate?: unknown }).toDate === "function") {
+    return (value as { toDate: () => Date }).toDate();
   }
   return new Date(0);
 }
