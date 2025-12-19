@@ -221,6 +221,7 @@ export function Dashboard({
   const [isKapitelLoading, setIsKapitelLoading] = useState(initialRuns.length === 0);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const selectedRunIdRef = useRef<string | null>(null);
   const selectedRun = runs.find((r) => r.id === selectedRunId);
   const hasShownNoticeRef = useRef(false);
   const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
@@ -324,9 +325,15 @@ export function Dashboard({
   }, [router, searchParams]);
 
   const handleSelectRun = useCallback((id: string) => {
+    if (selectedRunIdRef.current === id) return;
+    selectedRunIdRef.current = id;
     setIsKapitelLoading(true);
     setSelectedRunId(id);
   }, []);
+
+  useEffect(() => {
+    selectedRunIdRef.current = selectedRunId;
+  }, [selectedRunId]);
 
   const [showQuellenPanel, setShowQuellenPanel] = useState(() => getQuellenPanelState());
   const [textViewerContent, setTextViewerContent] = useState<{
@@ -542,7 +549,7 @@ export function Dashboard({
           return baseRuns;
         });
 
-        if (!snapshot.empty && !selectedRunId) {
+        if (!snapshot.empty && !selectedRunIdRef.current) {
           handleSelectRun(snapshot.docs[0].id);
         }
 
@@ -559,7 +566,7 @@ export function Dashboard({
     return () => {
       unsubscribeRuns();
     };
-  }, [user?.uid, activeKapitelId, runListLimit, selectedRunId, handleSelectRun]);
+  }, [user?.uid, activeKapitelId, runListLimit, handleSelectRun]);
 
   // Load data (artifacts/results) only for the selected run
   useEffect(() => {

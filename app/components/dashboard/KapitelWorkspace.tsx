@@ -85,6 +85,7 @@ export function KapitelWorkspace({
   onOpenResultRefinement,
 }: KapitelWorkspaceProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showFullAnweisung, setShowFullAnweisung] = useState(false);
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] =
     useState(false);
   const [intermediateGroupsLoading, setIntermediateGroupsLoading] = useState(false);
@@ -109,6 +110,7 @@ export function KapitelWorkspace({
 
   // Reset intermediate groups when selected run changes
   useEffect(() => {
+    setShowFullAnweisung(false);
     setIntermediateGroupsExpanded(false);
     setIntermediateGroupsLoading(false);
     setIntermediateGroups(null);
@@ -295,9 +297,24 @@ export function KapitelWorkspace({
               {selectedRun.thema && (
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground shrink-0 w-24">Anweisung:</span>
-                  <span className={cn("text-foreground", themaIsLong && "line-clamp-2")}>
-                    {selectedRun.thema}
-                  </span>
+                  <div className="flex-1">
+                    <span className={cn("text-foreground", themaIsLong && !showFullAnweisung && "line-clamp-2")}>
+                      {selectedRun.thema}
+                    </span>
+                    {themaIsLong && (
+                      <div className="mt-1">
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="sm"
+                          className="h-auto p-0 text-xs"
+                          onClick={() => setShowFullAnweisung((v) => !v)}
+                        >
+                          {showFullAnweisung ? "Weniger anzeigen" : "Alles anzeigen"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
