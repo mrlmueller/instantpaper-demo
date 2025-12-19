@@ -42,6 +42,7 @@ export interface QuellenErgebnis {
   text: string;
   status: "waiting" | "success" | "no-content";
   cost: number; // Cost in cents (USD)
+  costUsd?: number; // Cost in USD (high precision, for display/aggregation)
 }
 
 export interface IntermediateGroup {
@@ -55,6 +56,7 @@ export interface IntermediateGroup {
   modelUsed: string;
   tokensUsed: number;
   cost: number; // Cost in cents (USD)
+  costUsd?: number; // Cost in USD (high precision, for display/aggregation)
   createdAt: Date;
 }
 
@@ -70,12 +72,17 @@ export interface Run {
   combinedText: string;
   quellenErgebnisse: QuellenErgebnis[];
   quellenCost: number; // Cost for per-source processing in cents
+  quellenCostUsd?: number; // Cost for per-source processing in USD (high precision)
   combinedCost: number; // Cost for combining in cents
+  combinedCostUsd?: number; // Cost for combining in USD (high precision)
   combinedRefinementCost?: number; // Total cost for combined text refinements (in cents)
+  combinedRefinementCostUsd?: number; // Total cost for combined text refinements (USD, high precision)
   shortenedRefinementCost?: number; // Total cost for shortened text refinements (in cents)
+  shortenedRefinementCostUsd?: number; // Total cost for shortened text refinements (USD, high precision)
   intermediateGroups?: IntermediateGroup[]; // Optional array of intermediate groups
   shortenedText?: string | null; // Shortened and deduplicated text
   shortenedCost?: number; // Cost for shortening in cents
+  shortenedCostUsd?: number; // Cost for shortening in USD (high precision)
   shortenedOriginalLength?: number; // Original word count before shortening
   shortenedLength?: number; // Word count after shortening
   explanation?: {
@@ -90,7 +97,9 @@ export interface Run {
   leseflussOriginalLength?: number;
   leseflussLength?: number;
   leseflussCost?: number;
+  leseflussCostUsd?: number; // Cost for lesefluss in USD (high precision)
   leseflussRefinementCost?: number; // Total cost for lesefluss text refinements (in cents)
+  leseflussRefinementCostUsd?: number; // Total cost for lesefluss text refinements (USD, high precision)
 }
 
 export interface ProcessingSettings {

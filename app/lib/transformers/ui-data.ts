@@ -87,7 +87,8 @@ export function transformResultToUI(
   // UI uses cents, Firestore stores USD float.
   const baseCostUsd = fbResult.costUsd || 0;
   const refinementCostUsd = fbResult.refinement?.costTotalUsd || 0;
-  const costInCents = Math.round((baseCostUsd + refinementCostUsd) * 100);
+  const costUsd = baseCostUsd + refinementCostUsd;
+  const costInCents = Math.round(costUsd * 100);
 
   return {
     id: fbResult.quelleId,
@@ -96,6 +97,7 @@ export function transformResultToUI(
     text: fbResult.content || "",
     status,
     cost: costInCents,
+    costUsd,
   };
 }
 
@@ -115,24 +117,31 @@ export function transformRunToUI(
 
   // Calculate total costs in cents
   const quellenCost = quellenErgebnisse.reduce((sum, r) => sum + r.cost, 0);
+  const quellenCostUsd = quellenErgebnisse.reduce((sum, r) => sum + (r.costUsd || 0), 0);
   const combined = fbRun.artifacts?.combined ?? null;
   const shortened = fbRun.artifacts?.shortened ?? null;
   const lesefluss = fbRun.artifacts?.lesefluss ?? null;
 
   const combinedCost = combined ? Math.round((combined.costUsd || 0) * 100) : 0;
+  const combinedCostUsd = combined ? Number(combined.costUsd || 0) : 0;
   const combinedRefinementCost = combined
     ? Math.round(((combined.refinement?.costTotalUsd || 0) as number) * 100)
     : 0;
+  const combinedRefinementCostUsd = combined ? Number((combined.refinement?.costTotalUsd || 0) as number) : 0;
 
   const shortenedCost = shortened ? Math.round((shortened.costUsd || 0) * 100) : undefined;
+  const shortenedCostUsd = shortened ? Number(shortened.costUsd || 0) : undefined;
   const shortenedRefinementCost = shortened
     ? Math.round(((shortened.refinement?.costTotalUsd || 0) as number) * 100)
     : 0;
+  const shortenedRefinementCostUsd = shortened ? Number((shortened.refinement?.costTotalUsd || 0) as number) : 0;
 
   const leseflussCost = lesefluss ? Math.round((lesefluss.costUsd || 0) * 100) : undefined;
+  const leseflussCostUsd = lesefluss ? Number(lesefluss.costUsd || 0) : undefined;
   const leseflussRefinementCost = lesefluss
     ? Math.round(((lesefluss.refinement?.costTotalUsd || 0) as number) * 100)
     : 0;
+  const leseflussRefinementCostUsd = lesefluss ? Number((lesefluss.refinement?.costTotalUsd || 0) as number) : 0;
 
   // Determine status
   // For now, simplified: if we have a combined result, it's success
@@ -154,11 +163,16 @@ export function transformRunToUI(
     combinedText: combined?.content || "",
     quellenErgebnisse,
     quellenCost,
+    quellenCostUsd,
     combinedCost,
+    combinedCostUsd,
     combinedRefinementCost,
+    combinedRefinementCostUsd,
     shortenedRefinementCost,
+    shortenedRefinementCostUsd,
     shortenedText: shortened?.content || null,
     shortenedCost,
+    shortenedCostUsd,
     shortenedOriginalLength: shortened?.originalLength,
     shortenedLength: shortened?.shortenedLength,
     explanation: shortened?.explanation,
@@ -168,7 +182,9 @@ export function transformRunToUI(
     leseflussOriginalLength: lesefluss?.originalLength,
     leseflussLength: lesefluss?.leseflussLength,
     leseflussCost,
+    leseflussCostUsd,
     leseflussRefinementCost,
+    leseflussRefinementCostUsd,
   };
 }
 

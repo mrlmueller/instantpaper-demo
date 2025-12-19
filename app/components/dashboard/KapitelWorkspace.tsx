@@ -176,6 +176,7 @@ export function KapitelWorkspace({
           modelUsed: g.model,
           tokensUsed: g.usage?.totalTokens ?? 0,
           cost: Math.round((g.costUsd ?? 0) * 100),
+          costUsd: Number(g.costUsd ?? 0),
           createdAt: new Date(g.createdAt),
         }));
         setIntermediateGroups(uiGroups);
@@ -208,22 +209,24 @@ export function KapitelWorkspace({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Calculate total cost including summaries and lesefluss
-  const summariesCost = summaries.reduce((sum, summary) => sum + Math.round((summary.costUsd ?? 0) * 100), 0);
-  const totalCost = selectedRun
-    ? selectedRun.quellenCost +
-      selectedRun.combinedCost +
-      (selectedRun.combinedRefinementCost || 0) +
-      (selectedRun.shortenedCost || 0) +
-      (selectedRun.shortenedRefinementCost || 0) +
-      (selectedRun.leseflussCost || 0) +
-      (selectedRun.leseflussRefinementCost || 0) +
-      summariesCost
+  // Calculate total cost in USD (high precision); formatting handles tiny values.
+  const summariesCostUsd = summaries.reduce((sum, summary) => sum + Number(summary.costUsd ?? 0), 0);
+  const totalCostUsd = selectedRun
+    ? Number(selectedRun.quellenCostUsd ?? selectedRun.quellenCost / 100) +
+      Number(selectedRun.combinedCostUsd ?? selectedRun.combinedCost / 100) +
+      Number(selectedRun.combinedRefinementCostUsd ?? (selectedRun.combinedRefinementCost || 0) / 100) +
+      Number(selectedRun.shortenedCostUsd ?? (selectedRun.shortenedCost || 0) / 100) +
+      Number(selectedRun.shortenedRefinementCostUsd ?? (selectedRun.shortenedRefinementCost || 0) / 100) +
+      Number(selectedRun.leseflussCostUsd ?? (selectedRun.leseflussCost || 0) / 100) +
+      Number(selectedRun.leseflussRefinementCostUsd ?? (selectedRun.leseflussRefinementCost || 0) / 100) +
+      summariesCostUsd
     : 0;
 
-  const formatCost = (cents: number) => {
-    const usd = cents / 100;
-    return `$${usd.toFixed(2)}`;
+  const formatUsd = (usd: number) => {
+    const value = Number(usd || 0);
+    if (!Number.isFinite(value) || value <= 0) return "$0.00";
+    if (value < 0.01) return "<$0.01";
+    return `$${value.toFixed(2)}`;
   };
 
   const openCostPopover = () => {
@@ -248,7 +251,7 @@ export function KapitelWorkspace({
     key: string;
     label: string;
     hint?: string;
-    cents: number;
+    usd: number;
   }> = (() => {
     if (!selectedRun) return [];
 
@@ -256,14 +259,14 @@ export function KapitelWorkspace({
       key: string;
       label: string;
       hint?: string;
-      cents: number;
+      usd: number;
     }> = [];
 
     const results = selectedRun.quellenErgebnisse || [];
     const resultsSuccess = results.filter((r) => r.status === "success").length;
     const resultsNoContent = results.filter((r) => r.status === "no-content").length;
 
-    if (selectedRun.quellenCost > 0) {
+    if (results.length > 0) {
       const hintParts: string[] = [];
       if (results.length > 0) hintParts.push(`${resultsSuccess}/${results.length} Quellen`);
       if (resultsNoContent > 0) hintParts.push(`${resultsNoContent} ohne Inhalt`);
@@ -271,65 +274,65 @@ export function KapitelWorkspace({
         key: "results",
         label: "Ergebnisse pro Quelle",
         hint: hintParts.length > 0 ? hintParts.join(" · ") : undefined,
-        cents: selectedRun.quellenCost,
+        usd: Number(selectedRun.quellenCostUsd ?? selectedRun.quellenCost / 100),
       });
     }
 
-    if (selectedRun.combinedCost > 0) {
+    if (Boolean(selectedRun.combinedText && selectedRun.combinedText.trim().length > 0)) {
       items.push({
         key: "combined",
         label: "Kombiniert",
         hint: hasIntermediateGroups === true ? "inkl. Zwischengruppen" : undefined,
-        cents: selectedRun.combinedCost,
+        usd: Number(selectedRun.combinedCostUsd ?? selectedRun.combinedCost / 100),
       });
     }
 
-    if ((selectedRun.combinedRefinementCost || 0) > 0) {
+    if (Number(selectedRun.combinedRefinementCostUsd ?? (selectedRun.combinedRefinementCost || 0) / 100) > 0) {
       items.push({
         key: "combinedRefine",
         label: "Verfeinerung (Kombiniert)",
-        cents: selectedRun.combinedRefinementCost || 0,
+        usd: Number(selectedRun.combinedRefinementCostUsd ?? (selectedRun.combinedRefinementCost || 0) / 100),
       });
     }
 
-    if ((selectedRun.shortenedCost || 0) > 0) {
+    if (Boolean(selectedRun.shortenedText && selectedRun.shortenedText.trim().length > 0)) {
       items.push({
         key: "shorten",
         label: "Text kürzen",
-        cents: selectedRun.shortenedCost || 0,
+        usd: Number(selectedRun.shortenedCostUsd ?? (selectedRun.shortenedCost || 0) / 100),
       });
     }
 
-    if ((selectedRun.shortenedRefinementCost || 0) > 0) {
+    if (Number(selectedRun.shortenedRefinementCostUsd ?? (selectedRun.shortenedRefinementCost || 0) / 100) > 0) {
       items.push({
         key: "shortenRefine",
         label: "Verfeinerung (Gekürzt)",
-        cents: selectedRun.shortenedRefinementCost || 0,
+        usd: Number(selectedRun.shortenedRefinementCostUsd ?? (selectedRun.shortenedRefinementCost || 0) / 100),
       });
     }
 
-    if ((selectedRun.leseflussCost || 0) > 0) {
+    if (Boolean(selectedRun.leseflussText && selectedRun.leseflussText.trim().length > 0)) {
       items.push({
         key: "lesefluss",
         label: "Lesefluss verbessern",
-        cents: selectedRun.leseflussCost || 0,
+        usd: Number(selectedRun.leseflussCostUsd ?? (selectedRun.leseflussCost || 0) / 100),
       });
     }
 
-    if ((selectedRun.leseflussRefinementCost || 0) > 0) {
+    if (Number(selectedRun.leseflussRefinementCostUsd ?? (selectedRun.leseflussRefinementCost || 0) / 100) > 0) {
       items.push({
         key: "leseflussRefine",
         label: "Verfeinerung (Lesefluss)",
-        cents: selectedRun.leseflussRefinementCost || 0,
+        usd: Number(selectedRun.leseflussRefinementCostUsd ?? (selectedRun.leseflussRefinementCost || 0) / 100),
       });
     }
 
-    if (summariesLoading || summariesCost > 0 || summaries.length > 0) {
+    if (summariesLoading || summariesCostUsd > 0 || summaries.length > 0) {
       items.push({
         key: "summaries",
         label: "Kapitel-Summaries (Kontext)",
         hint: summariesLoading ? "lädt…" : `${summaries.length} Kapitel`,
-        cents: summariesCost,
+        usd: summariesCostUsd,
       });
     }
 
@@ -427,7 +430,7 @@ export function KapitelWorkspace({
                     onFocus={openCostPopover}
                     onBlur={scheduleCloseCostPopover}
                   >
-                    Kosten: {formatCost(totalCost)}
+                    Kosten: {formatUsd(totalCostUsd)}
                   </span>
                 </PopoverTrigger>
                 <PopoverContent
@@ -440,7 +443,7 @@ export function KapitelWorkspace({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-xs font-medium">Kostenübersicht</span>
-                      <span className="text-xs font-medium tabular-nums">{formatCost(totalCost)}</span>
+                      <span className="text-xs font-medium tabular-nums">{formatUsd(totalCostUsd)}</span>
                     </div>
 
                     <Separator />
@@ -455,7 +458,7 @@ export function KapitelWorkspace({
                                 <div className="text-muted-foreground/70">{item.hint}</div>
                               )}
                             </div>
-                            <span className="tabular-nums">{formatCost(item.cents)}</span>
+                            <span className="tabular-nums">{formatUsd(item.usd)}</span>
                           </div>
                         ))}
                       </div>
@@ -883,7 +886,7 @@ export function KapitelWorkspace({
                         <span>•</span>
                         <span>{group.tokensUsed.toLocaleString()} tokens</span>
                         <span>•</span>
-                        <span>{formatCost(group.cost)}</span>
+                        <span>{formatUsd(group.costUsd ?? group.cost / 100)}</span>
                       </div>
                     </Card>
                   ))}
@@ -1046,7 +1049,7 @@ export function KapitelWorkspace({
                         <span>·</span>
                         <span>{group.tokensUsed.toLocaleString()} tokens</span>
                         <span>·</span>
-                        <span>{formatCost(group.cost)}</span>
+                        <span>{formatUsd(group.costUsd ?? group.cost / 100)}</span>
                       </div>
                     </Card>
                   ))}
