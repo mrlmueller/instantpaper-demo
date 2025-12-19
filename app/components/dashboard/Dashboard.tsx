@@ -1722,7 +1722,7 @@ export function Dashboard({
   ]);
 
   const handleShorten = useCallback(
-    async (contextKapitelIds: string[], model: string, promptChoice?: Partial<Record<PromptStage, string | 'default'>>) => {
+    async (contextKapitelIds: string[], promptChoice?: Partial<Record<PromptStage, string | 'default'>>) => {
       if (!activeKapitel || !selectedRun) return;
 
       if (!(await ensureOpenAIAccess())) return;
@@ -1758,12 +1758,7 @@ export function Dashboard({
       });
 
       try {
-        const result = await createShortenRun(
-          activeKapitelId,
-          selectedRun.id,
-          contextKapitelIds,
-          model as 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2'
-        );
+        const result = await createShortenRun(activeKapitelId, selectedRun.id, contextKapitelIds);
 
         if (!result?.success) {
           const message = result?.error || 'Kürzung konnte nicht gestartet werden.';
@@ -1838,7 +1833,6 @@ export function Dashboard({
     async (
       contextKapitelIds: string[],
       aufgabenstellung: string,
-      model: string,
       promptChoice?: Partial<Record<PromptStage, string | 'default'>>
     ) => {
       if (!activeKapitel || !selectedRun) return;
@@ -1876,13 +1870,7 @@ export function Dashboard({
       });
 
       try {
-        const result = await createLeseflussRun(
-          activeKapitelId,
-          selectedRun.id,
-          contextKapitelIds,
-          aufgabenstellung,
-          model as 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2'
-        );
+        const result = await createLeseflussRun(activeKapitelId, selectedRun.id, contextKapitelIds, aufgabenstellung);
 
         if (!result?.success) {
           const message = result?.error || 'Lese Fluss verbessern konnte nicht gestartet werden.';
@@ -2091,6 +2079,7 @@ export function Dashboard({
           onOpenChange={setShortenDialogOpen}
           allKapitels={kapiteln}
           currentKapitelId={activeKapitel.id}
+          runModel={selectedRun.model}
           onShorten={handleShorten}
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
@@ -2099,12 +2088,13 @@ export function Dashboard({
         />
       )}
 
-      {activeKapitel && (
+      {activeKapitel && selectedRun && (
         <LeseflussDialog
           open={leseflussDialogOpen}
           onOpenChange={setLeseflussDialogOpen}
           allKapitels={kapiteln}
           currentKapitelId={activeKapitel.id}
+          runModel={selectedRun.model}
           onLesefluss={handleLesefluss}
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}

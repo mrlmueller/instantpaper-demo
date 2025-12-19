@@ -394,6 +394,20 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
             if not run_data:
                 raise ValueError(f"Run {run_id} not found for Kapitel {kapitel_id}")
 
+            # Enforce run-level model for all actions tied to this run.
+            run_model = (run_data.get("model") or "").strip()
+            if run_model:
+                if model and model != run_model:
+                    logger.info(
+                        f"Overriding requested model '{model}' with run model '{run_model}' "
+                        f"(Kapitel {kapitel_id}, run {run_id})"
+                    )
+                model = run_model
+            else:
+                logger.warning(
+                    f"Run {run_id} for Kapitel {kapitel_id} has no model; falling back to requested model '{model}'"
+                )
+
             ueberschrift = run_data.get('ueberschrift', 'Untitled')
             thema = run_data.get('thema', '')
 
@@ -759,6 +773,20 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
             run_data = await firebase_service.get_kapitel_run(user_id, kapitel_id, run_id)
             if not run_data:
                 raise ValueError(f"Run {run_id} not found for Kapitel {kapitel_id}")
+
+            # Enforce run-level model for all actions tied to this run.
+            run_model = (run_data.get("model") or "").strip()
+            if run_model:
+                if model and model != run_model:
+                    logger.info(
+                        f"Overriding requested model '{model}' with run model '{run_model}' "
+                        f"(Kapitel {kapitel_id}, run {run_id})"
+                    )
+                model = run_model
+            else:
+                logger.warning(
+                    f"Run {run_id} for Kapitel {kapitel_id} has no model; falling back to requested model '{model}'"
+                )
 
             kapitel_nummer = run_data.get('nummer', '?')
 

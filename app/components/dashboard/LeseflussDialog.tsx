@@ -25,10 +25,10 @@ interface LeseflussDialogProps {
   onOpenChange: (open: boolean) => void
   allKapitels: Kapitel[]
   currentKapitelId: string
+  runModel: string
   onLesefluss: (
     contextKapitelIds: string[],
     aufgabenstellung: string,
-    model: string,
     promptChoice?: Partial<Record<PromptStage, string | "default">>
   ) => Promise<void>
   askOnEachProcess: boolean
@@ -42,6 +42,7 @@ export function LeseflussDialog({
   onOpenChange,
   allKapitels,
   currentKapitelId,
+  runModel,
   onLesefluss,
   askOnEachProcess,
   promptTemplates,
@@ -50,7 +51,6 @@ export function LeseflussDialog({
 }: LeseflussDialogProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [aufgabenstellung, setAufgabenstellung] = useState("")
-  const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-mini")
   const [shortenedAvailability, setShortenedAvailability] = useState<Record<string, boolean> | null>(null)
   const [shortenedAvailabilityLoading, setShortenedAvailabilityLoading] = useState(false)
   const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
@@ -148,7 +148,7 @@ export function LeseflussDialog({
     setLocalLeseflussLoading(true)
     onOpenChange(false)
     try {
-      await onLesefluss(selectedIds, aufgabenstellung.trim(), model, promptChoice)
+      await onLesefluss(selectedIds, aufgabenstellung.trim(), promptChoice)
       setSelectedIds([])
       setAufgabenstellung("")
     } finally {
@@ -303,17 +303,13 @@ export function LeseflussDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="lesefluss-model">Modell</Label>
-            <Select value={model} onValueChange={(value) => setModel(value as typeof model)}>
-              <SelectTrigger id="lesefluss-model">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gpt-5-nano">gpt-5-nano (Empfohlen)</SelectItem>
-                <SelectItem value="gpt-5-mini">gpt-5-mini (Beste Qualität)</SelectItem>
-                <SelectItem value="gpt-5.2">gpt-5.2 (Beste Qualität)</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label>Modell</Label>
+            <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-foreground">
+              {runModel}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Dieses Kapitel-Run ist fix auf dieses Modell gesetzt.
+            </p>
           </div>
         </div>
 

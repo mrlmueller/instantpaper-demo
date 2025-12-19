@@ -247,6 +247,11 @@ function normalizeSummarySourceType(sourceType: unknown): 'combined' | 'shortene
   return sourceType === 'shortened' ? 'shortened' : 'combined';
 }
 
+function normalizeRunModel(model: unknown): 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' {
+  const m = String(model ?? '').trim();
+  return m === 'gpt-5-nano' || m === 'gpt-5-mini' || m === 'gpt-5.2' ? m : 'gpt-5-nano';
+}
+
 async function fetchFastApi(path: string, payload: unknown) {
   await requireAuth();
   const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
@@ -766,25 +771,44 @@ export async function hasCombinedGroups(kapitelId: string, runId: string): Promi
 export async function createShortenRun(
   kapitelId: string,
   runId: string,
-  contextKapitelIds: string[],
-  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano'
+  contextKapitelIds: string[]
 ) {
-  return fetchFastApi('/api/shorten', { kapitel_id: kapitelId, run_id: runId, context_kapitel_ids: contextKapitelIds, model });
+  const user = await requireAuth();
+  let runModel: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano';
+  if (user) {
+    const db = await getFirestoreForUser();
+    const runSnap = await getDoc(doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId));
+    runModel = normalizeRunModel(runSnap.exists() ? (runSnap.data() as DocumentData).model : null);
+  }
+
+  return fetchFastApi('/api/shorten', {
+    kapitel_id: kapitelId,
+    run_id: runId,
+    context_kapitel_ids: contextKapitelIds,
+    model: runModel,
+  });
 }
 
 export async function createLeseflussRun(
   kapitelId: string,
   runId: string,
   contextKapitelIds: string[],
-  aufgabenstellung: string,
-  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano'
+  aufgabenstellung: string
 ) {
+  const user = await requireAuth();
+  let runModel: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano';
+  if (user) {
+    const db = await getFirestoreForUser();
+    const runSnap = await getDoc(doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId));
+    runModel = normalizeRunModel(runSnap.exists() ? (runSnap.data() as DocumentData).model : null);
+  }
+
   return fetchFastApi('/api/lesefluss', {
     kapitel_id: kapitelId,
     run_id: runId,
     context_kapitel_ids: contextKapitelIds,
     aufgabenstellung,
-    model,
+    model: runModel,
   });
 }
 
