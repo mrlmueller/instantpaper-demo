@@ -1,15 +1,15 @@
 'use server';
 
-import { getFirestoreForUser, getStorageForUser } from '@/app/lib/firebase/serverApp';
+import { getFirestoreForUser } from '@/app/lib/firebase/serverApp';
 import type { AuthUser } from '@/app/lib/auth/server-auth';
 import {
   collection,
   addDoc,
   updateDoc,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
+  setDoc,
   query,
   orderBy,
   where,
@@ -17,17 +17,19 @@ import {
   deleteField,
   type Firestore,
 } from 'firebase/firestore';
-import { ref, deleteObject } from 'firebase/storage';
 import { requireAuth } from '@/app/lib/auth/server-auth';
 import { revalidatePath } from 'next/cache';
+import { quelleContentDoc, quelleDoc, quellenCol } from '@/app/lib/firestore/refs';
 
 export type Quelle = {
   id: string;
   title: string;
-  content: string;
   projektId: string;
   createdAt: string; // ISO string
   updatedAt?: string; // ISO string
+  archived?: boolean;
+  archivedAt?: string; // ISO string
+  wordCount?: number;
   images?: {
     url: string;
     path: string;
@@ -63,6 +65,13 @@ export type ImageMetadata = {
   contentType: string;
 };
 
+function countWords(text: string) {
+  return (text || '').trim().split(/\s+/).filter(Boolean).length;
+}
+
+const MAX_WORDS = 7000;
+const MAX_CHARS = 140000;
+
 export async function createQuelle(
   title: string,
   content: string,
@@ -84,14 +93,23 @@ export async function createQuelle(
       return { success: false, error: 'Not authenticated' };
     }
 
+    const wordCount = countWords(content);
+    if (wordCount > MAX_WORDS) {
+      return { success: false, error: `Text zu lang (${wordCount} Wörter). Maximal ${MAX_WORDS} Wörter.` };
+    }
+    if (content.length > MAX_CHARS) {
+      return { success: false, error: `Text zu lang (${content.length} Zeichen). Bitte kürzen.` };
+    }
+
     // Create Firestore document
-    const quellenRef = collection(db, 'users', user.uid, 'quellen');
-    const docData: any = {
+    const quellenRef = quellenCol(db, user.uid);
+    const docData: Record<string, unknown> = {
       title,
-      content,
       projektId,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+      archived: false,
+      wordCount,
     };
 
     if (imageMetadata && imageMetadata.length > 0) {
@@ -110,15 +128,22 @@ export async function createQuelle(
 
     const docRef = await addDoc(quellenRef, docData);
 
+    await setDoc(quelleContentDoc(db, user.uid, docRef.id), {
+      text: content,
+      wordCount,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
     revalidatePath('/dashboard');
     return {
       success: true,
       id: docRef.id,
       imageUrls: imageMetadata?.map((img) => img.url) || [],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error creating Quelle:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
@@ -129,23 +154,48 @@ export async function updateQuelle(quelleId: string, title: string, content: str
       return { success: false, error: 'Not authenticated' };
     }
 
-    const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
-    const quelleDoc = await getDoc(quelleRef);
-    if (!quelleDoc.exists()) {
+    const quelleRef = quelleDoc(db, user.uid, quelleId);
+    const quelleSnap = await getDoc(quelleRef);
+    if (!quelleSnap.exists()) {
       throw new Error('Quelle not found');
+    }
+
+    const wordCount = countWords(content);
+    if (wordCount > MAX_WORDS) {
+      return { success: false, error: `Text zu lang (${wordCount} Wörter). Maximal ${MAX_WORDS} Wörter.` };
+    }
+    if (content.length > MAX_CHARS) {
+      return { success: false, error: `Text zu lang (${content.length} Zeichen). Bitte kürzen.` };
     }
 
     await updateDoc(quelleRef, {
       title,
-      content,
+      wordCount,
       updatedAt: serverTimestamp(),
     });
 
+    const contentRef = quelleContentDoc(db, user.uid, quelleId);
+    const contentSnap = await getDoc(contentRef);
+    if (contentSnap.exists()) {
+      await updateDoc(contentRef, {
+        text: content,
+        wordCount,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(contentRef, {
+        text: content,
+        wordCount,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
     revalidatePath('/dashboard');
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error updating Quelle:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
@@ -156,39 +206,24 @@ export async function deleteQuelle(quelleId: string, ctx?: ActionContext) {
       return { success: false, error: 'Not authenticated' };
     }
 
-    const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
-    const quelleDoc = await getDoc(quelleRef);
-    if (!quelleDoc.exists()) {
+    const quelleRef = quelleDoc(db, user.uid, quelleId);
+    const snap = await getDoc(quelleRef);
+    if (!snap.exists()) {
       throw new Error('Quelle not found');
     }
 
-    // Delete images from Storage
-    const quelleData = quelleDoc.data();
-    if (quelleData.images && Array.isArray(quelleData.images)) {
-      const storage = await getStorageForUser();
-
-      await Promise.all(
-        quelleData.images.map(async (img: any) => {
-          try {
-            await deleteObject(ref(storage, img.path));
-            console.log(`Deleted image: ${img.path}`);
-          } catch (error: any) {
-            if (error.code !== 'storage/object-not-found') {
-              console.error(`Failed to delete ${img.path}:`, error);
-            }
-          }
-        })
-      );
-    }
-
-    // Delete Firestore document
-    await deleteDoc(quelleRef);
+    // V2: archive instead of hard delete (rules deny deletes)
+    await updateDoc(quelleRef, {
+      archived: true,
+      archivedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
 
     revalidatePath('/dashboard');
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error deleting Quelle:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
@@ -199,27 +234,94 @@ export async function getQuelle(quelleId: string, ctx?: ActionContext): Promise<
       return null;
     }
 
-    const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
-    const quelleDoc = await getDoc(quelleRef);
+    const quelleRef = quelleDoc(db, user.uid, quelleId);
+    const quelleSnap = await getDoc(quelleRef);
 
-    if (!quelleDoc.exists()) {
+    if (!quelleSnap.exists()) {
       return null;
     }
 
-    const data = quelleDoc.data();
+    const data = quelleSnap.data();
 
     return {
-      id: quelleDoc.id,
+      id: quelleSnap.id,
       title: data.title,
-      content: data.content,
       projektId: data.projektId || 'default',
       createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
       images: data.images || undefined,
+      archived: Boolean(data.archived),
+      archivedAt: data.archivedAt?.toDate?.()?.toISOString(),
+      wordCount: typeof data.wordCount === 'number' ? data.wordCount : undefined,
+      autor: data.autor,
+      jahr: data.jahr,
+      typ: data.typ,
+      url: data.url,
+      zugriffAm: data.zugriffAm,
+      color: data.color,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error getting Quelle:', error);
     return null;
+  }
+}
+
+export async function getQuelleContent(
+  quelleId: string,
+  ctx?: ActionContext
+): Promise<{ text: string; wordCount: number } | null> {
+  try {
+    const { user, db } = await getContext(ctx);
+    if (!user) return null;
+
+    const ref = quelleContentDoc(db, user.uid, quelleId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return null;
+    const data = snap.data();
+    return { text: data.text || '', wordCount: Number(data.wordCount ?? 0) };
+  } catch (error: unknown) {
+    console.error('Error getting Quelle content:', error);
+    return null;
+  }
+}
+
+export async function setQuelleContent(quelleId: string, text: string, ctx?: ActionContext) {
+  try {
+    const { user, db } = await getContext(ctx);
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    const wordCount = countWords(text);
+    if (wordCount > MAX_WORDS) {
+      return { success: false, error: `Text zu lang (${wordCount} Wörter). Maximal ${MAX_WORDS} Wörter.` };
+    }
+    if (text.length > MAX_CHARS) {
+      return { success: false, error: `Text zu lang (${text.length} Zeichen). Bitte kürzen.` };
+    }
+
+    const metaRef = quelleDoc(db, user.uid, quelleId);
+    const metaSnap = await getDoc(metaRef);
+    if (!metaSnap.exists()) {
+      return { success: false, error: 'Quelle not found' };
+    }
+
+    const contentRef = quelleContentDoc(db, user.uid, quelleId);
+    const contentSnap = await getDoc(contentRef);
+
+    if (contentSnap.exists()) {
+      await updateDoc(contentRef, { text, wordCount, updatedAt: serverTimestamp() });
+    } else {
+      await setDoc(contentRef, { text, wordCount, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    }
+
+    await updateDoc(metaRef, { wordCount, updatedAt: serverTimestamp() });
+
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error: unknown) {
+    console.error('Error setting Quelle content:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
@@ -230,8 +332,13 @@ export async function getUserQuellen(projektId: string, ctx?: ActionContext): Pr
       return [];
     }
 
-    const quellenRef = collection(db, 'users', user.uid, 'quellen');
-    const q = query(quellenRef, where('projektId', '==', projektId), orderBy('createdAt', 'desc'));
+    const quellenRef = quellenCol(db, user.uid);
+    const q = query(
+      quellenRef,
+      where('projektId', '==', projektId),
+      where('archived', '==', false),
+      orderBy('createdAt', 'desc')
+    );
 
     const querySnapshot = await getDocs(q);
     const quellen: Quelle[] = [];
@@ -242,10 +349,12 @@ export async function getUserQuellen(projektId: string, ctx?: ActionContext): Pr
       quellen.push({
         id: d.id,
         title: data.title,
-        content: data.content,
         projektId: data.projektId || 'default',
         createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
         updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
+        archived: Boolean(data.archived),
+        archivedAt: data.archivedAt?.toDate?.()?.toISOString(),
+        wordCount: typeof data.wordCount === 'number' ? data.wordCount : undefined,
         images: data.images || undefined,
         // Advanced metadata fields
         autor: data.autor,
@@ -258,7 +367,7 @@ export async function getUserQuellen(projektId: string, ctx?: ActionContext): Pr
     });
 
     return quellen;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error getting user Quellen:', error);
     return [];
   }
@@ -276,13 +385,13 @@ export async function updateQuelleColor(
       return { success: false, error: 'Not authenticated' };
     }
 
-    const quelleRef = doc(db, 'users', user.uid, 'quellen', quelleId);
-    const quelleDoc = await getDoc(quelleRef);
-    if (!quelleDoc.exists()) {
+    const quelleRef = quelleDoc(db, user.uid, quelleId);
+    const quelleSnap = await getDoc(quelleRef);
+    if (!quelleSnap.exists()) {
       throw new Error('Quelle not found');
     }
 
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       updatedAt: serverTimestamp(),
     };
 
@@ -297,9 +406,9 @@ export async function updateQuelleColor(
 
     revalidatePath('/dashboard');
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error updating Quelle color:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
@@ -341,9 +450,9 @@ export async function bulkAssignQuellen(
 
     revalidatePath('/dashboard');
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error bulk assigning Quellen:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
@@ -378,7 +487,7 @@ export async function getKapitelsForQuelle(
     });
 
     return kapitels;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error getting Kapitels for Quelle:', error);
     return [];
   }

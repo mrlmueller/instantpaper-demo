@@ -36,22 +36,22 @@ type ModelChoice = "gpt-5-nano" | "gpt-5-mini" | "gpt-5.2";
 
 type RefinementVersion = {
   id: string;
-  parent_version_id: string | null;
+  parentVersionId: string | null;
   depth: number;
-  user_message?: string | null;
-  assistant_text?: string;
+  userMessage?: string | null;
+  assistantText?: string;
   status: "running" | "success" | "error";
   model?: string;
   usage?: {
-    input_tokens: number;
-    cached_input_tokens: number;
-    output_tokens: number;
-    reasoning_tokens: number;
-    total_tokens: number;
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
+    totalTokens: number;
   } | null;
-  cost?: number; // USD float
-  created_at?: any;
-  error_message?: string;
+  costUsd?: number; // USD float
+  createdAt?: unknown;
+  errorMessage?: string;
 };
 
 const MODEL_PRICING_USD_PER_MILLION: Record<ModelChoice, { input: number; cached_input: number; output: number }> = {
@@ -85,10 +85,14 @@ function formatEurFromUsd(usd: number) {
   return `${euros.toFixed(2)} €`;
 }
 
-function toDate(value: any): Date {
+function toDate(value: unknown): Date {
   if (!value) return new Date(0);
   if (typeof value === "string") return new Date(value);
-  if (value?.toDate) return value.toDate();
+  if (typeof value === "object") {
+    const candidate = value as Record<string, unknown>;
+    const toDateFn = candidate.toDate;
+    if (typeof toDateFn === "function") return (toDateFn as () => Date)();
+  }
   return new Date(0);
 }
 
@@ -144,7 +148,7 @@ export function CombinedRefinementDialog({
 
   const combinedDocRef = useMemo(() => {
     if (!user?.uid) return null;
-    return doc(db, "users", user.uid, "kapitels", kapitelId, "runs", runId, "combined", "combined");
+    return doc(db, "users", user.uid, "kapitels", kapitelId, "runs", runId, "artifacts", "combined");
   }, [db, user?.uid, kapitelId, runId]);
 
   const versionsRef = useMemo(() => {
@@ -205,8 +209,8 @@ export function CombinedRefinementDialog({
       (snap) => {
         const data: any = snap.data();
         if (!data) return;
-        setActiveVersionId(String(data.refinement_active_version_id ?? "root"));
-        setRefinementCostTotalUsd(Number(data.refinement_cost_total ?? 0));
+        setActiveVersionId(String(data.refinement?.activeVersionId ?? "root"));
+        setRefinementCostTotalUsd(Number(data.refinement?.costTotalUsd ?? 0));
       },
       (err) => {
         console.error("Combined refinement doc listen failed:", err);
@@ -227,16 +231,16 @@ export function CombinedRefinementDialog({
           const data: any = d.data();
           return {
             id: d.id,
-            parent_version_id: data.parent_version_id ?? null,
+            parentVersionId: data.parentVersionId ?? null,
             depth: Number(data.depth ?? 0),
-            user_message: data.user_message ?? null,
-            assistant_text: data.assistant_text ?? "",
+            userMessage: data.userMessage ?? null,
+            assistantText: data.assistantText ?? "",
             status: data.status ?? "success",
             model: data.model ?? "",
             usage: data.usage ?? null,
-            cost: typeof data.cost === "number" ? data.cost : Number(data.cost ?? 0),
-            created_at: data.created_at,
-            error_message: data.error_message ?? "",
+            costUsd: typeof data.costUsd === "number" ? data.costUsd : Number(data.costUsd ?? 0),
+            createdAt: data.createdAt,
+            errorMessage: data.errorMessage ?? "",
           };
         });
         setVersions(items);
@@ -254,7 +258,7 @@ export function CombinedRefinementDialog({
     const childrenByParentId = new Map<string, RefinementVersion[]>();
 
     for (const v of versions) {
-      const parentId = v.parent_version_id;
+      const parentId = v.parentVersionId;
       if (!parentId) continue;
       const arr = childrenByParentId.get(parentId) ?? [];
       arr.push(v);
@@ -263,8 +267,8 @@ export function CombinedRefinementDialog({
 
     for (const arr of childrenByParentId.values()) {
       arr.sort((a, b) => {
-        const ta = toDate(a.created_at).getTime();
-        const tb = toDate(b.created_at).getTime();
+        const ta = toDate(a.createdAt).getTime();
+        const tb = toDate(b.createdAt).getTime();
         if (ta !== tb) return ta - tb;
         return a.id.localeCompare(b.id);
       });
@@ -291,7 +295,7 @@ export function CombinedRefinementDialog({
       const selectedChildId = selectedChildByParentId[current.id];
       const selectedChild = selectedChildId ? tree.byId.get(selectedChildId) : null;
       const next =
-        selectedChild && selectedChild.parent_version_id === current.id ? selectedChild : children[children.length - 1];
+        selectedChild && selectedChild.parentVersionId === current.id ? selectedChild : children[children.length - 1];
 
       chain.push(next);
       current = next;
@@ -324,12 +328,12 @@ export function CombinedRefinementDialog({
   const estimate = useMemo(() => {
     const usage = parentForNext?.usage;
     if (!usage) return null;
-    const prevInput = Number(usage.input_tokens ?? 0);
-    const prevOutputTotal = Number(usage.output_tokens ?? 0) + Number(usage.reasoning_tokens ?? 0);
+    const prevInput = Number(usage.inputTokens ?? 0);
+    const prevOutputTotal = Number(usage.outputTokens ?? 0) + Number(usage.reasoningTokens ?? 0);
 
     // Heuristic requested by you:
     // input: previous input + previous output, output: previous output
-    // TODO(text-refinement): incorporate cached_input_tokens into estimate carefully (range/upper bound).
+    // TODO(text-refinement): incorporate cachedInputTokens into estimate carefully (range/upper bound).
     const estInput = prevInput + prevOutputTotal;
     const estOutput = prevOutputTotal;
     const estUsd = estimateCostUsd(runModel, estInput, 0, estOutput, 0);
@@ -350,19 +354,20 @@ export function CombinedRefinementDialog({
   const handleUseVersion = useCallback(
     async (version: RefinementVersion) => {
       if (!combinedDocRef) return;
-      if (!version.assistant_text || version.status !== "success") return;
+      if (!version.assistantText || version.status !== "success") return;
 
       try {
         await updateDoc(combinedDocRef, {
-          combined_content: version.assistant_text,
-          refinement_active_version_id: version.id,
-          refinement_selected_at: serverTimestamp(),
+          content: version.assistantText,
+          updatedAt: serverTimestamp(),
+          "refinement.activeVersionId": version.id,
+          "refinement.selectedAt": serverTimestamp(),
         });
         toast.success("Version übernommen", { description: "Der kombinierte Text wurde aktualisiert." });
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Failed to set active refinement version:", err);
         toast.error("Konnte Version nicht übernehmen", {
-          description: err?.message || "Unbekannter Fehler",
+          description: err instanceof Error ? err.message : "Unbekannter Fehler",
         });
       }
     },
@@ -450,7 +455,7 @@ export function CombinedRefinementDialog({
 
   const startEdit = useCallback((version: RefinementVersion) => {
     setEditingVersionId(version.id);
-    setEditMessage(String(version.user_message ?? ""));
+    setEditMessage(String(version.userMessage ?? ""));
   }, []);
 
   const cancelEdit = useCallback(() => {
@@ -469,7 +474,7 @@ export function CombinedRefinementDialog({
 
       if (!(await ensureOpenAIAccess())) return;
 
-      const parentVersionId = version.parent_version_id || "root";
+      const parentVersionId = version.parentVersionId || "root";
       const parentDepth = Number(tree.byId.get(parentVersionId)?.depth ?? 0);
       const newDepth = parentDepth + 1;
       if (newDepth > maxDepth) {
@@ -534,7 +539,7 @@ export function CombinedRefinementDialog({
   const formatCost = (cents: number) => `${(cents / 100).toFixed(2)} €`;
   const PREVIEW_LENGTH = 300;
 
-  const originalText = (tree.root?.assistant_text || "").toString();
+  const originalText = (tree.root?.assistantText || "").toString();
   const isOriginalActive = activeVersionId === "root";
 
   const userMessageCount = Math.max(0, path.length - 1);
@@ -652,15 +657,15 @@ export function CombinedRefinementDialog({
               </Card>
 
               {path.slice(1).map((v) => {
-                const parentId = v.parent_version_id || "root";
+                const parentId = v.parentVersionId || "root";
                 const siblings = tree.childrenByParentId.get(parentId) ?? [];
                 let branchIndex = siblings.findIndex((c) => c.id === v.id);
                 if (branchIndex === -1) branchIndex = Math.max(0, siblings.length - 1);
                 const showBranchNav = siblings.length > 1;
 
                 const isActiveMessage = activeVersionId === v.id && !isOriginalActive;
-                const userText = String(v.user_message ?? "");
-                const assistantText = String(v.assistant_text ?? "").trim();
+                const userText = String(v.userMessage ?? "");
+                const assistantText = String(v.assistantText ?? "").trim();
                 const needsExpand = assistantText.length > PREVIEW_LENGTH;
 
                 return (
@@ -771,7 +776,7 @@ export function CombinedRefinementDialog({
                             </div>
                             {v.status === "error" ? (
                               <p className="text-sm leading-relaxed whitespace-pre-wrap text-destructive">
-                                {v.error_message || "Unbekannter Fehler"}
+                                {v.errorMessage || "Unbekannter Fehler"}
                               </p>
                             ) : (
                               <p className="text-sm leading-relaxed whitespace-pre-wrap">

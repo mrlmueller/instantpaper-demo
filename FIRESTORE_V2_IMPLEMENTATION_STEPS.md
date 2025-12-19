@@ -7,6 +7,8 @@ This is the concrete execution checklist for implementing Firestore V2. For deta
 
 ## Step-by-step (9 steps)
 
+Status: Steps 1–8 implemented; Step 9 pending cutover.
+
 1) Update the V2 spec to match final decisions (archiving for projects/quellen/kapitels/runs + “7000 words max” policy), to keep implementation consistent:
 - `FIRESTORE_V2_DATABASE_PLAN.md:99`
 - `FIRESTORE_V2_DATABASE_PLAN.md:320`
@@ -49,4 +51,3 @@ This is the concrete execution checklist for implementing Firestore V2. For deta
 - verify end-to-end
 - `FIRESTORE_V2_DATABASE_PLAN.md:420`
 - `FIRESTORE_V2_CODE_PLAN.md:330`
-

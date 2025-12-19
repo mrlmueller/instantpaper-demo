@@ -37,8 +37,8 @@ import {
 } from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import type { Kapitel, Quelle, Run } from "@/app/types/ui";
-import { getSummaries, type SummaryResult } from "@/app/actions/kapitels";
+import type { Kapitel, Quelle, Run, IntermediateGroup } from "@/app/types/ui";
+import { getCombinedGroups, getSummaries, type SummaryResult } from "@/app/actions/kapitels";
 import { ProcessingStepper } from "./ProcessingStepper";
 
 interface KapitelWorkspaceProps {
@@ -87,6 +87,8 @@ export function KapitelWorkspace({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] =
     useState(false);
+  const [intermediateGroupsLoading, setIntermediateGroupsLoading] = useState(false);
+  const [intermediateGroups, setIntermediateGroups] = useState<IntermediateGroup[] | null>(null);
   const [gekuerztSummariesExpanded, setGekuerztSummariesExpanded] =
     useState(false);
   const [verbessertSummariesExpanded, setVerbessertSummariesExpanded] =
@@ -103,8 +105,42 @@ export function KapitelWorkspace({
     selectedRun?.shortenedText && selectedRun.shortenedText.length > 0;
   const hasVerbessert =
     selectedRun?.leseflussText && selectedRun.leseflussText.length > 0;
-  const hasIntermediateGroups =
-    selectedRun?.intermediateGroups && selectedRun.intermediateGroups.length > 0;
+  const canShowIntermediateGroups = Boolean(selectedRun?.combinedText && selectedRun.combinedText.length > 0);
+
+  // Reset intermediate groups when selected run changes
+  useEffect(() => {
+    setIntermediateGroupsExpanded(false);
+    setIntermediateGroupsLoading(false);
+    setIntermediateGroups(null);
+  }, [selectedRun?.id]);
+
+  // Lazy-load intermediate groups only when expanded
+  useEffect(() => {
+    if (!intermediateGroupsExpanded) return;
+    if (!selectedRun) return;
+    if (intermediateGroupsLoading) return;
+    if (intermediateGroups !== null) return;
+
+    setIntermediateGroupsLoading(true);
+    getCombinedGroups(kapitel.id, selectedRun.id)
+      .then((groups) => {
+        const uiGroups: IntermediateGroup[] = groups.map((g) => ({
+          id: g.id,
+          groupNumber: g.groupNumber,
+          combinedContent: g.content,
+          sourceQuelleIds: g.sourceQuelleIds,
+          sourceCount: g.sourceQuelleIds.length,
+          heading: g.heading,
+          topic: g.topic,
+          modelUsed: g.model,
+          tokensUsed: g.usage?.totalTokens ?? 0,
+          cost: Math.round((g.costUsd ?? 0) * 100),
+          createdAt: new Date(g.createdAt),
+        }));
+        setIntermediateGroups(uiGroups);
+      })
+      .finally(() => setIntermediateGroupsLoading(false));
+  }, [intermediateGroupsExpanded, intermediateGroupsLoading, intermediateGroups, selectedRun?.id, kapitel.id]);
 
   // Fetch summaries when selectedRun changes and has generated text (shortened or improved)
   useEffect(() => {
@@ -132,10 +168,7 @@ export function KapitelWorkspace({
   };
 
   // Calculate total cost including summaries and lesefluss
-  const summariesCost = summaries.reduce(
-    (sum, summary) => sum + summary.cost,
-    0
-  );
+  const summariesCost = summaries.reduce((sum, summary) => sum + Math.round((summary.costUsd ?? 0) * 100), 0);
   const totalCost = selectedRun
     ? selectedRun.quellenCost +
       selectedRun.combinedCost +
@@ -386,7 +419,7 @@ export function KapitelWorkspace({
                                   onClick={() =>
                                     onOpenTextViewer({
                                       title: `Zusammenfassung: ${sourceKapitel?.nummer} ${sourceKapitel?.title}`,
-                                      text: summary.summaryContent,
+                                      text: summary.content,
                                     })
                                   }
                                 >
@@ -394,7 +427,7 @@ export function KapitelWorkspace({
                                 </Button>
                               </div>
                               <p className="text-xs text-foreground/70 leading-relaxed line-clamp-3">
-                                {summary.summaryContent}
+                                {summary.content}
                               </p>
                             </div>
                           );
@@ -525,7 +558,7 @@ export function KapitelWorkspace({
                                   onClick={() =>
                                     onOpenTextViewer({
                                       title: `Zusammenfassung: ${sourceKapitel?.nummer} ${sourceKapitel?.title}`,
-                                      text: summary.summaryContent,
+                                      text: summary.content,
                                     })
                                   }
                                 >
@@ -533,7 +566,7 @@ export function KapitelWorkspace({
                                 </Button>
                               </div>
                               <p className="text-xs text-foreground/70 leading-relaxed line-clamp-3">
-                                {summary.summaryContent}
+                                {summary.content}
                               </p>
                             </div>
                           );
@@ -548,7 +581,7 @@ export function KapitelWorkspace({
         )}
 
         {/* 3. Intermediate Groups - IMPROVED STYLING */}
-        {hasIntermediateGroups && (
+        {canShowIntermediateGroups && (
           <Card className="mb-8 bg-card border-border shadow-sm">
             <Collapsible
               open={intermediateGroupsExpanded}
@@ -563,7 +596,11 @@ export function KapitelWorkspace({
                         Zwischengruppen
                       </h3>
                       <span className="text-sm text-muted-foreground">
-                        ({selectedRun!.intermediateGroups!.length} Gruppen)
+                        {intermediateGroupsLoading
+                          ? "(lädt...)"
+                          : intermediateGroups
+                          ? `(${intermediateGroups.length} Gruppen)`
+                          : "(0 Gruppen)"}
                       </span>
                     </div>
                     <ChevronDown
@@ -578,7 +615,7 @@ export function KapitelWorkspace({
 
               <CollapsibleContent>
                 <div className="px-6 pb-6 space-y-4">
-                  {selectedRun!.intermediateGroups!.map((group) => (
+                  {(intermediateGroups ?? []).map((group) => (
                     <Card key={group.id} className="p-4 bg-muted/30">
                       <div className="flex items-start justify-between mb-3">
                         <div>

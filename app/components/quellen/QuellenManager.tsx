@@ -54,6 +54,7 @@ import {
   updateQuelleColor,
   bulkAssignQuellen,
   deleteQuelle,
+  getQuelleContent,
   type ImageMetadata,
 } from "@/app/actions/quellen";
 import {
@@ -124,7 +125,21 @@ export function QuellenManager({
   );
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [viewingQuelle, setViewingQuelle] = useState<Quelle | null>(null);
+  const [viewingQuelleLoading, setViewingQuelleLoading] = useState(false);
   const [backLoading, setBackLoading] = useState(false);
+
+  const handleViewQuelle = async (quelle: Quelle) => {
+    setViewingQuelleLoading(true);
+    setViewingQuelle({ ...quelle, text: "" });
+    try {
+      const content = await getQuelleContent(quelle.id);
+      if (content?.text != null) {
+        setViewingQuelle((prev) => (prev?.id === quelle.id ? { ...prev, text: content.text } : prev));
+      }
+    } finally {
+      setViewingQuelleLoading(false);
+    }
+  };
 
   // New Quelle dialog state
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -774,7 +789,7 @@ export function QuellenManager({
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
-                          onClick={() => setViewingQuelle(quelle)}
+                          onClick={() => handleViewQuelle(quelle)}
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
@@ -913,6 +928,7 @@ export function QuellenManager({
       {/* Quelle Viewer Modal */}
       <QuelleViewerModal
         quelle={viewingQuelle}
+        loading={viewingQuelleLoading}
         open={viewingQuelle !== null}
         onOpenChange={(open) => !open && setViewingQuelle(null)}
       />
