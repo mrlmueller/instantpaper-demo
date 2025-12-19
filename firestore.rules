@@ -91,6 +91,14 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------------
+    // Global server-only config
+    // ---------------------------------------------------------------------
+
+    match /_config/{doc=**} {
+      allow read, write: if false;
+    }
+
+    // ---------------------------------------------------------------------
     // users/{uid}
     // ---------------------------------------------------------------------
 
@@ -116,6 +124,12 @@ service cloud.firestore {
 
       match /secrets/{secretId} {
         allow read, write: if false;
+      }
+
+      // Cost metrics are server-written and immutable from the client.
+      match /costMetrics/{doc=**} {
+        allow read: if isOwner(userId);
+        allow write: if false;
       }
 
       // -------------------------------------------------------------------

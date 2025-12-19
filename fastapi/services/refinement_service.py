@@ -10,7 +10,7 @@ from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 from services.firebase_service import firebase_service
 from services.openai_service import openai_service
 from services.prompt_service import prompt_service
-from services.quelle_service import calculate_cost
+from services.cost_service import get_cost_service, TokenUsage
 from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
 from utils.config import config
@@ -578,13 +578,71 @@ WICHTIG:
                 debug_prompt_dump_path=debug_dump_path,
             )
 
-            cost = calculate_cost(
-                model=openai_result["model"],
-                input_tokens=openai_result["input_tokens"],
-                cached_input_tokens=openai_result.get("cached_input_tokens", 0),
-                output_tokens=openai_result["output_tokens"],
-                reasoning_tokens=openai_result.get("reasoning_tokens", 0),
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(
+                openai_result.get("input_tokens", 0),
+                openai_result.get("cached_input_tokens", 0),
+                openai_result.get("output_tokens", 0),
             )
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=openai_result.get("model") or model,
+                usage=usage_obj,
+            )
+
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run = await firebase_service.get_run(user_id, kapitel_id, run_id)
+            run_snapshot = {
+                "id": run_id,
+                "index": (run or {}).get("index"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="refine_combined",
+                user_id=user_id,
+                user_action_id=version_id,
+                operation_details={
+                    "versionId": version_id,
+                    "parentVersionId": parent_version_id,
+                    "baseTextCount": len(source_texts),
+                    "hasUserMessage": bool((user_message or "").strip()),
+                },
+                model=openai_result.get("model") or model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
 
             version_update = {
                 "assistantText": openai_result["content"],
@@ -769,13 +827,71 @@ WICHTIG:
                 debug_prompt_dump_path=debug_dump_path,
             )
 
-            cost = calculate_cost(
-                model=openai_result["model"],
-                input_tokens=openai_result["input_tokens"],
-                cached_input_tokens=openai_result.get("cached_input_tokens", 0),
-                output_tokens=openai_result["output_tokens"],
-                reasoning_tokens=openai_result.get("reasoning_tokens", 0),
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(
+                openai_result.get("input_tokens", 0),
+                openai_result.get("cached_input_tokens", 0),
+                openai_result.get("output_tokens", 0),
             )
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=openai_result.get("model") or model,
+                usage=usage_obj,
+            )
+
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run = await firebase_service.get_run(user_id, kapitel_id, run_id)
+            run_snapshot = {
+                "id": run_id,
+                "index": (run or {}).get("index"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="refine_shortened",
+                user_id=user_id,
+                user_action_id=version_id,
+                operation_details={
+                    "versionId": version_id,
+                    "parentVersionId": parent_version_id,
+                    "baseTextCount": len(source_texts),
+                    "hasUserMessage": bool((user_message or "").strip()),
+                },
+                model=openai_result.get("model") or model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
 
             version_update = {
                 "assistantText": openai_result["content"],
@@ -957,6 +1073,7 @@ WICHTIG:
                     model=model,
                     api_key=api_key,
                     key_source=key_source,
+                    user_action_id=version_id,
                 )
                 for ctx_id in context_kapitel_ids
             ]
@@ -1031,13 +1148,68 @@ WICHTIG:
             output_tokens = int(usage.get("completion_tokens", 0) or 0)
             total_tokens = input_tokens + output_tokens
 
-            cost = calculate_cost(
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(input_tokens, cached_input_tokens, output_tokens)
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
                 model=model,
-                input_tokens=input_tokens,
-                cached_input_tokens=cached_input_tokens,
-                output_tokens=output_tokens,
-                reasoning_tokens=0,
+                usage=usage_obj,
             )
+
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run = await firebase_service.get_run(user_id, kapitel_id, run_id)
+            run_snapshot = {
+                "id": run_id,
+                "index": (run or {}).get("index"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="refine_lesefluss",
+                user_id=user_id,
+                user_action_id=version_id,
+                operation_details={
+                    "versionId": version_id,
+                    "parentVersionId": parent_version_id,
+                    "usedKapitelIds": valid_context_ids,
+                    "summaryCount": len(summaries),
+                    "hasUserMessage": bool((user_message or "").strip()),
+                },
+                model=model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
 
             version_update = {
                 "assistantText": content,
@@ -1238,13 +1410,77 @@ WICHTIG:
                 debug_prompt_dump_path=debug_dump_path,
             )
 
-            cost = calculate_cost(
-                model=openai_result["model"],
-                input_tokens=openai_result["input_tokens"],
-                cached_input_tokens=openai_result.get("cached_input_tokens", 0),
-                output_tokens=openai_result["output_tokens"],
-                reasoning_tokens=openai_result.get("reasoning_tokens", 0),
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(
+                openai_result.get("input_tokens", 0),
+                openai_result.get("cached_input_tokens", 0),
+                openai_result.get("output_tokens", 0),
             )
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=openai_result.get("model") or model,
+                usage=usage_obj,
+            )
+
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run_snapshot = {
+                "id": run_id,
+                "index": (run or {}).get("index"),
+            }
+
+            quelle_snapshot = {
+                "id": quelle_id,
+                "title": quelle.get("title"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="refine_result",
+                user_id=user_id,
+                user_action_id=version_id,
+                operation_details={
+                    "versionId": version_id,
+                    "parentVersionId": parent_version_id,
+                    "hasUserMessage": bool((user_message or "").strip()),
+                    "quelleHasImages": bool(quelle_images),
+                },
+                model=openai_result.get("model") or model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                quelle_id=quelle_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+                quelle_snapshot=quelle_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
 
             version_update = {
                 "assistantText": openai_result["content"],

@@ -1135,6 +1135,21 @@ class FirebaseService:
             logger.error(f"Error fetching kapitel {kapitel_id}: {str(e)}")
             raise
 
+    async def get_project(self, user_id: str, project_id: str) -> Optional[dict]:
+        """Fetch a Project document (`users/{uid}/projects/{projectId}`)."""
+        try:
+            project_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("projects")
+                .document(project_id)
+            )
+            doc = project_ref.get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Error fetching project {project_id}: {str(e)}")
+            raise
+
     async def check_all_quellen_processed(
         self,
         user_id: str,
@@ -1470,7 +1485,10 @@ class FirebaseService:
 
             usage = summary_data.get("usage") if isinstance(summary_data.get("usage"), dict) else {}
             input_tokens = int(usage.get("inputTokens", 0))
+            cached_input_tokens = int(usage.get("cachedInputTokens", 0))
             output_tokens = int(usage.get("outputTokens", 0))
+            reasoning_tokens = int(usage.get("reasoningTokens", 0))
+            total_tokens = int(usage.get("totalTokens", input_tokens + output_tokens))
 
             v2_doc = {
                 "sourceKapitelId": summary_data.get("sourceKapitelId") or source_kapitel_id,
@@ -1482,8 +1500,10 @@ class FirebaseService:
                 "model": summary_data.get("model") or "",
                 "usage": {
                     "inputTokens": input_tokens,
+                    "cachedInputTokens": cached_input_tokens,
                     "outputTokens": output_tokens,
-                    "totalTokens": input_tokens + output_tokens,
+                    "reasoningTokens": reasoning_tokens,
+                    "totalTokens": total_tokens,
                 },
                 "costUsd": float(summary_data.get("costUsd") or 0.0),
                 "keySource": summary_data.get("keySource"),

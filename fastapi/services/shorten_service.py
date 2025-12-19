@@ -1,10 +1,11 @@
 from services.firebase_service import firebase_service
 from services.openai_service import openai_service
-from services.quelle_service import calculate_cost
+from services.cost_service import get_cost_service, TokenUsage
 from services.user_key_service import user_key_service
 from services.prompt_service import prompt_service
 import logging
 import asyncio
+import uuid
 from datetime import datetime
 import services.openai_service as openai_module
 from typing import Optional, List, Tuple, Dict
@@ -106,6 +107,7 @@ class ShortenService:
         model: str,
         api_key: str,
         key_source: str,
+        user_action_id: str,
     ) -> str:
         """
         Get cached summary or create new one.
@@ -150,21 +152,76 @@ class ShortenService:
             source_text, model, source_kapitel_id, api_key=api_key, instructions=instructions
         )
 
-        # Calculate cost
-        cost = calculate_cost(
-            model,
-            usage.get('prompt_tokens', 0),
-            usage.get('prompt_tokens_details', {}).get('cached_tokens', 0),
-            usage.get('completion_tokens', 0)
+        input_tokens = int(usage.get("prompt_tokens", 0))
+        cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
+        output_tokens = int(usage.get("completion_tokens", 0))
+
+        # Calculate cost and log immutable operation (costMetrics)
+        cost_service = get_cost_service(firebase_service)
+        usage_obj = TokenUsage.from_any(input_tokens, cached_input_tokens, output_tokens)
+        cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+            model=model,
+            usage=usage_obj,
         )
+
+        target_kapitel = await firebase_service.get_kapitel(user_id, target_kapitel_id)
+        projekt_id = (target_kapitel or {}).get("projektId")
+
+        projekt_snapshot = None
+        if projekt_id:
+            project = await firebase_service.get_project(user_id, projekt_id)
+            if project:
+                projekt_snapshot = {
+                    "id": projekt_id,
+                    "name": project.get("name"),
+                    "archived": bool(project.get("archived", False)),
+                }
+
+        kapitel_snapshot = (
+            {
+                "id": target_kapitel_id,
+                "nummer": (target_kapitel or {}).get("nummer", "?"),
+                "title": (target_kapitel or {}).get("title", "Untitled"),
+            }
+            if target_kapitel
+            else None
+        )
+
+        run_snapshot = {
+            "id": target_run_id,
+            "index": None,
+        }
+
+        await cost_service.log_operation(
+            operation_type="summary",
+            user_id=user_id,
+            user_action_id=user_action_id,
+            operation_details={
+                "sourceKapitelId": source_kapitel_id,
+                "sourceRunId": source_run_id,
+                "sourceType": source_type,
+            },
+            model=model,
+            usage=usage_obj,
+            cost_breakdown=cost_breakdown,
+            matched_model_key=matched_model,
+            pricing=pricing,
+            key_source=key_source,
+            projekt_id=projekt_id,
+            kapitel_id=target_kapitel_id,
+            run_id=target_run_id,
+            projekt_snapshot=projekt_snapshot,
+            kapitel_snapshot=kapitel_snapshot,
+            run_snapshot=run_snapshot,
+        )
+
+        cost = float(cost_breakdown.total_cost_usd)
 
         # Count words
         original_length = len(source_text.split())
         summary_length = len(summary_content.split())
 
         # Save the summary
-        input_tokens = int(usage.get("prompt_tokens", 0))
-        output_tokens = int(usage.get("completion_tokens", 0))
         summary_data = {
             "content": summary_content,
             "sourceKapitelId": source_kapitel_id,
@@ -175,7 +232,9 @@ class ShortenService:
             "model": model,
             "usage": {
                 "inputTokens": input_tokens,
+                "cachedInputTokens": cached_input_tokens,
                 "outputTokens": output_tokens,
+                "reasoningTokens": 0,
                 "totalTokens": input_tokens + output_tokens,
             },
             "costUsd": float(cost),
@@ -314,6 +373,7 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
         """
         try:
             api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+            user_action_id = str(uuid.uuid4())
             logger.info(
                 f"Starting shorten process for Kapitel {kapitel_id}, run {run_id}, "
                 f"with {len(context_kapitel_ids)} context Kapitels"
@@ -341,7 +401,16 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
             logger.info(f"Generating summaries for {len(context_kapitel_ids)} context Kapitels")
 
             summary_tasks = [
-                self.get_or_create_summary(user_id, kapitel_id, run_id, ctx_id, model, api_key, key_source)
+                self.get_or_create_summary(
+                    user_id,
+                    kapitel_id,
+                    run_id,
+                    ctx_id,
+                    model,
+                    api_key,
+                    key_source,
+                    user_action_id,
+                )
                 for ctx_id in context_kapitel_ids
             ]
 
@@ -391,13 +460,69 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
                 instructions=shorten_instructions
             )
 
-            # Calculate cost
-            cost = calculate_cost(
-                model,
-                usage.get('prompt_tokens', 0),
-                usage.get('prompt_tokens_details', {}).get('cached_tokens', 0),
-                usage.get('completion_tokens', 0)
+            input_tokens = int(usage.get("prompt_tokens", 0))
+            cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
+            output_tokens = int(usage.get("completion_tokens", 0))
+            total_tokens = input_tokens + output_tokens
+
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(input_tokens, cached_input_tokens, output_tokens)
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=model,
+                usage=usage_obj,
             )
+
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run_snapshot = {
+                "id": run_id,
+                "index": (run_data or {}).get("index"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="shorten",
+                user_id=user_id,
+                user_action_id=user_action_id,
+                operation_details={
+                    "usedKapitelIds": valid_context_ids,
+                    "summaryCount": len(summaries),
+                },
+                model=model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
 
             # Count words
             original_length = len(target_text.split())
@@ -405,11 +530,6 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
 
             # Step 4: Save the shortened result
             logger.info("Saving shortened result")
-
-            input_tokens = int(usage.get("prompt_tokens", 0))
-            cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
-            output_tokens = int(usage.get("completion_tokens", 0))
-            total_tokens = input_tokens + output_tokens
 
             shortened_data = {
                 "content": shortened_content,
@@ -619,6 +739,7 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
         5. Saves the result
         """
         try:
+            user_action_id = str(uuid.uuid4())
             logger.info(
                 f"Starting lesefluss process for Kapitel {kapitel_id}, run {run_id}, "
                 f"with {len(context_kapitel_ids)} context Kapitels"
@@ -645,7 +766,16 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
             logger.info(f"Generating summaries for {len(context_kapitel_ids)} context Kapitels")
 
             summary_tasks = [
-                self.get_or_create_summary(user_id, kapitel_id, run_id, ctx_id, model, api_key, key_source)
+                self.get_or_create_summary(
+                    user_id,
+                    kapitel_id,
+                    run_id,
+                    ctx_id,
+                    model,
+                    api_key,
+                    key_source,
+                    user_action_id,
+                )
                 for ctx_id in context_kapitel_ids
             ]
 
@@ -704,13 +834,69 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
                 instructions=lesefluss_instructions,
             )
 
-            # Calculate cost
-            cost = calculate_cost(
-                model,
-                usage.get('prompt_tokens', 0),
-                usage.get('prompt_tokens_details', {}).get('cached_tokens', 0),
-                usage.get('completion_tokens', 0)
+            input_tokens = int(usage.get("prompt_tokens", 0))
+            cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
+            output_tokens = int(usage.get("completion_tokens", 0))
+            total_tokens = input_tokens + output_tokens
+
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(input_tokens, cached_input_tokens, output_tokens)
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=model,
+                usage=usage_obj,
             )
+
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run_snapshot = {
+                "id": run_id,
+                "index": (run_data or {}).get("index"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="lesefluss",
+                user_id=user_id,
+                user_action_id=user_action_id,
+                operation_details={
+                    "usedKapitelIds": valid_context_ids,
+                    "summaryCount": len(summaries),
+                },
+                model=model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
 
             # Count words
             original_length = len(target_text.split())
@@ -718,11 +904,6 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
 
             # Step 5: Save the lesefluss result
             logger.info("Saving lesefluss result")
-
-            input_tokens = int(usage.get("prompt_tokens", 0))
-            cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
-            output_tokens = int(usage.get("completion_tokens", 0))
-            total_tokens = input_tokens + output_tokens
 
             lesefluss_data = {
                 "content": lesefluss_content,
