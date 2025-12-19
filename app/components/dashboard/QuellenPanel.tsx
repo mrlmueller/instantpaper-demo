@@ -346,10 +346,11 @@ export function QuellenPanel({
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                {quelle.text
-                  .split(/\s+/)
-                  .filter(Boolean)
-                  .length.toLocaleString("de-DE")}{" "}
+                {(
+                  typeof quelle.wordCount === "number"
+                    ? quelle.wordCount
+                    : quelle.text.split(/\s+/).filter(Boolean).length
+                ).toLocaleString("de-DE")}{" "}
                 Wörter
                 {quelle.typ && ` · ${typLabels[quelle.typ]}`}
                 {quelle.jahr && ` · ${quelle.jahr}`}

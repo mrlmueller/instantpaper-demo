@@ -27,6 +27,7 @@ export function transformQuelleToUI(
     name: fbQuelle.title,
     // V2: Quelle content is stored separately at `quellen/{id}/content/main` and should be loaded on open.
     text: "",
+    wordCount: typeof fbQuelle.wordCount === "number" ? fbQuelle.wordCount : undefined,
     projektId,
     createdAt: new Date(fbQuelle.createdAt),
     images: fbQuelle.images?.map((img) => img.url),

@@ -11,6 +11,7 @@ export interface Quelle {
   id: string;
   name: string; // Maps to Firebase 'title' field
   text: string; // Maps to Firebase 'content' field
+  wordCount?: number;
   projektId: string;
   createdAt: Date;
   images?: string[]; // Optional array of image URLs/data
