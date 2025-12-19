@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils"
 import type { Kapitel } from "@/app/types/ui"
 import type { ActivePromptSelections, PromptStage, PromptTemplate } from "@/app/types/prompts"
+import { getKapitelsWithShortenedText } from "@/app/actions/kapitels"
 
 interface LeseflussDialogProps {
   open: boolean
@@ -50,6 +51,8 @@ export function LeseflussDialog({
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [aufgabenstellung, setAufgabenstellung] = useState("")
   const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-mini")
+  const [shortenedAvailability, setShortenedAvailability] = useState<Record<string, boolean> | null>(null)
+  const [shortenedAvailabilityLoading, setShortenedAvailabilityLoading] = useState(false)
   const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
     summary: (promptActive?.summary as string | "default") || "default",
     lesefluss: (promptActive?.lesefluss as string | "default") || "default",
@@ -71,13 +74,49 @@ export function LeseflussDialog({
     })
   }, [allKapitels, currentKapitelId])
 
-  const hasCombinedText = (kapitelId: string) => {
-    const target = allKapitels.find((k) => k.id === kapitelId)
-    return target?.status === "fertig"
+  useEffect(() => {
+    if (!open) {
+      setShortenedAvailability(null)
+      setShortenedAvailabilityLoading(false)
+      return
+    }
+
+    const ids = sortedKapiteln.map((k) => k.id)
+    if (ids.length === 0) {
+      setShortenedAvailability({})
+      return
+    }
+
+    let cancelled = false
+    setShortenedAvailabilityLoading(true)
+
+    getKapitelsWithShortenedText(ids)
+      .then((result) => {
+        if (cancelled) return
+        setShortenedAvailability(result)
+      })
+      .catch((err) => {
+        console.error("Failed to check Kapitel shortened text availability", err)
+        if (cancelled) return
+        setShortenedAvailability({})
+      })
+      .finally(() => {
+        if (cancelled) return
+        setShortenedAvailabilityLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, sortedKapiteln])
+
+  const hasShortenedText = (kapitelId: string) => {
+    if (shortenedAvailabilityLoading || !shortenedAvailability) return false
+    return Boolean(shortenedAvailability[kapitelId])
   }
 
   const toggleKapitel = (id: string) => {
-    if (!hasCombinedText(id)) return
+    if (!hasShortenedText(id)) return
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
   }
 
@@ -201,12 +240,13 @@ export function LeseflussDialog({
           <div className="space-y-2">
             <Label>Kontext-Kapitel auswählen</Label>
             <p className="text-sm text-muted-foreground">
-              Wähle andere Kapitel aus, die als Kontext verwendet werden sollen. Nur Kapitel mit kombiniertem Text können ausgewählt werden.
+              Wähle andere Kapitel aus, die als Kontext verwendet werden sollen. Nur Kapitel mit gekürztem Text können ausgewählt werden.
             </p>
             <div className="border rounded-lg max-h-[240px] overflow-y-auto">
-              <TooltipProvider>
-                {sortedKapiteln.map((kapitel) => {
-                  const hasCombined = hasCombinedText(kapitel.id)
+                <TooltipProvider>
+                  {sortedKapiteln.map((kapitel) => {
+                  const isLoading = shortenedAvailabilityLoading || !shortenedAvailability
+                  const hasShortened = !isLoading && Boolean(shortenedAvailability[kapitel.id])
                   const isSelected = selectedIds.includes(kapitel.id)
                   const indentLevel = getIndentLevel(kapitel.nummer)
 
@@ -216,12 +256,12 @@ export function LeseflussDialog({
                         <button
                           className={cn(
                             "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors border-b last:border-b-0",
-                            hasCombined && "hover:bg-muted/50 cursor-pointer",
-                            !hasCombined && "opacity-50 cursor-not-allowed",
+                            hasShortened && "hover:bg-muted/50 cursor-pointer",
+                            !hasShortened && "opacity-50 cursor-not-allowed",
                             isSelected && "bg-primary/10",
                           )}
                           onClick={() => toggleKapitel(kapitel.id)}
-                          disabled={!hasCombined}
+                          disabled={isLoading || !hasShortened}
                           style={{ paddingLeft: `${16 + indentLevel * 20}px` }}
                         >
                           <div
@@ -229,7 +269,7 @@ export function LeseflussDialog({
                               "w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
                               isSelected
                                 ? "bg-primary border-primary text-primary-foreground"
-                                : hasCombined
+                                : hasShortened
                                   ? "border-muted-foreground/30"
                                   : "border-muted-foreground/20 bg-muted/30",
                             )}
@@ -239,15 +279,17 @@ export function LeseflussDialog({
                           <div className="flex-1 min-w-0">
                             <span className="text-sm">
                               <span className="text-muted-foreground mr-1.5">{kapitel.nummer}</span>
-                              <span className={cn(!hasCombined && "text-muted-foreground")}>{kapitel.title}</span>
+                              <span className={cn(!hasShortened && "text-muted-foreground")}>{kapitel.title}</span>
                             </span>
                           </div>
-                          {!hasCombined && <AlertCircle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
+                          {!hasShortened && <AlertCircle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
                         </button>
                       </TooltipTrigger>
-                      {!hasCombined && (
+                      {!hasShortened && (
                         <TooltipContent side="left">
-                          <p>Dieses Kapitel hat noch keinen kombinierten Text</p>
+                          <p>
+                            {isLoading ? "Pr\u00fcfe Text\u2026" : "Dieses Kapitel hat noch keinen gek\u00fcrzten Text"}
+                          </p>
                         </TooltipContent>
                       )}
                     </Tooltip>

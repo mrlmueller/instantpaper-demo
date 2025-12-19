@@ -962,3 +962,57 @@ export async function getKapitelsWithCombinedText(
     return Object.fromEntries(uniqueIds.map((id) => [id, false] as const));
   }
 }
+
+export async function getKapitelsWithShortenedText(
+  kapitelIds: string[],
+  runScanLimit = 20
+): Promise<Record<string, boolean>> {
+  const user = await requireAuth();
+  if (!user) return {};
+
+  const uniqueIds = Array.from(new Set(kapitelIds.filter(Boolean)));
+  if (uniqueIds.length === 0) return {};
+
+  try {
+    const db = await getFirestoreForUser();
+
+    const entries = await Promise.all(
+      uniqueIds.map(async (kapitelId) => {
+        try {
+          const runsSnapshot = await getDocs(
+            query(
+              runsCol(db, user.uid, kapitelId),
+              where('archived', '==', false),
+              orderBy('index', 'desc'),
+              limit(runScanLimit)
+            )
+          );
+
+          for (const runSnap of runsSnapshot.docs) {
+            const runData = runSnap.data() as DocumentData;
+            const shortenedStatus = (runData.artifactsStatus as { shortened?: unknown } | undefined)?.shortened;
+            if (shortenedStatus === 'success') {
+              return [kapitelId, true] as const;
+            }
+
+            const shortenedSnap = await getDoc(artifactDoc(db, user.uid, kapitelId, runSnap.id, 'shortened'));
+            if (shortenedSnap.exists()) {
+              const shortened = shortenedSnap.data() as DocumentData;
+              const content = typeof shortened.content === 'string' ? shortened.content : String(shortened.content ?? '');
+              if (content.trim().length > 0) return [kapitelId, true] as const;
+            }
+          }
+        } catch (e) {
+          console.error(`Error checking shortened text for kapitel ${kapitelId}:`, e);
+        }
+
+        return [kapitelId, false] as const;
+      })
+    );
+
+    return Object.fromEntries(entries);
+  } catch (error) {
+    console.error('Error checking shortened text availability:', error);
+    return Object.fromEntries(uniqueIds.map((id) => [id, false] as const));
+  }
+}
