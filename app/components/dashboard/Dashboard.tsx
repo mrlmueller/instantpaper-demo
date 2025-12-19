@@ -325,10 +325,8 @@ export function Dashboard({
   }, [router, searchParams]);
 
   const handleSelectRun = useCallback((id: string) => {
-    if (selectedRunIdRef.current === id) return;
     selectedRunIdRef.current = id;
-    setIsKapitelLoading(true);
-    setSelectedRunId(id);
+    setSelectedRunId((prev) => (prev === id ? prev : id));
   }, []);
 
   useEffect(() => {
@@ -385,6 +383,7 @@ export function Dashboard({
     const firstKapitelId = fbKapitels[0]?.id || '';
     setActiveKapitelId(firstKapitelId);
     setSelectedRunId(null);
+    selectedRunIdRef.current = null;
     setFbRuns([]);
 
     if (firstKapitelId) {
@@ -482,12 +481,16 @@ export function Dashboard({
       setFbRuns([]);
       setRuns([]);
       setSelectedRunId(null);
+      selectedRunIdRef.current = null;
       setIsKapitelLoading(false);
       return;
     }
 
     setIsKapitelLoading(true);
     setSelectedRunId(null);
+    // Prevent a race where the runs listener fires before `selectedRunId` state clears,
+    // which can block auto-selecting the first run and leave the Kapitel stuck loading.
+    selectedRunIdRef.current = null;
     setRunListLimit(RUN_HISTORY_LIMIT);
     setAllRunsLoaded(false);
 
@@ -508,6 +511,7 @@ export function Dashboard({
       setFbRuns([]);
       setRuns([]);
       setSelectedRunId(null);
+      selectedRunIdRef.current = null;
       return;
     }
 
@@ -549,13 +553,24 @@ export function Dashboard({
           return baseRuns;
         });
 
-        if (!snapshot.empty && !selectedRunIdRef.current) {
-          handleSelectRun(snapshot.docs[0].id);
+        if (!snapshot.empty) {
+          const firstRunId = snapshot.docs[0].id;
+          const currentSelected = selectedRunIdRef.current;
+          const currentIsInSnapshot =
+            currentSelected != null && snapshot.docs.some((d) => d.id === currentSelected);
+
+          if (!currentSelected || !currentIsInSnapshot) {
+            handleSelectRun(firstRunId);
+          }
         }
 
         if (snapshot.empty) {
           setIsKapitelLoading(false);
         }
+
+        // Once we have the runs snapshot for this Kapitel (empty or not), stop the workspace skeleton.
+        // Artifact/result docs can stream in asynchronously via the selected-run listeners.
+        setIsKapitelLoading(false);
       },
       (error) => {
         console.error('Error listening to runs:', error);
@@ -598,7 +613,6 @@ export function Dashboard({
       'results'
     );
 
-    setIsKapitelLoading(true);
     let hasData = false;
     let settledOnce = false;
 

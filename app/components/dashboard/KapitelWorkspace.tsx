@@ -133,6 +133,14 @@ export function KapitelWorkspace({
     setIntermediateGroups(null);
   }, [selectedRun?.id]);
 
+  // Defensive: if runs exist but selectedRun is missing (can happen during Kapitel switches),
+  // auto-select the first run so the workspace doesn't get stuck showing only the header.
+  useEffect(() => {
+    if (selectedRun) return;
+    if (!runs || runs.length === 0) return;
+    onSelectRun(runs[0].id);
+  }, [selectedRun, runs, onSelectRun]);
+
   // Only show Zwischengruppen when there are actually group docs.
   useEffect(() => {
     if (!selectedRun) return;
@@ -475,6 +483,15 @@ export function KapitelWorkspace({
               </Popover>
             </div>
           </div>
+        )}
+
+        {runs.length > 0 && !selectedRun && (
+          <Card className="mb-6 bg-card border-border shadow-sm">
+            <div className="p-6 flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Run wird geladen...</span>
+            </div>
+          </Card>
         )}
 
         {/* Processing Stepper */}
