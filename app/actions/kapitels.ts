@@ -22,6 +22,7 @@ import {
 } from 'firebase/firestore';
 import {
   artifactsCol,
+  artifactDoc,
   combinedGroupsCol,
   resultsCol,
   runsCol,
@@ -896,5 +897,54 @@ export async function getSummaries(kapitelId: string, runId: string): Promise<Su
   } catch (error: unknown) {
     console.error('Error getting summaries:', error);
     return [];
+  }
+}
+
+export async function getKapitelsWithCombinedText(
+  kapitelIds: string[],
+  runScanLimit = 20
+): Promise<Record<string, boolean>> {
+  const user = await requireAuth();
+  if (!user) return {};
+
+  const uniqueIds = Array.from(new Set(kapitelIds.filter(Boolean)));
+  if (uniqueIds.length === 0) return {};
+
+  try {
+    const db = await getFirestoreForUser();
+
+    const entries = await Promise.all(
+      uniqueIds.map(async (kapitelId) => {
+        try {
+          const runsSnapshot = await getDocs(
+            query(runsCol(db, user.uid, kapitelId), where('archived', '==', false), orderBy('index', 'desc'), limit(runScanLimit))
+          );
+
+          for (const runSnap of runsSnapshot.docs) {
+            const runData = runSnap.data() as DocumentData;
+            const combinedStatus = (runData.artifactsStatus as { combined?: unknown } | undefined)?.combined;
+            if (combinedStatus === 'success') {
+              return [kapitelId, true] as const;
+            }
+
+            const combinedSnap = await getDoc(artifactDoc(db, user.uid, kapitelId, runSnap.id, 'combined'));
+            if (combinedSnap.exists()) {
+              const combined = combinedSnap.data() as DocumentData;
+              const content = typeof combined.content === 'string' ? combined.content : String(combined.content ?? '');
+              if (content.trim().length > 0) return [kapitelId, true] as const;
+            }
+          }
+        } catch (e) {
+          console.error(`Error checking combined text for kapitel ${kapitelId}:`, e);
+        }
+
+        return [kapitelId, false] as const;
+      })
+    );
+
+    return Object.fromEntries(entries);
+  } catch (error) {
+    console.error('Error checking combined text availability:', error);
+    return Object.fromEntries(uniqueIds.map((id) => [id, false] as const));
   }
 }

@@ -17,6 +17,7 @@ import type { ActivePromptSelections, PromptStage, PromptTemplate } from "@/app/
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { getKapitelsWithCombinedText } from "@/app/actions/kapitels"
 
 interface ShortenDialogProps {
   open: boolean
@@ -47,6 +48,8 @@ export function ShortenDialog({
 }: ShortenDialogProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [model, setModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-mini")
+  const [combinedAvailability, setCombinedAvailability] = useState<Record<string, boolean> | null>(null)
+  const [combinedAvailabilityLoading, setCombinedAvailabilityLoading] = useState(false)
   const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
     summary: (promptActive?.summary as string | "default") || "default",
     shorten: (promptActive?.shorten as string | "default") || "default",
@@ -68,9 +71,45 @@ export function ShortenDialog({
     })
   }, [allKapitels, currentKapitelId])
 
+  useEffect(() => {
+    if (!open) {
+      setCombinedAvailability(null)
+      setCombinedAvailabilityLoading(false)
+      return
+    }
+
+    const ids = sortedKapiteln.map((k) => k.id)
+    if (ids.length === 0) {
+      setCombinedAvailability({})
+      return
+    }
+
+    let cancelled = false
+    setCombinedAvailabilityLoading(true)
+
+    getKapitelsWithCombinedText(ids)
+      .then((result) => {
+        if (cancelled) return
+        setCombinedAvailability(result)
+      })
+      .catch((err) => {
+        console.error("Failed to check Kapitel combined text availability", err)
+        if (cancelled) return
+        setCombinedAvailability({})
+      })
+      .finally(() => {
+        if (cancelled) return
+        setCombinedAvailabilityLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, sortedKapiteln])
+
   const hasCombinedText = (kapitelId: string) => {
-    const target = allKapitels.find((k) => k.id === kapitelId)
-    return target?.status === "fertig"
+    if (combinedAvailabilityLoading || !combinedAvailability) return false
+    return Boolean(combinedAvailability[kapitelId])
   }
 
   const toggleKapitel = (id: string) => {
@@ -187,6 +226,7 @@ export function ShortenDialog({
                 const hasCombined = hasCombinedText(kapitel.id)
                 const isSelected = selectedIds.includes(kapitel.id)
                 const indentLevel = getIndentLevel(kapitel.nummer)
+                const availabilityKnown = !combinedAvailabilityLoading && combinedAvailability !== null
 
                 return (
                   <Tooltip key={kapitel.id}>
@@ -225,7 +265,11 @@ export function ShortenDialog({
                     </TooltipTrigger>
                     {!hasCombined && (
                       <TooltipContent side="left">
-                        <p>Dieses Kapitel hat noch keinen kombinierten Text</p>
+                        <p>
+                          {!availabilityKnown
+                            ? "Prüfe Text..."
+                            : "Dieses Kapitel hat noch keinen kombinierten Text"}
+                        </p>
                       </TooltipContent>
                     )}
                   </Tooltip>

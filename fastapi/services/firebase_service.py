@@ -962,6 +962,34 @@ class FirebaseService:
                 },
                 merge=True,
             )
+
+            # Mark Kapitel latest run as "done" once a combined artifact exists for that run.
+            # This drives UI Kapitel status (denormalized via `kapitels.latestRun.status`).
+            try:
+                kapitel_ref = (
+                    self.db.collection("users")
+                    .document(user_id)
+                    .collection("kapitels")
+                    .document(kapitel_id)
+                )
+                kapitel_doc = kapitel_ref.get()
+                kapitel_data = kapitel_doc.to_dict() if kapitel_doc.exists else {}
+                latest_run = kapitel_data.get("latestRun") if isinstance(kapitel_data, dict) else None
+                if isinstance(latest_run, dict) and latest_run.get("runId") == run_id:
+                    batch.update(
+                        kapitel_ref,
+                        {
+                            "latestRun.status": "done",
+                            "latestRun.updatedAt": SERVER_TIMESTAMP,
+                            "updatedAt": SERVER_TIMESTAMP,
+                        },
+                    )
+            except Exception as e:
+                # Non-fatal: combined is saved, but Kapitel status may lag until next write.
+                logger.warning(
+                    f"Could not update Kapitel.latestRun status for kapitel {kapitel_id} run {run_id}: {e}"
+                )
+
             batch.commit()
             logger.info(
                 f"Saved combined result for kapitel {kapitel_id} run {run_id} (cost: ${cost:.6f})"
