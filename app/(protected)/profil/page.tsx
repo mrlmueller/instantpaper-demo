@@ -38,33 +38,9 @@ import {
   type OpenAIKeyStatus,
 } from "@/app/lib/api/openaiKeyClient";
 import { PromptManager } from "@/app/components/profile/PromptManager";
+import { getLiveUserStats, type LiveUserStats } from "@/app/actions/stats";
 
 type ProfileTab = "einstellungen" | "statistiken";
-
-const mockStats = {
-  totalCost: 1247,
-  totalRuns: 23,
-  totalProjekte: 3,
-  totalKapitel: 12,
-  totalQuellen: 45,
-  totalWords: 87450,
-  runsByMonth: [
-    { month: "Januar", runs: 5, cost: 245 },
-    { month: "Februar", runs: 8, cost: 412 },
-    { month: "März", runs: 10, cost: 590 },
-  ],
-  costByProjekt: [
-    { projektName: "Masterarbeit", cost: 847 },
-    { projektName: "Bachelorarbeit", cost: 280 },
-    { projektName: "Seminararbeit", cost: 120 },
-  ],
-  modelUsage: [
-    { model: "gpt-5-nano", count: 18 },
-    { model: "gpt-5-mini", count: 4 },
-    { model: "gpt-5.2", count: 1 },
-  ],
-  memberSince: new Date("2024-01-15"),
-};
 
 function StatCard({
   icon: Icon,
@@ -198,7 +174,8 @@ export default function ProfilPage() {
   const { user: authUser, loading: authLoading } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<ProfileTab>("einstellungen");
-  const [stats, setStats] = useState(mockStats);
+  const [stats, setStats] = useState<LiveUserStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
   const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
   const [keyLoading, setKeyLoading] = useState(true);
   const [savingKey, setSavingKey] = useState(false);
@@ -224,6 +201,36 @@ export default function ProfilPage() {
         toast.error("OpenAI Key", { description: message });
       })
       .finally(() => setKeyLoading(false));
+  }, [authLoading, authUser?.uid]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!authUser?.uid) return;
+
+    let cancelled = false;
+    setStatsLoading(true);
+
+    getLiveUserStats()
+      .then((live) => {
+        if (cancelled) return;
+        setStats(live);
+      })
+      .catch((err: unknown) => {
+        console.error("Failed to load live stats:", err);
+        if (cancelled) return;
+        toast.error("Statistiken", {
+          description: "Statistiken konnten nicht geladen werden.",
+        });
+        setStats(null);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setStatsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [authLoading, authUser?.uid]);
 
   const handleSaveKey = async () => {
@@ -275,7 +282,7 @@ export default function ProfilPage() {
   const isLoading = authLoading || keyLoading || !authUser;
   const userName = authUser?.displayName || authUser?.email || "Benutzer";
   const userEmail = authUser?.email || "user@example.com";
-  const memberSince = useMemo(() => stats.memberSince, [stats]);
+  const memberSince = useMemo(() => new Date(stats?.memberSince ?? new Date().toISOString()), [stats?.memberSince]);
   const initials = userName
     .split(" ")
     .map((n) => n[0])
@@ -286,8 +293,8 @@ export default function ProfilPage() {
   const formatCost = (cents: number) => `$${(cents / 100).toFixed(2)}`;
   const formatNumber = (num: number) => num.toLocaleString("de-DE");
   const maskedSavedKey = `sk-**************************************${keyStatus?.last4 || "****"}`;
-  const maxMonthlyRuns = Math.max(...stats.runsByMonth.map((m) => m.runs));
-  const maxProjektCost = Math.max(...stats.costByProjekt.map((p) => p.cost));
+  const maxMonthlyRuns = Math.max(1, ...(stats?.runsByMonth ?? []).map((m) => m.runs));
+  const maxProjektCost = Math.max(1, ...(stats?.costByProjekt ?? []).map((p) => p.cost));
 
   const handleBack = () => {
     if (backLoading) return;
@@ -455,81 +462,127 @@ export default function ProfilPage() {
 
               <TabsContent value="statistiken">
                 <h2 className="text-lg font-semibold text-foreground mb-4">Übersicht</h2>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                  <StatCard
-                    icon={Coins}
-                    label="Gesamtkosten"
-                    value={formatCost(stats.totalCost)}
-                    subtext={`${stats.totalRuns} Verarbeitungen`}
-                  />
-                  <StatCard icon={FileText} label="Projekte" value={String(stats.totalProjekte)} subtext={`${stats.totalKapitel} Kapitel`} />
-                  <StatCard icon={BookOpen} label="Quellen" value={String(stats.totalQuellen)} subtext="Hochgeladen" />
-                  <StatCard icon={PenTool} label="Generierte Wörter" value={formatNumber(stats.totalWords)} subtext="Insgesamt" />
-                </div>
 
-                <div className="grid md:grid-cols-2 gap-6 mb-8">
-                  <Card className="p-6">
-                    <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
-                      <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                      Aktivität pro Monat
-                    </h3>
-                    <div className="space-y-4">
-                      {stats.runsByMonth.map((month) => (
-                        <div key={month.month} className="flex items-center gap-3">
-                          <span className="text-sm text-muted-foreground w-20 shrink-0">{month.month.slice(0, 3)}</span>
-                          <div className="flex-1 h-6 bg-muted/30 rounded overflow-hidden">
-                            <div
-                              className="h-full bg-primary/70 rounded transition-all"
-                              style={{ width: `${(month.runs / maxMonthlyRuns) * 100}%` }}
-                            />
-                          </div>
-                          <span className="text-sm text-muted-foreground w-16 text-right">{month.runs} Runs</span>
-                        </div>
-                      ))}
+                {statsLoading ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <StatCardSkeleton />
+                      <StatCardSkeleton />
+                      <StatCardSkeleton />
+                      <StatCardSkeleton />
                     </div>
-                  </Card>
-
-                  <Card className="p-6">
-                    <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
-                      <Coins className="h-4 w-4 text-muted-foreground" />
-                      Kosten pro Projekt
-                    </h3>
-                    <div className="space-y-4">
-                      {stats.costByProjekt.map((projekt) => (
-                        <div key={projekt.projektName}>
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-sm text-foreground truncate max-w-[200px]">{projekt.projektName}</span>
-                            <span className="text-sm font-medium text-foreground">{formatCost(projekt.cost)}</span>
-                          </div>
-                          <div className="h-2 bg-muted/30 rounded overflow-hidden">
-                            <div
-                              className="h-full bg-primary/70 rounded transition-all"
-                              style={{ width: `${(projekt.cost / maxProjektCost) * 100}%` }}
-                            />
-                          </div>
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <Card className="p-6">
+                        <Skeleton className="h-4 w-40 mb-6" />
+                        <div className="space-y-4">
+                          <Skeleton className="h-6 w-full" />
+                          <Skeleton className="h-6 w-full" />
+                          <Skeleton className="h-6 w-full" />
                         </div>
-                      ))}
+                      </Card>
+                      <Card className="p-6">
+                        <Skeleton className="h-4 w-40 mb-6" />
+                        <div className="space-y-4">
+                          <Skeleton className="h-10 w-full" />
+                          <Skeleton className="h-10 w-full" />
+                          <Skeleton className="h-10 w-full" />
+                        </div>
+                      </Card>
                     </div>
-                  </Card>
-                </div>
-
-                <Card className="p-6">
-                  <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-muted-foreground" />
-                    Modellnutzung
-                  </h3>
-                  <div className="flex gap-6 flex-wrap">
-                    {stats.modelUsage.map((model) => (
-                      <div key={model.model} className="flex items-center gap-3 px-4 py-3 bg-muted/30 rounded-lg">
-                        <div className="w-3 h-3 rounded-full bg-primary" />
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{model.model}</p>
-                          <p className="text-xs text-muted-foreground">{model.count} Verarbeitungen</p>
-                        </div>
-                      </div>
-                    ))}
                   </div>
-                </Card>
+                ) : !stats ? (
+                  <Card className="p-6">
+                    <p className="text-sm text-muted-foreground">Noch keine Statistiken verfügbar.</p>
+                  </Card>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                      <StatCard
+                        icon={Coins}
+                        label="Gesamtkosten"
+                        value={formatCost(stats.totalCost)}
+                        subtext={`${stats.totalRuns} Verarbeitungen`}
+                      />
+                      <StatCard
+                        icon={FileText}
+                        label="Projekte"
+                        value={String(stats.totalProjekte)}
+                        subtext={`${stats.totalKapitel} Kapitel`}
+                      />
+                      <StatCard icon={BookOpen} label="Quellen" value={String(stats.totalQuellen)} subtext="Hochgeladen" />
+                      <StatCard
+                        icon={PenTool}
+                        label="Generierte Wörter (≈)"
+                        value={formatNumber(stats.totalWords)}
+                        subtext="Aus Output Tokens"
+                      />
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-6 mb-8">
+                      <Card className="p-6">
+                        <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
+                          <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                          Aktivität pro Monat
+                        </h3>
+                        <div className="space-y-4">
+                          {stats.runsByMonth.map((month) => (
+                            <div key={month.month} className="flex items-center gap-3">
+                              <span className="text-sm text-muted-foreground w-20 shrink-0">{month.month.slice(0, 3)}</span>
+                              <div className="flex-1 h-6 bg-muted/30 rounded overflow-hidden">
+                                <div
+                                  className="h-full bg-primary/70 rounded transition-all"
+                                  style={{ width: `${(month.runs / maxMonthlyRuns) * 100}%` }}
+                                />
+                              </div>
+                              <span className="text-sm text-muted-foreground w-16 text-right">{month.runs} Runs</span>
+                            </div>
+                          ))}
+                        </div>
+                      </Card>
+
+                      <Card className="p-6">
+                        <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
+                          <Coins className="h-4 w-4 text-muted-foreground" />
+                          Kosten pro Projekt
+                        </h3>
+                        <div className="space-y-4">
+                          {stats.costByProjekt.map((projekt) => (
+                            <div key={projekt.projektName}>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-sm text-foreground truncate max-w-[200px]">{projekt.projektName}</span>
+                                <span className="text-sm font-medium text-foreground">{formatCost(projekt.cost)}</span>
+                              </div>
+                              <div className="h-2 bg-muted/30 rounded overflow-hidden">
+                                <div
+                                  className="h-full bg-primary/70 rounded transition-all"
+                                  style={{ width: `${(projekt.cost / maxProjektCost) * 100}%` }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </Card>
+                    </div>
+
+                    <Card className="p-6">
+                      <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
+                        <Zap className="h-4 w-4 text-muted-foreground" />
+                        Modellnutzung
+                      </h3>
+                      <div className="flex gap-6 flex-wrap">
+                        {stats.modelUsage.map((model) => (
+                          <div key={model.model} className="flex items-center gap-3 px-4 py-3 bg-muted/30 rounded-lg">
+                            <div className="w-3 h-3 rounded-full bg-primary" />
+                            <div>
+                              <p className="text-sm font-medium text-foreground">{model.model}</p>
+                              <p className="text-xs text-muted-foreground">{model.count} Verarbeitungen</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  </>
+                )}
               </TabsContent>
             </Tabs>
           </div>
