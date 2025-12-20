@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, BackgroundTasks, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 from datetime import datetime
 from utils.config import config
@@ -32,6 +33,7 @@ import json
 import secrets
 import os
 from pathlib import Path
+import html as html_lib
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from utils.logging_config import configure_logging
@@ -132,6 +134,13 @@ def _require_admin(credentials: HTTPBasicCredentials = Depends(basic_security)) 
     Browser-friendly: opening the URL prompts for username/password.
     """
     if not config.ADMIN_BASIC_PASSWORD:
+        admin_env_keys = sorted([k for k in os.environ.keys() if "ADMIN" in k.upper()])
+        logger.error(
+            "ADMIN_BASIC_PASSWORD is not configured. Diagnostics: present=%s len=%s admin_env_keys=%s",
+            "ADMIN_BASIC_PASSWORD" in os.environ,
+            len(os.getenv("ADMIN_BASIC_PASSWORD", "") or ""),
+            admin_env_keys,
+        )
         raise HTTPException(status_code=500, detail="ADMIN_BASIC_PASSWORD is not configured on the server.")
 
     username_ok = secrets.compare_digest(credentials.username or "", config.ADMIN_BASIC_USER)
@@ -141,7 +150,6 @@ def _require_admin(credentials: HTTPBasicCredentials = Depends(basic_security)) 
 
 
 @app.get("/api/admin/approve")
-@app.get("/approve")
 async def admin_set_user_approved(
     email: str,
     approved: bool = True,
@@ -166,6 +174,92 @@ async def admin_set_user_approved(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to update user approval.") from None
+
+
+@app.get("/approve", response_class=HTMLResponse)
+async def approve_page(
+    email: str | None = None,
+    approved: bool = True,
+    _: None = Depends(_require_admin),
+):
+    """
+    Browser-friendly approval page (Basic Auth protected).
+
+    Uses GET params so it works without extra dependencies.
+    """
+    message_html = ""
+    if email is not None and email.strip():
+        try:
+            result = await firebase_service.set_user_approved_by_email(email=email, approved=approved)
+            state = "APPROVED" if result.get("approved") else "REVOKED"
+            message_html = f"""
+              <div class="ok">
+                <div><strong>{state}</strong></div>
+                <div>Email: <code>{html_lib.escape(result.get("email") or "")}</code></div>
+                <div>UID: <code>{html_lib.escape(result.get("uid") or "")}</code></div>
+                <div class="note">Hinweis: Der Nutzer muss sich ggf. einmal ab- und wieder anmelden, bis die Änderung wirksam ist.</div>
+              </div>
+            """
+        except Exception as exc:
+            message_html = f"""
+              <div class="err">
+                <div><strong>ERROR</strong></div>
+                <div>{html_lib.escape(str(exc) or "Failed to update user approval.")}</div>
+              </div>
+            """
+
+    selected_true = "selected" if approved else ""
+    selected_false = "selected" if not approved else ""
+
+    html_doc = f"""
+    <!doctype html>
+    <html lang="de">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>InstantPaper - User Approval</title>
+        <style>
+          body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; background: #0b0b0c; color: #f5f5f5; }}
+          .card {{ max-width: 560px; margin: 0 auto; background: #141416; border: 1px solid #2a2a2e; border-radius: 14px; padding: 18px; }}
+          h1 {{ font-size: 18px; margin: 0 0 12px; }}
+          label {{ display: block; font-size: 13px; color: #cfcfd6; margin: 10px 0 6px; }}
+          input[type="email"], select {{ width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #2a2a2e; background: #0f0f11; color: #f5f5f5; }}
+          .row {{ display:flex; gap: 12px; align-items: end; margin-top: 10px; }}
+          .row > * {{ flex: 1; }}
+          .btn {{ display: inline-block; width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #2a2a2e; background: #f5f5f5; color: #0b0b0c; font-weight: 600; }}
+          .btn:active {{ transform: translateY(1px); }}
+          .muted {{ font-size: 12px; color: #a8a8b3; margin-top: 10px; }}
+          .ok {{ margin-top: 14px; padding: 12px; border-radius: 12px; border: 1px solid #1f3b24; background: #0f1a12; }}
+          .err {{ margin-top: 14px; padding: 12px; border-radius: 12px; border: 1px solid #4a1f1f; background: #1b0f0f; }}
+          .note {{ margin-top: 8px; font-size: 12px; color: #cfcfd6; }}
+          code {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h1>User Approval</h1>
+          <form method="get" action="/approve">
+            <label for="email">Google Email</label>
+            <input id="email" name="email" type="email" placeholder="name@gmail.com" required value="{html_lib.escape(email or "")}" />
+            <div class="row">
+              <div>
+                <label for="approved" style="margin:0 0 6px;">Status</label>
+                <select id="approved" name="approved">
+                  <option value="true" {selected_true}>approved</option>
+                  <option value="false" {selected_false}>revoked</option>
+                </select>
+              </div>
+              <button class="btn" type="submit">Speichern</button>
+            </div>
+            <div class="muted">Tipp: Nutzer muss ggf. Token refreshen / neu anmelden.</div>
+          </form>
+          {message_html}
+        </div>
+      </body>
+    </html>
+    """
+
+    return HTMLResponse(content=html_doc, status_code=200)
 
 
 @app.post("/api/auth/session")
