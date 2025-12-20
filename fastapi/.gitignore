@@ -52,7 +52,7 @@ fastapi.log
 # Debug dumps (text refinement flow)
 .prompt_dumps/
 
-# Testing
+# Testing 
 .pytest_cache/
 .coverage
 htmlcov/
