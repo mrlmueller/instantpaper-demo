@@ -1237,9 +1237,9 @@ export function KapitelWorkspace({
                   size="sm"
                   variant="outline"
                   onClick={onCombineTexts}
-                  disabled={isCombining || combinedStatus === "running"}
+                  disabled={isCombining}
                 >
-                  {combinedStatus === "running" || isCombining ? (
+                  {isCombining ? (
                     <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                   ) : (
                     <Layers className="h-4 w-4 mr-1" />
