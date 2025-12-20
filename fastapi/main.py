@@ -30,6 +30,8 @@ import logging
 import base64
 import json
 import secrets
+import os
+from pathlib import Path
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from utils.logging_config import configure_logging
@@ -60,6 +62,21 @@ async def lifespan(app: FastAPI):
     logger.debug("Starting InstantPaper API server...")
     logger.debug(f"Debug mode: {config.DEBUG}")
     logger.debug(f"Allowed origins: {config.ALLOWED_ORIGINS}")
+
+    # Safe diagnostics (no secrets) to debug Cloud Run env injection issues.
+    if not config.ADMIN_BASIC_PASSWORD:
+        env_present = "ADMIN_BASIC_PASSWORD" in os.environ
+        env_len = len(os.getenv("ADMIN_BASIC_PASSWORD", "") or "")
+        dot_env_present = Path(".env").exists()
+        fastapi_dot_env_present = Path("fastapi/.env").exists()
+        logger.warning(
+            "ADMIN_BASIC_PASSWORD is empty (admin approval endpoints disabled). "
+            "Diagnostics: env_present=%s env_len=%s .env_present=%s fastapi/.env_present=%s",
+            env_present,
+            env_len,
+            dot_env_present,
+            fastapi_dot_env_present,
+        )
 
     yield
 
