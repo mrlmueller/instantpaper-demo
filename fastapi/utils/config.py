@@ -1,11 +1,13 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 import logging
 from typing import List
 
-# Load environment variables from .env file (for local dev).
-# override=False ensures real environment variables (e.g. Cloud Run secrets) win over any .env file.
-load_dotenv(override=False)
+# Load environment variables from `fastapi/.env` regardless of current working directory.
+# override=True ensures the local `.env` wins over any pre-set env vars (e.g. accidental system-wide OPENAI_API_KEY).
+_dotenv_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=_dotenv_path, override=True)
 
 logger = logging.getLogger(__name__)
 
