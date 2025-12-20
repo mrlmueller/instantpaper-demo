@@ -1925,6 +1925,11 @@ class FirebaseService:
             started_at_value = (
                 existing_data.get("startedAt")
                 if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
                 else SERVER_TIMESTAMP
             )
 
@@ -2045,6 +2050,11 @@ class FirebaseService:
             existing = summary_ref.get()
             existing_data = existing.to_dict() if existing.exists else {}
             created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
 
             usage = summary_data.get("usage") if isinstance(summary_data.get("usage"), dict) else {}
             input_tokens = int(usage.get("inputTokens", 0))

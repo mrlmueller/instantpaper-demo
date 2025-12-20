@@ -340,7 +340,7 @@ curl -X POST http://localhost:8000/api/process \
 **Solution**:
 1. Verify `OPENAI_API_KEY` is correct
 2. Check your OpenAI account has credits/quota
-3. Review logs in `fastapi.log` for detailed error messages
+3. Review console logs for detailed error messages (increase verbosity via `FASTAPI_LOG_LEVEL=INFO` if needed)
 
 ### Authentication Fails
 
@@ -354,16 +354,13 @@ curl -X POST http://localhost:8000/api/process \
 
 ## Logging
 
-Logs are written to:
-- `fastapi.log` (file)
-- Console output (stdout)
+Logs are written to console output (stdout).
 
-Log level is INFO in debug mode, WARNING in production.
+Default log level is `WARNING` to keep background processing quiet. To temporarily increase verbosity:
+- `FASTAPI_LOG_LEVEL=INFO` (more details)
+- `FASTAPI_LOG_LEVEL=DEBUG` (very verbose)
 
-View logs:
-```bash
-tail -f fastapi.log
-```
+Uvicorn access logs (HTTP requests) stay enabled at `INFO`.
 
 ## Development
 
@@ -404,7 +401,7 @@ tail -f fastapi.log
 ## Support
 
 For issues or questions:
-1. Check the logs in `fastapi.log`
+1. Check the server console logs
 2. Verify environment variables are set correctly
 3. Test endpoints individually (health → auth → process)
 4. Review Firebase Console for Firestore errors

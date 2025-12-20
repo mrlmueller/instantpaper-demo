@@ -30,15 +30,10 @@ import logging
 import base64
 import json
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO if config.DEBUG else logging.WARNING,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('fastapi.log'),
-        logging.StreamHandler()
-    ]
-)
+from utils.logging_config import configure_logging
+
+# Configure logging early (no file logs; keep uvicorn access logs).
+configure_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +54,14 @@ class RevokeSessionRequest(BaseModel):
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown"""
     # Startup
-    logger.info("Starting InstantPaper API server...")
-    logger.info(f"Debug mode: {config.DEBUG}")
-    logger.info(f"Allowed origins: {config.ALLOWED_ORIGINS}")
+    logger.debug("Starting InstantPaper API server...")
+    logger.debug(f"Debug mode: {config.DEBUG}")
+    logger.debug(f"Allowed origins: {config.ALLOWED_ORIGINS}")
 
     yield
 
     # Shutdown (if needed in the future)
-    logger.info("Shutting down InstantPaper API server...")
+    logger.debug("Shutting down InstantPaper API server...")
 
 
 # Initialize FastAPI app with lifespan
@@ -782,5 +777,8 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=config.PORT,
-        reload=config.DEBUG
+        reload=config.DEBUG,
+        # Use our in-app logging config; keep access logs.
+        log_config=None,
+        access_log=True,
     )
