@@ -115,7 +115,9 @@ def _count_words(text: str) -> int:
     return len([w for w in text.split() if w])
 
 
-def _enforce_text_limits(*, text: str, doc_path: str, truncate_long_texts: bool) -> tuple[str, int]:
+def _enforce_text_limits(
+    *, text: str, doc_path: str, truncate_long_texts: bool
+) -> tuple[str, int]:
     word_count = _count_words(text)
     if word_count <= MAX_TEXT_WORDS and len(text) <= MAX_TEXT_CHARS:
         return text, word_count
@@ -159,27 +161,47 @@ def _normalize_usage_map(usage: Any) -> dict:
     if not isinstance(usage, dict):
         return _usage_from_tokens()
     return _usage_from_tokens(
-        total_tokens=usage.get("totalTokens") or usage.get("total_tokens") or usage.get("tokens_used"),
-        input_tokens=usage.get("inputTokens") or usage.get("input_tokens") or usage.get("input"),
+        total_tokens=usage.get("totalTokens")
+        or usage.get("total_tokens")
+        or usage.get("tokens_used"),
+        input_tokens=usage.get("inputTokens")
+        or usage.get("input_tokens")
+        or usage.get("input"),
         cached_input_tokens=usage.get("cachedInputTokens")
         or usage.get("cached_input_tokens")
         or usage.get("cached_input"),
-        output_tokens=usage.get("outputTokens") or usage.get("output_tokens") or usage.get("output"),
-        reasoning_tokens=usage.get("reasoningTokens") or usage.get("reasoning_tokens") or 0,
+        output_tokens=usage.get("outputTokens")
+        or usage.get("output_tokens")
+        or usage.get("output"),
+        reasoning_tokens=usage.get("reasoningTokens")
+        or usage.get("reasoning_tokens")
+        or 0,
     )
 
 
-def _normalize_refinement(doc: dict, *, created_at: datetime, default_max_depth: int) -> dict:
+def _normalize_refinement(
+    doc: dict, *, created_at: datetime, default_max_depth: int
+) -> dict:
     active = (
         doc.get("refinementActiveVersionId")
         or doc.get("refinement_active_version_id")
         or doc.get("refinement_active_version")
         or "root"
     )
-    max_depth = _as_int(doc.get("refinementMaxDepth") or doc.get("refinement_max_depth"), default=default_max_depth)
-    cost_total = _as_float(doc.get("refinementCostTotal") or doc.get("refinement_cost_total"), default=0.0)
-    initialized_at = _coerce_ts(doc.get("refinementInitializedAt") or doc.get("refinement_initialized_at"), created_at)
-    selected_at = _to_dt(doc.get("refinementSelectedAt") or doc.get("refinement_selected_at"))
+    max_depth = _as_int(
+        doc.get("refinementMaxDepth") or doc.get("refinement_max_depth"),
+        default=default_max_depth,
+    )
+    cost_total = _as_float(
+        doc.get("refinementCostTotal") or doc.get("refinement_cost_total"), default=0.0
+    )
+    initialized_at = _coerce_ts(
+        doc.get("refinementInitializedAt") or doc.get("refinement_initialized_at"),
+        created_at,
+    )
+    selected_at = _to_dt(
+        doc.get("refinementSelectedAt") or doc.get("refinement_selected_at")
+    )
 
     out = {
         "rootVersionId": "root",
@@ -198,15 +220,31 @@ def _normalize_version(doc: dict) -> dict:
     updated_at = _to_dt(doc.get("updatedAt") or doc.get("updated_at"))
 
     out = {
-        "parentVersionId": doc.get("parentVersionId") if "parentVersionId" in doc else doc.get("parent_version_id"),
+        "parentVersionId": (
+            doc.get("parentVersionId")
+            if "parentVersionId" in doc
+            else doc.get("parent_version_id")
+        ),
         "depth": _as_int(doc.get("depth"), default=0),
-        "userMessage": doc.get("userMessage") if "userMessage" in doc else doc.get("user_message"),
-        "assistantText": doc.get("assistantText") if "assistantText" in doc else (doc.get("assistant_text") or ""),
-        "hasContent": bool(doc.get("hasContent") if "hasContent" in doc else doc.get("has_content", True)),
+        "userMessage": (
+            doc.get("userMessage") if "userMessage" in doc else doc.get("user_message")
+        ),
+        "assistantText": (
+            doc.get("assistantText")
+            if "assistantText" in doc
+            else (doc.get("assistant_text") or "")
+        ),
+        "hasContent": bool(
+            doc.get("hasContent")
+            if "hasContent" in doc
+            else doc.get("has_content", True)
+        ),
         "status": doc.get("status") or "success",
         "model": doc.get("model") or "",
         "usage": _normalize_usage_map(doc.get("usage")),
-        "costUsd": _as_float(doc.get("costUsd"), default=_as_float(doc.get("cost"), default=0.0)),
+        "costUsd": _as_float(
+            doc.get("costUsd"), default=_as_float(doc.get("cost"), default=0.0)
+        ),
         "createdAt": created_at,
     }
     assistant_explanation = (
@@ -278,8 +316,12 @@ def _migrate_user(
 
     for snap in users_ref.collection("projects").stream():
         data = snap.to_dict() or {}
-        created_at = _coerce_ts(data.get("createdAt") or data.get("created_at"), _utc_now())
-        updated_at = _coerce_ts(data.get("updatedAt") or data.get("updated_at"), created_at)
+        created_at = _coerce_ts(
+            data.get("createdAt") or data.get("created_at"), _utc_now()
+        )
+        updated_at = _coerce_ts(
+            data.get("updatedAt") or data.get("updated_at"), created_at
+        )
         archived = bool(data.get("archived", False))
         archived_at = _to_dt(data.get("archivedAt") or data.get("archived_at"))
         if archived and archived_at is None:
@@ -298,8 +340,12 @@ def _migrate_user(
 
     for snap in users_ref.collection("quellen").stream():
         data = snap.to_dict() or {}
-        created_at = _coerce_ts(data.get("createdAt") or data.get("created_at"), _utc_now())
-        updated_at = _coerce_ts(data.get("updatedAt") or data.get("updated_at"), created_at)
+        created_at = _coerce_ts(
+            data.get("createdAt") or data.get("created_at"), _utc_now()
+        )
+        updated_at = _coerce_ts(
+            data.get("updatedAt") or data.get("updated_at"), created_at
+        )
 
         text = str(data.get("content") or "")
         text, word_count = _enforce_text_limits(
@@ -330,14 +376,23 @@ def _migrate_user(
         writer.set(snap.reference, meta_doc, merge=False)
         writer.set(
             snap.reference.collection("content").document("main"),
-            {"text": text, "wordCount": word_count, "createdAt": created_at, "updatedAt": updated_at},
+            {
+                "text": text,
+                "wordCount": word_count,
+                "createdAt": created_at,
+                "updatedAt": updated_at,
+            },
             merge=False,
         )
 
     for kap_snap in users_ref.collection("kapitels").stream():
         kap = kap_snap.to_dict() or {}
-        kap_created = _coerce_ts(kap.get("createdAt") or kap.get("created_at"), _utc_now())
-        kap_updated = _coerce_ts(kap.get("updatedAt") or kap.get("updated_at"), kap_created)
+        kap_created = _coerce_ts(
+            kap.get("createdAt") or kap.get("created_at"), _utc_now()
+        )
+        kap_updated = _coerce_ts(
+            kap.get("updatedAt") or kap.get("updated_at"), kap_created
+        )
         kap_archived = bool(kap.get("archived", False))
         kap_archived_at = _to_dt(kap.get("archivedAt") or kap.get("archived_at"))
         if kap_archived and kap_archived_at is None:
@@ -347,7 +402,9 @@ def _migrate_user(
             "projektId": kap.get("projektId") or kap.get("projekt_id") or "",
             "title": kap.get("title") or "",
             "nummer": kap.get("nummer") or "",
-            "parentId": kap.get("parentId") if "parentId" in kap else kap.get("parent_id"),
+            "parentId": (
+                kap.get("parentId") if "parentId" in kap else kap.get("parent_id")
+            ),
             "order": _as_int(kap.get("order"), default=0),
             "quelleIds": kap.get("quelleIds") or kap.get("quelle_ids") or [],
             "createdAt": kap_created,
@@ -364,8 +421,12 @@ def _migrate_user(
 
         for run_snap in kap_snap.reference.collection("runs").stream():
             run = run_snap.to_dict() or {}
-            run_created = _coerce_ts(run.get("createdAt") or run.get("created_at"), _utc_now())
-            run_updated = _coerce_ts(run.get("updatedAt") or run.get("updated_at"), run_created)
+            run_created = _coerce_ts(
+                run.get("createdAt") or run.get("created_at"), _utc_now()
+            )
+            run_updated = _coerce_ts(
+                run.get("updatedAt") or run.get("updated_at"), run_created
+            )
             run_archived = bool(run.get("archived", False))
             run_archived_at = _to_dt(run.get("archivedAt") or run.get("archived_at"))
             if run_archived and run_archived_at is None:
@@ -377,27 +438,49 @@ def _migrate_user(
 
             for res_snap in run_snap.reference.collection("results").stream():
                 res = res_snap.to_dict() or {}
-                created_at = _coerce_ts(res.get("createdAt") or res.get("created_at"), _utc_now())
-                updated_at = _coerce_ts(res.get("updatedAt") or res.get("updated_at"), created_at)
+                created_at = _coerce_ts(
+                    res.get("createdAt") or res.get("created_at"), _utc_now()
+                )
+                updated_at = _coerce_ts(
+                    res.get("updatedAt") or res.get("updated_at"), created_at
+                )
 
                 result_v2 = {
                     "quelleId": res_snap.id,
                     "userInput": res.get("userInput") or res.get("user_input") or "",
-                    "content": res.get("content") or res.get("resultContent") or res.get("result_content") or "",
-                    "hasContent": bool(res.get("hasContent") if "hasContent" in res else res.get("has_content", True)),
-                    "model": res.get("model") or res.get("model_used") or res.get("modelUsed") or "",
+                    "content": res.get("content")
+                    or res.get("resultContent")
+                    or res.get("result_content")
+                    or "",
+                    "hasContent": bool(
+                        res.get("hasContent")
+                        if "hasContent" in res
+                        else res.get("has_content", True)
+                    ),
+                    "model": res.get("model")
+                    or res.get("model_used")
+                    or res.get("modelUsed")
+                    or "",
                     "usage": _usage_from_tokens(
                         total_tokens=res.get("tokensUsed") or res.get("tokens_used"),
                         input_tokens=res.get("inputTokens") or res.get("input_tokens"),
-                        cached_input_tokens=res.get("cachedInputTokens") or res.get("cached_input_tokens"),
-                        output_tokens=res.get("outputTokens") or res.get("output_tokens"),
-                        reasoning_tokens=res.get("reasoningTokens") or res.get("reasoning_tokens"),
+                        cached_input_tokens=res.get("cachedInputTokens")
+                        or res.get("cached_input_tokens"),
+                        output_tokens=res.get("outputTokens")
+                        or res.get("output_tokens"),
+                        reasoning_tokens=res.get("reasoningTokens")
+                        or res.get("reasoning_tokens"),
                     ),
-                    "costUsd": _as_float(res.get("costUsd"), default=_as_float(res.get("cost"), default=0.0)),
+                    "costUsd": _as_float(
+                        res.get("costUsd"),
+                        default=_as_float(res.get("cost"), default=0.0),
+                    ),
                     "keySource": res.get("keySource") or res.get("key_source"),
                     "createdAt": created_at,
                     "updatedAt": updated_at,
-                    "refinement": _normalize_refinement(res, created_at=created_at, default_max_depth=default_max_depth),
+                    "refinement": _normalize_refinement(
+                        res, created_at=created_at, default_max_depth=default_max_depth
+                    ),
                 }
 
                 results_completed += 1
@@ -408,36 +491,62 @@ def _migrate_user(
                 writer.set(res_snap.reference, result_v2, merge=False)
 
                 for ver_snap in res_snap.reference.collection("versions").stream():
-                    writer.set(ver_snap.reference, _normalize_version(ver_snap.to_dict() or {}), merge=False)
+                    writer.set(
+                        ver_snap.reference,
+                        _normalize_version(ver_snap.to_dict() or {}),
+                        merge=False,
+                    )
 
-            artifacts_status = {"combined": "empty", "shortened": "empty", "lesefluss": "empty"}
+            artifacts_status = {
+                "combined": "empty",
+                "shortened": "empty",
+                "lesefluss": "empty",
+            }
             artifacts_ref = run_snap.reference.collection("artifacts")
 
-            old_combined_ref = run_snap.reference.collection("combined").document("combined")
+            old_combined_ref = run_snap.reference.collection("combined").document(
+                "combined"
+            )
             old_combined = old_combined_ref.get()
             combined_art_ref = artifacts_ref.document("combined")
             if old_combined.exists:
                 d = old_combined.to_dict() or {}
-                created_at = _coerce_ts(d.get("createdAt") or d.get("created_at"), run_created)
+                created_at = _coerce_ts(
+                    d.get("createdAt") or d.get("created_at"), run_created
+                )
 
                 combined_v2 = {
                     "artifactId": "combined",
-                    "content": d.get("content") or d.get("combinedContent") or d.get("combined_content") or "",
+                    "content": d.get("content")
+                    or d.get("combinedContent")
+                    or d.get("combined_content")
+                    or "",
                     "heading": d.get("heading") or "",
                     "topic": d.get("topic") or "",
-                    "sourceQuelleIds": d.get("sourceQuelleIds") or d.get("source_quelle_ids") or [],
-                    "model": d.get("model") or d.get("model_used") or d.get("modelUsed") or "",
+                    "sourceQuelleIds": d.get("sourceQuelleIds")
+                    or d.get("source_quelle_ids")
+                    or [],
+                    "model": d.get("model")
+                    or d.get("model_used")
+                    or d.get("modelUsed")
+                    or "",
                     "usage": _usage_from_tokens(
                         total_tokens=d.get("tokensUsed") or d.get("tokens_used"),
                         input_tokens=d.get("inputTokens") or d.get("input_tokens"),
-                        cached_input_tokens=d.get("cachedInputTokens") or d.get("cached_input_tokens"),
+                        cached_input_tokens=d.get("cachedInputTokens")
+                        or d.get("cached_input_tokens"),
                         output_tokens=d.get("outputTokens") or d.get("output_tokens"),
-                        reasoning_tokens=d.get("reasoningTokens") or d.get("reasoning_tokens"),
+                        reasoning_tokens=d.get("reasoningTokens")
+                        or d.get("reasoning_tokens"),
                     ),
-                    "costUsd": _as_float(d.get("costUsd"), default=_as_float(d.get("cost"), default=0.0)),
+                    "costUsd": _as_float(
+                        d.get("costUsd"), default=_as_float(d.get("cost"), default=0.0)
+                    ),
                     "keySource": d.get("keySource") or d.get("key_source"),
                     "createdAt": created_at,
-                    "refinement": _normalize_refinement(d, created_at=created_at, default_max_depth=default_max_depth),
+                    "refinement": _normalize_refinement(
+                        d, created_at=created_at, default_max_depth=default_max_depth
+                    ),
                 }
                 updated_at = _to_dt(d.get("updatedAt") or d.get("updated_at"))
                 if updated_at is not None:
@@ -491,34 +600,59 @@ def _migrate_user(
                     writer.set(
                         combined_art_ref.collection("groups").document(g_snap.id),
                         {
-                            "groupNumber": _as_int(g.get("groupNumber"), default=_as_int(g.get("group_number"), default=0)),
-                            "content": g.get("content") or g.get("combinedContent") or g.get("combined_content") or "",
+                            "groupNumber": _as_int(
+                                g.get("groupNumber"),
+                                default=_as_int(g.get("group_number"), default=0),
+                            ),
+                            "content": g.get("content")
+                            or g.get("combinedContent")
+                            or g.get("combined_content")
+                            or "",
                             "heading": g.get("heading") or "",
                             "topic": g.get("topic") or "",
-                            "sourceQuelleIds": g.get("sourceQuelleIds") or g.get("source_quelle_ids") or [],
-                            "model": g.get("model") or g.get("model_used") or g.get("modelUsed") or "",
+                            "sourceQuelleIds": g.get("sourceQuelleIds")
+                            or g.get("source_quelle_ids")
+                            or [],
+                            "model": g.get("model")
+                            or g.get("model_used")
+                            or g.get("modelUsed")
+                            or "",
                             "usage": _usage_from_tokens(
-                                total_tokens=g.get("tokensUsed") or g.get("tokens_used"),
-                                input_tokens=g.get("inputTokens") or g.get("input_tokens"),
-                                cached_input_tokens=g.get("cachedInputTokens") or g.get("cached_input_tokens"),
-                                output_tokens=g.get("outputTokens") or g.get("output_tokens"),
-                                reasoning_tokens=g.get("reasoningTokens") or g.get("reasoning_tokens"),
+                                total_tokens=g.get("tokensUsed")
+                                or g.get("tokens_used"),
+                                input_tokens=g.get("inputTokens")
+                                or g.get("input_tokens"),
+                                cached_input_tokens=g.get("cachedInputTokens")
+                                or g.get("cached_input_tokens"),
+                                output_tokens=g.get("outputTokens")
+                                or g.get("output_tokens"),
+                                reasoning_tokens=g.get("reasoningTokens")
+                                or g.get("reasoning_tokens"),
                             ),
-                            "costUsd": _as_float(g.get("costUsd"), default=_as_float(g.get("cost"), default=0.0)),
+                            "costUsd": _as_float(
+                                g.get("costUsd"),
+                                default=_as_float(g.get("cost"), default=0.0),
+                            ),
                             "keySource": g.get("keySource") or g.get("key_source"),
-                            "createdAt": _coerce_ts(g.get("createdAt") or g.get("created_at"), run_created),
+                            "createdAt": _coerce_ts(
+                                g.get("createdAt") or g.get("created_at"), run_created
+                            ),
                         },
                         merge=False,
                     )
                     if delete_old:
                         writer.delete(g_snap.reference)
 
-            old_short_ref = run_snap.reference.collection("shortened").document("shortened")
+            old_short_ref = run_snap.reference.collection("shortened").document(
+                "shortened"
+            )
             old_short = old_short_ref.get()
             short_art_ref = artifacts_ref.document("shortened")
             if old_short.exists:
                 d = old_short.to_dict() or {}
-                created_at = _coerce_ts(d.get("createdAt") or d.get("created_at"), run_created)
+                created_at = _coerce_ts(
+                    d.get("createdAt") or d.get("created_at"), run_created
+                )
 
                 cost_raw = d.get("costUsd") if "costUsd" in d else d.get("cost")
                 cost_usd = _as_float(cost_raw, default=0.0)
@@ -529,38 +663,68 @@ def _migrate_user(
                 if not isinstance(tokens_used, dict):
                     tokens_used = {}
 
-                explanation = d.get("explanation") if isinstance(d.get("explanation"), dict) else None
+                explanation = (
+                    d.get("explanation")
+                    if isinstance(d.get("explanation"), dict)
+                    else None
+                )
                 short_v2 = {
                     "artifactId": "shortened",
-                    "content": d.get("content") or d.get("shortenedContent") or d.get("shortened_content") or "",
-                    "originalLength": _as_int(d.get("originalLength"), default=_as_int(d.get("original_length"), default=0)),
-                    "shortenedLength": _as_int(d.get("shortenedLength"), default=_as_int(d.get("shortened_length"), default=0)),
-                    "compressionRatio": _as_float(d.get("compressionRatio"), default=_as_float(d.get("compression_ratio"), default=0.0)),
-                    "usedKapitelIds": d.get("usedKapitelIds") or d.get("used_kapitel_ids") or [],
+                    "content": d.get("content")
+                    or d.get("shortenedContent")
+                    or d.get("shortened_content")
+                    or "",
+                    "originalLength": _as_int(
+                        d.get("originalLength"),
+                        default=_as_int(d.get("original_length"), default=0),
+                    ),
+                    "shortenedLength": _as_int(
+                        d.get("shortenedLength"),
+                        default=_as_int(d.get("shortened_length"), default=0),
+                    ),
+                    "compressionRatio": _as_float(
+                        d.get("compressionRatio"),
+                        default=_as_float(d.get("compression_ratio"), default=0.0),
+                    ),
+                    "usedKapitelIds": d.get("usedKapitelIds")
+                    or d.get("used_kapitel_ids")
+                    or [],
                     "model": d.get("model") or "",
                     "usage": _usage_from_tokens(
-                        input_tokens=tokens_used.get("inputTokens") or tokens_used.get("input"),
+                        input_tokens=tokens_used.get("inputTokens")
+                        or tokens_used.get("input"),
                         cached_input_tokens=tokens_used.get("cachedInputTokens")
                         or tokens_used.get("cachedInput")
                         or tokens_used.get("cached_input"),
-                        output_tokens=tokens_used.get("outputTokens") or tokens_used.get("output"),
+                        output_tokens=tokens_used.get("outputTokens")
+                        or tokens_used.get("output"),
                         reasoning_tokens=tokens_used.get("reasoningTokens") or 0,
                         total_tokens=tokens_used.get("totalTokens"),
                     ),
                     "costUsd": cost_usd,
                     "keySource": d.get("keySource") or d.get("key_source"),
                     "createdAt": created_at,
-                    "refinement": _normalize_refinement(d, created_at=created_at, default_max_depth=default_max_depth),
+                    "refinement": _normalize_refinement(
+                        d, created_at=created_at, default_max_depth=default_max_depth
+                    ),
                 }
                 updated_at = _to_dt(d.get("updatedAt") or d.get("updated_at"))
                 if updated_at is not None:
                     short_v2["updatedAt"] = updated_at
                 if explanation is not None:
                     short_v2["explanation"] = {
-                        "lengthDecision": explanation.get("lengthDecision") or explanation.get("length_decision") or "",
-                        "omittedTopics": explanation.get("omittedTopics") or explanation.get("omitted_topics") or [],
-                        "preservedFocus": explanation.get("preservedFocus") or explanation.get("preserved_focus") or [],
-                        "compressionNotes": explanation.get("compressionNotes") or explanation.get("compression_notes") or "",
+                        "lengthDecision": explanation.get("lengthDecision")
+                        or explanation.get("length_decision")
+                        or "",
+                        "omittedTopics": explanation.get("omittedTopics")
+                        or explanation.get("omitted_topics")
+                        or [],
+                        "preservedFocus": explanation.get("preservedFocus")
+                        or explanation.get("preserved_focus")
+                        or [],
+                        "compressionNotes": explanation.get("compressionNotes")
+                        or explanation.get("compression_notes")
+                        or "",
                     }
 
                 writer.set(short_art_ref, short_v2, merge=False)
@@ -577,12 +741,16 @@ def _migrate_user(
                 if delete_old:
                     writer.delete(old_short_ref)
 
-            old_lese_ref = run_snap.reference.collection("lesefluss").document("lesefluss")
+            old_lese_ref = run_snap.reference.collection("lesefluss").document(
+                "lesefluss"
+            )
             old_lese = old_lese_ref.get()
             lese_art_ref = artifacts_ref.document("lesefluss")
             if old_lese.exists:
                 d = old_lese.to_dict() or {}
-                created_at = _coerce_ts(d.get("createdAt") or d.get("created_at"), run_created)
+                created_at = _coerce_ts(
+                    d.get("createdAt") or d.get("created_at"), run_created
+                )
 
                 cost_raw = d.get("costUsd") if "costUsd" in d else d.get("cost")
                 cost_usd = _as_float(cost_raw, default=0.0)
@@ -595,26 +763,41 @@ def _migrate_user(
 
                 lese_v2 = {
                     "artifactId": "lesefluss",
-                    "content": d.get("content") or d.get("leseflussContent") or d.get("lesefluss_content") or "",
+                    "content": d.get("content")
+                    or d.get("leseflussContent")
+                    or d.get("lesefluss_content")
+                    or "",
                     "aufgabenstellung": d.get("aufgabenstellung") or "",
                     "explanation": d.get("explanation") or "",
-                    "originalLength": _as_int(d.get("originalLength"), default=_as_int(d.get("original_length"), default=0)),
-                    "leseflussLength": _as_int(d.get("leseflussLength"), default=_as_int(d.get("lesefluss_length"), default=0)),
-                    "usedKapitelIds": d.get("usedKapitelIds") or d.get("used_kapitel_ids") or [],
+                    "originalLength": _as_int(
+                        d.get("originalLength"),
+                        default=_as_int(d.get("original_length"), default=0),
+                    ),
+                    "leseflussLength": _as_int(
+                        d.get("leseflussLength"),
+                        default=_as_int(d.get("lesefluss_length"), default=0),
+                    ),
+                    "usedKapitelIds": d.get("usedKapitelIds")
+                    or d.get("used_kapitel_ids")
+                    or [],
                     "model": d.get("model") or "",
                     "usage": _usage_from_tokens(
-                        input_tokens=tokens_used.get("inputTokens") or tokens_used.get("input"),
+                        input_tokens=tokens_used.get("inputTokens")
+                        or tokens_used.get("input"),
                         cached_input_tokens=tokens_used.get("cachedInputTokens")
                         or tokens_used.get("cachedInput")
                         or tokens_used.get("cached_input"),
-                        output_tokens=tokens_used.get("outputTokens") or tokens_used.get("output"),
+                        output_tokens=tokens_used.get("outputTokens")
+                        or tokens_used.get("output"),
                         reasoning_tokens=tokens_used.get("reasoningTokens") or 0,
                         total_tokens=tokens_used.get("totalTokens"),
                     ),
                     "costUsd": cost_usd,
                     "keySource": d.get("keySource") or d.get("key_source"),
                     "createdAt": created_at,
-                    "refinement": _normalize_refinement(d, created_at=created_at, default_max_depth=default_max_depth),
+                    "refinement": _normalize_refinement(
+                        d, created_at=created_at, default_max_depth=default_max_depth
+                    ),
                 }
                 updated_at = _to_dt(d.get("updatedAt") or d.get("updated_at"))
                 if updated_at is not None:
@@ -636,7 +819,9 @@ def _migrate_user(
 
             for sum_snap in run_snap.reference.collection("summaries").stream():
                 d = sum_snap.to_dict() or {}
-                created_at = _coerce_ts(d.get("createdAt") or d.get("created_at"), run_created)
+                created_at = _coerce_ts(
+                    d.get("createdAt") or d.get("created_at"), run_created
+                )
                 updated_at = _to_dt(d.get("updatedAt") or d.get("updated_at"))
 
                 cost_raw = d.get("costUsd") if "costUsd" in d else d.get("cost")
@@ -647,18 +832,37 @@ def _migrate_user(
                 tokens_used = d.get("tokensUsed") or d.get("tokens_used") or {}
                 if not isinstance(tokens_used, dict):
                     tokens_used = {}
-                input_t = _as_int(tokens_used.get("inputTokens") or tokens_used.get("input"))
-                output_t = _as_int(tokens_used.get("outputTokens") or tokens_used.get("output"))
+                input_t = _as_int(
+                    tokens_used.get("inputTokens") or tokens_used.get("input")
+                )
+                output_t = _as_int(
+                    tokens_used.get("outputTokens") or tokens_used.get("output")
+                )
 
                 summary_v2 = {
-                    "sourceKapitelId": d.get("sourceKapitelId") or d.get("source_kapitel_id") or sum_snap.id,
+                    "sourceKapitelId": d.get("sourceKapitelId")
+                    or d.get("source_kapitel_id")
+                    or sum_snap.id,
                     "sourceRunId": d.get("sourceRunId") or d.get("source_run_id") or "",
                     "sourceType": d.get("sourceType") or d.get("source_type") or "",
-                    "content": d.get("content") or d.get("summaryContent") or d.get("summary_content") or "",
-                    "originalLength": _as_int(d.get("originalLength"), default=_as_int(d.get("original_length"), default=0)),
-                    "summaryLength": _as_int(d.get("summaryLength"), default=_as_int(d.get("summary_length"), default=0)),
+                    "content": d.get("content")
+                    or d.get("summaryContent")
+                    or d.get("summary_content")
+                    or "",
+                    "originalLength": _as_int(
+                        d.get("originalLength"),
+                        default=_as_int(d.get("original_length"), default=0),
+                    ),
+                    "summaryLength": _as_int(
+                        d.get("summaryLength"),
+                        default=_as_int(d.get("summary_length"), default=0),
+                    ),
                     "model": d.get("model") or "",
-                    "usage": {"inputTokens": input_t, "outputTokens": output_t, "totalTokens": input_t + output_t},
+                    "usage": {
+                        "inputTokens": input_t,
+                        "outputTokens": output_t,
+                        "totalTokens": input_t + output_t,
+                    },
                     "costUsd": cost_usd,
                     "keySource": d.get("keySource") or d.get("key_source"),
                     "createdAt": created_at,
@@ -671,7 +875,10 @@ def _migrate_user(
             last_activity_at = max(last_result_at, run_updated)
 
             run_v2 = {
-                "projektId": run.get("projektId") or run.get("projekt_id") or kap_v2.get("projektId") or "",
+                "projektId": run.get("projektId")
+                or run.get("projekt_id")
+                or kap_v2.get("projektId")
+                or "",
                 "index": _as_int(run.get("index"), default=0),
                 "instruction": run.get("instruction") or "",
                 "model": run.get("model") or "",
@@ -684,10 +891,20 @@ def _migrate_user(
                 "grundlegendeInformationen": run.get("grundlegendeInformationen"),
                 "ueberschrift": run.get("ueberschrift"),
                 "thema": run.get("thema"),
-                "resultsExpectedCount": _as_int(run.get("resultsExpectedCount"), default=results_expected),
-                "resultsCompletedCount": _as_int(run.get("resultsCompletedCount"), default=results_completed),
-                "resultsWithContentCount": _as_int(run.get("resultsWithContentCount"), default=results_with_content),
-                "artifactsStatus": run.get("artifactsStatus") if isinstance(run.get("artifactsStatus"), dict) else artifacts_status,
+                "resultsExpectedCount": _as_int(
+                    run.get("resultsExpectedCount"), default=results_expected
+                ),
+                "resultsCompletedCount": _as_int(
+                    run.get("resultsCompletedCount"), default=results_completed
+                ),
+                "resultsWithContentCount": _as_int(
+                    run.get("resultsWithContentCount"), default=results_with_content
+                ),
+                "artifactsStatus": (
+                    run.get("artifactsStatus")
+                    if isinstance(run.get("artifactsStatus"), dict)
+                    else artifacts_status
+                ),
                 "lastResultAt": last_result_at,
                 "lastActivityAt": last_activity_at,
             }
@@ -697,7 +914,13 @@ def _migrate_user(
             writer.set(run_snap.reference, run_v2, merge=False)
 
 
-def migrate(*, user_id: Optional[str], dry_run: bool, delete_old: bool, truncate_long_texts: bool) -> None:
+def migrate(
+    *,
+    user_id: Optional[str],
+    dry_run: bool,
+    delete_old: bool,
+    truncate_long_texts: bool,
+) -> None:
     _load_fastapi_env()
     db = _init_firestore()
     default_max_depth = _as_int(os.getenv("TEXT_REFINEMENT_MAX_DEPTH", "4"), default=4)
@@ -737,11 +960,21 @@ def migrate(*, user_id: Optional[str], dry_run: bool, delete_old: bool, truncate
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Migrate Firestore to V2 schema (big-bang).")
+    p = argparse.ArgumentParser(
+        description="Migrate Firestore to V2 schema (big-bang)."
+    )
     mode = p.add_mutually_exclusive_group(required=False)
-    mode.add_argument("--dry-run", action="store_true", help="Print actions without writing (default).")
+    mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print actions without writing (default).",
+    )
     mode.add_argument("--apply", action="store_true", help="Apply writes to Firestore.")
-    p.add_argument("--user-id", default=None, help="Only migrate one user (uid). Default: all users.")
+    p.add_argument(
+        "--user-id",
+        default=None,
+        help="Only migrate one user (uid). Default: all users.",
+    )
     p.add_argument(
         "--delete-old",
         action="store_true",
