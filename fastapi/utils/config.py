@@ -49,6 +49,12 @@ class Config:
         os.getenv("DUMP_REFINEMENT_PROMPTS", "true" if DEBUG else "false").lower() == "true"
     )
 
+    # Prompt dumps (all OpenAI requests)
+    DUMP_OPENAI_PROMPTS: bool = (
+        os.getenv("DUMP_OPENAI_PROMPTS", "true" if DEBUG else "false").lower() == "true"
+    )
+    OPENAI_PROMPT_DUMP_DIR: str = os.getenv("OPENAI_PROMPT_DUMP_DIR", "").strip()
+
     @classmethod
     def validate(cls) -> None:
         """Validate that all required configuration is present"""

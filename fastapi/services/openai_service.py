@@ -1,7 +1,7 @@
 from openai import AsyncOpenAI
 from utils.config import config
+from utils.prompt_dumps import dump_prompt_markdown
 import logging
-from pathlib import Path
 from typing import Optional, List, Tuple
 
 logger = logging.getLogger(__name__)
@@ -102,19 +102,30 @@ class OpenAIService:
             if quelle_images:
                 logger.info(f"Including {len(quelle_images)} image(s) in request")
 
-            if debug_prompt_dump_path:
-                try:
-                    dump_path = Path(debug_prompt_dump_path)
-                    dump_path.parent.mkdir(parents=True, exist_ok=True)
-                    dump_text = prompt
-                    if quelle_images:
-                        dump_text += "\n\n---\n\n### Images\n" + "\n".join(
-                            [f"- {u}" for u in quelle_images]
-                        )
-                    dump_path.write_text(dump_text, encoding="utf-8")
-                    logger.info(f"Saved prompt dump to {dump_path}")
-                except Exception as dump_exc:
-                    logger.warning(f"Failed to write prompt dump: {dump_exc}")
+            system_message = (
+                "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+                "You can analyze both text and images provided. "
+                "Think step-by-step to ensure correctness. "
+                f"If the Quelle does NOT contain any useful information for the request, respond with the single token '{NO_CONTENT_SENTINEL}' only. "
+                "Otherwise, return only the final answer without any extra commentary."
+            )
+
+            dump_sections = [
+                ("System Prompt", system_message),
+                ("Instructions", user_input),
+                ("Quelle Content", quelle_content),
+            ]
+            if grundlegende_informationen and grundlegende_informationen.strip():
+                dump_sections.append(("Grundlegende Informationen", grundlegende_informationen))
+            dump_sections.append(("Full User Message (text)", prompt))
+
+            dump_prompt_markdown(
+                stage="process_quelle",
+                model=model,
+                sections=dump_sections,
+                images=quelle_images,
+                dump_path=debug_prompt_dump_path,
+            )
 
             # Build user message content (multimodal format)
             user_message_content = [
@@ -128,15 +139,6 @@ class OpenAIService:
                         "type": "input_image",
                         "image_url": img_url
                     })
-
-            # Call OpenAI API
-            system_message = (
-                "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
-                "You can analyze both text and images provided. "
-                "Think step-by-step to ensure correctness. "
-                f"If the Quelle does NOT contain any useful information for the request, respond with the single token '{NO_CONTENT_SENTINEL}' only. "
-                "Otherwise, return only the final answer without any extra commentary."
-            )
 
             response = await client.responses.create(
                 model=model,
@@ -239,14 +241,21 @@ class OpenAIService:
 
             logger.info(f"Combining {len(texts)} texts with model {model}")
 
-            if debug_prompt_dump_path:
-                try:
-                    dump_path = Path(debug_prompt_dump_path)
-                    dump_path.parent.mkdir(parents=True, exist_ok=True)
-                    dump_path.write_text(prompt, encoding="utf-8")
-                    logger.info(f"Saved prompt dump to {dump_path}")
-                except Exception as dump_exc:
-                    logger.warning(f"Failed to write prompt dump: {dump_exc}")
+            system_message = (
+                "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+            )
+
+            dump_prompt_markdown(
+                stage="combine",
+                model=model,
+                sections=[
+                    ("System Prompt", system_message),
+                    ("Instructions", prompt_body),
+                    ("Combined Texts", combined_texts),
+                    ("Full User Message (text)", prompt),
+                ],
+                dump_path=debug_prompt_dump_path,
+            )
 
             response = await client.responses.create(
                 model=model,
@@ -257,7 +266,7 @@ class OpenAIService:
                         "content": [
                             {
                                 "type": "input_text",
-                                "text": "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>",
+                                "text": system_message,
                             }
                         ],
                     },
@@ -318,6 +327,24 @@ class OpenAIService:
         try:
             client = self._get_client(api_key)
             logger.info(f"Summarizing Kapitel with model {model}")
+
+            instructions_text = prompt
+            context_text = ""
+            marker = "### Text:"
+            marker_idx = (prompt or "").find(marker)
+            if marker_idx != -1:
+                instructions_text = (prompt or "")[:marker_idx].rstrip()
+                context_text = (prompt or "")[marker_idx:].lstrip()
+
+            dump_sections = [
+                ("System Prompt", SUMMARIZE_SYSTEM_MESSAGE),
+                ("Instructions", instructions_text),
+            ]
+            if context_text:
+                dump_sections.append(("Context", context_text))
+            dump_sections.append(("Full User Message (text)", prompt))
+
+            dump_prompt_markdown(stage="summary", model=model, sections=dump_sections)
 
             response = await client.responses.create(
                 model=model,
@@ -385,6 +412,24 @@ class OpenAIService:
         try:
             client = self._get_client(api_key)
             logger.info(f"Shortening and deduplicating Kapitel with model {model}")
+
+            instructions_text = prompt
+            context_text = ""
+            marker = "### Gliederung:"
+            marker_idx = (prompt or "").find(marker)
+            if marker_idx != -1:
+                instructions_text = (prompt or "")[:marker_idx].rstrip()
+                context_text = (prompt or "")[marker_idx:].lstrip()
+
+            dump_sections = [
+                ("System Prompt", SHORTEN_SYSTEM_MESSAGE),
+                ("Instructions", instructions_text),
+            ]
+            if context_text:
+                dump_sections.append(("Context", context_text))
+            dump_sections.append(("Full User Message (text)", prompt))
+
+            dump_prompt_markdown(stage="shorten", model=model, sections=dump_sections)
 
             response = await client.responses.create(
                 model=model,
@@ -478,14 +523,28 @@ class OpenAIService:
             client = self._get_client(api_key)
             logger.info(f"Improving reading flow with model {model}")
 
-            if debug_prompt_dump_path:
-                try:
-                    dump_path = Path(debug_prompt_dump_path)
-                    dump_path.parent.mkdir(parents=True, exist_ok=True)
-                    dump_path.write_text(prompt, encoding="utf-8")
-                    logger.info(f"Saved prompt dump to {dump_path}")
-                except Exception as dump_exc:
-                    logger.warning(f"Failed to write prompt dump: {dump_exc}")
+            instructions_text = prompt
+            context_text = ""
+            marker = "### Gliederung:"
+            marker_idx = (prompt or "").find(marker)
+            if marker_idx != -1:
+                instructions_text = (prompt or "")[:marker_idx].rstrip()
+                context_text = (prompt or "")[marker_idx:].lstrip()
+
+            dump_sections = [
+                ("System Prompt", LESEFLUSS_SYSTEM_MESSAGE),
+                ("Instructions", instructions_text),
+            ]
+            if context_text:
+                dump_sections.append(("Context", context_text))
+            dump_sections.append(("Full User Message (text)", prompt))
+
+            dump_prompt_markdown(
+                stage="lesefluss",
+                model=model,
+                sections=dump_sections,
+                dump_path=debug_prompt_dump_path,
+            )
 
             response = await client.responses.create(
                 model=model,
