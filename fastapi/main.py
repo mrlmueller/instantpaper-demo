@@ -45,6 +45,27 @@ logger = logging.getLogger(__name__)
 basic_security = HTTPBasic()
 
 
+def _safe_env_diagnostics() -> dict:
+    """
+    Safe diagnostics for env injection issues (never includes secret values).
+
+    Intended for logs only.
+    """
+    admin_env_keys = sorted([k for k in os.environ.keys() if "ADMIN" in k.upper()])
+    return {
+        "k_service": os.getenv("K_SERVICE", ""),
+        "k_revision": os.getenv("K_REVISION", ""),
+        "k_configuration": os.getenv("K_CONFIGURATION", ""),
+        "env_count": len(os.environ),
+        "admin_env_keys": admin_env_keys,
+        "admin_basic_user_present": "ADMIN_BASIC_USER" in os.environ,
+        "admin_basic_password_present": "ADMIN_BASIC_PASSWORD" in os.environ,
+        "admin_basic_password_len": len(os.getenv("ADMIN_BASIC_PASSWORD", "") or ""),
+        "dot_env_present": Path(".env").exists(),
+        "fastapi_dot_env_present": Path("fastapi/.env").exists(),
+    }
+
+
 class SaveOpenAIKeyRequest(BaseModel):
     key: str
 
@@ -67,18 +88,8 @@ async def lifespan(app: FastAPI):
 
     # Safe diagnostics (no secrets) to debug Cloud Run env injection issues.
     if not config.ADMIN_BASIC_PASSWORD:
-        env_present = "ADMIN_BASIC_PASSWORD" in os.environ
-        env_len = len(os.getenv("ADMIN_BASIC_PASSWORD", "") or "")
-        dot_env_present = Path(".env").exists()
-        fastapi_dot_env_present = Path("fastapi/.env").exists()
-        logger.warning(
-            "ADMIN_BASIC_PASSWORD is empty (admin approval endpoints disabled). "
-            "Diagnostics: env_present=%s env_len=%s .env_present=%s fastapi/.env_present=%s",
-            env_present,
-            env_len,
-            dot_env_present,
-            fastapi_dot_env_present,
-        )
+        diag = _safe_env_diagnostics()
+        logger.warning("ADMIN_BASIC_PASSWORD is empty (admin approval endpoints disabled). env_diag=%s", diag)
 
     yield
 
@@ -134,13 +145,7 @@ def _require_admin(credentials: HTTPBasicCredentials = Depends(basic_security)) 
     Browser-friendly: opening the URL prompts for username/password.
     """
     if not config.ADMIN_BASIC_PASSWORD:
-        admin_env_keys = sorted([k for k in os.environ.keys() if "ADMIN" in k.upper()])
-        logger.error(
-            "ADMIN_BASIC_PASSWORD is not configured. Diagnostics: present=%s len=%s admin_env_keys=%s",
-            "ADMIN_BASIC_PASSWORD" in os.environ,
-            len(os.getenv("ADMIN_BASIC_PASSWORD", "") or ""),
-            admin_env_keys,
-        )
+        logger.error("ADMIN_BASIC_PASSWORD is not configured. env_diag=%s", _safe_env_diagnostics())
         raise HTTPException(status_code=500, detail="ADMIN_BASIC_PASSWORD is not configured on the server.")
 
     username_ok = secrets.compare_digest(credentials.username or "", config.ADMIN_BASIC_USER)
