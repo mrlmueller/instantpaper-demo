@@ -22,7 +22,8 @@ def configure_logging() -> None:
     - Avoid writing log files.
     """
     # Ensure .env values are available even when this is called before utils.config import.
-    load_dotenv(override=True)
+    # override=False so Cloud Run env vars / secrets are never overwritten by a bundled .env file.
+    load_dotenv(override=False)
 
     app_level = _parse_level(os.getenv("FASTAPI_LOG_LEVEL", "WARNING"), default="WARNING")
 

@@ -150,7 +150,10 @@ class FirebaseService:
         if not email_norm:
             raise ValueError("email is required")
 
-        user = auth.get_user_by_email(email_norm)
+        try:
+            user = auth.get_user_by_email(email_norm)
+        except auth.UserNotFoundError as exc:
+            raise ValueError("User not found. Ask the user to sign in once, then approve again.") from exc
         existing_claims = user.custom_claims or {}
         next_claims = {**existing_claims, "approved": bool(approved)}
         auth.set_custom_user_claims(user.uid, next_claims)

@@ -104,7 +104,8 @@ async def health_check():
         "status": "healthy",
         "version": "1.0.0",
         "firebase": "connected" if config.FIREBASE_PROJECT_ID else "not configured",
-        "openai": "connected" if config.OPENAI_API_KEY else "not configured"
+        "openai": "connected" if config.OPENAI_API_KEY else "not configured",
+        "adminApprovalConfigured": bool(config.ADMIN_BASIC_PASSWORD),
     }
 
 def _require_admin(credentials: HTTPBasicCredentials = Depends(basic_security)) -> None:

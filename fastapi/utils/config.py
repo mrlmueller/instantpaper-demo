@@ -3,9 +3,9 @@ from dotenv import load_dotenv
 import logging
 from typing import List
 
-# Load environment variables from .env file
-# override=True ensures .env file takes precedence over system environment variables
-load_dotenv(override=True)
+# Load environment variables from .env file (for local dev).
+# override=False ensures real environment variables (e.g. Cloud Run secrets) win over any .env file.
+load_dotenv(override=False)
 
 logger = logging.getLogger(__name__)
 
