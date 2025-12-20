@@ -8,18 +8,21 @@ import {
   getDoc,
   getDocs,
   setDoc,
-  deleteDoc,
+  updateDoc,
   serverTimestamp,
   query,
   orderBy,
+  where,
   type Firestore,
 } from 'firebase/firestore';
+import { projectsCol, projectDoc } from '@/app/lib/firestore/refs';
 
 export type Project = {
   id: string;
   name: string;
   createdAt: string;
   updatedAt?: string;
+  archived?: boolean;
 };
 
 const DEFAULT_PROJECT_ID = 'default';
@@ -42,7 +45,7 @@ export async function getOrCreateDefaultProject(ctx?: ActionContext): Promise<Pr
     throw new Error('Not authenticated');
   }
 
-  const projectRef = doc(db, 'users', user.uid, 'projects', DEFAULT_PROJECT_ID);
+  const projectRef = projectDoc(db, user.uid, DEFAULT_PROJECT_ID);
   const projectSnap = await getDoc(projectRef);
 
   if (!projectSnap.exists()) {
@@ -51,12 +54,14 @@ export async function getOrCreateDefaultProject(ctx?: ActionContext): Promise<Pr
       ownerId: user.uid,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+      archived: false,
     });
     return {
       id: DEFAULT_PROJECT_ID,
       name: DEFAULT_PROJECT_NAME,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      archived: false,
     };
   }
 
@@ -66,6 +71,7 @@ export async function getOrCreateDefaultProject(ctx?: ActionContext): Promise<Pr
     name: data.name || DEFAULT_PROJECT_NAME,
     createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
     updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
+    archived: Boolean(data.archived),
   };
 }
 
@@ -75,8 +81,8 @@ export async function getProjects(ctx?: ActionContext): Promise<Project[]> {
     throw new Error('Not authenticated');
   }
 
-  const projectsRef = collection(db, 'users', user.uid, 'projects');
-  const snapshot = await getDocs(query(projectsRef, orderBy('createdAt', 'desc')));
+  const projectsRef = projectsCol(db, user.uid);
+  const snapshot = await getDocs(query(projectsRef, where('archived', '==', false), orderBy('createdAt', 'desc')));
 
   return snapshot.docs.map((docSnap) => {
     const data = docSnap.data();
@@ -85,6 +91,7 @@ export async function getProjects(ctx?: ActionContext): Promise<Project[]> {
       name: data.name,
       createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
+      archived: Boolean(data.archived),
     };
   });
 }
@@ -97,19 +104,20 @@ export async function createProject(name: string): Promise<{ success: boolean; i
     }
     const db = await getFirestoreForUser();
 
-    const projectsRef = collection(db, 'users', user.uid, 'projects');
+    const projectsRef = projectsCol(db, user.uid);
     const newRef = doc(projectsRef); // random id
     await setDoc(newRef, {
       name,
       ownerId: user.uid,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+      archived: false,
     });
 
     return { success: true, id: newRef.id };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error creating project:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
@@ -121,7 +129,7 @@ export async function renameProject(projectId: string, name: string) {
     }
     const db = await getFirestoreForUser();
 
-    const projectRef = doc(db, 'users', user.uid, 'projects', projectId);
+    const projectRef = projectDoc(db, user.uid, projectId);
     const snap = await getDoc(projectRef);
     if (!snap.exists()) {
       return { success: false, error: 'Projekt nicht gefunden' };
@@ -137,9 +145,9 @@ export async function renameProject(projectId: string, name: string) {
     );
 
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error renaming project:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
@@ -151,13 +159,22 @@ export async function deleteProject(projectId: string) {
     }
     const db = await getFirestoreForUser();
 
-    const projectRef = doc(db, 'users', user.uid, 'projects', projectId);
-    await deleteDoc(projectRef);
+    const projectRef = projectDoc(db, user.uid, projectId);
+    const snap = await getDoc(projectRef);
+    if (!snap.exists()) {
+      return { success: false, error: 'Projekt nicht gefunden' };
+    }
+
+    await updateDoc(projectRef, {
+      archived: true,
+      archivedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
 
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error deleting project:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
@@ -167,5 +184,6 @@ export async function getDefaultProjectInfo(): Promise<Project> {
     name: DEFAULT_PROJECT_NAME,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    archived: false,
   };
 }

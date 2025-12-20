@@ -6,15 +6,12 @@ import type {
   Kapitel as FirebaseKapitel,
   KapitelRun as FirebaseKapitelRun,
   KapitelRunResult as FirebaseKapitelRunResult,
-  CombinedResult as FirebaseCombinedResult,
-  IntermediateGroupResult as FirebaseIntermediateGroupResult,
 } from "@/app/actions/kapitels";
 import type {
   Quelle as UIQuelle,
   Kapitel as UIKapitel,
   Run as UIRun,
   QuellenErgebnis as UIQuellenErgebnis,
-  IntermediateGroup as UIIntermediateGroup,
 } from "@/app/types/ui";
 
 /**
@@ -28,7 +25,9 @@ export function transformQuelleToUI(
   return {
     id: fbQuelle.id,
     name: fbQuelle.title,
-    text: fbQuelle.content,
+    // V2: Quelle content is stored separately at `quellen/{id}/content/main` and should be loaded on open.
+    text: "",
+    wordCount: typeof fbQuelle.wordCount === "number" ? fbQuelle.wordCount : undefined,
     projektId,
     createdAt: new Date(fbQuelle.createdAt),
     images: fbQuelle.images?.map((img) => img.url),
@@ -51,31 +50,24 @@ export function transformKapitelToUI(
   fbKapitel: FirebaseKapitel,
   projektId: string
 ): UIKapitel {
-  // Compute status from runs
-  let status: "nicht-verarbeitet" | "in-bearbeitung" | "fertig" =
-    "nicht-verarbeitet";
-
-  if (fbKapitel.runs && fbKapitel.runs.length > 0) {
-    const latestRun = fbKapitel.runs[0];
-    // If combined result exists, it's finished
-    if (latestRun.combined && latestRun.combined.combinedContent) {
-      status = "fertig";
-    }
-    // If individual results exist but no combined, it's in progress
-    else if (latestRun.results && latestRun.results.length > 0) {
-      status = "in-bearbeitung";
-    }
-  }
+  // V2: Kapitel status comes from denormalized `latestRun.status`
+  const latestStatus = fbKapitel.latestRun?.status ?? "none";
+  const status: "nicht-verarbeitet" | "in-bearbeitung" | "fertig" =
+    latestStatus === "done"
+      ? "fertig"
+      : latestStatus === "running"
+      ? "in-bearbeitung"
+      : "nicht-verarbeitet";
 
   return {
     id: fbKapitel.id,
     title: fbKapitel.title,
-    nummer: (fbKapitel as any).nummer || "1", // Default to "1" for existing kapitels
+    nummer: fbKapitel.nummer || "1",
     status,
     order: fbKapitel.order ?? 0,
     projektId,
     assignedQuellenIds: fbKapitel.quelleIds || [],
-    parentId: (fbKapitel as any).parentId ?? null,
+    parentId: fbKapitel.parentId ?? null,
   };
 }
 
@@ -87,49 +79,26 @@ export function transformResultToUI(
   quelleName: string = ""
 ): UIQuellenErgebnis {
   // Determine status
-  let status: "waiting" | "success" | "no-content" = "success";
-  if (fbResult.hasContent === false) {
-    status = "no-content";
-  }
+  let status: "waiting" | "success" | "no-content" | "error" = "success";
+  if (fbResult.status === "running") status = "waiting";
+  else if (fbResult.status === "error") status = "error";
+  else if (fbResult.status === "no-content") status = "no-content";
+  else if (fbResult.hasContent === false) status = "no-content";
 
-  // Convert cost from dollars to cents (EUR)
-  // Note: Firebase stores in USD, UI expects cents in EUR
-  // For now, just convert to cents (multiply by 100)
-  const baseCost = fbResult.cost || 0;
-  const refinementCost = (fbResult as any).refinementCostTotal || 0;
-  const costInCents = Math.round((baseCost + refinementCost) * 100);
+  // UI uses cents, Firestore stores USD float.
+  const baseCostUsd = fbResult.costUsd || 0;
+  const refinementCostUsd = fbResult.refinement?.costTotalUsd || 0;
+  const costUsd = baseCostUsd + refinementCostUsd;
+  const costInCents = Math.round(costUsd * 100);
 
   return {
     id: fbResult.quelleId,
     quelleId: fbResult.quelleId,
     quelleName,
-    text: fbResult.resultContent || "",
+    text: fbResult.content || "",
     status,
     cost: costInCents,
-  };
-}
-
-/**
- * Transform Firebase IntermediateGroupResult to UI IntermediateGroup
- */
-export function transformIntermediateGroupToUI(
-  fbGroup: FirebaseIntermediateGroupResult
-): UIIntermediateGroup {
-  // Convert cost from dollars to cents (EUR)
-  const costInCents = Math.round((fbGroup.cost || 0) * 100);
-
-  return {
-    id: fbGroup.id,
-    groupNumber: fbGroup.groupNumber,
-    combinedContent: fbGroup.combinedContent,
-    sourceQuelleIds: fbGroup.sourceQuelleIds,
-    sourceCount: fbGroup.sourceQuelleIds.length,
-    heading: fbGroup.heading,
-    topic: fbGroup.topic,
-    modelUsed: fbGroup.modelUsed,
-    tokensUsed: fbGroup.tokensUsed,
-    cost: costInCents,
-    createdAt: new Date(fbGroup.createdAt),
+    costUsd,
   };
 }
 
@@ -147,34 +116,45 @@ export function transformRunToUI(
     return transformResultToUI(result, quelleName);
   });
 
-  // Transform intermediate groups if they exist
-  const intermediateGroups: UIIntermediateGroup[] | undefined =
-    fbRun.intermediateGroups
-      ? fbRun.intermediateGroups.map(transformIntermediateGroupToUI)
-      : undefined;
-
   // Calculate total costs in cents
   const quellenCost = quellenErgebnisse.reduce((sum, r) => sum + r.cost, 0);
-  const combinedCost = fbRun.combined
-    ? Math.round((fbRun.combined.cost || 0) * 100)
+  const quellenCostUsd = quellenErgebnisse.reduce((sum, r) => sum + (r.costUsd || 0), 0);
+  const combined = fbRun.artifacts?.combined ?? null;
+  const shortened = fbRun.artifacts?.shortened ?? null;
+  const lesefluss = fbRun.artifacts?.lesefluss ?? null;
+
+  const combinedStatus: "empty" | "running" | "success" | "error" =
+    combined?.status ?? fbRun.artifactsStatus?.combined ?? (combined && combined.content ? "success" : "empty");
+  const shortenedStatus: "empty" | "running" | "success" | "error" =
+    shortened?.status ?? fbRun.artifactsStatus?.shortened ?? (shortened && shortened.content ? "success" : "empty");
+  const leseflussStatus: "empty" | "running" | "success" | "error" =
+    lesefluss?.status ?? fbRun.artifactsStatus?.lesefluss ?? (lesefluss && lesefluss.content ? "success" : "empty");
+
+  const combinedCost = combined ? Math.round((combined.costUsd || 0) * 100) : 0;
+  const combinedCostUsd = combined ? Number(combined.costUsd || 0) : 0;
+  const combinedRefinementCost = combined
+    ? Math.round(((combined.refinement?.costTotalUsd || 0) as number) * 100)
     : 0;
-  const combinedRefinementCost = fbRun.combined
-    ? Math.round(((fbRun.combined as any).refinementCostTotal || 0) * 100)
+  const combinedRefinementCostUsd = combined ? Number((combined.refinement?.costTotalUsd || 0) as number) : 0;
+
+  const shortenedCost = shortened ? Math.round((shortened.costUsd || 0) * 100) : undefined;
+  const shortenedCostUsd = shortened ? Number(shortened.costUsd || 0) : undefined;
+  const shortenedRefinementCost = shortened
+    ? Math.round(((shortened.refinement?.costTotalUsd || 0) as number) * 100)
     : 0;
-  const shortenedRefinementCost = fbRun.shortened
-    ? Math.round(((fbRun.shortened as any).refinementCostTotal || 0) * 100)
+  const shortenedRefinementCostUsd = shortened ? Number((shortened.refinement?.costTotalUsd || 0) as number) : 0;
+
+  const leseflussCost = lesefluss ? Math.round((lesefluss.costUsd || 0) * 100) : undefined;
+  const leseflussCostUsd = lesefluss ? Number(lesefluss.costUsd || 0) : undefined;
+  const leseflussRefinementCost = lesefluss
+    ? Math.round(((lesefluss.refinement?.costTotalUsd || 0) as number) * 100)
     : 0;
-  const shortenedCost = fbRun.shortened
-    ? Math.round((fbRun.shortened.cost || 0) * 100)
-    : undefined;
-  const leseflussRefinementCost = fbRun.lesefluss
-    ? Math.round(((fbRun.lesefluss as any).refinementCostTotal || 0) * 100)
-    : 0;
+  const leseflussRefinementCostUsd = lesefluss ? Number((lesefluss.refinement?.costTotalUsd || 0) as number) : 0;
 
   // Determine status
   // For now, simplified: if we have a combined result, it's success
   // In future, we could add more sophisticated status tracking
-  const status: "success" | "error" | "running" = fbRun.combined
+  const status: "success" | "error" | "running" = combined
     ? "success"
     : "running";
 
@@ -185,30 +165,37 @@ export function transformRunToUI(
     timestamp: new Date(fbRun.createdAt),
     status,
     model: fbRun.model || "",
-    ueberschrift: (fbRun as any).ueberschrift || fbRun.combined?.heading || "",
+    ueberschrift: fbRun.ueberschrift || combined?.heading || "",
     thema:
-      (fbRun as any).thema || fbRun.instruction || fbRun.combined?.topic || "",
-    combinedText: fbRun.combined?.combinedContent || "",
+      fbRun.thema || fbRun.instruction || combined?.topic || "",
+    combinedText: combined?.content || "",
     quellenErgebnisse,
     quellenCost,
+    quellenCostUsd,
     combinedCost,
+    combinedCostUsd,
+    combinedStatus,
     combinedRefinementCost,
+    combinedRefinementCostUsd,
     shortenedRefinementCost,
-    intermediateGroups,
-    shortenedText: fbRun.shortened?.shortenedContent || null,
+    shortenedRefinementCostUsd,
+    shortenedText: shortened?.content || null,
     shortenedCost,
-    shortenedOriginalLength: fbRun.shortened?.originalLength,
-    shortenedLength: fbRun.shortened?.shortenedLength,
-    explanation: fbRun.shortened?.explanation,
-    leseflussText: fbRun.lesefluss?.leseflussContent || null,
-    leseflussExplanation: fbRun.lesefluss?.explanation,
-    leseflussAufgabenstellung: fbRun.lesefluss?.aufgabenstellung,
-    leseflussOriginalLength: fbRun.lesefluss?.originalLength,
-    leseflussLength: fbRun.lesefluss?.leseflussLength,
-    leseflussCost: fbRun.lesefluss
-      ? Math.round((fbRun.lesefluss.cost || 0) * 100)
-      : undefined,
+    shortenedCostUsd,
+    shortenedStatus,
+    shortenedOriginalLength: shortened?.originalLength,
+    shortenedLength: shortened?.shortenedLength,
+    explanation: shortened?.explanation,
+    leseflussText: lesefluss?.content || null,
+    leseflussExplanation: lesefluss?.explanation,
+    leseflussAufgabenstellung: lesefluss?.aufgabenstellung,
+    leseflussOriginalLength: lesefluss?.originalLength,
+    leseflussLength: lesefluss?.leseflussLength,
+    leseflussCost,
+    leseflussCostUsd,
+    leseflussStatus,
     leseflussRefinementCost,
+    leseflussRefinementCostUsd,
   };
 }
 

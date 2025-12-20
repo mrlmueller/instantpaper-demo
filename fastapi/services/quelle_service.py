@@ -1,115 +1,14 @@
 from fastapi import HTTPException
 from services.firebase_service import firebase_service
 from services.openai_service import openai_service
+from services.cost_service import get_cost_service, TokenUsage
 from services.user_key_service import user_key_service
 from services.prompt_service import prompt_service
 import logging
-import re
 import asyncio
 from typing import Optional, List
 
 logger = logging.getLogger(__name__)
-
-# Pricing per million tokens (input, cached_input, output)
-MODEL_PRICING = {
-    "gpt-5.2": (1.75, 0.175, 14.00),      # Most expensive model
-    "gpt-5-mini": (0.25, 0.025, 2.00),    # Mid-tier model
-    "gpt-5-nano": (0.05, 0.005, 0.40),    # Most economical model
-}
-
-
-def calculate_cost(
-    model: str,
-    input_tokens: int,
-    cached_input_tokens: int,
-    output_tokens: int,
-    reasoning_tokens: int = 0
-) -> float:
-    """
-    Calculate cost in USD based on model and token usage
-
-    Args:
-        model: Model name (e.g., "gpt-5.2", "gpt-5-mini", "gpt-5-nano")
-        input_tokens: Total number of input tokens used
-        cached_input_tokens: Number of input tokens from cache (charged at 10% rate)
-        output_tokens: Number of output tokens used (visible output)
-        reasoning_tokens: Number of reasoning tokens used (internal chain-of-thought)
-
-    Returns:
-        float: Total cost in USD
-
-    Note:
-        - Cached input tokens are charged at 10% of regular input rate
-        - Non-cached input = input_tokens - cached_input_tokens
-        - Reasoning tokens are charged at the output token rate
-    """
-    def _resolve_pricing(model_name: str):
-        """
-        Return pricing tuple and matched key for potentially versioned model names.
-
-        The OpenAI API returns release-stamped model names (e.g., gpt-5.2-2025-11-13).
-        We normalize those back to their base product name so we don't undercharge
-        when a date suffix appears.
-        """
-        model_lower = (model_name or "").lower()
-        normalized_pricing = {key.lower(): (key, price) for key, price in MODEL_PRICING.items()}
-
-        # 1) Exact match
-        if model_lower in normalized_pricing:
-            matched_key, pricing = normalized_pricing[model_lower]
-            return matched_key, pricing, "exact"
-
-        # 2) Strip release-date suffixes (e.g., gpt-5.2-2025-11-13 -> gpt-5.2)
-        date_stripped = re.sub(r"-20\d{2}-\d{2}-\d{2}$", "", model_lower)
-        if date_stripped in normalized_pricing:
-            matched_key, pricing = normalized_pricing[date_stripped]
-            return matched_key, pricing, "date_suffix"
-
-        # 3) Prefix match for other versioned variants (e.g., gpt-5.2-xyz)
-        for key_lower, (original_key, pricing) in normalized_pricing.items():
-            if model_lower.startswith(f"{key_lower}-"):
-                return original_key, pricing, "prefix"
-
-        # 4) Fallback to default pricing
-        return "gpt-5-mini", MODEL_PRICING["gpt-5-mini"], "fallback"
-
-    logger.info(f"Matching model '{model}' against pricing dictionary")
-
-    matched_key, pricing, match_type = _resolve_pricing(model)
-
-    if match_type == "fallback":
-        logger.warning(f"Unknown model '{model}', using default pricing (gpt-5-mini)")
-    else:
-        normalized_note = "" if matched_key.lower() == model.lower() else f" (normalized from '{model}')"
-        input_price, cached_input_price, output_price = pricing
-        logger.info(
-            f"Matched pricing key: '{matched_key}'{normalized_note} -> "
-            f"${input_price}/M input, ${cached_input_price}/M cached, ${output_price}/M output"
-        )
-
-    input_price, cached_input_price, output_price = pricing
-
-    # Calculate non-cached input tokens (regular rate)
-    non_cached_input_tokens = input_tokens - cached_input_tokens
-
-    # Calculate cost (prices are per million tokens)
-    non_cached_input_cost = (non_cached_input_tokens / 1_000_000) * input_price
-    cached_input_cost = (cached_input_tokens / 1_000_000) * cached_input_price
-    total_output_tokens = output_tokens + reasoning_tokens
-    output_cost = (total_output_tokens / 1_000_000) * output_price
-
-    total_cost = non_cached_input_cost + cached_input_cost + output_cost
-
-    logger.info(
-        f"Cost calculation for {model}: "
-        f"Non-cached input ${non_cached_input_cost:.6f} ({non_cached_input_tokens:,} x ${input_price}/M) + "
-        f"Cached input ${cached_input_cost:.6f} ({cached_input_tokens:,} x ${cached_input_price}/M) + "
-        f"Output ${output_cost:.6f} ({output_tokens:,} + {reasoning_tokens:,} reasoning x ${output_price}/M) = "
-        f"${total_cost:.6f}"
-    )
-
-    return total_cost
-
 
 def calculate_groups(num_items: int, min_group_size: int = 4, max_group_size: int = 5) -> List[List[int]]:
     """
@@ -189,32 +88,46 @@ class QuelleService:
                     detail="kapitel_id and run_id are required to save results"
                 )
 
-            # Step 1: Fetch Quelle from Firestore (verifies ownership)
+            # Step 1: Fetch Quelle meta + content (V2 stores content separately)
             logger.info(f"Fetching Quelle {quelle_id} for user {user_id}")
-            quelle = await self.firebase.get_quelle(user_id, quelle_id)
-
-            if not quelle:
+            quelle_meta = await self.firebase.get_quelle_meta(user_id, quelle_id)
+            if not quelle_meta:
                 logger.warning(f"Quelle {quelle_id} not found for user {user_id}")
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Quelle {quelle_id} not found or you don't have access to it"
+                    detail=f"Quelle {quelle_id} not found or you don't have access to it",
+                )
+
+            quelle_content_doc = await self.firebase.get_quelle_content(user_id, quelle_id)
+            if not quelle_content_doc or not (quelle_content_doc.get("text") or "").strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Quelle {quelle_id} has no content. Please open/edit the Quelle first.",
                 )
 
             # Step 1.5: Fetch run to get grundlegendeInformationen
             run = await self.firebase.get_run(user_id, kapitel_id, run_id)
             grundlegende_informationen = run.get('grundlegendeInformationen') if run else None
+            run_model = (run.get("model") or "").strip() if run else ""
+            if run_model:
+                if model and model != run_model:
+                    logger.info(
+                        f"Overriding requested model '{model}' with run model '{run_model}' "
+                        f"(Kapitel {kapitel_id}, run {run_id})"
+                    )
+                model = run_model
 
             # Step 1.6: Extract image URLs from Quelle (if any)
             quelle_images = None
-            if 'images' in quelle and isinstance(quelle['images'], list):
-                quelle_images = [img['url'] for img in quelle['images'] if 'url' in img]
+            if "images" in quelle_meta and isinstance(quelle_meta["images"], list):
+                quelle_images = [img["url"] for img in quelle_meta["images"] if "url" in img]
                 logger.info(f"Quelle has {len(quelle_images)} image(s)")
 
             # Step 2: Process with OpenAI
             api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
             logger.info(f"Processing Quelle {quelle_id} with OpenAI model {model}")
             openai_result = await self.openai.process_quelle(
-                quelle['content'],
+                quelle_content_doc.get("text") or "",
                 user_input,
                 model,
                 grundlegende_informationen,
@@ -222,14 +135,77 @@ class QuelleService:
                 quelle_images=quelle_images
             )
 
-            # Step 2.5: Calculate cost (including cached input and reasoning tokens)
-            cost = calculate_cost(
-                model=openai_result['model'],
-                input_tokens=openai_result['input_tokens'],
-                cached_input_tokens=openai_result.get('cached_input_tokens', 0),
-                output_tokens=openai_result['output_tokens'],
-                reasoning_tokens=openai_result.get('reasoning_tokens', 0)
+            # Step 2.5: Calculate cost and log immutable operation (costMetrics)
+            cost_service = get_cost_service(firebase_service)
+            usage = TokenUsage.from_any(
+                openai_result.get("input_tokens", 0),
+                openai_result.get("cached_input_tokens", 0),
+                openai_result.get("output_tokens", 0),
             )
+
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=openai_result.get("model") or model,
+                usage=usage,
+            )
+
+            kapitel = await self.firebase.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await self.firebase.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run_snapshot = {
+                "id": run_id,
+                "index": (run or {}).get("index"),
+            }
+
+            quelle_snapshot = {
+                "id": quelle_id,
+                "title": quelle_meta.get("title"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="process_quelle",
+                user_id=user_id,
+                user_action_id=run_id,
+                operation_details={
+                    "hasContent": bool(openai_result.get("has_content", True)),
+                    "quelleHasImages": bool(quelle_images),
+                },
+                model=openai_result.get("model") or model,
+                usage=usage,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                quelle_id=quelle_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+                quelle_snapshot=quelle_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
 
             # Step 3: Save result to Firestore under the Kapitel run
             logger.info(f"Saving result for Quelle {quelle_id} in Kapitel {kapitel_id} run {run_id} (cost: ${cost:.6f})")
@@ -242,11 +218,11 @@ class QuelleService:
                 result_content=openai_result['content'],
                 has_content=openai_result.get('has_content', True),
                 model_used=openai_result['model'],
-                tokens_used=openai_result['tokens'],
-                input_tokens=openai_result['input_tokens'],
-                cached_input_tokens=openai_result.get('cached_input_tokens', 0),
-                output_tokens=openai_result['output_tokens'],
-                reasoning_tokens=openai_result.get('reasoning_tokens', 0),
+                tokens_used=usage.total_tokens,
+                input_tokens=usage.input_tokens,
+                cached_input_tokens=usage.cached_input_tokens,
+                output_tokens=usage.output_tokens,
+                reasoning_tokens=0,
                 cost=cost,
                 key_source=key_source
             )
@@ -261,11 +237,11 @@ class QuelleService:
                 "content": openai_result['content'],
                 "has_content": openai_result.get('has_content', True),
                 "model": openai_result['model'],
-                "tokens": openai_result['tokens'],
-                "input_tokens": openai_result['input_tokens'],
-                "cached_input_tokens": openai_result.get('cached_input_tokens', 0),
-                "output_tokens": openai_result['output_tokens'],
-                "reasoning_tokens": openai_result.get('reasoning_tokens', 0),
+                "tokens": usage.total_tokens,
+                "input_tokens": usage.input_tokens,
+                "cached_input_tokens": usage.cached_input_tokens,
+                "output_tokens": usage.output_tokens,
+                "reasoning_tokens": 0,
                 "cost": cost
             }
 
@@ -321,6 +297,15 @@ class QuelleService:
                     f"Auto-combine skipped for run {run_id}: only {content_count} text(s) with content "
                     "(need at least 2)"
                 )
+                # Auto-combine is enabled, but we can't combine. Reset combined stage status so the UI
+                # does not show an infinite "combining..." state.
+                await self.firebase.set_run_artifact_status(
+                    user_id=user_id,
+                    kapitel_id=kapitel_id,
+                    run_id=run_id,
+                    artifact_id="combined",
+                    status="empty",
+                )
                 return
 
             # All conditions met - trigger auto-combine after delay
@@ -350,6 +335,10 @@ class QuelleService:
         """
         Combine multiple Quelle results for a run into a single text.
         """
+        api_key: Optional[str] = None
+        key_source: Optional[str] = None
+        marked_running = False
+
         try:
             run = await self.firebase.get_run(user_id, kapitel_id, run_id)
             if not run:
@@ -359,7 +348,12 @@ class QuelleService:
 
             existing_combined = await self.firebase.get_combined_result(user_id, kapitel_id, run_id)
             if existing_combined:
-                raise HTTPException(status_code=400, detail="Combined result already exists for this run.")
+                existing_status = (existing_combined.get("status") or "").strip()
+                existing_content = (existing_combined.get("content") or "").strip()
+                # Allow if a placeholder exists (status=running) or a previous attempt errored.
+                # Block only if we already have a finished combined text.
+                if existing_content and (existing_status == "success" or not existing_status):
+                    raise HTTPException(status_code=400, detail="Combined result already exists for this run.")
 
             prompt_payload = run.get("promptPayload") or run.get("prompt_payload") or {}
             heading = prompt_payload.get("heading", "").strip() or "Zusammenfassung"
@@ -372,13 +366,9 @@ class QuelleService:
             )
             eligible = []
             for res in results:
-                if not res.get("has_content", True):
+                if not res.get("hasContent", True):
                     continue
-                content = (
-                    res.get("result_content")
-                    or res.get("resultContent")
-                    or res.get("content")
-                )
+                content = res.get("content")
                 if content:
                     eligible.append({"id": res["id"], "content": content})
 
@@ -387,6 +377,19 @@ class QuelleService:
                     status_code=400,
                     detail="Not enough eligible texts to combine (need at least 2 with content)."
                 )
+
+            # Mark combined artifact as running (auto-combine path calls this method directly).
+            # This creates/merges the target doc and updates runs/{runId}.artifactsStatus.combined
+            # so the UI can show an in-progress state immediately.
+            await self.firebase.mark_artifact_running(
+                user_id=user_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                artifact_id="combined",
+                model=model,
+                key_source=key_source,
+            )
+            marked_running = True
 
             # DECISION POINT: Single-level vs Hierarchical combining
             if len(eligible) > 5:
@@ -404,13 +407,67 @@ class QuelleService:
                 texts, heading, topic, model, api_key=api_key, instructions=combine_instructions
             )
 
-            cost = calculate_cost(
-                model=openai_result['model'],
-                input_tokens=openai_result['input_tokens'],
-                cached_input_tokens=openai_result.get('cached_input_tokens', 0),
-                output_tokens=openai_result['output_tokens'],
-                reasoning_tokens=openai_result.get('reasoning_tokens', 0)
+            cost_service = get_cost_service(firebase_service)
+            usage = TokenUsage.from_any(
+                openai_result.get("input_tokens", 0),
+                openai_result.get("cached_input_tokens", 0),
+                openai_result.get("output_tokens", 0),
             )
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=openai_result.get("model") or model,
+                usage=usage,
+            )
+
+            kapitel = await self.firebase.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await self.firebase.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run_snapshot = {
+                "id": run_id,
+                "index": (run or {}).get("index"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="combine",
+                user_id=user_id,
+                user_action_id=run_id,
+                operation_details={"sourceCount": len(source_quelle_ids)},
+                model=openai_result.get("model") or model,
+                usage=usage,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                quelle_id=None,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+                quelle_snapshot=None,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
 
             combined_id = await self.firebase.save_combined_result(
                 user_id=user_id,
@@ -421,11 +478,11 @@ class QuelleService:
                 heading=heading,
                 topic=topic,
                 model_used=openai_result['model'],
-                tokens_used=openai_result['tokens'],
-                input_tokens=openai_result['input_tokens'],
-                cached_input_tokens=openai_result.get('cached_input_tokens', 0),
-                output_tokens=openai_result['output_tokens'],
-                reasoning_tokens=openai_result.get('reasoning_tokens', 0),
+                tokens_used=usage.total_tokens,
+                input_tokens=usage.input_tokens,
+                cached_input_tokens=usage.cached_input_tokens,
+                output_tokens=usage.output_tokens,
+                reasoning_tokens=0,
                 cost=cost,
                 key_source=key_source
             )
@@ -439,11 +496,11 @@ class QuelleService:
                 "combined_id": combined_id,
                 "content": openai_result['content'],
                 "model": openai_result['model'],
-                "tokens": openai_result['tokens'],
-                "input_tokens": openai_result['input_tokens'],
-                "cached_input_tokens": openai_result.get('cached_input_tokens', 0),
-                "output_tokens": openai_result['output_tokens'],
-                "reasoning_tokens": openai_result.get('reasoning_tokens', 0),
+                "tokens": usage.total_tokens,
+                "input_tokens": usage.input_tokens,
+                "cached_input_tokens": usage.cached_input_tokens,
+                "output_tokens": usage.output_tokens,
+                "reasoning_tokens": 0,
                 "cost": cost,
                 "source_quelle_ids": source_quelle_ids,
                 "heading": heading,
@@ -454,6 +511,14 @@ class QuelleService:
             raise
         except Exception as e:
             logger.error(f"Error combining run results: {str(e)}")
+            if marked_running:
+                await self.firebase.mark_artifact_error(
+                    user_id=user_id,
+                    kapitel_id=kapitel_id,
+                    run_id=run_id,
+                    artifact_id="combined",
+                    key_source=key_source,
+                )
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to combine run results: {str(e)}"
@@ -489,6 +554,39 @@ class QuelleService:
         # STEP 1: Combine each group
         intermediate_results = []
         total_intermediate_cost = 0.0
+        total_usage_input = 0
+        total_usage_cached = 0
+        total_usage_output = 0
+
+        cost_service = get_cost_service(firebase_service)
+        run = await self.firebase.get_run(user_id, kapitel_id, run_id)
+        kapitel = await self.firebase.get_kapitel(user_id, kapitel_id)
+        projekt_id = (kapitel or {}).get("projektId")
+
+        projekt_snapshot = None
+        if projekt_id:
+            project = await self.firebase.get_project(user_id, projekt_id)
+            if project:
+                projekt_snapshot = {
+                    "id": projekt_id,
+                    "name": project.get("name"),
+                    "archived": bool(project.get("archived", False)),
+                }
+
+        kapitel_snapshot = (
+            {
+                "id": kapitel_id,
+                "nummer": (kapitel or {}).get("nummer", "?"),
+                "title": (kapitel or {}).get("title", "Untitled"),
+            }
+            if kapitel
+            else None
+        )
+
+        run_snapshot = {
+            "id": run_id,
+            "index": (run or {}).get("index"),
+        }
 
         for group_idx, group_indices in enumerate(groups):
             group_number = group_idx + 1
@@ -503,15 +601,45 @@ class QuelleService:
                 group_texts, heading, topic, model, api_key=api_key, instructions=instructions
             )
 
-            # Calculate cost
-            cost = calculate_cost(
-                model=openai_result['model'],
-                input_tokens=openai_result['input_tokens'],
-                cached_input_tokens=openai_result.get('cached_input_tokens', 0),
-                output_tokens=openai_result['output_tokens'],
-                reasoning_tokens=openai_result.get('reasoning_tokens', 0)
+            usage = TokenUsage.from_any(
+                openai_result.get("input_tokens", 0),
+                openai_result.get("cached_input_tokens", 0),
+                openai_result.get("output_tokens", 0),
             )
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=openai_result.get("model") or model,
+                usage=usage,
+            )
+
+            await cost_service.log_operation(
+                operation_type="combine_intermediate",
+                user_id=user_id,
+                user_action_id=run_id,
+                operation_details={
+                    "groupNumber": int(group_number),
+                    "sourceCount": len(group_quelle_ids),
+                },
+                model=openai_result.get("model") or model,
+                usage=usage,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                quelle_id=None,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+                quelle_snapshot=None,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
             total_intermediate_cost += cost
+            total_usage_input += usage.input_tokens
+            total_usage_cached += usage.cached_input_tokens
+            total_usage_output += usage.output_tokens
 
             # Save intermediate result to database
             group_id = await self.firebase.save_intermediate_group_result(
@@ -524,11 +652,11 @@ class QuelleService:
                 heading=heading,
                 topic=topic,
                 model_used=openai_result['model'],
-                tokens_used=openai_result['tokens'],
-                input_tokens=openai_result['input_tokens'],
-                cached_input_tokens=openai_result.get('cached_input_tokens', 0),
-                output_tokens=openai_result['output_tokens'],
-                reasoning_tokens=openai_result.get('reasoning_tokens', 0),
+                tokens_used=usage.total_tokens,
+                input_tokens=usage.input_tokens,
+                cached_input_tokens=usage.cached_input_tokens,
+                output_tokens=usage.output_tokens,
+                reasoning_tokens=0,
                 cost=cost,
                 key_source=key_source
             )
@@ -549,16 +677,49 @@ class QuelleService:
             intermediate_texts, heading, topic, model, api_key=api_key, instructions=instructions
         )
 
-        final_cost = calculate_cost(
-            model=final_openai_result['model'],
-            input_tokens=final_openai_result['input_tokens'],
-            cached_input_tokens=final_openai_result.get('cached_input_tokens', 0),
-            output_tokens=final_openai_result['output_tokens'],
-            reasoning_tokens=final_openai_result.get('reasoning_tokens', 0)
+        final_usage = TokenUsage.from_any(
+            final_openai_result.get("input_tokens", 0),
+            final_openai_result.get("cached_input_tokens", 0),
+            final_openai_result.get("output_tokens", 0),
         )
+        final_breakdown, final_matched_model, final_pricing, _final_match_type = await cost_service.calculate_cost(
+            model=final_openai_result.get("model") or model,
+            usage=final_usage,
+        )
+
+        await cost_service.log_operation(
+            operation_type="combine",
+            user_id=user_id,
+            user_action_id=run_id,
+            operation_details={
+                "intermediateGroupsCount": len(groups),
+                "sourceCount": len(eligible),
+            },
+            model=final_openai_result.get("model") or model,
+            usage=final_usage,
+            cost_breakdown=final_breakdown,
+            matched_model_key=final_matched_model,
+            pricing=final_pricing,
+            key_source=key_source,
+            projekt_id=projekt_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            quelle_id=None,
+            projekt_snapshot=projekt_snapshot,
+            kapitel_snapshot=kapitel_snapshot,
+            run_snapshot=run_snapshot,
+            quelle_snapshot=None,
+        )
+
+        final_cost = float(final_breakdown.total_cost_usd)
 
         # STEP 3: Save final combined result (same as before)
         all_source_quelle_ids = [item['id'] for item in eligible]
+
+        total_usage_input += final_usage.input_tokens
+        total_usage_cached += final_usage.cached_input_tokens
+        total_usage_output += final_usage.output_tokens
+        total_usage = TokenUsage.from_any(total_usage_input, total_usage_cached, total_usage_output)
 
         combined_id = await self.firebase.save_combined_result(
             user_id=user_id,
@@ -569,12 +730,12 @@ class QuelleService:
             heading=heading,
             topic=topic,
             model_used=final_openai_result['model'],
-            tokens_used=final_openai_result['tokens'],
-            input_tokens=final_openai_result['input_tokens'],
-            cached_input_tokens=final_openai_result.get('cached_input_tokens', 0),
-            output_tokens=final_openai_result['output_tokens'],
-            reasoning_tokens=final_openai_result.get('reasoning_tokens', 0),
-            cost=final_cost,
+            tokens_used=total_usage.total_tokens,
+            input_tokens=total_usage.input_tokens,
+            cached_input_tokens=total_usage.cached_input_tokens,
+            output_tokens=total_usage.output_tokens,
+            reasoning_tokens=0,
+            cost=total_intermediate_cost + final_cost,
             key_source=key_source
         )
 
@@ -590,11 +751,11 @@ class QuelleService:
             "combined_id": combined_id,
             "content": final_openai_result['content'],
             "model": final_openai_result['model'],
-            "tokens": final_openai_result['tokens'],
-            "input_tokens": final_openai_result['input_tokens'],
-            "cached_input_tokens": final_openai_result.get('cached_input_tokens', 0),
-            "output_tokens": final_openai_result['output_tokens'],
-            "reasoning_tokens": final_openai_result.get('reasoning_tokens', 0),
+            "tokens": total_usage.total_tokens,
+            "input_tokens": total_usage.input_tokens,
+            "cached_input_tokens": total_usage.cached_input_tokens,
+            "output_tokens": total_usage.output_tokens,
+            "reasoning_tokens": 0,
             "cost": total_cost,  # Return total cost (intermediate + final)
             "source_quelle_ids": all_source_quelle_ids,
             "heading": heading,

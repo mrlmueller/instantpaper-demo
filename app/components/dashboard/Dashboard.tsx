@@ -40,6 +40,7 @@ import {
 import {
   createQuelle,
   deleteQuelle as deleteQuelleAction,
+  getQuelleContent,
   getUserQuellen,
   type Quelle as FirebaseQuelle,
   type ImageMetadata,
@@ -61,20 +62,20 @@ import { createProject, deleteProject, type Project as FirebaseProject } from '@
 
 // Firebase real-time
 import { useAuth } from '@/app/components/providers/AuthProvider';
-import { firebaseApp } from '@/app/lib/firebase/config';
+import { firestoreClient } from '@/app/lib/firebase/firestoreClient';
 import {
-  getFirestore,
   collection,
   onSnapshot,
   query,
   orderBy,
   limit,
-  type Unsubscribe,
+  where,
   doc,
+  getDoc,
+  getDocs,
   updateDoc,
   serverTimestamp,
   addDoc,
-  deleteDoc,
 } from 'firebase/firestore';
 import Cookies from 'js-cookie';
 import { fetchOpenAIKeyStatus, type OpenAIKeyStatus } from '@/app/lib/api/openaiKeyClient';
@@ -95,7 +96,7 @@ type PromptChoiceDialogProps = {
 
 function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCancel }: PromptChoiceDialogProps) {
   const [choices, setChoices] = useState<Record<PromptStage, string | 'default'>>(() => {
-    const initial: Record<PromptStage, string | 'default'> = {} as any;
+    const initial = {} as Record<PromptStage, string | 'default'>;
     stages.forEach((s) => {
       initial[s] = (active[s] as string | 'default') || 'default';
     });
@@ -103,7 +104,7 @@ function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCanc
   });
 
   useEffect(() => {
-    const init: Record<PromptStage, string | 'default'> = {} as any;
+    const init = {} as Record<PromptStage, string | 'default'>;
     stages.forEach((s) => {
       init[s] = (active[s] as string | 'default') || 'default';
     });
@@ -131,7 +132,7 @@ function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCanc
                   </div>
                   <Select
                     value={choices[stage] || 'default'}
-                    onValueChange={(val) => setChoices((prev) => ({ ...prev, [stage]: val as any }))}
+                    onValueChange={(val) => setChoices((prev) => ({ ...prev, [stage]: val as string | 'default' }))}
                   >
                     <SelectTrigger className="w-64">
                       <SelectValue />
@@ -213,17 +214,14 @@ export function Dashboard({
   const [activeKapitelId, setActiveKapitelId] = useState(initialActiveKapitelId);
   const activeKapitel = kapiteln.find((k) => k.id === activeKapitelId);
 
-  const initialRunsForActive =
-    initialRuns.length > 0
-      ? initialRuns
-      : initialKapitels.find((k) => k.id === initialActiveKapitelId)?.runs || [];
-  const [fbRuns, setFbRuns] = useState<FirebaseKapitelRun[]>(initialRunsForActive);
-  const keepInitialRunsRef = useRef(initialRunsForActive.length > 0);
+  const [fbRuns, setFbRuns] = useState<FirebaseKapitelRun[]>(initialRuns);
+  const keepInitialRunsRef = useRef(initialRuns.length > 0);
   const [runListLimit, setRunListLimit] = useState<number>(RUN_HISTORY_LIMIT);
   const [allRunsLoaded, setAllRunsLoaded] = useState(false);
-  const [isKapitelLoading, setIsKapitelLoading] = useState(initialRunsForActive.length === 0);
+  const [isKapitelLoading, setIsKapitelLoading] = useState(initialRuns.length === 0);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const selectedRunIdRef = useRef<string | null>(null);
   const selectedRun = runs.find((r) => r.id === selectedRunId);
   const hasShownNoticeRef = useRef(false);
   const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
@@ -327,9 +325,13 @@ export function Dashboard({
   }, [router, searchParams]);
 
   const handleSelectRun = useCallback((id: string) => {
-    setIsKapitelLoading(true);
-    setSelectedRunId(id);
+    selectedRunIdRef.current = id;
+    setSelectedRunId((prev) => (prev === id ? prev : id));
   }, []);
+
+  useEffect(() => {
+    selectedRunIdRef.current = selectedRunId;
+  }, [selectedRunId]);
 
   const [showQuellenPanel, setShowQuellenPanel] = useState(() => getQuellenPanelState());
   const [textViewerContent, setTextViewerContent] = useState<{
@@ -337,6 +339,7 @@ export function Dashboard({
     text: string;
   } | null>(null);
   const [quelleViewer, setQuelleViewer] = useState<Quelle | null>(null);
+  const [quelleViewerLoading, setQuelleViewerLoading] = useState(false);
   const [processingDialogOpen, setProcessingDialogOpen] = useState(false);
 
   // Persist Quellen panel state to localStorage
@@ -380,6 +383,7 @@ export function Dashboard({
     const firstKapitelId = fbKapitels[0]?.id || '';
     setActiveKapitelId(firstKapitelId);
     setSelectedRunId(null);
+    selectedRunIdRef.current = null;
     setFbRuns([]);
 
     if (firstKapitelId) {
@@ -394,7 +398,7 @@ export function Dashboard({
 
   const persistKapitelQuellenClient = useCallback(async (kapitelId: string, quelleIds: string[]) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
-    const db = getFirestore(firebaseApp);
+    const db = firestoreClient;
     const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
     await updateDoc(kapitelRef, {
       quelleIds,
@@ -404,7 +408,7 @@ export function Dashboard({
 
   const createKapitelClient = useCallback(async (title: string, nummer: string, parentId: string | null = null) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
-    const db = getFirestore(firebaseApp);
+    const db = firestoreClient;
     const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
     const docRef = await addDoc(kapitelsRef, {
       title,
@@ -414,13 +418,15 @@ export function Dashboard({
       parentId,
       order: Date.now(),
       createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      archived: false,
     });
     return docRef.id;
   }, [user?.uid, projekt.id]);
 
   const updateKapitelTitleClient = useCallback(async (kapitelId: string, title: string, nummer: string) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
-    const db = getFirestore(firebaseApp);
+    const db = firestoreClient;
     const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
     await updateDoc(kapitelRef, {
       title,
@@ -429,12 +435,45 @@ export function Dashboard({
     });
   }, [user?.uid]);
 
-  const deleteKapitelClient = useCallback(async (kapitelId: string) => {
-    if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
-    const db = getFirestore(firebaseApp);
-    const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
-    await deleteDoc(kapitelRef);
-  }, [user?.uid]);
+  const deleteKapitelClient = useCallback(
+    async (kapitelId: string, deleteStrategy: 'promote' | 'cascade' = 'promote') => {
+      if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
+      const db = firestoreClient;
+
+      const archiveRec = async (id: string, strategy: 'promote' | 'cascade') => {
+        const kapitelRef = doc(db, 'users', user.uid, 'kapitels', id);
+        const kapitelSnap = await getDoc(kapitelRef);
+        if (!kapitelSnap.exists()) return;
+        const parentId = (kapitelSnap.data() as any).parentId ?? null;
+
+        const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
+        const childrenQ = query(kapitelsRef, where('parentId', '==', id), where('archived', '==', false));
+        const childrenSnap = await getDocs(childrenQ);
+
+        if (strategy === 'cascade') {
+          for (const child of childrenSnap.docs) {
+            await archiveRec(child.id, 'cascade');
+          }
+        } else {
+          for (const child of childrenSnap.docs) {
+            await updateDoc(doc(db, 'users', user.uid, 'kapitels', child.id), {
+              parentId,
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+
+        await updateDoc(kapitelRef, {
+          archived: true,
+          archivedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      };
+
+      await archiveRec(kapitelId, deleteStrategy);
+    },
+    [user?.uid]
+  );
 
   // When the active Kapitel changes, seed runs from initial data while real-time listeners attach
   useEffect(() => {
@@ -442,12 +481,16 @@ export function Dashboard({
       setFbRuns([]);
       setRuns([]);
       setSelectedRunId(null);
+      selectedRunIdRef.current = null;
       setIsKapitelLoading(false);
       return;
     }
 
     setIsKapitelLoading(true);
     setSelectedRunId(null);
+    // Prevent a race where the runs listener fires before `selectedRunId` state clears,
+    // which can block auto-selecting the first run and leave the Kapitel stuck loading.
+    selectedRunIdRef.current = null;
     setRunListLimit(RUN_HISTORY_LIMIT);
     setAllRunsLoaded(false);
 
@@ -468,12 +511,13 @@ export function Dashboard({
       setFbRuns([]);
       setRuns([]);
       setSelectedRunId(null);
+      selectedRunIdRef.current = null;
       return;
     }
 
-    const db = getFirestore(firebaseApp);
+    const db = firestoreClient;
     const runsRef = collection(db, 'users', user.uid, 'kapitels', activeKapitelId, 'runs');
-    const q = query(runsRef, orderBy('index', 'desc'), limit(runListLimit));
+    const q = query(runsRef, where('archived', '==', false), orderBy('index', 'desc'), limit(runListLimit));
 
     const unsubscribeRuns = onSnapshot(
       q,
@@ -488,30 +532,45 @@ export function Dashboard({
               index: data.index || 0,
               instruction: data.instruction || '',
               model: data.model || '',
-              createdAt:
-                data.createdAt?.toDate?.()?.toISOString() ||
-                data.created_at?.toDate?.()?.toISOString() ||
-                new Date().toISOString(),
+              createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+              updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
               promptTemplateId: data.promptTemplateId,
               promptPayload: data.promptPayload,
               autoCombine: data.autoCombine ?? false,
               results: existing?.results || [],
-              combined: existing?.combined || null,
-              shortened: existing?.shortened || null,
+              artifacts: existing?.artifacts,
+              artifactsStatus: data.artifactsStatus,
+              resultsExpectedCount: data.resultsExpectedCount,
+              resultsCompletedCount: data.resultsCompletedCount,
+              resultsWithContentCount: data.resultsWithContentCount,
+              lastResultAt: data.lastResultAt?.toDate?.()?.toISOString() ?? null,
+              lastActivityAt: data.lastActivityAt?.toDate?.()?.toISOString() ?? null,
               ueberschrift: data.ueberschrift || existing?.ueberschrift || '',
-              thema: data.thema || data.instruction || existing?.thema || '',
+              thema: data.thema || existing?.thema || '',
+              grundlegendeInformationen: data.grundlegendeInformationen ?? existing?.grundlegendeInformationen ?? null,
             } as FirebaseKapitelRun;
           });
           return baseRuns;
         });
 
-        if (!snapshot.empty && !selectedRunId) {
-          handleSelectRun(snapshot.docs[0].id);
+        if (!snapshot.empty) {
+          const firstRunId = snapshot.docs[0].id;
+          const currentSelected = selectedRunIdRef.current;
+          const currentIsInSnapshot =
+            currentSelected != null && snapshot.docs.some((d) => d.id === currentSelected);
+
+          if (!currentSelected || !currentIsInSnapshot) {
+            handleSelectRun(firstRunId);
+          }
         }
 
         if (snapshot.empty) {
           setIsKapitelLoading(false);
         }
+
+        // Once we have the runs snapshot for this Kapitel (empty or not), stop the workspace skeleton.
+        // Artifact/result docs can stream in asynchronously via the selected-run listeners.
+        setIsKapitelLoading(false);
       },
       (error) => {
         console.error('Error listening to runs:', error);
@@ -522,17 +581,17 @@ export function Dashboard({
     return () => {
       unsubscribeRuns();
     };
-  }, [user?.uid, activeKapitelId, runListLimit, selectedRunId, handleSelectRun]);
+  }, [user?.uid, activeKapitelId, runListLimit, handleSelectRun]);
 
-  // Load data (combined/shortened/results) only for the selected run
+  // Load data (artifacts/results) only for the selected run
   useEffect(() => {
     if (!user?.uid || !activeKapitelId || !selectedRunId) {
       return;
     }
 
-    const db = getFirestore(firebaseApp);
+    const db = firestoreClient;
 
-    const combinedRef = collection(
+    const artifactsRef = collection(
       db,
       'users',
       user.uid,
@@ -540,18 +599,9 @@ export function Dashboard({
       activeKapitelId,
       'runs',
       selectedRunId,
-      'combined'
+      'artifacts'
     );
-    const shortenedRef = collection(
-      db,
-      'users',
-      user.uid,
-      'kapitels',
-      activeKapitelId,
-      'runs',
-      selectedRunId,
-      'shortened'
-    );
+
     const resultsRef = collection(
       db,
       'users',
@@ -563,7 +613,6 @@ export function Dashboard({
       'results'
     );
 
-    setIsKapitelLoading(true);
     let hasData = false;
     let settledOnce = false;
 
@@ -571,29 +620,24 @@ export function Dashboard({
     let pendingUpdate: Partial<FirebaseKapitelRun> = {};
     let updateTimeout: NodeJS.Timeout | null = null;
 
-    // Track when all 4 listeners have fired at least once
+    // Track when both listeners have fired at least once
     let listenersSettled = 0;
     const totalListeners = 4;
 
     const flushBatchedUpdate = () => {
       if (Object.keys(pendingUpdate).length > 0) {
-        setFbRuns((prev) =>
-          prev.map((run) => (run.id === selectedRunId ? { ...run, ...pendingUpdate } : run))
-        );
+        setFbRuns((prev) => prev.map((run) => (run.id === selectedRunId ? { ...run, ...pendingUpdate } : run)));
         pendingUpdate = {};
       }
     };
 
     const updateRunBatched = (partial: Partial<FirebaseKapitelRun>) => {
-      // Accumulate updates
       pendingUpdate = { ...pendingUpdate, ...partial };
 
-      // Clear existing timeout
       if (updateTimeout) {
         clearTimeout(updateTimeout);
       }
 
-      // Schedule batched update (50ms debounce)
       updateTimeout = setTimeout(flushBatchedUpdate, 50);
     };
 
@@ -604,7 +648,6 @@ export function Dashboard({
       }
     };
 
-    // Clear loading once all listeners have fired, even if no data yet
     const checkListenerSettled = () => {
       listenersSettled++;
       if (listenersSettled >= totalListeners) {
@@ -612,228 +655,218 @@ export function Dashboard({
       }
     };
 
-    const combinedUnsub = onSnapshot(combinedRef, (combinedSnap) => {
-      let combined: any = null;
-      if (!combinedSnap.empty) {
-        const doc = combinedSnap.docs[0];
-        const data: any = doc.data();
-        combined = {
-          id: doc.id,
-          combinedContent: data.combined_content ?? data.combinedContent ?? '',
-          sourceQuelleIds: data.source_quelle_ids ?? data.sourceQuelleIds ?? [],
-          heading: data.heading ?? '',
-          topic: data.topic ?? '',
-          modelUsed: data.model_used ?? data.modelUsed ?? '',
-          tokensUsed: data.tokens_used ?? data.tokensUsed ?? 0,
-          inputTokens: data.input_tokens ?? data.inputTokens ?? 0,
-          cachedInputTokens: data.cached_input_tokens ?? data.cachedInputTokens ?? 0,
-          outputTokens: data.output_tokens ?? data.outputTokens ?? 0,
-          reasoningTokens: data.reasoning_tokens ?? data.reasoningTokens ?? 0,
-          cost: data.cost ?? 0,
-          refinementCostTotal: data.refinement_cost_total ?? data.refinementCostTotal ?? 0,
-          refinementRootVersionId: data.refinement_root_version_id ?? data.refinementRootVersionId ?? undefined,
-          refinementActiveVersionId: data.refinement_active_version_id ?? data.refinementActiveVersionId ?? undefined,
-          refinementMaxDepth: data.refinement_max_depth ?? data.refinementMaxDepth ?? undefined,
-          createdAt:
-            data.created_at?.toDate?.()?.toISOString() ||
-            data.createdAt?.toDate?.()?.toISOString() ||
-            new Date().toISOString(),
-        };
-      }
-      updateRunBatched({ combined });
-      hasData = hasData || !!combined;
-      if (hasData) finishIfNeeded();
-      checkListenerSettled();
-    });
+    const normalizeRefinement = (refinement: any) =>
+      refinement
+        ? {
+            rootVersionId: 'root' as const,
+            activeVersionId: refinement.activeVersionId ?? 'root',
+            maxDepth: refinement.maxDepth ?? 4,
+            costTotalUsd: refinement.costTotalUsd ?? 0,
+            initializedAt: refinement.initializedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            selectedAt: refinement.selectedAt?.toDate?.()?.toISOString() ?? null,
+          }
+        : {
+            rootVersionId: 'root' as const,
+            activeVersionId: 'root',
+            maxDepth: 4,
+            costTotalUsd: 0,
+            initializedAt: new Date().toISOString(),
+            selectedAt: null,
+          };
 
-    const shortenedUnsub = onSnapshot(shortenedRef, (shortenedSnap) => {
-      let shortened: any = null;
-        if (!shortenedSnap.empty) {
-          const doc = shortenedSnap.docs[0];
-          const data: any = doc.data();
-          shortened = {
-            id: doc.id,
-            shortenedContent: data.shortened_content ?? data.shortenedContent ?? '',
-            explanation: data.explanation ? {
-              lengthDecision: data.explanation.length_decision ?? '',
-              omittedTopics: data.explanation.omitted_topics ?? [],
-              preservedFocus: data.explanation.preserved_focus ?? [],
-              compressionNotes: data.explanation.compression_notes ?? '',
-            } : undefined,
-            originalLength: data.original_length ?? data.originalLength ?? 0,
-            shortenedLength: data.shortened_length ?? data.shortenedLength ?? 0,
-            usedKapitelIds: data.used_kapitel_ids ?? data.usedKapitelIds ?? [],
-            model: data.model ?? '',
-            cost: data.cost ?? 0,
-            refinementCostTotal: data.refinement_cost_total ?? data.refinementCostTotal ?? 0,
-            refinementRootVersionId: data.refinement_root_version_id ?? data.refinementRootVersionId ?? undefined,
-            refinementActiveVersionId: data.refinement_active_version_id ?? data.refinementActiveVersionId ?? undefined,
-            refinementMaxDepth: data.refinement_max_depth ?? data.refinementMaxDepth ?? undefined,
-            tokensUsed: data.tokens_used ?? data.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
-            createdAt:
-              data.created_at?.toDate?.()?.toISOString() ||
-              data.createdAt?.toDate?.()?.toISOString() ||
-            new Date().toISOString(),
-        };
-      }
-      updateRunBatched({ shortened });
-      hasData = hasData || !!shortened;
-      if (hasData) finishIfNeeded();
-      checkListenerSettled();
-    });
+    const normalizeUsage = (usage: any) =>
+      usage
+        ? {
+            inputTokens: usage.inputTokens ?? 0,
+            cachedInputTokens: usage.cachedInputTokens ?? 0,
+            outputTokens: usage.outputTokens ?? 0,
+            reasoningTokens: usage.reasoningTokens ?? 0,
+            totalTokens: usage.totalTokens ?? 0,
+          }
+        : { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 };
 
-    const leseflussRef = collection(
-      db,
-      'users',
-      user.uid,
-      'kapitels',
-      activeKapitelId,
-      'runs',
-      selectedRunId,
-      'lesefluss'
+    // Listen to fixed artifact docs individually so we don't fail if legacy/unknown docs exist in the collection.
+    const artifacts: any = { combined: null, shortened: null, lesefluss: null };
+
+    const listenArtifact = (artifactId: 'combined' | 'shortened' | 'lesefluss') =>
+      onSnapshot(
+        doc(artifactsRef, artifactId),
+        (snap) => {
+          if (!snap.exists()) {
+            artifacts[artifactId] = null;
+            updateRunBatched({ artifacts: { ...artifacts } });
+            checkListenerSettled();
+            return;
+          }
+
+          const data: any = snap.data();
+          const refinement = normalizeRefinement(data.refinement);
+          const usage = normalizeUsage(data.usage);
+
+          if (artifactId === 'combined') {
+            artifacts.combined = {
+              id: 'combined',
+              content: data.content ?? '',
+              status: data.status,
+              sourceQuelleIds: data.sourceQuelleIds ?? [],
+              heading: data.heading ?? '',
+              topic: data.topic ?? '',
+              model: data.model ?? '',
+              usage,
+              costUsd: data.costUsd ?? 0,
+              refinement,
+              createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+              updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
+            };
+          } else if (artifactId === 'shortened') {
+            artifacts.shortened = {
+              id: 'shortened',
+              content: data.content ?? '',
+              status: data.status,
+              explanation: data.explanation,
+              originalLength: data.originalLength ?? 0,
+              shortenedLength: data.shortenedLength ?? 0,
+              usedKapitelIds: data.usedKapitelIds ?? [],
+              model: data.model ?? '',
+              usage,
+              costUsd: data.costUsd ?? 0,
+              refinement,
+              createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+              updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
+            };
+          } else if (artifactId === 'lesefluss') {
+            artifacts.lesefluss = {
+              id: 'lesefluss',
+              content: data.content ?? '',
+              status: data.status,
+              aufgabenstellung: data.aufgabenstellung ?? '',
+              explanation: data.explanation,
+              originalLength: data.originalLength,
+              leseflussLength: data.leseflussLength ?? 0,
+              usedKapitelIds: data.usedKapitelIds ?? [],
+              model: data.model ?? '',
+              usage,
+              costUsd: data.costUsd ?? 0,
+              refinement,
+              createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+              updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
+            };
+          }
+
+          updateRunBatched({ artifacts: { ...artifacts } });
+          hasData = hasData || Boolean(artifacts.combined || artifacts.shortened || artifacts.lesefluss);
+          if (hasData) finishIfNeeded();
+          checkListenerSettled();
+        },
+        (err) => {
+          console.error(`Artifact listen failed (${artifactId}):`, err);
+          checkListenerSettled();
+        }
+      );
+
+    const artifactsUnsubs = [listenArtifact('combined'), listenArtifact('shortened'), listenArtifact('lesefluss')];
+
+    const resultsUnsub = onSnapshot(
+      resultsRef,
+      (resSnapshot) => {
+        const results = resSnapshot.docs.map((resDoc) => {
+          const resData: any = resDoc.data();
+          return {
+            quelleId: resDoc.id,
+            userInput: resData.userInput ?? '',
+            content: resData.content ?? '',
+            hasContent: typeof resData.hasContent === 'boolean' ? resData.hasContent : true,
+            status: resData.status,
+            model: resData.model ?? '',
+            usage: normalizeUsage(resData.usage),
+            costUsd: resData.costUsd ?? 0,
+            refinement: normalizeRefinement(resData.refinement),
+            createdAt: resData.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            updatedAt: resData.updatedAt?.toDate?.()?.toISOString(),
+          };
+        });
+
+        updateRunBatched({ results });
+        hasData = hasData || results.length > 0;
+        if (hasData) finishIfNeeded();
+        if (!hasData && resSnapshot.empty) {
+          finishIfNeeded();
+        }
+        checkListenerSettled();
+      },
+      (err) => {
+        console.error('Results listen failed:', err);
+        checkListenerSettled();
+      }
     );
 
-    const leseflussUnsub = onSnapshot(leseflussRef, (leseflussSnap) => {
-      let lesefluss: any = null;
-      if (!leseflussSnap.empty) {
-        const doc = leseflussSnap.docs[0];
-        const data: any = doc.data();
-        lesefluss = {
-          id: doc.id,
-          leseflussContent: data.lesefluss_content ?? data.leseflussContent ?? '',
-          aufgabenstellung: data.aufgabenstellung ?? '',
-          explanation: data.explanation ?? '',
-          originalLength: data.original_length ?? data.originalLength ?? 0,
-          leseflussLength: data.lesefluss_length ?? data.leseflussLength ?? 0,
-          usedKapitelIds: data.used_kapitel_ids ?? data.usedKapitelIds ?? [],
-          model: data.model ?? '',
-          cost: data.cost ?? 0,
-          tokensUsed: data.tokens_used ?? data.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
-          createdAt:
-            data.created_at?.toDate?.()?.toISOString() ||
-            data.createdAt?.toDate?.()?.toISOString() ||
-            new Date().toISOString(),
-        };
-      }
-      updateRunBatched({ lesefluss });
-      hasData = hasData || !!lesefluss;
-      if (hasData) finishIfNeeded();
-      checkListenerSettled();
-    });
-
-    const resultsUnsub = onSnapshot(resultsRef, (resSnapshot) => {
-      const results = resSnapshot.docs.map((resDoc) => {
-        const resData: any = resDoc.data();
-        return {
-          quelleId: resDoc.id,
-          resultContent: resData.result_content ?? resData.resultContent ?? '',
-          hasContent: resData.has_content ?? resData.hasContent ?? true,
-          modelUsed: resData.model_used ?? resData.modelUsed ?? '',
-          tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
-          inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
-          cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
-          outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
-          reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
-          cost: resData.cost ?? 0,
-          createdAt:
-            resData.created_at?.toDate?.()?.toISOString() ||
-            resData.createdAt?.toDate?.()?.toISOString() ||
-            new Date().toISOString(),
-        };
-      });
-
-      updateRunBatched({ results });
-      hasData = hasData || results.length > 0;
-      if (hasData) finishIfNeeded();
-      if (!hasData && resSnapshot.empty) {
-        finishIfNeeded();
-      }
-      checkListenerSettled();
-    });
-
     return () => {
-      // Clear pending timeout and flush any pending updates
       if (updateTimeout) {
         clearTimeout(updateTimeout);
         flushBatchedUpdate();
       }
-      combinedUnsub();
-      shortenedUnsub();
-      leseflussUnsub();
+      artifactsUnsubs.forEach((fn) => fn());
       resultsUnsub();
     };
   }, [user?.uid, activeKapitelId, selectedRunId]);
 
-  // Live status per Kapitel (latest run only, minimal data)
+  // Realtime Kapitels list for the active project (status comes from denormalized `latestRun`)
   useEffect(() => {
-    if (!user?.uid || kapiteln.length === 0) return;
+    if (!user?.uid || !projekt?.id) return;
 
-    const db = getFirestore(firebaseApp);
-    const runUnsubs: Unsubscribe[] = [];
-    const combinedUnsubs: Map<string, Unsubscribe> = new Map();
-    const kapitelIds = kapiteln.map((k) => k.id);
+    const db = firestoreClient;
+    const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
+    const q = query(
+      kapitelsRef,
+      where('projektId', '==', projekt.id),
+      where('archived', '==', false),
+      orderBy('order', 'asc')
+    );
 
-    const updateKapitelStatus = (
-      kapitelId: string,
-      status: 'nicht-verarbeitet' | 'in-bearbeitung' | 'fertig'
-    ) => {
-      setKapiteln((prev) =>
-        prev.map((k) => {
-          if (k.id !== kapitelId) return k;
-          if (k.status === status) return k;
-          return { ...k, status };
-        })
-      );
-    };
-
-    kapitelIds.forEach((kapitelId) => {
-      const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
-      const q = query(runsRef, orderBy('index', 'desc'), limit(1));
-
-      const runUnsub = onSnapshot(q, (runSnap) => {
-        const existing = combinedUnsubs.get(kapitelId);
-        if (existing) {
-          existing();
-          combinedUnsubs.delete(kapitelId);
-        }
-
-        if (runSnap.empty) {
-          updateKapitelStatus(kapitelId, 'nicht-verarbeitet');
-          return;
-        }
-
-        const latestRunId = runSnap.docs[0].id;
-        updateKapitelStatus(kapitelId, 'in-bearbeitung');
-
-        const combinedRef = collection(
-          db,
-          'users',
-          user.uid,
-          'kapitels',
-          kapitelId,
-          'runs',
-          latestRunId,
-          'combined'
-        );
-        const combinedUnsub = onSnapshot(combinedRef, (combinedSnap) => {
-          if (!combinedSnap.empty) {
-            updateKapitelStatus(kapitelId, 'fertig');
-          } else {
-            updateKapitelStatus(kapitelId, 'in-bearbeitung');
-          }
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const fb = snap.docs.map((d) => {
+          const data: any = d.data();
+          return {
+            id: d.id,
+            title: data.title || '',
+            projektId: data.projektId || projekt.id,
+            nummer: data.nummer || '1',
+            createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
+            archived: Boolean(data.archived),
+            archivedAt: data.archivedAt?.toDate?.()?.toISOString(),
+            quelleIds: data.quelleIds || [],
+            parentId: data.parentId ?? null,
+            order: data.order ?? 0,
+            latestRun: data.latestRun
+              ? {
+                  runId: data.latestRun.runId,
+                  index: data.latestRun.index,
+                  status: data.latestRun.status,
+                  updatedAt: data.latestRun.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+                }
+              : undefined,
+          };
         });
 
-        combinedUnsubs.set(kapitelId, combinedUnsub);
-      });
+        const ui = fb.map((k) => transformKapitelToUI(k as any, projekt.id));
+        setKapiteln(ui);
 
-      runUnsubs.push(runUnsub);
-    });
+        setActiveKapitelId((prev) => {
+          if (!ui.length) return '';
+          if (prev && ui.some((k) => k.id === prev)) return prev;
+          return ui[0].id;
+        });
+      },
+      (err) => {
+        console.error('Error listening to kapitels:', err);
+      }
+    );
 
-    return () => {
-      runUnsubs.forEach((u) => u());
-      combinedUnsubs.forEach((u) => u());
-    };
-  }, [user?.uid, kapiteln.map((k) => k.id).join(',')]);
+    return () => unsub();
+  }, [user?.uid, projekt.id]);
 
   // hide initial skeleton once first client render completes
   useEffect(() => {
@@ -973,7 +1006,7 @@ export function Dashboard({
       const loadingToast = toast.loading('Quelle wird hinzugefügt...');
       const uploadingToast =
         imageFiles.length > 0
-          ? toast.loading(`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`)
+          ? toast.loading(`Lade ${imageFiles.length} Bild(er) hoch...`)
           : undefined;
 
       let imageMetadata: ImageMetadata[] = [];
@@ -994,7 +1027,7 @@ export function Dashboard({
         if (result.success) {
           success = true;
           toast.success('Quelle hinzugefügt', {
-            description: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` mit ${imageFiles.length} Bild(ern)` : ''}.`,
+            description: `"${name}" wurde erfolgreich erstellt${imageFiles.length > 0 ? ` mit ${imageFiles.length} Bild(ern)` : ''}.`,
             id: loadingToast,
           });
           // Optimistically update UI
@@ -1067,6 +1100,19 @@ export function Dashboard({
     }
   }, [deletingQuelleIds]);
 
+  const handleViewQuelle = useCallback(async (quelle: Quelle) => {
+    setQuelleViewerLoading(true);
+    setQuelleViewer({ ...quelle, text: '' });
+    try {
+      const content = await getQuelleContent(quelle.id);
+      if (content?.text != null) {
+        setQuelleViewer((prev) => (prev?.id === quelle.id ? { ...prev, text: content.text } : prev));
+      }
+    } finally {
+      setQuelleViewerLoading(false);
+    }
+  }, []);
+
   const handleAssignQuelle = useCallback(
     async (quelleId: string) => {
       if (!activeKapitelId) return;
@@ -1092,7 +1138,7 @@ export function Dashboard({
         await persistKapitelQuellenClient(activeKapitelId, newQuelleIds);
         toast.success('Quelle zugewiesen', {
           id: toastId,
-          description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
+          description: quelle ? `"${quelle.name}" wurde dem Kapitel hinzugefügt.` : undefined,
         });
       } catch (clientErr) {
         // Fallback to server action
@@ -1105,7 +1151,7 @@ export function Dashboard({
         } else {
           toast.success('Quelle zugewiesen', {
             id: toastId,
-            description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
+            description: quelle ? `"${quelle.name}" wurde dem Kapitel hinzugefügt.` : undefined,
           });
         }
       } finally {
@@ -1140,7 +1186,7 @@ export function Dashboard({
         await persistKapitelQuellenClient(activeKapitelId, newQuelleIds);
         toast.success('Quelle entfernt', {
           id: toastId,
-          description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
+          description: quelle ? `"${quelle.name}" wurde vom Kapitel entfernt.` : undefined,
         });
       } catch (clientErr) {
         const result = await updateKapitelQuellen(activeKapitelId, newQuelleIds);
@@ -1152,7 +1198,7 @@ export function Dashboard({
         } else {
           toast.success('Quelle entfernt', {
             id: toastId,
-            description: quelle ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>` : undefined,
+            description: quelle ? `"${quelle.name}" wurde vom Kapitel entfernt.` : undefined,
           });
         }
       } finally {
@@ -1419,7 +1465,7 @@ export function Dashboard({
       setIsProcessingRun(true);
       setProcessingDialogOpen(false);
       const processingToastId = toast.loading('Verarbeitung gestartet', {
-        description: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`,
+        description: `"${settings.ueberschrift}" wird mit ${assignedQuellen.length} Quellen verarbeitet...`,
       });
 
       try {
@@ -1442,6 +1488,7 @@ export function Dashboard({
         // Optimistically show the new run while Firestore listeners update
         setFbRuns((prev) => {
           if (prev.some((r) => r.id === result.runId)) return prev;
+          const combinedStatus = settings.directCombine ? 'running' : 'empty';
           return [
             {
               id: result.runId!,
@@ -1449,6 +1496,7 @@ export function Dashboard({
               instruction: prompt,
               model: settings.model,
               createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
               promptTemplateId: processChoice,
               promptPayload: {
                 heading: settings.ueberschrift.trim(),
@@ -1456,9 +1504,16 @@ export function Dashboard({
               },
               autoCombine: settings.directCombine,
               results: [],
-              combined: null,
+              artifacts: { combined: null, shortened: null, lesefluss: null },
+              artifactsStatus: { combined: combinedStatus, shortened: 'empty', lesefluss: 'empty' },
+              resultsExpectedCount: assignedQuellen.length,
+              resultsCompletedCount: 0,
+              resultsWithContentCount: 0,
+              lastResultAt: null,
+              lastActivityAt: new Date().toISOString(),
               ueberschrift: settings.ueberschrift.trim(),
               thema: settings.thema.trim(),
+              grundlegendeInformationen: settings.grundlegendeInfos?.trim() || null,
             },
             ...prev,
           ];
@@ -1535,7 +1590,7 @@ export function Dashboard({
                 return;
               }
 
-              console.error(`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`, err);
+              console.error(`Error processing Quelle ${nextQuelle?.id}:`, err);
               toast.error('Fehler bei einer Quelle', {
                 description: err.message || 'Unbekannter Fehler beim Verarbeiten der Quelle',
                 id: processingToastId,
@@ -1585,6 +1640,13 @@ export function Dashboard({
   const handleCombineTexts = useCallback(async () => {
     if (!activeKapitelId || !selectedRun) {
       toast.error('Kein Run ausgewählt');
+      return;
+    }
+
+    if (selectedRun.combinedStatus === 'running') {
+      toast.info('Kombination laeuft bereits', {
+        description: 'Bitte warte, bis die Kombination abgeschlossen ist.',
+      });
       return;
     }
 
@@ -1694,8 +1756,15 @@ export function Dashboard({
   ]);
 
   const handleShorten = useCallback(
-    async (contextKapitelIds: string[], model: string, promptChoice?: Partial<Record<PromptStage, string | 'default'>>) => {
+    async (contextKapitelIds: string[], promptChoice?: Partial<Record<PromptStage, string | 'default'>>) => {
       if (!activeKapitel || !selectedRun) return;
+
+      if (selectedRun.shortenedStatus === 'running') {
+        toast.info('Kuerzung laeuft bereits', {
+          description: 'Bitte warte, bis die Kuerzung abgeschlossen ist.',
+        });
+        return;
+      }
 
       if (!(await ensureOpenAIAccess())) return;
 
@@ -1730,12 +1799,7 @@ export function Dashboard({
       });
 
       try {
-        const result = await createShortenRun(
-          activeKapitelId,
-          selectedRun.id,
-          contextKapitelIds,
-          model as 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2'
-        );
+        const result = await createShortenRun(activeKapitelId, selectedRun.id, contextKapitelIds);
 
         if (!result?.success) {
           const message = result?.error || 'Kürzung konnte nicht gestartet werden.';
@@ -1810,10 +1874,16 @@ export function Dashboard({
     async (
       contextKapitelIds: string[],
       aufgabenstellung: string,
-      model: string,
       promptChoice?: Partial<Record<PromptStage, string | 'default'>>
     ) => {
       if (!activeKapitel || !selectedRun) return;
+
+      if (selectedRun.leseflussStatus === 'running') {
+        toast.info('Lesefluss laeuft bereits', {
+          description: 'Bitte warte, bis der Lesefluss abgeschlossen ist.',
+        });
+        return;
+      }
 
       if (!(await ensureOpenAIAccess())) return;
 
@@ -1848,13 +1918,7 @@ export function Dashboard({
       });
 
       try {
-        const result = await createLeseflussRun(
-          activeKapitelId,
-          selectedRun.id,
-          contextKapitelIds,
-          aufgabenstellung,
-          model as 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2'
-        );
+        const result = await createLeseflussRun(activeKapitelId, selectedRun.id, contextKapitelIds, aufgabenstellung);
 
         if (!result?.success) {
           const message = result?.error || 'Lese Fluss verbessern konnte nicht gestartet werden.';
@@ -2024,7 +2088,7 @@ export function Dashboard({
               onDeleteQuelle={(id, name) => setDeleteConfirm({ type: 'quelle', id, name })}
               onAssignQuelle={handleAssignQuelle}
               onUnassignQuelle={handleUnassignQuelle}
-              onViewQuelle={(quelle) => setQuelleViewer(quelle)}
+              onViewQuelle={handleViewQuelle}
               isAddingQuelle={isAddingQuelle}
               assigningQuelleIds={assigningQuelleIds}
               unassigningQuelleIds={unassigningQuelleIds}
@@ -2036,6 +2100,7 @@ export function Dashboard({
       <TextViewerModal content={textViewerContent} onClose={() => setTextViewerContent(null)} />
       <QuelleViewerModal
         quelle={quelleViewer}
+        loading={quelleViewerLoading}
         open={!!quelleViewer}
         onOpenChange={(open) => {
           if (!open) setQuelleViewer(null);
@@ -2062,6 +2127,7 @@ export function Dashboard({
           onOpenChange={setShortenDialogOpen}
           allKapitels={kapiteln}
           currentKapitelId={activeKapitel.id}
+          runModel={selectedRun.model}
           onShorten={handleShorten}
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
@@ -2070,12 +2136,13 @@ export function Dashboard({
         />
       )}
 
-      {activeKapitel && (
+      {activeKapitel && selectedRun && (
         <LeseflussDialog
           open={leseflussDialogOpen}
           onOpenChange={setLeseflussDialogOpen}
           allKapitels={kapiteln}
           currentKapitelId={activeKapitel.id}
+          runModel={selectedRun.model}
           onLesefluss={handleLesefluss}
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
@@ -2091,7 +2158,7 @@ export function Dashboard({
           kapitelId={activeKapitel.id}
           runId={selectedRun.id}
           runModel={selectedRun.model}
-          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          kapitelLabel={`${activeKapitel.nummer} ${activeKapitel.title}`}
           ensureOpenAIAccess={ensureOpenAIAccess}
           onAuthFailure={handleAuthFailure}
           onServerDown={notifyServerDown}
@@ -2105,7 +2172,7 @@ export function Dashboard({
           onOpenChange={setShortenedRefinementDialogOpen}
           kapitelId={activeKapitel.id}
           runId={selectedRun.id}
-          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          kapitelLabel={`${activeKapitel.nummer} ${activeKapitel.title}`}
           ensureOpenAIAccess={ensureOpenAIAccess}
           onAuthFailure={handleAuthFailure}
           onServerDown={notifyServerDown}
@@ -2119,7 +2186,7 @@ export function Dashboard({
           onOpenChange={setLeseflussRefinementDialogOpen}
           kapitelId={activeKapitel.id}
           runId={selectedRun.id}
-          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          kapitelLabel={`${activeKapitel.nummer} ${activeKapitel.title}`}
           ensureOpenAIAccess={ensureOpenAIAccess}
           onAuthFailure={handleAuthFailure}
           onServerDown={notifyServerDown}
@@ -2138,7 +2205,7 @@ export function Dashboard({
           runId={selectedRun.id}
           quelleId={resultRefinementTarget.quelleId}
           quelleName={resultRefinementTarget.quelleName}
-          kapitelLabel={`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`}
+          kapitelLabel={`${activeKapitel.nummer} ${activeKapitel.title}`}
           ensureOpenAIAccess={ensureOpenAIAccess}
           onAuthFailure={handleAuthFailure}
           onServerDown={notifyServerDown}
@@ -2186,10 +2253,11 @@ export function Dashboard({
 }
 
 function buildPrompt(heading: string, topic: string, basicInfo?: string) {
-  const prompt = `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`;
+  const prompt = `### Aufgabe:
+Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz ist, schreibe keine Einleitung oder Schlussfolgerung/Zusammenfassung. Der Absatz hat die Überschrift "${heading}" und soll genauer das Thema "${topic}" behandeln. Beziehe dich beim Schreiben des Absatzes nur auf die oben gegebenen Informationen und nutze nichts aus deinem eigenen Wissen. Fokussiere dich außerdem genau auf das Thema, das ich vorgegeben habe, da andere Informationen hierzu bereits behandelt worden sind oder noch behandelt werden; kurzum, schreibe wirklich nur über das vorgegebene Thema. Wichtig ist, dass Informationen, die aus dem obigen Text übernommen werden, so umgeschrieben werden sollen, dass der obige Text nicht mehr zu erkennen ist – das Ergebnis also einzigartig ist. Der Text soll so lang sein, wie er sein muss, um alle relevanten Informationen zu integrieren; ziehe ihn nicht unnötig in die Länge, aber lasse auch nichts Relevantes weg. Sollte der Text keine sinnvollen Informationen zu dem gegebenen Thema enthalten, kannst du mir das sagen und den Text dann nicht schreiben; gib mir dann eine kurze Erklärung, warum der Text nicht zum Thema gepasst hat. Integriere außerdem die Quellen (mit Seitenzahlen, wenn diese gegeben wurden) aus dem oberen Text an den richtigen Stellen. Der gegebene Text hat sicherlich mehr Informationen zu manchen Themen und weniger zu anderen. Fokussiere dich auf die Themen, zu denen du wirklich konkrete und tiefe Einblicke geben kannst. Dieser Text ist nur einer von 10, die ich zu diesem Thema habe. Das bedeutet, wenn du eine Dimension nur wenig oder gar nicht behandelst, habe ich dennoch viele Informationen zu dieser in einem anderen Text. Genauer ausgedrückt, schreibst du gerade einen von 10 Texten, die später das Kapitel ergeben werden. Das bedeutet auch, dass du dich wirklich auf das Wichtigste beschränken kannst und nicht unnötiges schreiben musst. Schreibe keine Zusammenfassung oder Schlussfolgerung am Ende. Nur reine Informationen. Formuliere den Text ohne dass du ; verwendest, außer zwischen zwei Quellen.`;
 
   const grundInfo = basicInfo?.trim()
-    ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`
+    ? `\n\nGrundlegende Informationen, die durchgehend berücksichtigt werden sollen:\n${basicInfo.trim()}`
     : '';
 
   return `${prompt}${grundInfo}`;

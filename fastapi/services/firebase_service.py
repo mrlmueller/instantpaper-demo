@@ -7,6 +7,8 @@ from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+AI_GENERIC_ERROR_MESSAGE = "Fehler bei der Verarbeitung. Wenn es weiterhin passiert, bitte melde dich."
+
 
 class FirebaseService:
     """Service for Firebase Admin SDK operations"""
@@ -137,31 +139,51 @@ class FirebaseService:
             logger.error(f"Session cookie verification failed: {str(e)}")
             raise
 
-    async def get_quelle(self, user_id: str, quelle_id: str) -> Optional[dict]:
-        """
-        Fetch a Quelle from Firestore
-
-        Args:
-            user_id: User ID (owner of the Quelle)
-            quelle_id: Quelle document ID
-
-        Returns:
-            dict: Quelle data if found, None otherwise
-        """
+    async def get_quelle_meta(self, user_id: str, quelle_id: str) -> Optional[dict]:
+        """Fetch a Quelle metadata doc (`users/{uid}/quellen/{quelleId}`)."""
         try:
-            doc_ref = self.db.collection('users').document(user_id) \
-                            .collection('quellen').document(quelle_id)
+            doc_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("quellen")
+                .document(quelle_id)
+            )
             doc = doc_ref.get()
-
-            if doc.exists:
-                return doc.to_dict()
-            else:
+            if not doc.exists:
                 logger.warning(f"Quelle {quelle_id} not found for user {user_id}")
                 return None
-
+            data = doc.to_dict() or {}
+            data["id"] = doc.id
+            return data
         except Exception as e:
-            logger.error(f"Error fetching Quelle: {str(e)}")
+            logger.error(f"Error fetching Quelle meta: {str(e)}")
             raise
+
+    async def get_quelle_content(self, user_id: str, quelle_id: str) -> Optional[dict]:
+        """Fetch Quelle content doc (`users/{uid}/quellen/{quelleId}/content/main`)."""
+        try:
+            doc_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("quellen")
+                .document(quelle_id)
+                .collection("content")
+                .document("main")
+            )
+            doc = doc_ref.get()
+            if not doc.exists:
+                logger.warning(f"Quelle content missing for quelle {quelle_id} user {user_id}")
+                return None
+            data = doc.to_dict() or {}
+            data["id"] = doc.id
+            return data
+        except Exception as e:
+            logger.error(f"Error fetching Quelle content: {str(e)}")
+            raise
+
+    async def get_quelle(self, user_id: str, quelle_id: str) -> Optional[dict]:
+        """Backward-compat alias for Quelle metadata (V2 stores content separately)."""
+        return await self.get_quelle_meta(user_id, quelle_id)
 
     async def save_result(
         self,
@@ -218,25 +240,86 @@ class FirebaseService:
                 .document(quelle_id)
             )
 
+            existing = result_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+            is_new = not existing.exists
+
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
+            existing_refinement = existing_data.get("refinement") if isinstance(existing_data, dict) else None
+            refinement_value = (
+                existing_refinement
+                if isinstance(existing_refinement, dict) and existing_refinement.get("rootVersionId") == "root"
+                else {
+                    "rootVersionId": "root",
+                    "activeVersionId": "root",
+                    "maxDepth": int(config.TEXT_REFINEMENT_MAX_DEPTH),
+                    "costTotalUsd": 0.0,
+                    "initializedAt": SERVER_TIMESTAMP,
+                }
+            )
+
+            status_value = (
+                "success"
+                if bool(has_content) and (result_content or "").strip()
+                else "no-content"
+            )
+
             result_data = {
-                'quelle_id': quelle_id,
-                'user_input': user_input,
-                'result_content': result_content,
-                'has_content': has_content,
-                'model_used': model_used,
-                'tokens_used': tokens_used,
-                'input_tokens': input_tokens,
-                'cached_input_tokens': cached_input_tokens,
-                'output_tokens': output_tokens,
-                'reasoning_tokens': reasoning_tokens,
-                'cost': cost,
-                'created_at': SERVER_TIMESTAMP
+                "quelleId": quelle_id,
+                "userInput": user_input,
+                "content": result_content,
+                "hasContent": bool(has_content),
+                "status": status_value,
+                "errorMessage": None,
+                "errorAt": None,
+                "model": model_used,
+                "usage": {
+                    "inputTokens": int(input_tokens),
+                    "cachedInputTokens": int(cached_input_tokens),
+                    "outputTokens": int(output_tokens),
+                    "reasoningTokens": int(reasoning_tokens),
+                    "totalTokens": int(tokens_used),
+                },
+                "costUsd": float(cost),
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
+                "refinement": refinement_value,
             }
 
-            if key_source:
-                result_data['key_source'] = key_source
+            batch = self.db.batch()
+            # Always write the V2 shape; preserve createdAt + refinement when re-saving.
+            batch.set(result_ref, result_data)
 
-            result_ref.set(result_data)
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            run_update: dict = {
+                "lastResultAt": SERVER_TIMESTAMP,
+                "lastActivityAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            }
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
+            should_count_completion = is_new or prev_status == "running"
+            if should_count_completion:
+                run_update["resultsCompletedCount"] = Increment(1)
+                if bool(has_content) and (result_content or "").strip():
+                    run_update["resultsWithContentCount"] = Increment(1)
+            batch.set(run_ref, run_update, merge=True)
+
+            batch.commit()
             logger.info(
                 f"Saved result for quelle {quelle_id} in kapitel {kapitel_id} run {run_id} for user {user_id} "
                 f"(cost: ${cost:.6f}, cached: {cached_input_tokens}, reasoning: {reasoning_tokens})"
@@ -259,6 +342,147 @@ class FirebaseService:
             .collection('results')
             .document(quelle_id)
         )
+
+    async def mark_result_running(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        quelle_id: str,
+        user_input: str,
+        model: str,
+        key_source: Optional[str] = None,
+    ) -> None:
+        """
+        Create/merge a placeholder result doc (status=running) so the UI can show progress and avoid infinite spinners.
+        """
+        try:
+            result_ref = self._run_result_ref(user_id, kapitel_id, run_id, quelle_id)
+            existing = result_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else SERVER_TIMESTAMP
+            )
+
+            existing_refinement = existing_data.get("refinement") if isinstance(existing_data, dict) else None
+            refinement_value = (
+                existing_refinement
+                if isinstance(existing_refinement, dict) and existing_refinement.get("rootVersionId") == "root"
+                else {
+                    "rootVersionId": "root",
+                    "activeVersionId": "root",
+                    "maxDepth": int(config.TEXT_REFINEMENT_MAX_DEPTH),
+                    "costTotalUsd": 0.0,
+                    "initializedAt": SERVER_TIMESTAMP,
+                }
+            )
+
+            placeholder = {
+                "quelleId": quelle_id,
+                "userInput": user_input,
+                "content": "",
+                "hasContent": True,
+                "status": "running",
+                "errorMessage": None,
+                "errorAt": None,
+                "model": model or "",
+                "usage": {
+                    "inputTokens": 0,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 0,
+                    "reasoningTokens": 0,
+                    "totalTokens": 0,
+                },
+                "costUsd": 0.0,
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": None,
+                "refinement": refinement_value,
+            }
+
+            batch = self.db.batch()
+            batch.set(result_ref, placeholder, merge=True)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            batch.set(
+                run_ref,
+                {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP},
+                merge=True,
+            )
+            batch.commit()
+        except Exception as e:
+            logger.error(f"Error marking result running: {e}")
+
+    async def mark_result_error(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        quelle_id: str,
+        *,
+        key_source: Optional[str] = None,
+    ) -> None:
+        """Mark a result doc as errored (status=error) with a generic message."""
+        try:
+            result_ref = self._run_result_ref(user_id, kapitel_id, run_id, quelle_id)
+            existing = result_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else SERVER_TIMESTAMP
+            )
+
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
+            should_count_completion = (not existing.exists) or prev_status == "running"
+
+            update = {
+                "quelleId": quelle_id,
+                "content": "",
+                "hasContent": True,
+                "status": "error",
+                "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                "errorAt": SERVER_TIMESTAMP,
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
+            }
+
+            batch = self.db.batch()
+            batch.set(result_ref, update, merge=True)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            run_update: dict = {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP}
+            if should_count_completion:
+                run_update["resultsCompletedCount"] = Increment(1)
+            batch.set(run_ref, run_update, merge=True)
+            batch.commit()
+        except Exception as e:
+            logger.error(f"Error marking result error: {e}")
 
     def _run_result_refinement_version_ref(
         self, user_id: str, kapitel_id: str, run_id: str, quelle_id: str, version_id: str
@@ -326,44 +550,43 @@ class FirebaseService:
         root_id = 'root'
         root_doc = await self.get_result_refinement_version(user_id, kapitel_id, run_id, quelle_id, root_id)
         if not root_doc:
-            created_at = result.get('created_at') or result.get('createdAt') or SERVER_TIMESTAMP
+            created_at = result.get("createdAt") or SERVER_TIMESTAMP
+            usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
             root_data = {
-                'parent_version_id': None,
-                'depth': 0,
-                'user_message': None,
-                'assistant_text': result.get('result_content') or result.get('resultContent') or '',
-                'has_content': result.get('has_content') if 'has_content' in result else result.get('hasContent', True),
-                'status': 'success',
-                'model': result.get('model_used') or result.get('modelUsed') or '',
-                'usage': {
-                    'input_tokens': int(result.get('input_tokens') or result.get('inputTokens') or 0),
-                    'cached_input_tokens': int(result.get('cached_input_tokens') or result.get('cachedInputTokens') or 0),
-                    'output_tokens': int(result.get('output_tokens') or result.get('outputTokens') or 0),
-                    'reasoning_tokens': int(result.get('reasoning_tokens') or result.get('reasoningTokens') or 0),
-                    'total_tokens': int(result.get('tokens_used') or result.get('tokensUsed') or 0),
+                "parentVersionId": None,
+                "depth": 0,
+                "userMessage": None,
+                "assistantText": result.get("content") or "",
+                "hasContent": bool(result.get("hasContent", True)),
+                "status": "success",
+                "model": result.get("model") or "",
+                "usage": {
+                    "inputTokens": int(usage.get("inputTokens", 0)),
+                    "cachedInputTokens": int(usage.get("cachedInputTokens", 0)),
+                    "outputTokens": int(usage.get("outputTokens", 0)),
+                    "reasoningTokens": int(usage.get("reasoningTokens", 0)),
+                    "totalTokens": int(usage.get("totalTokens", 0)),
                 },
-                'cost': 0.0,
-                'created_at': created_at,
+                "costUsd": 0.0,
+                "keySource": result.get("keySource"),
+                "createdAt": created_at,
             }
             await self.save_result_refinement_version(user_id, kapitel_id, run_id, quelle_id, root_id, root_data)
 
         # Initialize refinement metadata on result doc (merge, idempotent)
         result_ref = self._run_result_ref(user_id, kapitel_id, run_id, quelle_id)
-        active_id = (
-            result.get('refinement_active_version_id')
-            or result.get('refinementActiveVersionId')
-            or 'root'
-        )
-        result_ref.set(
-            {
-                'refinement_root_version_id': 'root',
-                'refinement_active_version_id': active_id,
-                'refinement_cost_total': result.get('refinement_cost_total') or result.get('refinementCostTotal') or 0.0,
-                'refinement_max_depth': max_depth,
-                'refinement_initialized_at': SERVER_TIMESTAMP,
-            },
-            merge=True,
-        )
+        existing_refinement = result.get("refinement") if isinstance(result.get("refinement"), dict) else {}
+        active_id = existing_refinement.get("activeVersionId") or "root"
+        refinement_doc = {
+            "rootVersionId": "root",
+            "activeVersionId": active_id,
+            "maxDepth": int(max_depth),
+            "costTotalUsd": float(existing_refinement.get("costTotalUsd") or 0.0),
+            "initializedAt": existing_refinement.get("initializedAt") or SERVER_TIMESTAMP,
+        }
+        if "selectedAt" in existing_refinement:
+            refinement_doc["selectedAt"] = existing_refinement.get("selectedAt")
+        result_ref.set({"refinement": refinement_doc, "updatedAt": SERVER_TIMESTAMP}, merge=True)
 
         return {
             'root_version_id': 'root',
@@ -374,12 +597,12 @@ class FirebaseService:
     async def increment_result_refinement_cost_total(
         self, user_id: str, kapitel_id: str, run_id: str, quelle_id: str, cost_usd: float
     ) -> None:
-        """Increment results/{quelleId}.refinement_cost_total atomically (USD)."""
+        """Increment results/{quelleId}.refinement.costTotalUsd atomically (USD)."""
         result_ref = self._run_result_ref(user_id, kapitel_id, run_id, quelle_id)
         result_ref.update(
             {
-                'refinement_cost_total': Increment(cost_usd),
-                'refinement_updated_at': SERVER_TIMESTAMP,
+                "refinement.costTotalUsd": Increment(float(cost_usd)),
+                "updatedAt": SERVER_TIMESTAMP,
             }
         )
 
@@ -422,7 +645,7 @@ class FirebaseService:
             raise
 
     async def get_combined_result(self, user_id: str, kapitel_id: str, run_id: str) -> Optional[dict]:
-        """Fetch combined result if it exists."""
+        """Fetch combined artifact (`artifacts/combined`) if it exists."""
         try:
             combined_ref = (
                 self.db.collection('users')
@@ -431,7 +654,7 @@ class FirebaseService:
                 .document(kapitel_id)
                 .collection('runs')
                 .document(run_id)
-                .collection('combined')
+                .collection('artifacts')
                 .document('combined')
             )
             doc = combined_ref.get()
@@ -439,6 +662,234 @@ class FirebaseService:
         except Exception as e:
             logger.error(f"Error fetching combined result for run {run_id}: {str(e)}")
             raise
+
+    async def set_run_artifact_status(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        artifact_id: str,
+        status: str,
+    ) -> None:
+        """Update runs/{runId}.artifactsStatus.{artifactId} (used to drive UI states)."""
+        try:
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            run_ref.set(
+                {
+                    f"artifactsStatus.{artifact_id}": status,
+                    "lastActivityAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+        except Exception as e:
+            logger.error(f"Error setting run artifact status ({artifact_id}={status}): {e}")
+
+    async def mark_artifact_running(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        artifact_id: str,
+        *,
+        model: Optional[str] = None,
+        key_source: Optional[str] = None,
+        used_kapitel_ids: Optional[list] = None,
+        aufgabenstellung: Optional[str] = None,
+    ) -> None:
+        """
+        Create/merge a placeholder artifact doc (status=running) so the UI can show progress and avoid infinite spinners.
+        Also updates runs/{runId}.artifactsStatus.{artifactId} = "running".
+        """
+        try:
+            doc_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('artifacts')
+                .document(artifact_id)
+            )
+
+            existing = doc_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else SERVER_TIMESTAMP
+            )
+
+            existing_refinement = existing_data.get("refinement") if isinstance(existing_data, dict) else None
+            refinement_value = (
+                existing_refinement
+                if isinstance(existing_refinement, dict) and existing_refinement.get("rootVersionId") == "root"
+                else {
+                    "rootVersionId": "root",
+                    "activeVersionId": "root",
+                    "maxDepth": int(config.TEXT_REFINEMENT_MAX_DEPTH),
+                    "costTotalUsd": 0.0,
+                    "initializedAt": SERVER_TIMESTAMP,
+                }
+            )
+
+            model_value = (model or "").strip() or (existing_data.get("model") or "")
+
+            placeholder: dict = {
+                "artifactId": artifact_id,
+                "status": "running",
+                "errorMessage": None,
+                "errorAt": None,
+                "model": model_value,
+                "usage": {
+                    "inputTokens": 0,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 0,
+                    "reasoningTokens": 0,
+                    "totalTokens": 0,
+                },
+                "costUsd": 0.0,
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": None,
+                "refinement": refinement_value,
+            }
+
+            if artifact_id == "combined":
+                placeholder.update(
+                    {
+                        "content": "",
+                        "heading": existing_data.get("heading") or "",
+                        "topic": existing_data.get("topic") or "",
+                        "sourceQuelleIds": [],
+                    }
+                )
+            elif artifact_id == "shortened":
+                placeholder.update(
+                    {
+                        "content": "",
+                        "originalLength": 0,
+                        "shortenedLength": 0,
+                        "compressionRatio": 0.0,
+                        "usedKapitelIds": used_kapitel_ids or [],
+                        "explanation": None,
+                    }
+                )
+            elif artifact_id == "lesefluss":
+                placeholder.update(
+                    {
+                        "content": "",
+                        "aufgabenstellung": aufgabenstellung or (existing_data.get("aufgabenstellung") or ""),
+                        "explanation": "",
+                        "originalLength": 0,
+                        "leseflussLength": 0,
+                        "usedKapitelIds": used_kapitel_ids or [],
+                    }
+                )
+
+            batch = self.db.batch()
+            batch.set(doc_ref, placeholder, merge=True)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            batch.set(
+                run_ref,
+                {
+                    f"artifactsStatus.{artifact_id}": "running",
+                    "lastActivityAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            batch.commit()
+        except Exception as e:
+            logger.error(f"Error marking artifact running ({artifact_id}): {e}")
+
+    async def mark_artifact_error(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        artifact_id: str,
+        *,
+        key_source: Optional[str] = None,
+    ) -> None:
+        """Mark an artifact doc as errored (status=error) with a generic message."""
+        try:
+            doc_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(kapitel_id)
+                .collection('runs')
+                .document(run_id)
+                .collection('artifacts')
+                .document(artifact_id)
+            )
+
+            existing = doc_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else SERVER_TIMESTAMP
+            )
+
+            update = {
+                "artifactId": artifact_id,
+                "status": "error",
+                "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                "errorAt": SERVER_TIMESTAMP,
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
+            }
+
+            batch = self.db.batch()
+            batch.set(doc_ref, update, merge=True)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            batch.set(
+                run_ref,
+                {
+                    f"artifactsStatus.{artifact_id}": "error",
+                    "lastActivityAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            batch.commit()
+        except Exception as e:
+            logger.error(f"Error marking artifact error ({artifact_id}): {e}")
 
     def _combined_root_ref(self, user_id: str, kapitel_id: str, run_id: str):
         return (
@@ -448,7 +899,7 @@ class FirebaseService:
             .document(kapitel_id)
             .collection('runs')
             .document(run_id)
-            .collection('combined')
+            .collection('artifacts')
             .document('combined')
         )
 
@@ -491,62 +942,58 @@ class FirebaseService:
         self, user_id: str, kapitel_id: str, run_id: str, max_depth: int
     ) -> dict:
         """
-        Ensure the refinement root version exists under combined/combined/versions/root.
+        Ensure the refinement root version exists under artifacts/combined/versions/root.
 
-        Also ensures combined/combined has refinement metadata fields initialized.
+        Also ensures artifacts/combined has refinement metadata initialized.
         """
         combined = await self.get_combined_result(user_id, kapitel_id, run_id)
         if not combined:
             raise ValueError("No combined result found for this run.")
 
-        combined_content = (
-            combined.get('combined_content')
-            or combined.get('combinedContent')
-            or ''
-        )
+        combined_content = combined.get("content") or ""
         if not combined_content:
             raise ValueError("Combined content is empty.")
 
         root_id = 'root'
         root_doc = await self.get_combined_refinement_version(user_id, kapitel_id, run_id, root_id)
         if not root_doc:
-            created_at = combined.get('created_at') or combined.get('createdAt') or SERVER_TIMESTAMP
+            created_at = combined.get("createdAt") or SERVER_TIMESTAMP
+            usage = combined.get("usage") if isinstance(combined.get("usage"), dict) else {}
             root_data = {
-                'parent_version_id': None,
-                'depth': 0,
-                'user_message': None,
-                'assistant_text': combined_content,
-                'status': 'success',
-                'model': combined.get('model_used') or combined.get('modelUsed') or '',
-                'usage': {
-                    'input_tokens': combined.get('input_tokens') or combined.get('inputTokens') or 0,
-                    'cached_input_tokens': combined.get('cached_input_tokens') or combined.get('cachedInputTokens') or 0,
-                    'output_tokens': combined.get('output_tokens') or combined.get('outputTokens') or 0,
-                    'reasoning_tokens': combined.get('reasoning_tokens') or combined.get('reasoningTokens') or 0,
-                    'total_tokens': combined.get('tokens_used') or combined.get('tokensUsed') or 0,
+                "parentVersionId": None,
+                "depth": 0,
+                "userMessage": None,
+                "assistantText": combined_content,
+                "hasContent": True,
+                "status": "success",
+                "model": combined.get("model") or "",
+                "usage": {
+                    "inputTokens": int(usage.get("inputTokens", 0)),
+                    "cachedInputTokens": int(usage.get("cachedInputTokens", 0)),
+                    "outputTokens": int(usage.get("outputTokens", 0)),
+                    "reasoningTokens": int(usage.get("reasoningTokens", 0)),
+                    "totalTokens": int(usage.get("totalTokens", 0)),
                 },
-                'cost': 0.0,
-                'created_at': created_at,
+                "costUsd": 0.0,
+                "keySource": combined.get("keySource"),
+                "createdAt": created_at,
             }
             await self.save_combined_refinement_version(user_id, kapitel_id, run_id, root_id, root_data)
 
-        # Initialize refinement metadata on combined doc (merge, idempotent)
+        # Initialize refinement metadata on combined doc (merge, idempotent).
         combined_ref = self._combined_root_ref(user_id, kapitel_id, run_id)
-        active_id = (
-            combined.get('refinement_active_version_id')
-            or combined.get('refinementActiveVersionId')
-            or 'root'
-        )
-        combined_ref.set(
-            {
-                'refinement_root_version_id': 'root',
-                'refinement_active_version_id': active_id,
-                'refinement_cost_total': combined.get('refinement_cost_total') or combined.get('refinementCostTotal') or 0.0,
-                'refinement_max_depth': max_depth,
-                'refinement_initialized_at': SERVER_TIMESTAMP,
-            },
-            merge=True,
-        )
+        existing_refinement = combined.get("refinement") if isinstance(combined.get("refinement"), dict) else {}
+        active_id = existing_refinement.get("activeVersionId") or "root"
+        refinement_doc = {
+            "rootVersionId": "root",
+            "activeVersionId": active_id,
+            "maxDepth": int(max_depth),
+            "costTotalUsd": float(existing_refinement.get("costTotalUsd") or 0.0),
+            "initializedAt": existing_refinement.get("initializedAt") or SERVER_TIMESTAMP,
+        }
+        if "selectedAt" in existing_refinement:
+            refinement_doc["selectedAt"] = existing_refinement.get("selectedAt")
+        combined_ref.set({"refinement": refinement_doc, "updatedAt": SERVER_TIMESTAMP}, merge=True)
 
         return {
             'root_version_id': 'root',
@@ -557,12 +1004,12 @@ class FirebaseService:
     async def increment_combined_refinement_cost_total(
         self, user_id: str, kapitel_id: str, run_id: str, cost_usd: float
     ) -> None:
-        """Increment combined/combined.refinement_cost_total atomically (USD)."""
+        """Increment artifacts/combined.refinement.costTotalUsd atomically (USD)."""
         combined_ref = self._combined_root_ref(user_id, kapitel_id, run_id)
         combined_ref.update(
             {
-                'refinement_cost_total': Increment(cost_usd),
-                'refinement_updated_at': SERVER_TIMESTAMP,
+                "refinement.costTotalUsd": Increment(float(cost_usd)),
+                "updatedAt": SERVER_TIMESTAMP,
             }
         )
 
@@ -574,7 +1021,7 @@ class FirebaseService:
             .document(kapitel_id)
             .collection('runs')
             .document(run_id)
-            .collection('shortened')
+            .collection('artifacts')
             .document('shortened')
         )
 
@@ -617,75 +1064,59 @@ class FirebaseService:
         self, user_id: str, kapitel_id: str, run_id: str, max_depth: int
     ) -> dict:
         """
-        Ensure the refinement root version exists under shortened/shortened/versions/root.
+        Ensure the refinement root version exists under artifacts/shortened/versions/root.
 
-        Also ensures shortened/shortened has refinement metadata fields initialized.
+        Also ensures artifacts/shortened has refinement metadata initialized.
         """
         shortened = await self.get_shortened_result(user_id, kapitel_id, run_id)
         if not shortened:
             raise ValueError("No shortened result found for this run.")
 
-        shortened_content = (
-            shortened.get('shortened_content')
-            or shortened.get('shortenedContent')
-            or ''
-        )
+        shortened_content = shortened.get("content") or ""
         if not shortened_content:
             raise ValueError("Shortened content is empty.")
 
         root_id = 'root'
         root_doc = await self.get_shortened_refinement_version(user_id, kapitel_id, run_id, root_id)
         if not root_doc:
-            created_at = shortened.get('created_at') or shortened.get('createdAt') or SERVER_TIMESTAMP
-            model = shortened.get('model') or ''
-
-            tokens_used = shortened.get('tokens_used') or shortened.get('tokensUsed') or {}
-            input_tokens = tokens_used.get('input') or tokens_used.get('prompt_tokens') or 0
-            cached_input_tokens = (
-                tokens_used.get('cached_input')
-                or tokens_used.get('cachedInput')
-                or tokens_used.get('cached_tokens')
-                or 0
-            )
-            output_tokens = tokens_used.get('output') or tokens_used.get('completion_tokens') or 0
-            total_tokens = int(input_tokens) + int(output_tokens)
+            created_at = shortened.get("createdAt") or SERVER_TIMESTAMP
+            usage = shortened.get("usage") if isinstance(shortened.get("usage"), dict) else {}
 
             root_data = {
-                'parent_version_id': None,
-                'depth': 0,
-                'user_message': None,
-                'assistant_text': shortened_content,
-                'status': 'success',
-                'model': model,
-                'usage': {
-                    'input_tokens': int(input_tokens),
-                    'cached_input_tokens': int(cached_input_tokens),
-                    'output_tokens': int(output_tokens),
-                    'reasoning_tokens': 0,
-                    'total_tokens': total_tokens,
+                "parentVersionId": None,
+                "depth": 0,
+                "userMessage": None,
+                "assistantText": shortened_content,
+                "hasContent": True,
+                "status": "success",
+                "model": shortened.get("model") or "",
+                "usage": {
+                    "inputTokens": int(usage.get("inputTokens", 0)),
+                    "cachedInputTokens": int(usage.get("cachedInputTokens", 0)),
+                    "outputTokens": int(usage.get("outputTokens", 0)),
+                    "reasoningTokens": int(usage.get("reasoningTokens", 0)),
+                    "totalTokens": int(usage.get("totalTokens", 0)),
                 },
-                'cost': 0.0,
-                'created_at': created_at,
+                "costUsd": 0.0,
+                "keySource": shortened.get("keySource"),
+                "createdAt": created_at,
             }
             await self.save_shortened_refinement_version(user_id, kapitel_id, run_id, root_id, root_data)
 
         # Initialize refinement metadata on shortened doc (merge, idempotent)
         shortened_ref = self._shortened_root_ref(user_id, kapitel_id, run_id)
-        active_id = (
-            shortened.get('refinement_active_version_id')
-            or shortened.get('refinementActiveVersionId')
-            or 'root'
-        )
-        shortened_ref.set(
-            {
-                'refinement_root_version_id': 'root',
-                'refinement_active_version_id': active_id,
-                'refinement_cost_total': shortened.get('refinement_cost_total') or shortened.get('refinementCostTotal') or 0.0,
-                'refinement_max_depth': max_depth,
-                'refinement_initialized_at': SERVER_TIMESTAMP,
-            },
-            merge=True,
-        )
+        existing_refinement = shortened.get("refinement") if isinstance(shortened.get("refinement"), dict) else {}
+        active_id = existing_refinement.get("activeVersionId") or "root"
+        refinement_doc = {
+            "rootVersionId": "root",
+            "activeVersionId": active_id,
+            "maxDepth": int(max_depth),
+            "costTotalUsd": float(existing_refinement.get("costTotalUsd") or 0.0),
+            "initializedAt": existing_refinement.get("initializedAt") or SERVER_TIMESTAMP,
+        }
+        if "selectedAt" in existing_refinement:
+            refinement_doc["selectedAt"] = existing_refinement.get("selectedAt")
+        shortened_ref.set({"refinement": refinement_doc, "updatedAt": SERVER_TIMESTAMP}, merge=True)
 
         return {
             'root_version_id': 'root',
@@ -696,12 +1127,12 @@ class FirebaseService:
     async def increment_shortened_refinement_cost_total(
         self, user_id: str, kapitel_id: str, run_id: str, cost_usd: float
     ) -> None:
-        """Increment shortened/shortened.refinement_cost_total atomically (USD)."""
+        """Increment artifacts/shortened.refinement.costTotalUsd atomically (USD)."""
         shortened_ref = self._shortened_root_ref(user_id, kapitel_id, run_id)
         shortened_ref.update(
             {
-                'refinement_cost_total': Increment(cost_usd),
-                'refinement_updated_at': SERVER_TIMESTAMP,
+                "refinement.costTotalUsd": Increment(float(cost_usd)),
+                "updatedAt": SERVER_TIMESTAMP,
             }
         )
 
@@ -713,7 +1144,7 @@ class FirebaseService:
             .document(kapitel_id)
             .collection('runs')
             .document(run_id)
-            .collection('lesefluss')
+            .collection('artifacts')
             .document('lesefluss')
         )
 
@@ -756,76 +1187,60 @@ class FirebaseService:
         self, user_id: str, kapitel_id: str, run_id: str, max_depth: int
     ) -> dict:
         """
-        Ensure the refinement root version exists under lesefluss/lesefluss/versions/root.
+        Ensure the refinement root version exists under artifacts/lesefluss/versions/root.
 
-        Also ensures lesefluss/lesefluss has refinement metadata fields initialized.
+        Also ensures artifacts/lesefluss has refinement metadata initialized.
         """
         lesefluss = await self.get_lesefluss_result(user_id, kapitel_id, run_id)
         if not lesefluss:
             raise ValueError("No lesefluss result found for this run.")
 
-        lesefluss_content = (
-            lesefluss.get('lesefluss_content')
-            or lesefluss.get('leseflussContent')
-            or ''
-        )
+        lesefluss_content = lesefluss.get("content") or ""
         if not lesefluss_content:
             raise ValueError("Lesefluss content is empty.")
 
         root_id = 'root'
         root_doc = await self.get_lesefluss_refinement_version(user_id, kapitel_id, run_id, root_id)
         if not root_doc:
-            created_at = lesefluss.get('created_at') or lesefluss.get('createdAt') or SERVER_TIMESTAMP
-            model = lesefluss.get('model') or ''
-
-            tokens_used = lesefluss.get('tokens_used') or lesefluss.get('tokensUsed') or {}
-            input_tokens = tokens_used.get('input') or tokens_used.get('prompt_tokens') or 0
-            cached_input_tokens = (
-                tokens_used.get('cached_input')
-                or tokens_used.get('cachedInput')
-                or tokens_used.get('cached_tokens')
-                or 0
-            )
-            output_tokens = tokens_used.get('output') or tokens_used.get('completion_tokens') or 0
-            total_tokens = int(input_tokens) + int(output_tokens)
+            created_at = lesefluss.get("createdAt") or SERVER_TIMESTAMP
+            usage = lesefluss.get("usage") if isinstance(lesefluss.get("usage"), dict) else {}
 
             root_data = {
-                'parent_version_id': None,
-                'depth': 0,
-                'user_message': None,
-                'assistant_text': lesefluss_content,
-                'assistant_explanation': lesefluss.get('explanation') or '',
-                'status': 'success',
-                'model': model,
-                'usage': {
-                    'input_tokens': int(input_tokens),
-                    'cached_input_tokens': int(cached_input_tokens),
-                    'output_tokens': int(output_tokens),
-                    'reasoning_tokens': 0,
-                    'total_tokens': total_tokens,
+                "parentVersionId": None,
+                "depth": 0,
+                "userMessage": None,
+                "assistantText": lesefluss_content,
+                "assistantExplanation": lesefluss.get("explanation") or "",
+                "hasContent": True,
+                "status": "success",
+                "model": lesefluss.get("model") or "",
+                "usage": {
+                    "inputTokens": int(usage.get("inputTokens", 0)),
+                    "cachedInputTokens": int(usage.get("cachedInputTokens", 0)),
+                    "outputTokens": int(usage.get("outputTokens", 0)),
+                    "reasoningTokens": int(usage.get("reasoningTokens", 0)),
+                    "totalTokens": int(usage.get("totalTokens", 0)),
                 },
-                'cost': 0.0,
-                'created_at': created_at,
+                "costUsd": 0.0,
+                "keySource": lesefluss.get("keySource"),
+                "createdAt": created_at,
             }
             await self.save_lesefluss_refinement_version(user_id, kapitel_id, run_id, root_id, root_data)
 
         # Initialize refinement metadata on lesefluss doc (merge, idempotent)
         lesefluss_ref = self._lesefluss_root_ref(user_id, kapitel_id, run_id)
-        active_id = (
-            lesefluss.get('refinement_active_version_id')
-            or lesefluss.get('refinementActiveVersionId')
-            or 'root'
-        )
-        lesefluss_ref.set(
-            {
-                'refinement_root_version_id': 'root',
-                'refinement_active_version_id': active_id,
-                'refinement_cost_total': lesefluss.get('refinement_cost_total') or lesefluss.get('refinementCostTotal') or 0.0,
-                'refinement_max_depth': max_depth,
-                'refinement_initialized_at': SERVER_TIMESTAMP,
-            },
-            merge=True,
-        )
+        existing_refinement = lesefluss.get("refinement") if isinstance(lesefluss.get("refinement"), dict) else {}
+        active_id = existing_refinement.get("activeVersionId") or "root"
+        refinement_doc = {
+            "rootVersionId": "root",
+            "activeVersionId": active_id,
+            "maxDepth": int(max_depth),
+            "costTotalUsd": float(existing_refinement.get("costTotalUsd") or 0.0),
+            "initializedAt": existing_refinement.get("initializedAt") or SERVER_TIMESTAMP,
+        }
+        if "selectedAt" in existing_refinement:
+            refinement_doc["selectedAt"] = existing_refinement.get("selectedAt")
+        lesefluss_ref.set({"refinement": refinement_doc, "updatedAt": SERVER_TIMESTAMP}, merge=True)
 
         return {
             'root_version_id': 'root',
@@ -836,12 +1251,12 @@ class FirebaseService:
     async def increment_lesefluss_refinement_cost_total(
         self, user_id: str, kapitel_id: str, run_id: str, cost_usd: float
     ) -> None:
-        """Increment lesefluss/lesefluss.refinement_cost_total atomically (USD)."""
+        """Increment artifacts/lesefluss.refinement.costTotalUsd atomically (USD)."""
         lesefluss_ref = self._lesefluss_root_ref(user_id, kapitel_id, run_id)
         lesefluss_ref.update(
             {
-                'refinement_cost_total': Increment(cost_usd),
-                'refinement_updated_at': SERVER_TIMESTAMP,
+                "refinement.costTotalUsd": Increment(float(cost_usd)),
+                "updatedAt": SERVER_TIMESTAMP,
             }
         )
 
@@ -864,7 +1279,7 @@ class FirebaseService:
         key_source: Optional[str] = None,
     ) -> str:
         """
-        Save combined result under a run (separate collection next to results).
+        Save combined artifact under a run (`artifacts/combined`).
         """
         try:
             combined_ref = (
@@ -874,29 +1289,107 @@ class FirebaseService:
                 .document(kapitel_id)
                 .collection('runs')
                 .document(run_id)
-                .collection('combined')
+                .collection('artifacts')
                 .document('combined')
             )
 
+            existing = combined_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
+            existing_refinement = existing_data.get("refinement") if isinstance(existing_data, dict) else None
+            refinement_value = (
+                existing_refinement
+                if isinstance(existing_refinement, dict) and existing_refinement.get("rootVersionId") == "root"
+                else {
+                    "rootVersionId": "root",
+                    "activeVersionId": "root",
+                    "maxDepth": int(config.TEXT_REFINEMENT_MAX_DEPTH),
+                    "costTotalUsd": 0.0,
+                    "initializedAt": SERVER_TIMESTAMP,
+                }
+            )
+
             combined_data = {
-                'combined_content': combined_content,
-                'source_quelle_ids': source_quelle_ids,
-                'heading': heading,
-                'topic': topic,
-                'model_used': model_used,
-                'tokens_used': tokens_used,
-                'input_tokens': input_tokens,
-                'cached_input_tokens': cached_input_tokens,
-                'output_tokens': output_tokens,
-                'reasoning_tokens': reasoning_tokens,
-                'cost': cost,
-                'created_at': SERVER_TIMESTAMP
+                "artifactId": "combined",
+                "status": "success",
+                "errorMessage": None,
+                "errorAt": None,
+                "content": combined_content,
+                "heading": heading,
+                "topic": topic,
+                "sourceQuelleIds": source_quelle_ids,
+                "model": model_used,
+                "usage": {
+                    "inputTokens": int(input_tokens),
+                    "cachedInputTokens": int(cached_input_tokens),
+                    "outputTokens": int(output_tokens),
+                    "reasoningTokens": int(reasoning_tokens),
+                    "totalTokens": int(tokens_used),
+                },
+                "costUsd": float(cost),
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
+                "refinement": refinement_value,
             }
 
-            if key_source:
-                combined_data['key_source'] = key_source
+            batch = self.db.batch()
+            batch.set(combined_ref, combined_data)
 
-            combined_ref.set(combined_data)
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            batch.set(
+                run_ref,
+                {
+                    "artifactsStatus.combined": "success",
+                    "lastActivityAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+
+            # Mark Kapitel latest run as "done" once a combined artifact exists for that run.
+            # This drives UI Kapitel status (denormalized via `kapitels.latestRun.status`).
+            try:
+                kapitel_ref = (
+                    self.db.collection("users")
+                    .document(user_id)
+                    .collection("kapitels")
+                    .document(kapitel_id)
+                )
+                kapitel_doc = kapitel_ref.get()
+                kapitel_data = kapitel_doc.to_dict() if kapitel_doc.exists else {}
+                latest_run = kapitel_data.get("latestRun") if isinstance(kapitel_data, dict) else None
+                if isinstance(latest_run, dict) and latest_run.get("runId") == run_id:
+                    batch.update(
+                        kapitel_ref,
+                        {
+                            "latestRun.status": "done",
+                            "latestRun.updatedAt": SERVER_TIMESTAMP,
+                            "updatedAt": SERVER_TIMESTAMP,
+                        },
+                    )
+            except Exception as e:
+                # Non-fatal: combined is saved, but Kapitel status may lag until next write.
+                logger.warning(
+                    f"Could not update Kapitel.latestRun status for kapitel {kapitel_id} run {run_id}: {e}"
+                )
+
+            batch.commit()
             logger.info(
                 f"Saved combined result for kapitel {kapitel_id} run {run_id} (cost: ${cost:.6f})"
             )
@@ -936,30 +1429,56 @@ class FirebaseService:
                 .document(kapitel_id)
                 .collection('runs')
                 .document(run_id)
-                .collection('intermediate_groups')
+                .collection('artifacts')
+                .document('combined')
+                .collection('groups')
                 .document(f'group_{group_number}')
             )
 
             group_data = {
-                'group_number': group_number,
-                'combined_content': combined_content,
-                'source_quelle_ids': source_quelle_ids,
-                'heading': heading,
-                'topic': topic,
-                'model_used': model_used,
-                'tokens_used': tokens_used,
-                'input_tokens': input_tokens,
-                'cached_input_tokens': cached_input_tokens,
-                'output_tokens': output_tokens,
-                'reasoning_tokens': reasoning_tokens,
-                'cost': cost,
-                'created_at': SERVER_TIMESTAMP
+                "status": "success",
+                "errorMessage": None,
+                "errorAt": None,
+                "groupNumber": int(group_number),
+                "content": combined_content,
+                "heading": heading,
+                "topic": topic,
+                "sourceQuelleIds": source_quelle_ids,
+                "model": model_used,
+                "usage": {
+                    "inputTokens": int(input_tokens),
+                    "cachedInputTokens": int(cached_input_tokens),
+                    "outputTokens": int(output_tokens),
+                    "reasoningTokens": int(reasoning_tokens),
+                    "totalTokens": int(tokens_used),
+                },
+                "costUsd": float(cost),
+                "keySource": key_source,
+                "createdAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
             }
 
-            if key_source:
-                group_data['key_source'] = key_source
+            batch = self.db.batch()
+            batch.set(group_ref, group_data)
 
-            group_ref.set(group_data)
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            batch.set(
+                run_ref,
+                {
+                    "lastActivityAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            batch.commit()
             logger.info(
                 f"Saved intermediate group {group_number} for kapitel {kapitel_id} run {run_id} "
                 f"(sources: {len(source_quelle_ids)}, cost: ${cost:.6f})"
@@ -976,7 +1495,7 @@ class FirebaseService:
         run_id: str
     ) -> list:
         """
-        Fetch all intermediate group results for a run, ordered by group_number.
+        Fetch all combined intermediate groups for a run, ordered by groupNumber.
         Returns list of dicts with group data.
         """
         try:
@@ -987,7 +1506,9 @@ class FirebaseService:
                 .document(kapitel_id)
                 .collection('runs')
                 .document(run_id)
-                .collection('intermediate_groups')
+                .collection('artifacts')
+                .document('combined')
+                .collection('groups')
             )
 
             docs = groups_ref.stream()
@@ -997,8 +1518,7 @@ class FirebaseService:
                 data['id'] = doc.id
                 groups.append(data)
 
-            # Sort by group_number
-            groups.sort(key=lambda x: x.get('group_number', 0))
+            groups.sort(key=lambda x: x.get('groupNumber', 0))
             return groups
         except Exception as e:
             logger.error(f"Error fetching intermediate groups: {str(e)}")
@@ -1017,6 +1537,21 @@ class FirebaseService:
             return doc.to_dict() if doc.exists else None
         except Exception as e:
             logger.error(f"Error fetching kapitel {kapitel_id}: {str(e)}")
+            raise
+
+    async def get_project(self, user_id: str, project_id: str) -> Optional[dict]:
+        """Fetch a Project document (`users/{uid}/projects/{projectId}`)."""
+        try:
+            project_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("projects")
+                .document(project_id)
+            )
+            doc = project_ref.get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Error fetching project {project_id}: {str(e)}")
             raise
 
     async def check_all_quellen_processed(
@@ -1047,20 +1582,30 @@ class FirebaseService:
 
             # Get all results for this run
             results = await self.get_run_results(user_id, kapitel_id, run_id)
-            result_ids = {r['id'] for r in results}
+            results_by_id = {r["id"]: r for r in results}
+            result_ids = set(results_by_id.keys())
 
             # Check if all Quellen have results
-            all_processed = all(quelle_id in result_ids for quelle_id in quelle_ids)
+            all_present = all(quelle_id in result_ids for quelle_id in quelle_ids)
+            all_finished = False
+            if all_present:
+                all_finished = all(
+                    (str(results_by_id[quelle_id].get("status") or "").strip() != "running")
+                    for quelle_id in quelle_ids
+                )
+            all_processed = all_present and all_finished
 
             # Count results with usable content
             content_count = sum(
-                1 for r in results
-                if r.get('has_content', True) and r.get('result_content')
+                1
+                for r in results
+                if bool(r.get("hasContent", True)) and (r.get("content") or "").strip()
             )
 
             logger.info(
                 f"Kapitel {kapitel_id} run {run_id}: "
-                f"{len(result_ids)}/{len(quelle_ids)} processed, "
+                f"{len(result_ids)}/{len(quelle_ids)} result docs, "
+                f"all_present={all_present}, all_finished={all_finished}, "
                 f"{content_count} with content"
             )
 
@@ -1071,7 +1616,7 @@ class FirebaseService:
             raise
 
     async def get_shortened_result(self, user_id: str, kapitel_id: str, run_id: str) -> Optional[dict]:
-        """Fetch shortened result if it exists."""
+        """Fetch shortened artifact (`artifacts/shortened`) if it exists."""
         try:
             shortened_ref = (
                 self.db.collection('users')
@@ -1080,7 +1625,7 @@ class FirebaseService:
                 .document(kapitel_id)
                 .collection('runs')
                 .document(run_id)
-                .collection('shortened')
+                .collection('artifacts')
                 .document('shortened')
             )
             doc = shortened_ref.get()
@@ -1097,11 +1642,7 @@ class FirebaseService:
         shortened_data: dict
     ) -> str:
         """
-        Save shortened result under a run.
-
-        Args:
-            shortened_data: Dict with shortenedContent, originalLength, shortenedLength,
-                          usedKapitelIds, model, cost, tokensUsed, createdAt
+        Save shortened artifact under a run (`artifacts/shortened`).
         """
         try:
             shortened_ref = (
@@ -1111,14 +1652,85 @@ class FirebaseService:
                 .document(kapitel_id)
                 .collection('runs')
                 .document(run_id)
-                .collection('shortened')
+                .collection('artifacts')
                 .document('shortened')
             )
 
-            shortened_ref.set(shortened_data)
+            existing = shortened_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
+            existing_refinement = existing_data.get("refinement") if isinstance(existing_data, dict) else None
+            refinement_value = (
+                existing_refinement
+                if isinstance(existing_refinement, dict) and existing_refinement.get("rootVersionId") == "root"
+                else {
+                    "rootVersionId": "root",
+                    "activeVersionId": "root",
+                    "maxDepth": int(config.TEXT_REFINEMENT_MAX_DEPTH),
+                    "costTotalUsd": 0.0,
+                    "initializedAt": SERVER_TIMESTAMP,
+                }
+            )
+
+            usage = shortened_data.get("usage") if isinstance(shortened_data.get("usage"), dict) else {}
+            v2_doc = {
+                "artifactId": "shortened",
+                "status": "success",
+                "errorMessage": None,
+                "errorAt": None,
+                "content": shortened_data.get("content") or "",
+                "originalLength": int(shortened_data.get("originalLength") or 0),
+                "shortenedLength": int(shortened_data.get("shortenedLength") or 0),
+                "compressionRatio": float(shortened_data.get("compressionRatio") or 0.0),
+                "usedKapitelIds": shortened_data.get("usedKapitelIds") or [],
+                "explanation": shortened_data.get("explanation"),
+                "model": shortened_data.get("model") or "",
+                "usage": {
+                    "inputTokens": int(usage.get("inputTokens", 0)),
+                    "cachedInputTokens": int(usage.get("cachedInputTokens", 0)),
+                    "outputTokens": int(usage.get("outputTokens", 0)),
+                    "reasoningTokens": int(usage.get("reasoningTokens", 0)),
+                    "totalTokens": int(usage.get("totalTokens", 0)),
+                },
+                "costUsd": float(shortened_data.get("costUsd") or 0.0),
+                "keySource": shortened_data.get("keySource"),
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
+                "refinement": refinement_value,
+            }
+
+            batch = self.db.batch()
+            batch.set(shortened_ref, v2_doc)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            batch.set(
+                run_ref,
+                {
+                    "artifactsStatus.shortened": "success",
+                    "lastActivityAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            batch.commit()
             logger.info(
                 f"Saved shortened result for kapitel {kapitel_id} run {run_id} "
-                f"(cost: ${shortened_data.get('cost', 0)/100:.4f})"
+                f"(cost: ${float(shortened_data.get('costUsd') or 0.0):.4f})"
             )
             return shortened_ref.id
         except Exception as e:
@@ -1137,7 +1749,7 @@ class FirebaseService:
                 .document(kapitel_id)
                 .collection('runs')
                 .document(run_id)
-                .collection('lesefluss')
+                .collection('artifacts')
                 .document('lesefluss')
             )
 
@@ -1158,7 +1770,7 @@ class FirebaseService:
         run_id: str,
         lesefluss_data: dict
     ) -> None:
-        """Save lesefluss result to Firestore."""
+        """Save lesefluss artifact to Firestore (`artifacts/lesefluss`)."""
         try:
             doc_ref = (
                 self.db.collection('users')
@@ -1167,11 +1779,82 @@ class FirebaseService:
                 .document(kapitel_id)
                 .collection('runs')
                 .document(run_id)
-                .collection('lesefluss')
+                .collection('artifacts')
                 .document('lesefluss')
             )
 
-            doc_ref.set(lesefluss_data)
+            existing = doc_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
+            existing_refinement = existing_data.get("refinement") if isinstance(existing_data, dict) else None
+            refinement_value = (
+                existing_refinement
+                if isinstance(existing_refinement, dict) and existing_refinement.get("rootVersionId") == "root"
+                else {
+                    "rootVersionId": "root",
+                    "activeVersionId": "root",
+                    "maxDepth": int(config.TEXT_REFINEMENT_MAX_DEPTH),
+                    "costTotalUsd": 0.0,
+                    "initializedAt": SERVER_TIMESTAMP,
+                }
+            )
+
+            usage = lesefluss_data.get("usage") if isinstance(lesefluss_data.get("usage"), dict) else {}
+            v2_doc = {
+                "artifactId": "lesefluss",
+                "status": "success",
+                "errorMessage": None,
+                "errorAt": None,
+                "content": lesefluss_data.get("content") or "",
+                "aufgabenstellung": lesefluss_data.get("aufgabenstellung") or "",
+                "explanation": lesefluss_data.get("explanation") or "",
+                "originalLength": int(lesefluss_data.get("originalLength") or 0),
+                "leseflussLength": int(lesefluss_data.get("leseflussLength") or 0),
+                "usedKapitelIds": lesefluss_data.get("usedKapitelIds") or [],
+                "model": lesefluss_data.get("model") or "",
+                "usage": {
+                    "inputTokens": int(usage.get("inputTokens", 0)),
+                    "cachedInputTokens": int(usage.get("cachedInputTokens", 0)),
+                    "outputTokens": int(usage.get("outputTokens", 0)),
+                    "reasoningTokens": int(usage.get("reasoningTokens", 0)),
+                    "totalTokens": int(usage.get("totalTokens", 0)),
+                },
+                "costUsd": float(lesefluss_data.get("costUsd") or 0.0),
+                "keySource": lesefluss_data.get("keySource"),
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
+                "refinement": refinement_value,
+            }
+
+            batch = self.db.batch()
+            batch.set(doc_ref, v2_doc)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            batch.set(
+                run_ref,
+                {
+                    "artifactsStatus.lesefluss": "success",
+                    "lastActivityAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            batch.commit()
             logger.info(
                 f"Saved lesefluss result for kapitel {kapitel_id}, run {run_id}"
             )
@@ -1206,6 +1889,141 @@ class FirebaseService:
             )
             raise
 
+    async def mark_summary_running(
+        self,
+        user_id: str,
+        target_kapitel_id: str,
+        target_run_id: str,
+        source_kapitel_id: str,
+        *,
+        source_run_id: str,
+        source_type: str,
+        model: str,
+        key_source: Optional[str] = None,
+    ) -> None:
+        """Create/merge a placeholder summary doc (status=running)."""
+        try:
+            summary_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(target_kapitel_id)
+                .collection('runs')
+                .document(target_run_id)
+                .collection('summaries')
+                .document(source_kapitel_id)
+            )
+
+            existing = summary_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else SERVER_TIMESTAMP
+            )
+
+            placeholder = {
+                "status": "running",
+                "errorMessage": None,
+                "errorAt": None,
+                "sourceKapitelId": source_kapitel_id,
+                "sourceRunId": source_run_id,
+                "sourceType": source_type,
+                "content": "",
+                "originalLength": 0,
+                "summaryLength": 0,
+                "model": model or "",
+                "usage": {
+                    "inputTokens": 0,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 0,
+                    "reasoningTokens": 0,
+                    "totalTokens": 0,
+                },
+                "costUsd": 0.0,
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": None,
+            }
+
+            batch = self.db.batch()
+            batch.set(summary_ref, placeholder, merge=True)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(target_kapitel_id)
+                .collection("runs")
+                .document(target_run_id)
+            )
+            batch.set(
+                run_ref,
+                {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP},
+                merge=True,
+            )
+            batch.commit()
+        except Exception as e:
+            logger.error(f"Error marking summary running ({source_kapitel_id}): {e}")
+
+    async def mark_summary_error(
+        self,
+        user_id: str,
+        target_kapitel_id: str,
+        target_run_id: str,
+        source_kapitel_id: str,
+        *,
+        key_source: Optional[str] = None,
+    ) -> None:
+        """Mark a summary doc as errored (status=error) with a generic message."""
+        try:
+            summary_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+                .document(target_kapitel_id)
+                .collection('runs')
+                .document(target_run_id)
+                .collection('summaries')
+                .document(source_kapitel_id)
+            )
+
+            existing = summary_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else SERVER_TIMESTAMP
+            )
+
+            update = {
+                "status": "error",
+                "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                "errorAt": SERVER_TIMESTAMP,
+                "keySource": key_source,
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
+            }
+            summary_ref.set(update, merge=True)
+        except Exception as e:
+            logger.error(f"Error marking summary error ({source_kapitel_id}): {e}")
+
     async def save_summary_result(
         self,
         user_id: str,
@@ -1216,11 +2034,6 @@ class FirebaseService:
     ) -> str:
         """
         Save a summary result.
-
-        Args:
-            summary_data: Dict with summaryContent, sourceKapitelId, sourceRunId,
-                        sourceType, originalLength, summaryLength, model, cost,
-                        tokensUsed, createdAt
         """
         try:
             summary_ref = (
@@ -1234,7 +2047,65 @@ class FirebaseService:
                 .document(source_kapitel_id)
             )
 
-            summary_ref.set(summary_data)
+            existing = summary_ref.get()
+            existing_data = existing.to_dict() if existing.exists else {}
+            created_at_value = existing_data.get("createdAt") if existing.exists else SERVER_TIMESTAMP
+            started_at_value = (
+                existing_data.get("startedAt")
+                if existing.exists and existing_data.get("startedAt") is not None
+                else created_at_value
+            )
+
+            usage = summary_data.get("usage") if isinstance(summary_data.get("usage"), dict) else {}
+            input_tokens = int(usage.get("inputTokens", 0))
+            cached_input_tokens = int(usage.get("cachedInputTokens", 0))
+            output_tokens = int(usage.get("outputTokens", 0))
+            reasoning_tokens = int(usage.get("reasoningTokens", 0))
+            total_tokens = int(usage.get("totalTokens", input_tokens + output_tokens))
+
+            v2_doc = {
+                "status": "success",
+                "errorMessage": None,
+                "errorAt": None,
+                "sourceKapitelId": summary_data.get("sourceKapitelId") or source_kapitel_id,
+                "sourceRunId": summary_data.get("sourceRunId") or "",
+                "sourceType": summary_data.get("sourceType") or "",
+                "content": summary_data.get("content") or "",
+                "originalLength": int(summary_data.get("originalLength") or 0),
+                "summaryLength": int(summary_data.get("summaryLength") or 0),
+                "model": summary_data.get("model") or "",
+                "usage": {
+                    "inputTokens": input_tokens,
+                    "cachedInputTokens": cached_input_tokens,
+                    "outputTokens": output_tokens,
+                    "reasoningTokens": reasoning_tokens,
+                    "totalTokens": total_tokens,
+                },
+                "costUsd": float(summary_data.get("costUsd") or 0.0),
+                "keySource": summary_data.get("keySource"),
+                "createdAt": created_at_value,
+                "startedAt": started_at_value,
+                "updatedAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
+            }
+
+            batch = self.db.batch()
+            batch.set(summary_ref, v2_doc)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(target_kapitel_id)
+                .collection("runs")
+                .document(target_run_id)
+            )
+            batch.set(
+                run_ref,
+                {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP},
+                merge=True,
+            )
+            batch.commit()
             logger.info(
                 f"Saved summary for source Kapitel {source_kapitel_id} "
                 f"in target Kapitel {target_kapitel_id} run {target_run_id}"
@@ -1332,12 +2203,12 @@ class FirebaseService:
                 "ciphertext": data["ciphertext"],
                 "tag": data["tag"],
                 "last4": data.get("last4", ""),
-                "updated_at": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
             }
 
             existing = secret_ref.get()
             if not existing.exists:
-                payload["created_at"] = SERVER_TIMESTAMP
+                payload["createdAt"] = SERVER_TIMESTAMP
 
             secret_ref.set(payload)
             logger.info(f"Stored encrypted OpenAI key for user {user_id}")

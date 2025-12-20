@@ -7,10 +7,10 @@ from uuid import uuid4
 from fastapi import HTTPException
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
-from services.firebase_service import firebase_service
+from services.firebase_service import firebase_service, AI_GENERIC_ERROR_MESSAGE
 from services.openai_service import openai_service
 from services.prompt_service import prompt_service
-from services.quelle_service import calculate_cost
+from services.cost_service import get_cost_service, TokenUsage
 from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
 from utils.config import config
@@ -90,13 +90,9 @@ class RefinementService:
         results = await firebase_service.get_run_results(user_id, kapitel_id, run_id)
         eligible: list[dict] = []
         for res in results:
-            if not res.get("has_content", True):
+            if not res.get("hasContent", True):
                 continue
-            content = (
-                res.get("result_content")
-                or res.get("resultContent")
-                or res.get("content")
-            )
+            content = res.get("content")
             if content:
                 eligible.append({"id": res.get("id"), "content": content})
 
@@ -121,13 +117,9 @@ class RefinementService:
         results = await firebase_service.get_run_results(user_id, kapitel_id, run_id)
         eligible: list[dict] = []
         for res in results:
-            if not res.get("has_content", True):
+            if not res.get("hasContent", True):
                 continue
-            content = (
-                res.get("result_content")
-                or res.get("resultContent")
-                or res.get("content")
-            )
+            content = res.get("content")
             if content:
                 eligible.append({"id": res.get("id"), "content": content})
 
@@ -155,7 +147,7 @@ class RefinementService:
             if not version:
                 raise ValueError(f"Refinement version '{current_id}' not found.")
             path.append(version)
-            current_id = version.get("parent_version_id")
+            current_id = version.get("parentVersionId")
 
         path.reverse()
         return path
@@ -176,7 +168,7 @@ class RefinementService:
             if not version:
                 raise ValueError(f"Refinement version '{current_id}' not found.")
             path.append(version)
-            current_id = version.get("parent_version_id")
+            current_id = version.get("parentVersionId")
 
         path.reverse()
         return path
@@ -197,7 +189,7 @@ class RefinementService:
             if not version:
                 raise ValueError(f"Refinement version '{current_id}' not found.")
             path.append(version)
-            current_id = version.get("parent_version_id")
+            current_id = version.get("parentVersionId")
 
         path.reverse()
         return path
@@ -218,7 +210,7 @@ class RefinementService:
             if not version:
                 raise ValueError(f"Refinement version '{current_id}' not found.")
             path.append(version)
-            current_id = version.get("parent_version_id")
+            current_id = version.get("parentVersionId")
 
         path.reverse()
         return path
@@ -235,14 +227,14 @@ class RefinementService:
             version_id = v.get("id")
             if version_id == "root":
                 history_blocks.append(
-                    "ASSISTANT (Root / Ausgangstext):\n" + (v.get("assistant_text") or "")
+                    "ASSISTANT (Root / Ausgangstext):\n" + (v.get("assistantText") or "")
                 )
                 continue
             history_blocks.append(
                 "USER:\n"
-                + (v.get("user_message") or "")
+                + (v.get("userMessage") or "")
                 + "\n\nASSISTANT:\n"
-                + (v.get("assistant_text") or "")
+                + (v.get("assistantText") or "")
             )
 
         history_text = "\n\n---\n\n".join(history_blocks) if history_blocks else "Keine bisherigen Iterationen."
@@ -319,14 +311,14 @@ WICHTIG:
             version_id = v.get("id")
             if version_id == "root":
                 history_blocks.append(
-                    "ASSISTANT (Root / Ausgangstext):\n" + (v.get("assistant_text") or "")
+                    "ASSISTANT (Root / Ausgangstext):\n" + (v.get("assistantText") or "")
                 )
                 continue
             history_blocks.append(
                 "USER:\n"
-                + (v.get("user_message") or "")
+                + (v.get("userMessage") or "")
                 + "\n\nASSISTANT:\n"
-                + (v.get("assistant_text") or "")
+                + (v.get("assistantText") or "")
             )
 
         history_text = "\n\n---\n\n".join(history_blocks) if history_blocks else "Keine bisherigen Iterationen."
@@ -371,14 +363,14 @@ WICHTIG:
             version_id = v.get("id")
             if version_id == "root":
                 history_blocks.append(
-                    "ASSISTANT (Root / Ausgangstext):\n" + (v.get("assistant_text") or "")
+                    "ASSISTANT (Root / Ausgangstext):\n" + (v.get("assistantText") or "")
                 )
                 continue
             history_blocks.append(
                 "USER:\n"
-                + (v.get("user_message") or "")
+                + (v.get("userMessage") or "")
                 + "\n\nASSISTANT:\n"
-                + (v.get("assistant_text") or "")
+                + (v.get("assistantText") or "")
             )
 
         history_text = "\n\n---\n\n".join(history_blocks) if history_blocks else "Keine bisherigen Iterationen."
@@ -416,14 +408,14 @@ WICHTIG:
             version_id = v.get("id")
             if version_id == "root":
                 history_blocks.append(
-                    "ASSISTANT (Root / Ausgangstext):\n" + (v.get("assistant_text") or "")
+                    "ASSISTANT (Root / Ausgangstext):\n" + (v.get("assistantText") or "")
                 )
                 continue
             history_blocks.append(
                 "USER:\n"
-                + (v.get("user_message") or "")
+                + (v.get("userMessage") or "")
                 + "\n\nASSISTANT:\n"
-                + (v.get("assistant_text") or "")
+                + (v.get("assistantText") or "")
             )
 
         history_text = "\n\n---\n\n".join(history_blocks) if history_blocks else "Keine bisherigen Iterationen."
@@ -488,14 +480,24 @@ WICHTIG:
 
         version_id = str(uuid4())
         pending = {
-            "parent_version_id": parent_version_id,
+            "parentVersionId": parent_version_id,
             "depth": next_depth,
-            "user_message": user_message,
-            "assistant_text": "",
+            "userMessage": user_message,
+            "assistantText": "",
+            "hasContent": True,
             "status": "running",
             "model": run_model,
-            "cost": 0.0,
-            "created_at": SERVER_TIMESTAMP,
+            "usage": {
+                "inputTokens": 0,
+                "cachedInputTokens": 0,
+                "outputTokens": 0,
+                "reasoningTokens": 0,
+                "totalTokens": 0,
+            },
+            "costUsd": 0.0,
+            "keySource": None,
+            "createdAt": SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP,
         }
         await firebase_service.save_combined_refinement_version(
             user_id, kapitel_id, run_id, version_id, pending
@@ -540,7 +542,7 @@ WICHTIG:
             if not parent:
                 raise ValueError("Parent version not found.")
 
-            parent_text = parent.get("assistant_text") or ""
+            parent_text = parent.get("assistantText") or ""
             if not parent_text:
                 raise ValueError("Parent text is empty.")
 
@@ -576,28 +578,87 @@ WICHTIG:
                 debug_prompt_dump_path=debug_dump_path,
             )
 
-            cost = calculate_cost(
-                model=openai_result["model"],
-                input_tokens=openai_result["input_tokens"],
-                cached_input_tokens=openai_result.get("cached_input_tokens", 0),
-                output_tokens=openai_result["output_tokens"],
-                reasoning_tokens=openai_result.get("reasoning_tokens", 0),
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(
+                openai_result.get("input_tokens", 0),
+                openai_result.get("cached_input_tokens", 0),
+                openai_result.get("output_tokens", 0),
+            )
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=openai_result.get("model") or model,
+                usage=usage_obj,
             )
 
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run = await firebase_service.get_run(user_id, kapitel_id, run_id)
+            run_snapshot = {
+                "id": run_id,
+                "index": (run or {}).get("index"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="refine_combined",
+                user_id=user_id,
+                user_action_id=version_id,
+                operation_details={
+                    "versionId": version_id,
+                    "parentVersionId": parent_version_id,
+                    "baseTextCount": len(source_texts),
+                    "hasUserMessage": bool((user_message or "").strip()),
+                },
+                model=openai_result.get("model") or model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
+
             version_update = {
-                "assistant_text": openai_result["content"],
+                "assistantText": openai_result["content"],
+                "hasContent": True,
                 "status": "success",
                 "model": openai_result["model"],
                 "usage": {
-                    "input_tokens": openai_result["input_tokens"],
-                    "cached_input_tokens": openai_result.get("cached_input_tokens", 0),
-                    "output_tokens": openai_result["output_tokens"],
-                    "reasoning_tokens": openai_result.get("reasoning_tokens", 0),
-                    "total_tokens": openai_result["tokens"],
+                    "inputTokens": int(openai_result["input_tokens"]),
+                    "cachedInputTokens": int(openai_result.get("cached_input_tokens", 0)),
+                    "outputTokens": int(openai_result["output_tokens"]),
+                    "reasoningTokens": int(openai_result.get("reasoning_tokens", 0)),
+                    "totalTokens": int(openai_result["tokens"]),
                 },
-                "cost": float(cost),
-                "key_source": key_source,
-                "updated_at": datetime.utcnow().isoformat() + "Z",
+                "costUsd": float(cost),
+                "keySource": key_source,
+                "updatedAt": SERVER_TIMESTAMP,
             }
 
             await firebase_service.update_combined_refinement_version(
@@ -621,8 +682,8 @@ WICHTIG:
                     version_id,
                     {
                         "status": "error",
-                        "error_message": str(e),
-                        "updated_at": datetime.utcnow().isoformat() + "Z",
+                        "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                        "updatedAt": SERVER_TIMESTAMP,
                     },
                 )
             except Exception:
@@ -665,14 +726,24 @@ WICHTIG:
 
         version_id = str(uuid4())
         pending = {
-            "parent_version_id": parent_version_id,
+            "parentVersionId": parent_version_id,
             "depth": next_depth,
-            "user_message": user_message,
-            "assistant_text": "",
+            "userMessage": user_message,
+            "assistantText": "",
+            "hasContent": True,
             "status": "running",
             "model": stage_model,
-            "cost": 0.0,
-            "created_at": SERVER_TIMESTAMP,
+            "usage": {
+                "inputTokens": 0,
+                "cachedInputTokens": 0,
+                "outputTokens": 0,
+                "reasoningTokens": 0,
+                "totalTokens": 0,
+            },
+            "costUsd": 0.0,
+            "keySource": None,
+            "createdAt": SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP,
         }
         await firebase_service.save_shortened_refinement_version(
             user_id, kapitel_id, run_id, version_id, pending
@@ -714,7 +785,7 @@ WICHTIG:
             if not parent:
                 raise ValueError("Parent version not found.")
 
-            parent_text = parent.get("assistant_text") or ""
+            parent_text = parent.get("assistantText") or ""
             if not parent_text:
                 raise ValueError("Parent text is empty.")
 
@@ -756,28 +827,87 @@ WICHTIG:
                 debug_prompt_dump_path=debug_dump_path,
             )
 
-            cost = calculate_cost(
-                model=openai_result["model"],
-                input_tokens=openai_result["input_tokens"],
-                cached_input_tokens=openai_result.get("cached_input_tokens", 0),
-                output_tokens=openai_result["output_tokens"],
-                reasoning_tokens=openai_result.get("reasoning_tokens", 0),
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(
+                openai_result.get("input_tokens", 0),
+                openai_result.get("cached_input_tokens", 0),
+                openai_result.get("output_tokens", 0),
+            )
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=openai_result.get("model") or model,
+                usage=usage_obj,
             )
 
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run = await firebase_service.get_run(user_id, kapitel_id, run_id)
+            run_snapshot = {
+                "id": run_id,
+                "index": (run or {}).get("index"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="refine_shortened",
+                user_id=user_id,
+                user_action_id=version_id,
+                operation_details={
+                    "versionId": version_id,
+                    "parentVersionId": parent_version_id,
+                    "baseTextCount": len(source_texts),
+                    "hasUserMessage": bool((user_message or "").strip()),
+                },
+                model=openai_result.get("model") or model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
+
             version_update = {
-                "assistant_text": openai_result["content"],
+                "assistantText": openai_result["content"],
+                "hasContent": True,
                 "status": "success",
                 "model": openai_result["model"],
                 "usage": {
-                    "input_tokens": openai_result["input_tokens"],
-                    "cached_input_tokens": openai_result.get("cached_input_tokens", 0),
-                    "output_tokens": openai_result["output_tokens"],
-                    "reasoning_tokens": openai_result.get("reasoning_tokens", 0),
-                    "total_tokens": openai_result["tokens"],
+                    "inputTokens": int(openai_result["input_tokens"]),
+                    "cachedInputTokens": int(openai_result.get("cached_input_tokens", 0)),
+                    "outputTokens": int(openai_result["output_tokens"]),
+                    "reasoningTokens": int(openai_result.get("reasoning_tokens", 0)),
+                    "totalTokens": int(openai_result["tokens"]),
                 },
-                "cost": float(cost),
-                "key_source": key_source,
-                "updated_at": datetime.utcnow().isoformat() + "Z",
+                "costUsd": float(cost),
+                "keySource": key_source,
+                "updatedAt": SERVER_TIMESTAMP,
             }
 
             await firebase_service.update_shortened_refinement_version(
@@ -801,8 +931,8 @@ WICHTIG:
                     version_id,
                     {
                         "status": "error",
-                        "error_message": str(e),
-                        "updated_at": datetime.utcnow().isoformat() + "Z",
+                        "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                        "updatedAt": SERVER_TIMESTAMP,
                     },
                 )
             except Exception:
@@ -845,15 +975,25 @@ WICHTIG:
 
         version_id = str(uuid4())
         pending = {
-            "parent_version_id": parent_version_id,
+            "parentVersionId": parent_version_id,
             "depth": next_depth,
-            "user_message": user_message,
-            "assistant_text": "",
-            "assistant_explanation": "",
+            "userMessage": user_message,
+            "assistantText": "",
+            "assistantExplanation": "",
+            "hasContent": True,
             "status": "running",
             "model": stage_model,
-            "cost": 0.0,
-            "created_at": SERVER_TIMESTAMP,
+            "usage": {
+                "inputTokens": 0,
+                "cachedInputTokens": 0,
+                "outputTokens": 0,
+                "reasoningTokens": 0,
+                "totalTokens": 0,
+            },
+            "costUsd": 0.0,
+            "keySource": None,
+            "createdAt": SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP,
         }
         await firebase_service.save_lesefluss_refinement_version(
             user_id, kapitel_id, run_id, version_id, pending
@@ -895,7 +1035,7 @@ WICHTIG:
             if not parent:
                 raise ValueError("Parent version not found.")
 
-            parent_text = parent.get("assistant_text") or ""
+            parent_text = parent.get("assistantText") or ""
             if not parent_text:
                 raise ValueError("Parent text is empty.")
 
@@ -907,22 +1047,14 @@ WICHTIG:
             if not aufgabenstellung:
                 raise ValueError("Lesefluss aufgabenstellung is missing.")
 
-            context_kapitel_ids = (
-                lesefluss_doc.get("used_kapitel_ids")
-                or lesefluss_doc.get("usedKapitelIds")
-                or []
-            )
+            context_kapitel_ids = lesefluss_doc.get("usedKapitelIds") or []
             if not isinstance(context_kapitel_ids, list) or len(context_kapitel_ids) == 0:
-                raise ValueError("Lesefluss context chapters are missing (used_kapitel_ids).")
+                raise ValueError("Lesefluss context chapters are missing (usedKapitelIds).")
 
             shortened = await firebase_service.get_shortened_result(user_id, kapitel_id, run_id)
             if not shortened:
                 raise ValueError("No shortened result found for this run.")
-            base_target_text = (
-                shortened.get("shortened_content")
-                or shortened.get("shortenedContent")
-                or ""
-            )
+            base_target_text = (shortened.get("content") or "").strip()
             if not base_target_text:
                 raise ValueError("Shortened content is empty.")
 
@@ -941,6 +1073,7 @@ WICHTIG:
                     model=model,
                     api_key=api_key,
                     key_source=key_source,
+                    user_action_id=version_id,
                 )
                 for ctx_id in context_kapitel_ids
             ]
@@ -1015,29 +1148,85 @@ WICHTIG:
             output_tokens = int(usage.get("completion_tokens", 0) or 0)
             total_tokens = input_tokens + output_tokens
 
-            cost = calculate_cost(
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(input_tokens, cached_input_tokens, output_tokens)
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
                 model=model,
-                input_tokens=input_tokens,
-                cached_input_tokens=cached_input_tokens,
-                output_tokens=output_tokens,
-                reasoning_tokens=0,
+                usage=usage_obj,
             )
 
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run = await firebase_service.get_run(user_id, kapitel_id, run_id)
+            run_snapshot = {
+                "id": run_id,
+                "index": (run or {}).get("index"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="refine_lesefluss",
+                user_id=user_id,
+                user_action_id=version_id,
+                operation_details={
+                    "versionId": version_id,
+                    "parentVersionId": parent_version_id,
+                    "usedKapitelIds": valid_context_ids,
+                    "summaryCount": len(summaries),
+                    "hasUserMessage": bool((user_message or "").strip()),
+                },
+                model=model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
+
             version_update = {
-                "assistant_text": content,
-                "assistant_explanation": explanation,
+                "assistantText": content,
+                "assistantExplanation": explanation,
+                "hasContent": True,
                 "status": "success",
                 "model": model,
                 "usage": {
-                    "input_tokens": input_tokens,
-                    "cached_input_tokens": cached_input_tokens,
-                    "output_tokens": output_tokens,
-                    "reasoning_tokens": 0,
-                    "total_tokens": total_tokens,
+                    "inputTokens": input_tokens,
+                    "cachedInputTokens": cached_input_tokens,
+                    "outputTokens": output_tokens,
+                    "reasoningTokens": 0,
+                    "totalTokens": total_tokens,
                 },
-                "cost": float(cost),
-                "key_source": key_source,
-                "updated_at": datetime.utcnow().isoformat() + "Z",
+                "costUsd": float(cost),
+                "keySource": key_source,
+                "updatedAt": SERVER_TIMESTAMP,
             }
 
             await firebase_service.update_lesefluss_refinement_version(
@@ -1061,8 +1250,8 @@ WICHTIG:
                     version_id,
                     {
                         "status": "error",
-                        "error_message": str(e),
-                        "updated_at": datetime.utcnow().isoformat() + "Z",
+                        "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                        "updatedAt": SERVER_TIMESTAMP,
                     },
                 )
             except Exception:
@@ -1107,15 +1296,24 @@ WICHTIG:
 
         version_id = str(uuid4())
         pending = {
-            "parent_version_id": parent_version_id,
+            "parentVersionId": parent_version_id,
             "depth": next_depth,
-            "user_message": user_message,
-            "assistant_text": "",
-            "has_content": True,
+            "userMessage": user_message,
+            "assistantText": "",
+            "hasContent": True,
             "status": "running",
             "model": stage_model,
-            "cost": 0.0,
-            "created_at": SERVER_TIMESTAMP,
+            "usage": {
+                "inputTokens": 0,
+                "cachedInputTokens": 0,
+                "outputTokens": 0,
+                "reasoningTokens": 0,
+                "totalTokens": 0,
+            },
+            "costUsd": 0.0,
+            "keySource": None,
+            "createdAt": SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP,
         }
         await firebase_service.save_result_refinement_version(
             user_id, kapitel_id, run_id, quelle_id, version_id, pending
@@ -1159,15 +1357,15 @@ WICHTIG:
             if not parent:
                 raise ValueError("Parent version not found.")
 
-            parent_text = parent.get("assistant_text") or ""
+            parent_text = parent.get("assistantText") or ""
 
             result_doc = await firebase_service.get_run_result(user_id, kapitel_id, run_id, quelle_id)
             if not result_doc:
                 raise ValueError("Result not found.")
 
-            base_user_input = (result_doc.get("user_input") or "").strip()
+            base_user_input = (result_doc.get("userInput") or "").strip()
             if not base_user_input:
-                raise ValueError("Result user_input is empty.")
+                raise ValueError("Result userInput is empty.")
 
             history_path = await self._get_result_version_path(
                 user_id, kapitel_id, run_id, quelle_id, parent_version_id
@@ -1192,6 +1390,10 @@ WICHTIG:
             if not quelle:
                 raise ValueError("Quelle not found.")
 
+            quelle_content_doc = await firebase_service.get_quelle_content(user_id, quelle_id)
+            if not quelle_content_doc or not (quelle_content_doc.get("text") or "").strip():
+                raise ValueError("Quelle content is empty.")
+
             quelle_images = None
             if 'images' in quelle and isinstance(quelle['images'], list):
                 quelle_images = [img['url'] for img in quelle['images'] if 'url' in img]
@@ -1199,7 +1401,7 @@ WICHTIG:
             debug_dump_path = self._get_prompt_dump_path("refine_result", version_id)
 
             openai_result = await openai_service.process_quelle(
-                quelle.get("content") or "",
+                quelle_content_doc.get("text") or "",
                 refined_user_input,
                 model,
                 grundlegende_informationen,
@@ -1208,29 +1410,93 @@ WICHTIG:
                 debug_prompt_dump_path=debug_dump_path,
             )
 
-            cost = calculate_cost(
-                model=openai_result["model"],
-                input_tokens=openai_result["input_tokens"],
-                cached_input_tokens=openai_result.get("cached_input_tokens", 0),
-                output_tokens=openai_result["output_tokens"],
-                reasoning_tokens=openai_result.get("reasoning_tokens", 0),
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(
+                openai_result.get("input_tokens", 0),
+                openai_result.get("cached_input_tokens", 0),
+                openai_result.get("output_tokens", 0),
+            )
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=openai_result.get("model") or model,
+                usage=usage_obj,
             )
 
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run_snapshot = {
+                "id": run_id,
+                "index": (run or {}).get("index"),
+            }
+
+            quelle_snapshot = {
+                "id": quelle_id,
+                "title": quelle.get("title"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="refine_result",
+                user_id=user_id,
+                user_action_id=version_id,
+                operation_details={
+                    "versionId": version_id,
+                    "parentVersionId": parent_version_id,
+                    "hasUserMessage": bool((user_message or "").strip()),
+                    "quelleHasImages": bool(quelle_images),
+                },
+                model=openai_result.get("model") or model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                quelle_id=quelle_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+                quelle_snapshot=quelle_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
+
             version_update = {
-                "assistant_text": openai_result["content"],
-                "has_content": bool(openai_result.get("has_content", True)),
+                "assistantText": openai_result["content"],
+                "hasContent": bool(openai_result.get("has_content", True)),
                 "status": "success",
                 "model": openai_result["model"],
                 "usage": {
-                    "input_tokens": openai_result["input_tokens"],
-                    "cached_input_tokens": openai_result.get("cached_input_tokens", 0),
-                    "output_tokens": openai_result["output_tokens"],
-                    "reasoning_tokens": openai_result.get("reasoning_tokens", 0),
-                    "total_tokens": openai_result["tokens"],
+                    "inputTokens": int(openai_result["input_tokens"]),
+                    "cachedInputTokens": int(openai_result.get("cached_input_tokens", 0)),
+                    "outputTokens": int(openai_result["output_tokens"]),
+                    "reasoningTokens": int(openai_result.get("reasoning_tokens", 0)),
+                    "totalTokens": int(openai_result["tokens"]),
                 },
-                "cost": float(cost),
-                "key_source": key_source,
-                "updated_at": datetime.utcnow().isoformat() + "Z",
+                "costUsd": float(cost),
+                "keySource": key_source,
+                "updatedAt": SERVER_TIMESTAMP,
             }
 
             await firebase_service.update_result_refinement_version(
@@ -1255,8 +1521,8 @@ WICHTIG:
                     version_id,
                     {
                         "status": "error",
-                        "error_message": str(e),
-                        "updated_at": datetime.utcnow().isoformat() + "Z",
+                        "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                        "updatedAt": SERVER_TIMESTAMP,
                     },
                 )
             except Exception:

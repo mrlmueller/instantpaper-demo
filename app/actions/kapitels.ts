@@ -1,84 +1,100 @@
 'use server';
 
 import { getFirestoreForUser } from '@/app/lib/firebase/serverApp';
-import {
-  collection,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  orderBy,
-  limit,
-  where,
-  serverTimestamp,
-  type Firestore,
-  type DocumentReference,
-} from 'firebase/firestore';
 import { requireAuth, type AuthUser } from '@/app/lib/auth/server-auth';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
+import {
+  addDoc,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+  type CollectionReference,
+  type DocumentData,
+  type DocumentReference,
+  type Firestore,
+} from 'firebase/firestore';
+import {
+  artifactsCol,
+  artifactDoc,
+  combinedGroupsCol,
+  resultsCol,
+  runsCol,
+  summariesCol,
+  kapitelDoc,
+  kapitelsCol,
+} from '@/app/lib/firestore/refs';
+
+export type Usage = {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+};
+
+export type RefinementMeta = {
+  rootVersionId: 'root';
+  activeVersionId: string;
+  maxDepth: number;
+  costTotalUsd: number;
+  initializedAt: string;
+  selectedAt?: string | null;
+};
 
 export type KapitelRunResult = {
   quelleId: string;
-  resultContent: string;
-  hasContent?: boolean;
-  modelUsed: string;
-  tokensUsed: number;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
-  reasoningTokens: number;
-  cost: number;
-  refinementCostTotal?: number;
-  refinementRootVersionId?: string;
-  refinementActiveVersionId?: string;
-  refinementMaxDepth?: number;
+  userInput: string;
+  content: string;
+  hasContent: boolean;
+  status?: 'running' | 'success' | 'error' | 'no-content';
+  model: string;
+  usage: Usage;
+  costUsd: number;
+  refinement: RefinementMeta;
   createdAt: string;
+  updatedAt?: string;
 };
 
 export type CombinedResult = {
-  id: string;
-  combinedContent: string;
+  id: 'combined';
+  content: string;
+  status?: 'running' | 'success' | 'error';
   sourceQuelleIds: string[];
   heading: string;
   topic: string;
-  modelUsed: string;
-  tokensUsed: number;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
-  reasoningTokens: number;
-  cost: number;
+  model: string;
+  usage: Usage;
+  costUsd: number;
   createdAt: string;
-  refinementCostTotal?: number;
-  refinementRootVersionId?: string;
-  refinementActiveVersionId?: string;
-  refinementMaxDepth?: number;
+  updatedAt?: string;
+  refinement: RefinementMeta;
 };
 
 export type IntermediateGroupResult = {
   id: string;
   groupNumber: number;
-  combinedContent: string;
+  content: string;
   sourceQuelleIds: string[];
   heading: string;
   topic: string;
-  modelUsed: string;
-  tokensUsed: number;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
-  reasoningTokens: number;
-  cost: number;
+  model: string;
+  usage: Usage;
+  costUsd: number;
   createdAt: string;
+  updatedAt?: string;
 };
 
 export type ShortenedResult = {
-  id: string;
-  shortenedContent: string;
+  id: 'shortened';
+  content: string;
+  status?: 'running' | 'success' | 'error';
   explanation?: {
     lengthDecision: string;
     omittedTopics: string[];
@@ -89,56 +105,42 @@ export type ShortenedResult = {
   shortenedLength: number;
   usedKapitelIds: string[];
   model: string;
-  cost: number;
-  tokensUsed: {
-    input: number;
-    cachedInput: number;
-    output: number;
-  };
+  usage: Usage;
+  costUsd: number;
   createdAt: string;
-  refinementCostTotal?: number;
-  refinementRootVersionId?: string;
-  refinementActiveVersionId?: string;
-  refinementMaxDepth?: number;
+  updatedAt?: string;
+  refinement: RefinementMeta;
 };
 
 export type SummaryResult = {
   id: string;
-  summaryContent: string;
+  content: string;
   sourceKapitelId: string;
   sourceRunId: string;
   sourceType: 'combined' | 'shortened';
   originalLength: number;
   summaryLength: number;
   model: string;
-  cost: number;
-  tokensUsed: {
-    input: number;
-    output: number;
-  };
+  costUsd: number;
+  usage: Pick<Usage, 'inputTokens' | 'outputTokens' | 'totalTokens'>;
   createdAt: string;
 };
 
 export type LeseflussResult = {
-  id: string;
-  leseflussContent: string;
+  id: 'lesefluss';
+  content: string;
+  status?: 'running' | 'success' | 'error';
   aufgabenstellung: string;
-  explanation: string;
-  originalLength: number;
+  explanation?: string;
+  originalLength?: number;
   leseflussLength: number;
   usedKapitelIds: string[];
   model: string;
-  cost: number;
-  tokensUsed: {
-    input: number;
-    cachedInput: number;
-    output: number;
-  };
+  usage: Usage;
+  costUsd: number;
   createdAt: string;
-  refinementCostTotal?: number;
-  refinementRootVersionId?: string;
-  refinementActiveVersionId?: string;
-  refinementMaxDepth?: number;
+  updatedAt?: string;
+  refinement: RefinementMeta;
 };
 
 export type KapitelRun = {
@@ -147,30 +149,50 @@ export type KapitelRun = {
   instruction: string;
   model: string;
   createdAt: string;
+  updatedAt?: string;
   results: KapitelRunResult[];
-  combined?: CombinedResult | null;
-  intermediateGroups?: IntermediateGroupResult[];
-  shortened?: ShortenedResult | null;
-  lesefluss?: LeseflussResult | null;
-  summaries?: SummaryResult[];
+  artifacts?: {
+    combined?: CombinedResult | null;
+    shortened?: ShortenedResult | null;
+    lesefluss?: LeseflussResult | null;
+  };
   promptTemplateId?: string;
-  promptPayload?: Record<string, any>;
-  autoCombine?: boolean;
+  promptPayload?: Record<string, unknown>;
+  autoCombine: boolean;
   ueberschrift?: string;
   thema?: string;
   grundlegendeInformationen?: string | null;
+  artifactsStatus?: {
+    combined: 'empty' | 'running' | 'success' | 'error';
+    shortened: 'empty' | 'running' | 'success' | 'error';
+    lesefluss: 'empty' | 'running' | 'success' | 'error';
+  };
+  resultsExpectedCount?: number;
+  resultsCompletedCount?: number;
+  resultsWithContentCount?: number;
+  lastResultAt?: string | null;
+  lastActivityAt?: string | null;
 };
 
 export type Kapitel = {
   id: string;
   title: string;
   projektId: string;
-  nummer?: string; // e.g., "1", "1.1", "1.1.1" - hierarchical chapter number
+  nummer: string;
   createdAt: string;
+  updatedAt?: string;
+  archived: boolean;
+  archivedAt?: string;
   quelleIds: string[];
+  parentId: string | null;
+  order: number;
+  latestRun?: {
+    runId: string;
+    index: number;
+    status: 'none' | 'running' | 'done';
+    updatedAt: string;
+  };
   runs?: KapitelRun[];
-  parentId?: string | null;
-  order?: number;
 };
 
 type ActionContext = {
@@ -184,331 +206,277 @@ async function getContext(ctx?: ActionContext) {
   return { user, db };
 }
 
-// Helper function to check for circular references in parent chain
-async function checkCircularReference(
-  db: Firestore,
-  userId: string,
-  kapitelId: string,
-  targetParentId: string | null
-): Promise<boolean> {
-  if (!targetParentId) return false;
+function toIso(value: unknown): string {
+  if (!value) return new Date().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  }
+  if (typeof value === 'object' && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    const d = (value as { toDate: () => Date }).toDate();
+    return d instanceof Date ? d.toISOString() : new Date().toISOString();
+  }
+  return new Date().toISOString();
+}
 
-  let currentId: string | null = targetParentId;
-  const visited = new Set<string>([kapitelId]);
+function normalizeUsage(u: unknown): Usage {
+  const usage = u && typeof u === 'object' ? (u as Record<string, unknown>) : {};
+  return {
+    inputTokens: Number(usage.inputTokens ?? 0),
+    cachedInputTokens: Number(usage.cachedInputTokens ?? 0),
+    outputTokens: Number(usage.outputTokens ?? 0),
+    reasoningTokens: Number(usage.reasoningTokens ?? 0),
+    totalTokens: Number(usage.totalTokens ?? 0),
+  };
+}
 
-  while (currentId) {
-    if (visited.has(currentId)) {
-      return true; // Circular reference detected
-    }
-    visited.add(currentId);
+function normalizeRefinement(r: unknown): RefinementMeta {
+  const refinement = r && typeof r === 'object' ? (r as Record<string, unknown>) : {};
+  return {
+    rootVersionId: 'root',
+    activeVersionId: String(refinement.activeVersionId ?? 'root'),
+    maxDepth: Number(refinement.maxDepth ?? 4),
+    costTotalUsd: Number(refinement.costTotalUsd ?? 0),
+    initializedAt: toIso(refinement.initializedAt),
+    selectedAt: refinement.selectedAt ? toIso(refinement.selectedAt) : null,
+  };
+}
 
-    const parentRef: DocumentReference = doc(db, 'users', userId, 'kapitels', currentId);
-    const parentDoc = await getDoc(parentRef);
+function normalizeRunStatus(status: unknown): 'none' | 'running' | 'done' {
+  return status === 'running' || status === 'done' || status === 'none' ? status : 'none';
+}
 
-    if (!parentDoc.exists()) {
-      break;
-    }
+function normalizeSummarySourceType(sourceType: unknown): 'combined' | 'shortened' {
+  return sourceType === 'shortened' ? 'shortened' : 'combined';
+}
 
-    currentId = parentDoc.data()?.parentId || null;
+function normalizeRunModel(model: unknown): 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' {
+  const m = String(model ?? '').trim();
+  return m === 'gpt-5-nano' || m === 'gpt-5-mini' || m === 'gpt-5.2' ? m : 'gpt-5-nano';
+}
+
+function normalizeResultDocStatus(status: unknown): KapitelRunResult['status'] {
+  return status === 'running' || status === 'success' || status === 'error' || status === 'no-content' ? status : undefined;
+}
+
+function normalizeArtifactDocStatus(status: unknown): 'running' | 'success' | 'error' | undefined {
+  return status === 'running' || status === 'success' || status === 'error' ? status : undefined;
+}
+
+async function fetchFastApi(path: string, payload: unknown) {
+  await requireAuth();
+  const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+  const cookieStore = await cookies();
+  const authToken = cookieStore.get('__session')?.value;
+  if (!authToken) return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    return {
+      success: false,
+      error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte später erneut versuchen.',
+    };
   }
 
+  if (response.status === 401) return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
+  if (response.status >= 500)
+    return { success: false, error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es später erneut.' };
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    return { success: false, error: errorText || 'Request fehlgeschlagen.' };
+  }
+
+  const data = await response.json().catch(() => null);
+  revalidatePath('/dashboard');
+  return { success: true, data };
+}
+
+async function checkCircularReference(db: Firestore, userId: string, kapitelId: string, targetParentId: string | null) {
+  if (!targetParentId) return false;
+  let currentId: string | null = targetParentId;
+  const visited = new Set<string>([kapitelId]);
+  while (currentId) {
+    if (visited.has(currentId)) return true;
+    visited.add(currentId);
+    const parentSnap = await getDoc(kapitelDoc(db, userId, currentId));
+    if (!parentSnap.exists()) break;
+    const parentData = parentSnap.data() as DocumentData;
+    currentId = (parentData.parentId as string | null | undefined) ?? null;
+  }
   return false;
 }
 
-// Helper function to calculate depth of a Kapitel in the hierarchy
-async function getKapitelDepth(
-  db: Firestore,
-  userId: string,
-  kapitelId: string | null
-): Promise<number> {
-  if (!kapitelId) return 0;
-
+async function getKapitelDepth(db: Firestore, userId: string, kapitelId: string): Promise<number> {
   let depth = 0;
   let currentId: string | null = kapitelId;
-
-  while (currentId && depth < 10) { // Safety limit
-    const kapitelRef: DocumentReference = doc(db, 'users', userId, 'kapitels', currentId);
-    const kapitelDoc = await getDoc(kapitelRef);
-
-    if (!kapitelDoc.exists()) {
-      break;
-    }
-
-    currentId = kapitelDoc.data()?.parentId || null;
-    if (currentId) depth++;
+  while (currentId) {
+    const snap = await getDoc(kapitelDoc(db, userId, currentId));
+    if (!snap.exists()) break;
+    const data = snap.data() as DocumentData;
+    currentId = (data.parentId as string | null | undefined) ?? null;
+    depth += 1;
+    if (depth > 20) break;
   }
-
-  return depth;
+  return depth - 1;
 }
 
-// Helper function to get next order value for siblings
-async function getNextOrderForParent(
+async function archiveKapitelInternal(
   db: Firestore,
   userId: string,
-  parentId: string | null
-): Promise<number> {
-  const kapitelsRef = collection(db, 'users', userId, 'kapitels');
-  let q;
+  kapitelId: string,
+  strategy: 'promote' | 'cascade'
+) {
+  const ref = kapitelDoc(db, userId, kapitelId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Kapitel not found');
+  const data = snap.data() as DocumentData;
+  const parentId = (data.parentId as string | null | undefined) ?? null;
 
-  if (parentId === null) {
-    // Root level kapitels (no parent)
-    q = query(kapitelsRef, orderBy('order', 'desc'), limit(1));
+  const childrenSnapshot = await getDocs(
+    query(kapitelsCol(db, userId), where('parentId', '==', kapitelId), where('archived', '==', false))
+  );
+
+  if (strategy === 'cascade') {
+    for (const child of childrenSnapshot.docs) {
+      await archiveKapitelInternal(db, userId, child.id, 'cascade');
+    }
   } else {
-    // Child kapitels with specific parent
-    q = query(kapitelsRef, orderBy('order', 'desc'), limit(1));
+    for (const child of childrenSnapshot.docs) {
+      await updateDoc(kapitelDoc(db, userId, child.id) as unknown as DocumentReference<DocumentData>, {
+        parentId,
+        updatedAt: serverTimestamp(),
+      });
+    }
   }
 
-  const snapshot = await getDocs(q);
-
-  if (snapshot.empty) {
-    return 0;
-  }
-
-  // Filter by parentId in memory (Firestore doesn't support complex queries on optional fields)
-  const siblings = snapshot.docs.filter(doc => {
-    const data = doc.data();
-    return (data.parentId || null) === parentId;
+  await updateDoc(ref as unknown as DocumentReference<DocumentData>, {
+    archived: true,
+    archivedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
-
-  if (siblings.length === 0) {
-    return 0;
-  }
-
-  const maxOrder = Math.max(...siblings.map(doc => doc.data().order || 0));
-  return maxOrder + 1;
 }
 
-export async function createKapitel(
-  title: string,
-  quelleIds: string[],
-  parentId: string | null,
-  nummer: string,
-  projektId: string
-) {
+export async function createKapitel(title: string, quelleIds: string[], parentId: string | null, nummer: string, projektId: string) {
   try {
     const user = await requireAuth();
-    if (!user) {
-      return { success: false, error: 'Not authenticated' };
-    }
+    if (!user) return { success: false, error: 'Not authenticated' };
     const db = await getFirestoreForUser();
 
-    // Validate parentId if provided
     if (parentId) {
-      const parentRef = doc(db, 'users', user.uid, 'kapitels', parentId);
-      const parentDoc = await getDoc(parentRef);
-
-      if (!parentDoc.exists()) {
-        return { success: false, error: 'Parent Kapitel not found' };
-      }
-
-      // Check depth - enforce maximum of 5 levels
+      const parentSnap = await getDoc(kapitelDoc(db, user.uid, parentId));
+      if (!parentSnap.exists()) return { success: false, error: 'Parent Kapitel not found' };
       const parentDepth = await getKapitelDepth(db, user.uid, parentId);
-      if (parentDepth >= 4) {
-        return {
-          success: false,
-          error: 'Maximum nesting depth (5 levels) would be exceeded',
-        };
-      }
+      if (parentDepth >= 4) return { success: false, error: 'Maximum nesting depth (5 levels) would be exceeded' };
     }
 
-    // Get next order value for siblings
-    const order = await getNextOrderForParent(db, user.uid, parentId || null);
-
-    const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
-    const docRef = await addDoc(kapitelsRef, {
-      title,
+    const docRef = await addDoc(kapitelsCol(db, user.uid) as unknown as CollectionReference<DocumentData>, {
       projektId,
-      nummer: nummer || '1', // Default to '1' if not provided
+      title,
+      nummer: nummer || '1',
+      parentId: parentId ?? null,
+      order: Date.now(),
       quelleIds,
-      parentId: parentId || null,
-      order,
       createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      archived: false,
     });
 
     revalidatePath('/dashboard');
     return { success: true, id: docRef.id };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error creating Kapitel:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
 export async function updateKapitelQuellen(kapitelId: string, quelleIds: string[]) {
   try {
     const user = await requireAuth();
-    if (!user) {
-      return { success: false, error: 'Not authenticated' };
-    }
+    if (!user) return { success: false, error: 'Not authenticated' };
     const db = await getFirestoreForUser();
-
-    const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
-    const kapitelDoc = await getDoc(kapitelRef);
-    if (!kapitelDoc.exists()) {
-      throw new Error('Kapitel not found');
-    }
-
-    await updateDoc(kapitelRef, {
-      quelleIds,
-      updatedAt: serverTimestamp(),
-    });
-
+    const ref = kapitelDoc(db, user.uid, kapitelId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error('Kapitel not found');
+    await updateDoc(ref as unknown as DocumentReference<DocumentData>, { quelleIds, updatedAt: serverTimestamp() });
     revalidatePath('/dashboard');
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error updating Kapitel Quellen:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
-export async function updateKapitelParent(
-  kapitelId: string,
-  newParentId: string | null
-) {
+export async function updateKapitelParent(kapitelId: string, newParentId: string | null) {
   try {
     const user = await requireAuth();
-    if (!user) {
-      return { success: false, error: 'Not authenticated' };
-    }
+    if (!user) return { success: false, error: 'Not authenticated' };
     const db = await getFirestoreForUser();
+    const ref = kapitelDoc(db, user.uid, kapitelId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return { success: false, error: 'Kapitel not found' };
 
-    const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
-    const kapitelDoc = await getDoc(kapitelRef);
-    if (!kapitelDoc.exists()) {
-      return { success: false, error: 'Kapitel not found' };
-    }
-
-    // Check for circular reference
     if (newParentId) {
-      const hasCircular = await checkCircularReference(
-        db,
-        user.uid,
-        kapitelId,
-        newParentId
-      );
-
-      if (hasCircular) {
-        return {
-          success: false,
-          error: 'Cannot set parent: would create circular reference',
-        };
-      }
-
-      // Validate new parent exists
-      const parentRef = doc(db, 'users', user.uid, 'kapitels', newParentId);
-      const parentDoc = await getDoc(parentRef);
-      if (!parentDoc.exists()) {
-        return { success: false, error: 'Parent Kapitel not found' };
-      }
-
-      // Check depth
+      const hasCircular = await checkCircularReference(db, user.uid, kapitelId, newParentId);
+      if (hasCircular) return { success: false, error: 'Cannot set parent: would create circular reference' };
+      const parentSnap = await getDoc(kapitelDoc(db, user.uid, newParentId));
+      if (!parentSnap.exists()) return { success: false, error: 'Parent Kapitel not found' };
       const parentDepth = await getKapitelDepth(db, user.uid, newParentId);
-      if (parentDepth >= 4) {
-        return {
-          success: false,
-          error: 'Maximum nesting depth (5 levels) would be exceeded',
-        };
-      }
+      if (parentDepth >= 4) return { success: false, error: 'Maximum nesting depth (5 levels) would be exceeded' };
     }
 
-    // Get next order for new parent's children
-    const order = await getNextOrderForParent(db, user.uid, newParentId);
-
-    await updateDoc(kapitelRef, {
-      parentId: newParentId,
-      order,
+    await updateDoc(ref as unknown as DocumentReference<DocumentData>, {
+      parentId: newParentId ?? null,
+      order: Date.now(),
       updatedAt: serverTimestamp(),
     });
-
     revalidatePath('/dashboard');
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error updating Kapitel parent:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
-export async function updateKapitelTitle(
-  kapitelId: string,
-  title: string,
-  nummer: string
-) {
+export async function updateKapitelTitle(kapitelId: string, title: string, nummer: string) {
   try {
     const user = await requireAuth();
-    if (!user) {
-      return { success: false, error: 'Not authenticated' };
-    }
+    if (!user) return { success: false, error: 'Not authenticated' };
     const db = await getFirestoreForUser();
-
-    const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
-    const kapitelDoc = await getDoc(kapitelRef);
-    if (!kapitelDoc.exists()) {
-      throw new Error('Kapitel not found');
-    }
-
-    await updateDoc(kapitelRef, {
+    const ref = kapitelDoc(db, user.uid, kapitelId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error('Kapitel not found');
+    await updateDoc(ref as unknown as DocumentReference<DocumentData>, {
       title,
       nummer,
       updatedAt: serverTimestamp(),
     });
-
     revalidatePath('/dashboard');
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error updating Kapitel title:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
-export async function deleteKapitel(
-  kapitelId: string,
-  deleteStrategy: 'promote' | 'cascade' = 'promote'
-) {
+export async function deleteKapitel(kapitelId: string, deleteStrategy: 'promote' | 'cascade' = 'promote') {
   try {
     const user = await requireAuth();
-    if (!user) {
-      return { success: false, error: 'Not authenticated' };
-    }
+    if (!user) return { success: false, error: 'Not authenticated' };
     const db = await getFirestoreForUser();
-
-    const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
-    const kapitelDoc = await getDoc(kapitelRef);
-    if (!kapitelDoc.exists()) {
-      throw new Error('Kapitel not found');
-    }
-
-    const kapitelData = kapitelDoc.data();
-    const parentId = kapitelData.parentId || null;
-
-    // Find all children of this Kapitel
-    const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
-    const childrenSnapshot = await getDocs(kapitelsRef);
-    const children = childrenSnapshot.docs
-      .filter((doc) => doc.data().parentId === kapitelId)
-      .map((doc) => ({ id: doc.id, ...doc.data() }));
-
-    if (deleteStrategy === 'cascade') {
-      // Recursively delete all descendants
-      for (const child of children) {
-        await deleteKapitel(child.id, 'cascade');
-      }
-    } else {
-      // Promote children to parent's level
-      for (const child of children) {
-        const childRef = doc(db, 'users', user.uid, 'kapitels', child.id);
-        await updateDoc(childRef, {
-          parentId: parentId,
-          updatedAt: serverTimestamp(),
-        });
-      }
-    }
-
-    // Delete the Kapitel itself
-    await deleteDoc(kapitelRef);
+    await archiveKapitelInternal(db, user.uid, kapitelId, deleteStrategy);
     revalidatePath('/dashboard');
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error deleting Kapitel:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
@@ -518,312 +486,201 @@ export async function createKapitelRun(
   model: string,
   options?: {
     promptTemplateId?: string;
-    promptPayload?: Record<string, any>;
+    promptPayload?: Record<string, unknown>;
     autoCombine?: boolean;
     grundlegendeInformationen?: string;
-    ueberschrift?: string; // Heading for the chapter
-    thema?: string; // Topic/theme (can be same as instruction or separate)
+    ueberschrift?: string;
+    thema?: string;
   }
 ) {
   try {
     const user = await requireAuth();
-    if (!user) {
-      return { success: false, error: 'Not authenticated' };
-    }
+    if (!user) return { success: false, error: 'Not authenticated' };
     const db = await getFirestoreForUser();
 
-    const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
-    const kapitelDoc = await getDoc(kapitelRef);
-    if (!kapitelDoc.exists()) {
-      return { success: false, error: 'Kapitel not found' };
-    }
-    const projektId = kapitelDoc.data()?.projektId || 'default';
+    const kapitelRef = kapitelDoc(db, user.uid, kapitelId);
+    const kapitelSnap = await getDoc(kapitelRef);
+    if (!kapitelSnap.exists()) return { success: false, error: 'Kapitel not found' };
+    const kapitelData = kapitelSnap.data() as DocumentData;
 
-    const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
+    const projektId = String(kapitelData.projektId ?? 'default');
+    const quelleIds: string[] = Array.isArray(kapitelData.quelleIds) ? kapitelData.quelleIds : [];
 
-    // Determine next run index
+    const runsRef = runsCol(db, user.uid, kapitelId);
     const lastRunSnapshot = await getDocs(query(runsRef, orderBy('index', 'desc'), limit(1)));
-    const lastIndex = lastRunSnapshot.empty ? 0 : (lastRunSnapshot.docs[0].data().index || 0);
+    const lastIndex = lastRunSnapshot.empty ? 0 : Number(lastRunSnapshot.docs[0].data().index ?? 0);
     const nextIndex = lastIndex + 1;
 
-    const runDoc = await addDoc(runsRef, {
-      instruction,
-      model,
+    const runDocRef = await addDoc(runsRef as unknown as CollectionReference<DocumentData>, {
       projektId,
       index: nextIndex,
+      instruction,
+      model,
       createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      archived: false,
+      autoCombine: options?.autoCombine ?? false,
       promptTemplateId: options?.promptTemplateId,
       promptPayload: options?.promptPayload,
-      autoCombine: options?.autoCombine ?? false,
       grundlegendeInformationen: options?.grundlegendeInformationen || null,
       ueberschrift: options?.ueberschrift || null,
       thema: options?.thema || null,
+      resultsExpectedCount: quelleIds.length,
+      resultsCompletedCount: 0,
+      resultsWithContentCount: 0,
+      // If auto-combine is enabled, show the combined stage as "running" immediately,
+      // even while Quellen results are still processing (the server will flip to success/error later).
+      artifactsStatus: {
+        combined: options?.autoCombine ? 'running' : 'empty',
+        shortened: 'empty',
+        lesefluss: 'empty',
+      },
+      lastActivityAt: serverTimestamp(),
+    });
+
+    await updateDoc(kapitelRef as unknown as DocumentReference<DocumentData>, {
+      latestRun: { runId: runDocRef.id, index: nextIndex, status: 'running', updatedAt: serverTimestamp() },
+      updatedAt: serverTimestamp(),
     });
 
     revalidatePath('/dashboard');
-    return { success: true, runId: runDoc.id, index: nextIndex };
-  } catch (error: any) {
+    return { success: true, runId: runDocRef.id, index: nextIndex };
+  } catch (error: unknown) {
     console.error('Error creating Kapitel run:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
-export async function getKapitelRuns(
-  kapitelId: string,
-  runLimit = 10,
-  ctx?: ActionContext
-): Promise<KapitelRun[]> {
+export async function getKapitelRuns(kapitelId: string, runLimit = 10, ctx?: ActionContext): Promise<KapitelRun[]> {
   try {
     const { user, db } = await getContext(ctx);
-    if (!user) {
-      throw new Error('Not authenticated');
-    }
+    if (!user) throw new Error('Not authenticated');
 
-    const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
-    const runsSnapshot = await getDocs(query(runsRef, orderBy('index', 'desc'), limit(runLimit)));
+    const runsSnapshot = await getDocs(
+      query(runsCol(db, user.uid, kapitelId), where('archived', '==', false), orderBy('index', 'desc'), limit(runLimit))
+    );
 
-    // Parallelize fetching all runs and their subcollections
     const runs: KapitelRun[] = await Promise.all(
-      runsSnapshot.docs.map(async (runDoc) => {
-        const runData = runDoc.data();
+      runsSnapshot.docs.map(async (runSnap) => {
+        const runData = runSnap.data() as DocumentData;
 
-        // Define all collection references
-        const combinedRef = collection(
-          db,
-          'users',
-          user.uid,
-          'kapitels',
-          kapitelId,
-          'runs',
-          runDoc.id,
-          'combined'
-        );
-        const shortenedRef = collection(
-          db,
-          'users',
-          user.uid,
-          'kapitels',
-          kapitelId,
-          'runs',
-          runDoc.id,
-          'shortened'
-        );
-        const leseflussRef = collection(
-          db,
-          'users',
-          user.uid,
-          'kapitels',
-          kapitelId,
-          'runs',
-          runDoc.id,
-          'lesefluss'
-        );
-        const intermediateGroupsRef = collection(
-          db,
-          'users',
-          user.uid,
-          'kapitels',
-          kapitelId,
-          'runs',
-          runDoc.id,
-          'intermediate_groups'
-        );
-        const resultsRef = collection(
-          db,
-          'users',
-          user.uid,
-          'kapitels',
-          kapitelId,
-          'runs',
-          runDoc.id,
-          'results'
-        );
-
-        // Fetch all subcollections in parallel
-        const [
-          combinedSnapshot,
-          shortenedSnapshot,
-          leseflussSnapshot,
-          intermediateGroupsSnapshot,
-          resultsSnapshot,
-        ] = await Promise.all([
-          getDocs(combinedRef),
-          getDocs(shortenedRef),
-          getDocs(leseflussRef),
-          getDocs(intermediateGroupsRef),
-          getDocs(resultsRef),
+        const [resultsSnapshot, artifactsSnapshot] = await Promise.all([
+          getDocs(resultsCol(db, user.uid, kapitelId, runSnap.id)),
+          getDocs(artifactsCol(db, user.uid, kapitelId, runSnap.id)),
         ]);
 
-        // Transform combined result
-        let combined: CombinedResult | null = null;
-        if (!combinedSnapshot.empty) {
-          const doc = combinedSnapshot.docs[0];
-          const c = doc.data();
-          combined = {
-            id: doc.id,
-            combinedContent: c.combined_content ?? c.combinedContent ?? '',
-            sourceQuelleIds: c.source_quelle_ids ?? c.sourceQuelleIds ?? [],
-            heading: c.heading ?? '',
-            topic: c.topic ?? '',
-            modelUsed: c.model_used ?? c.modelUsed ?? '',
-            tokensUsed: c.tokens_used ?? c.tokensUsed ?? 0,
-            inputTokens: c.input_tokens ?? c.inputTokens ?? 0,
-            cachedInputTokens: c.cached_input_tokens ?? c.cachedInputTokens ?? 0,
-            outputTokens: c.output_tokens ?? c.outputTokens ?? 0,
-            reasoningTokens: c.reasoning_tokens ?? c.reasoningTokens ?? 0,
-            cost: c.cost ?? 0,
-            refinementCostTotal: c.refinement_cost_total ?? c.refinementCostTotal ?? 0,
-            refinementRootVersionId: c.refinement_root_version_id ?? c.refinementRootVersionId ?? undefined,
-            refinementActiveVersionId: c.refinement_active_version_id ?? c.refinementActiveVersionId ?? undefined,
-            refinementMaxDepth: c.refinement_max_depth ?? c.refinementMaxDepth ?? undefined,
-            createdAt:
-              c.created_at?.toDate?.()?.toISOString() ||
-              c.createdAt?.toDate?.()?.toISOString() ||
-              new Date().toISOString(),
-          };
-        }
-
-        // Transform shortened result
-        let shortened: ShortenedResult | null = null;
-        if (!shortenedSnapshot.empty) {
-          const doc = shortenedSnapshot.docs[0];
-          const s = doc.data();
-          shortened = {
-            id: doc.id,
-            shortenedContent: s.shortened_content ?? s.shortenedContent ?? '',
-            explanation: s.explanation
-              ? {
-                  lengthDecision: s.explanation.length_decision ?? '',
-                  omittedTopics: s.explanation.omitted_topics ?? [],
-                  preservedFocus: s.explanation.preserved_focus ?? [],
-                  compressionNotes: s.explanation.compression_notes ?? '',
-                }
-              : undefined,
-            originalLength: s.original_length ?? s.originalLength ?? 0,
-            shortenedLength: s.shortened_length ?? s.shortenedLength ?? 0,
-            usedKapitelIds: s.used_kapitel_ids ?? s.usedKapitelIds ?? [],
-            model: s.model ?? '',
-            cost: s.cost ?? 0,
-            refinementCostTotal: s.refinement_cost_total ?? s.refinementCostTotal ?? 0,
-            refinementRootVersionId: s.refinement_root_version_id ?? s.refinementRootVersionId ?? undefined,
-            refinementActiveVersionId: s.refinement_active_version_id ?? s.refinementActiveVersionId ?? undefined,
-            refinementMaxDepth: s.refinement_max_depth ?? s.refinementMaxDepth ?? undefined,
-            tokensUsed: s.tokens_used ?? s.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
-            createdAt:
-              s.created_at?.toDate?.()?.toISOString() ||
-              s.createdAt?.toDate?.()?.toISOString() ||
-              new Date().toISOString(),
-          };
-        }
-
-        // Transform lesefluss result
-        let lesefluss: LeseflussResult | null = null;
-        if (!leseflussSnapshot.empty) {
-          const doc = leseflussSnapshot.docs[0];
-          const l = doc.data();
-          lesefluss = {
-            id: doc.id,
-            leseflussContent: l.lesefluss_content ?? l.leseflussContent ?? '',
-            aufgabenstellung: l.aufgabenstellung ?? '',
-            explanation: l.explanation ?? '',
-            originalLength: l.original_length ?? l.originalLength ?? 0,
-            leseflussLength: l.lesefluss_length ?? l.leseflussLength ?? 0,
-            usedKapitelIds: l.used_kapitel_ids ?? l.usedKapitelIds ?? [],
-            model: l.model ?? '',
-            cost: l.cost ?? 0,
-            refinementCostTotal: l.refinement_cost_total ?? l.refinementCostTotal ?? 0,
-            refinementRootVersionId: l.refinement_root_version_id ?? l.refinementRootVersionId ?? undefined,
-            refinementActiveVersionId: l.refinement_active_version_id ?? l.refinementActiveVersionId ?? undefined,
-            refinementMaxDepth: l.refinement_max_depth ?? l.refinementMaxDepth ?? undefined,
-            tokensUsed: l.tokens_used ?? l.tokensUsed ?? { input: 0, cachedInput: 0, output: 0 },
-            createdAt:
-              l.created_at?.toDate?.()?.toISOString() ||
-              l.createdAt?.toDate?.()?.toISOString() ||
-              new Date().toISOString(),
-          };
-        }
-
-        // Transform intermediate groups
-        const intermediateGroups: IntermediateGroupResult[] = [];
-        if (!intermediateGroupsSnapshot.empty) {
-          for (const groupDoc of intermediateGroupsSnapshot.docs) {
-            const g = groupDoc.data();
-            intermediateGroups.push({
-              id: groupDoc.id,
-              groupNumber: g.group_number ?? 0,
-              combinedContent: g.combined_content ?? g.combinedContent ?? '',
-              sourceQuelleIds: g.source_quelle_ids ?? g.sourceQuelleIds ?? [],
-              heading: g.heading ?? '',
-              topic: g.topic ?? '',
-              modelUsed: g.model_used ?? g.modelUsed ?? '',
-              tokensUsed: g.tokens_used ?? g.tokensUsed ?? 0,
-              inputTokens: g.input_tokens ?? g.inputTokens ?? 0,
-              cachedInputTokens: g.cached_input_tokens ?? g.cachedInputTokens ?? 0,
-              outputTokens: g.output_tokens ?? g.outputTokens ?? 0,
-              reasoningTokens: g.reasoning_tokens ?? g.reasoningTokens ?? 0,
-              cost: g.cost ?? 0,
-              createdAt:
-                g.created_at?.toDate?.()?.toISOString() ||
-                g.createdAt?.toDate?.()?.toISOString() ||
-                new Date().toISOString(),
-            });
-          }
-          // Sort by group number
-          intermediateGroups.sort((a, b) => a.groupNumber - b.groupNumber);
-        }
-
-        // Transform results
-        const results: KapitelRunResult[] = resultsSnapshot.docs.map((resDoc) => {
-          const resData = resDoc.data();
+        const results: KapitelRunResult[] = resultsSnapshot.docs.map((d) => {
+          const r = d.data() as DocumentData;
           return {
-            quelleId: resDoc.id,
-            resultContent: resData.result_content ?? resData.resultContent ?? '',
-            hasContent: resData.has_content ?? resData.hasContent ?? true,
-            modelUsed: resData.model_used ?? resData.modelUsed ?? '',
-            tokensUsed: resData.tokens_used ?? resData.tokensUsed ?? 0,
-            inputTokens: resData.input_tokens ?? resData.inputTokens ?? 0,
-            cachedInputTokens: resData.cached_input_tokens ?? resData.cachedInputTokens ?? 0,
-            outputTokens: resData.output_tokens ?? resData.outputTokens ?? 0,
-            reasoningTokens: resData.reasoning_tokens ?? resData.reasoningTokens ?? 0,
-            cost: resData.cost ?? 0,
-            refinementCostTotal: resData.refinement_cost_total ?? resData.refinementCostTotal ?? 0,
-            refinementRootVersionId: resData.refinement_root_version_id ?? resData.refinementRootVersionId ?? undefined,
-            refinementActiveVersionId: resData.refinement_active_version_id ?? resData.refinementActiveVersionId ?? undefined,
-            refinementMaxDepth: resData.refinement_max_depth ?? resData.refinementMaxDepth ?? undefined,
-            createdAt:
-              resData.created_at?.toDate?.()?.toISOString() ||
-              resData.createdAt?.toDate?.()?.toISOString() ||
-              new Date().toISOString(),
+            quelleId: String(r.quelleId ?? d.id),
+            userInput: String(r.userInput ?? ''),
+            content: String(r.content ?? ''),
+            hasContent: Boolean(r.hasContent),
+            status: normalizeResultDocStatus(r.status),
+            model: String(r.model ?? ''),
+            usage: normalizeUsage(r.usage),
+            costUsd: Number(r.costUsd ?? 0),
+            refinement: normalizeRefinement(r.refinement),
+            createdAt: toIso(r.createdAt),
+            updatedAt: r.updatedAt ? toIso(r.updatedAt) : undefined,
           };
         });
 
-        // Return the complete run object
+        let combined: CombinedResult | null = null;
+        let shortened: ShortenedResult | null = null;
+        let lesefluss: LeseflussResult | null = null;
+
+        for (const d of artifactsSnapshot.docs) {
+          const a = d.data() as DocumentData;
+          const artifactId = String(a.artifactId ?? d.id);
+           if (artifactId === 'combined') {
+             combined = {
+               id: 'combined',
+               content: String(a.content ?? ''),
+               status: normalizeArtifactDocStatus(a.status),
+               sourceQuelleIds: Array.isArray(a.sourceQuelleIds) ? a.sourceQuelleIds : [],
+               heading: String(a.heading ?? ''),
+               topic: String(a.topic ?? ''),
+               model: String(a.model ?? ''),
+               usage: normalizeUsage(a.usage),
+              costUsd: Number(a.costUsd ?? 0),
+              refinement: normalizeRefinement(a.refinement),
+              createdAt: toIso(a.createdAt),
+              updatedAt: a.updatedAt ? toIso(a.updatedAt) : undefined,
+            };
+           } else if (artifactId === 'shortened') {
+             shortened = {
+               id: 'shortened',
+               content: String(a.content ?? ''),
+               status: normalizeArtifactDocStatus(a.status),
+               explanation: a.explanation
+                 ? {
+                     lengthDecision: String(a.explanation.lengthDecision ?? ''),
+                     omittedTopics: Array.isArray(a.explanation.omittedTopics) ? a.explanation.omittedTopics : [],
+                     preservedFocus: Array.isArray(a.explanation.preservedFocus) ? a.explanation.preservedFocus : [],
+                    compressionNotes: String(a.explanation.compressionNotes ?? ''),
+                  }
+                : undefined,
+              originalLength: Number(a.originalLength ?? 0),
+              shortenedLength: Number(a.shortenedLength ?? 0),
+              usedKapitelIds: Array.isArray(a.usedKapitelIds) ? a.usedKapitelIds : [],
+              model: String(a.model ?? ''),
+              usage: normalizeUsage(a.usage),
+              costUsd: Number(a.costUsd ?? 0),
+              refinement: normalizeRefinement(a.refinement),
+              createdAt: toIso(a.createdAt),
+              updatedAt: a.updatedAt ? toIso(a.updatedAt) : undefined,
+            };
+           } else if (artifactId === 'lesefluss') {
+             lesefluss = {
+               id: 'lesefluss',
+               content: String(a.content ?? ''),
+               status: normalizeArtifactDocStatus(a.status),
+               aufgabenstellung: String(a.aufgabenstellung ?? ''),
+               explanation: typeof a.explanation === 'string' ? a.explanation : undefined,
+               originalLength: typeof a.originalLength === 'number' ? a.originalLength : undefined,
+               leseflussLength: Number(a.leseflussLength ?? 0),
+              usedKapitelIds: Array.isArray(a.usedKapitelIds) ? a.usedKapitelIds : [],
+              model: String(a.model ?? ''),
+              usage: normalizeUsage(a.usage),
+              costUsd: Number(a.costUsd ?? 0),
+              refinement: normalizeRefinement(a.refinement),
+              createdAt: toIso(a.createdAt),
+              updatedAt: a.updatedAt ? toIso(a.updatedAt) : undefined,
+            };
+          }
+        }
+
         return {
-          id: runDoc.id,
-          index: runData.index || 0,
-          instruction: runData.instruction || '',
-          model: runData.model || '',
-          ueberschrift: runData.ueberschrift || runData.heading || '',
-          thema: runData.thema || runData.instruction || '',
-          grundlegendeInformationen: runData.grundlegendeInformationen || null,
+          id: runSnap.id,
+          index: Number(runData.index ?? 0),
+          instruction: String(runData.instruction ?? ''),
+          model: String(runData.model ?? ''),
+          createdAt: toIso(runData.createdAt),
+          updatedAt: runData.updatedAt ? toIso(runData.updatedAt) : undefined,
+          results,
+          artifacts: { combined, shortened, lesefluss },
           promptTemplateId: runData.promptTemplateId,
           promptPayload: runData.promptPayload,
-          autoCombine: runData.autoCombine ?? false,
-          createdAt:
-            runData.createdAt?.toDate?.()?.toISOString() ||
-            runData.created_at?.toDate?.()?.toISOString() ||
-            new Date().toISOString(),
-          results,
-          combined,
-          intermediateGroups: intermediateGroups.length > 0 ? intermediateGroups : undefined,
-          shortened: shortened ?? undefined,
-          lesefluss: lesefluss ?? undefined,
+          autoCombine: Boolean(runData.autoCombine),
+          ueberschrift: typeof runData.ueberschrift === 'string' ? runData.ueberschrift : undefined,
+          thema: typeof runData.thema === 'string' ? runData.thema : undefined,
+          grundlegendeInformationen:
+            typeof runData.grundlegendeInformationen === 'string' ? runData.grundlegendeInformationen : null,
+          artifactsStatus: runData.artifactsStatus,
+          resultsExpectedCount: typeof runData.resultsExpectedCount === 'number' ? runData.resultsExpectedCount : undefined,
+          resultsCompletedCount:
+            typeof runData.resultsCompletedCount === 'number' ? runData.resultsCompletedCount : undefined,
+          resultsWithContentCount:
+            typeof runData.resultsWithContentCount === 'number' ? runData.resultsWithContentCount : undefined,
+          lastResultAt: runData.lastResultAt ? toIso(runData.lastResultAt) : null,
+          lastActivityAt: runData.lastActivityAt ? toIso(runData.lastActivityAt) : null,
         };
       })
     );
 
     return runs;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching Kapitel runs:', error);
     return [];
   }
@@ -837,620 +694,187 @@ export async function getUserKapitels(
 ): Promise<Kapitel[]> {
   try {
     const { user, db } = await getContext(ctx);
-    if (!user) {
-      throw new Error('Not authenticated');
-    }
+    if (!user) throw new Error('Not authenticated');
 
-    const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
     const snapshot = await getDocs(
-      query(kapitelsRef, where('projektId', '==', projektId), orderBy('createdAt', 'desc'))
+      query(
+        kapitelsCol(db, user.uid),
+        where('projektId', '==', projektId),
+        where('archived', '==', false),
+        orderBy('order', 'asc')
+      )
     );
 
     const kapitels: Kapitel[] = [];
 
-    for (const kapitelDoc of snapshot.docs) {
-      const data = kapitelDoc.data();
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data() as DocumentData;
       const kapitel: Kapitel = {
-        id: kapitelDoc.id,
-        title: data.title,
-        projektId: data.projektId || 'default',
-        nummer: data.nummer || '1', // Default to '1' for existing kapitels without nummer
-        quelleIds: data.quelleIds || [],
-        createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-        parentId: data.parentId || null,
-        order: data.order ?? 0,
+        id: docSnap.id,
+        title: String(data.title ?? ''),
+        projektId: String(data.projektId ?? 'default'),
+        nummer: String(data.nummer ?? '1'),
+        createdAt: toIso(data.createdAt),
+        updatedAt: data.updatedAt ? toIso(data.updatedAt) : undefined,
+        archived: Boolean(data.archived),
+        archivedAt: data.archivedAt ? toIso(data.archivedAt) : undefined,
+        quelleIds: Array.isArray(data.quelleIds) ? data.quelleIds : [],
+        parentId: data.parentId ?? null,
+        order: Number(data.order ?? 0),
+        latestRun: data.latestRun
+          ? {
+              runId: String(data.latestRun.runId ?? ''),
+              index: Number(data.latestRun.index ?? 0),
+              status: normalizeRunStatus(data.latestRun.status),
+              updatedAt: toIso(data.latestRun.updatedAt),
+            }
+          : undefined,
       };
 
       if (withRuns) {
-        kapitel.runs = await getKapitelRuns(kapitelDoc.id, runLimit, { user, db });
+        kapitel.runs = await getKapitelRuns(docSnap.id, runLimit, { user, db });
       }
 
       kapitels.push(kapitel);
     }
 
     return kapitels;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error getting user Kapitels:', error);
     return [];
   }
 }
 
-/**
- * Create a shortening run for a Kapitel
- */
+export async function getCombinedGroups(kapitelId: string, runId: string): Promise<IntermediateGroupResult[]> {
+  const user = await requireAuth();
+  if (!user) return [];
+
+  try {
+    const db = await getFirestoreForUser();
+    const snap = await getDocs(combinedGroupsCol(db, user.uid, kapitelId, runId));
+    const groups: IntermediateGroupResult[] = snap.docs.map((d) => {
+      const g = d.data() as DocumentData;
+      return {
+        id: d.id,
+        groupNumber: Number(g.groupNumber ?? 0),
+        content: String(g.content ?? ''),
+        sourceQuelleIds: Array.isArray(g.sourceQuelleIds) ? g.sourceQuelleIds : [],
+        heading: String(g.heading ?? ''),
+        topic: String(g.topic ?? ''),
+        model: String(g.model ?? ''),
+        usage: normalizeUsage(g.usage),
+        costUsd: Number(g.costUsd ?? 0),
+        createdAt: toIso(g.createdAt),
+        updatedAt: g.updatedAt ? toIso(g.updatedAt) : undefined,
+      };
+    });
+    groups.sort((a, b) => a.groupNumber - b.groupNumber);
+    return groups;
+  } catch (error: unknown) {
+    console.error('Error getting combined groups:', error);
+    return [];
+  }
+}
+
+export async function hasCombinedGroups(kapitelId: string, runId: string): Promise<boolean> {
+  const user = await requireAuth();
+  if (!user) return false;
+
+  try {
+    const db = await getFirestoreForUser();
+    const snap = await getDocs(query(combinedGroupsCol(db, user.uid, kapitelId, runId), limit(1)));
+    return !snap.empty;
+  } catch (error: unknown) {
+    console.error('Error checking combined groups existence:', error);
+    return false;
+  }
+}
+
 export async function createShortenRun(
   kapitelId: string,
   runId: string,
-  contextKapitelIds: string[],
-  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano'
+  contextKapitelIds: string[]
 ) {
   const user = await requireAuth();
-  if (!user) {
-    return { success: false, error: 'Not authenticated' };
+  let runModel: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano';
+  if (user) {
+    const db = await getFirestoreForUser();
+    const runSnap = await getDoc(doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId));
+    runModel = normalizeRunModel(runSnap.exists() ? (runSnap.data() as DocumentData).model : null);
   }
 
-  try {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-    // Get the auth token from session cookie
-    const cookieStore = await cookies();
-    const authToken = cookieStore.get('__session')?.value;
-
-    if (!authToken) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    // Call the FastAPI endpoint
-    let response: Response;
-    try {
-      response = await fetch(`${apiBaseUrl}/api/shorten`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          kapitel_id: kapitelId,
-          run_id: runId,
-          context_kapitel_ids: contextKapitelIds,
-          model: model,
-        }),
-      });
-    } catch (err) {
-      return {
-        success: false,
-        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem – bitte später erneut versuchen.',
-      };
-    }
-
-    if (response.status === 401) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    if (response.status >= 500) {
-      return {
-        success: false,
-        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir – versuche es später erneut.',
-      };
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: errorText || 'Kürzen konnte nicht gestartet werden.' };
-    }
-
-    const result = await response.json();
-    console.log('Shortening queued:', result);
-
-    // Revalidate the dashboard path
-    revalidatePath('/dashboard');
-
-    return { success: true, data: result };
-  } catch (error: any) {
-    console.error('Error creating shorten run:', error);
-    return { success: false, error: error?.message || 'Failed to create shorten run' };
-  }
+  return fetchFastApi('/api/shorten', {
+    kapitel_id: kapitelId,
+    run_id: runId,
+    context_kapitel_ids: contextKapitelIds,
+    model: runModel,
+  });
 }
 
 export async function createLeseflussRun(
   kapitelId: string,
   runId: string,
   contextKapitelIds: string[],
-  aufgabenstellung: string,
-  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano'
+  aufgabenstellung: string
 ) {
   const user = await requireAuth();
-  if (!user) {
-    return { success: false, error: 'Not authenticated' };
+  let runModel: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano';
+  if (user) {
+    const db = await getFirestoreForUser();
+    const runSnap = await getDoc(doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId));
+    runModel = normalizeRunModel(runSnap.exists() ? (runSnap.data() as DocumentData).model : null);
   }
 
-  try {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-    const cookieStore = await cookies();
-    const authToken = cookieStore.get('__session')?.value;
-
-    if (!authToken) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    let response: Response;
-    try {
-      response = await fetch(`${apiBaseUrl}/api/lesefluss`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          kapitel_id: kapitelId,
-          run_id: runId,
-          context_kapitel_ids: contextKapitelIds,
-          aufgabenstellung: aufgabenstellung,
-          model: model,
-        }),
-      });
-    } catch (err) {
-      return {
-        success: false,
-        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem – bitte später erneut versuchen.',
-      };
-    }
-
-    if (response.status === 401) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    if (response.status >= 500) {
-      return {
-        success: false,
-        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir – versuche es später erneut.',
-      };
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: errorText || 'Lese Fluss verbessern konnte nicht gestartet werden.' };
-    }
-
-    const result = await response.json();
-    console.log('Lesefluss queued:', result);
-
-    revalidatePath('/dashboard');
-
-    return { success: true, data: result };
-  } catch (error: any) {
-    console.error('Error creating lesefluss run:', error);
-    return { success: false, error: error?.message || 'Failed to create lesefluss run' };
-  }
+  return fetchFastApi('/api/lesefluss', {
+    kapitel_id: kapitelId,
+    run_id: runId,
+    context_kapitel_ids: contextKapitelIds,
+    aufgabenstellung,
+    model: runModel,
+  });
 }
 
 export async function initCombinedRefinement(kapitelId: string, runId: string) {
-  await requireAuth();
-
-  try {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-    const cookieStore = await cookies();
-    const authToken = cookieStore.get('__session')?.value;
-
-    if (!authToken) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    let response: Response;
-    try {
-      response = await fetch(`${apiBaseUrl}/api/refine/combined/init`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          kapitel_id: kapitelId,
-          run_id: runId,
-        }),
-      });
-    } catch (err) {
-      return {
-        success: false,
-        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte spдer erneut versuchen.',
-      };
-    }
-
-    if (response.status === 401) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    if (response.status >= 500) {
-      return {
-        success: false,
-        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es spдer erneut.',
-      };
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: errorText || 'Refinement konnte nicht initialisiert werden.' };
-    }
-
-    const result = await response.json();
-    revalidatePath('/dashboard');
-    return { success: true, data: result };
-  } catch (error: any) {
-    console.error('Error initializing combined refinement:', error);
-    return { success: false, error: error?.message || 'Failed to init combined refinement' };
-  }
+  return fetchFastApi('/api/refine/combined/init', { kapitel_id: kapitelId, run_id: runId });
 }
 
-export async function createCombinedRefinement(
-  kapitelId: string,
-  runId: string,
-  parentVersionId: string,
-  userMessage: string
-) {
-  await requireAuth();
-
-  try {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-    const cookieStore = await cookies();
-    const authToken = cookieStore.get('__session')?.value;
-
-    if (!authToken) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    let response: Response;
-    try {
-      response = await fetch(`${apiBaseUrl}/api/refine/combined`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          kapitel_id: kapitelId,
-          run_id: runId,
-          parent_version_id: parentVersionId,
-          user_message: userMessage,
-        }),
-      });
-    } catch (err) {
-      return {
-        success: false,
-        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte spдer erneut versuchen.',
-      };
-    }
-
-    if (response.status === 401) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    if (response.status >= 500) {
-      return {
-        success: false,
-        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es spдer erneut.',
-      };
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: errorText || 'Refinement konnte nicht gestartet werden.' };
-    }
-
-    const result = await response.json();
-    revalidatePath('/dashboard');
-    return { success: true, data: result };
-  } catch (error: any) {
-    console.error('Error creating combined refinement:', error);
-    return { success: false, error: error?.message || 'Failed to create combined refinement' };
-  }
+export async function createCombinedRefinement(kapitelId: string, runId: string, parentVersionId: string, userMessage: string) {
+  return fetchFastApi('/api/refine/combined', {
+    kapitel_id: kapitelId,
+    run_id: runId,
+    parent_version_id: parentVersionId,
+    user_message: userMessage,
+  });
 }
 
 export async function initShortenedRefinement(kapitelId: string, runId: string) {
-  await requireAuth();
-
-  try {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-    const cookieStore = await cookies();
-    const authToken = cookieStore.get('__session')?.value;
-
-    if (!authToken) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    let response: Response;
-    try {
-      response = await fetch(`${apiBaseUrl}/api/refine/shortened/init`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          kapitel_id: kapitelId,
-          run_id: runId,
-        }),
-      });
-    } catch (err) {
-      return {
-        success: false,
-        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
-      };
-    }
-
-    if (response.status === 401) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    if (response.status >= 500) {
-      return {
-        success: false,
-        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
-      };
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: errorText || 'Refinement konnte nicht initialisiert werden.' };
-    }
-
-    const result = await response.json();
-    revalidatePath('/dashboard');
-    return { success: true, data: result };
-  } catch (error: any) {
-    console.error('Error initializing shortened refinement:', error);
-    return { success: false, error: error?.message || 'Failed to init shortened refinement' };
-  }
+  return fetchFastApi('/api/refine/shortened/init', { kapitel_id: kapitelId, run_id: runId });
 }
 
-export async function createShortenedRefinement(
-  kapitelId: string,
-  runId: string,
-  parentVersionId: string,
-  userMessage: string
-) {
-  await requireAuth();
-
-  try {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-    const cookieStore = await cookies();
-    const authToken = cookieStore.get('__session')?.value;
-
-    if (!authToken) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    let response: Response;
-    try {
-      response = await fetch(`${apiBaseUrl}/api/refine/shortened`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          kapitel_id: kapitelId,
-          run_id: runId,
-          parent_version_id: parentVersionId,
-          user_message: userMessage,
-        }),
-      });
-    } catch (err) {
-      return {
-        success: false,
-        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
-      };
-    }
-
-    if (response.status === 401) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    if (response.status >= 500) {
-      return {
-        success: false,
-        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
-      };
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: errorText || 'Refinement konnte nicht gestartet werden.' };
-    }
-
-    const result = await response.json();
-    revalidatePath('/dashboard');
-    return { success: true, data: result };
-  } catch (error: any) {
-    console.error('Error creating shortened refinement:', error);
-    return { success: false, error: error?.message || 'Failed to create shortened refinement' };
-  }
+export async function createShortenedRefinement(kapitelId: string, runId: string, parentVersionId: string, userMessage: string) {
+  return fetchFastApi('/api/refine/shortened', {
+    kapitel_id: kapitelId,
+    run_id: runId,
+    parent_version_id: parentVersionId,
+    user_message: userMessage,
+  });
 }
 
 export async function initLeseflussRefinement(kapitelId: string, runId: string) {
-  await requireAuth();
-
-  try {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-    const cookieStore = await cookies();
-    const authToken = cookieStore.get('__session')?.value;
-
-    if (!authToken) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    let response: Response;
-    try {
-      response = await fetch(`${apiBaseUrl}/api/refine/lesefluss/init`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          kapitel_id: kapitelId,
-          run_id: runId,
-        }),
-      });
-    } catch (err) {
-      return {
-        success: false,
-        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
-      };
-    }
-
-    if (response.status === 401) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    if (response.status >= 500) {
-      return {
-        success: false,
-        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
-      };
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: errorText || 'Refinement konnte nicht initialisiert werden.' };
-    }
-
-    const result = await response.json();
-    revalidatePath('/dashboard');
-    return { success: true, data: result };
-  } catch (error: any) {
-    console.error('Error initializing lesefluss refinement:', error);
-    return { success: false, error: error?.message || 'Failed to init lesefluss refinement' };
-  }
+  return fetchFastApi('/api/refine/lesefluss/init', { kapitel_id: kapitelId, run_id: runId });
 }
 
-export async function createLeseflussRefinement(
-  kapitelId: string,
-  runId: string,
-  parentVersionId: string,
-  userMessage: string
-) {
-  await requireAuth();
-
-  try {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-    const cookieStore = await cookies();
-    const authToken = cookieStore.get('__session')?.value;
-
-    if (!authToken) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    let response: Response;
-    try {
-      response = await fetch(`${apiBaseUrl}/api/refine/lesefluss`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          kapitel_id: kapitelId,
-          run_id: runId,
-          parent_version_id: parentVersionId,
-          user_message: userMessage,
-        }),
-      });
-    } catch (err) {
-      return {
-        success: false,
-        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
-      };
-    }
-
-    if (response.status === 401) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    if (response.status >= 500) {
-      return {
-        success: false,
-        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
-      };
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: errorText || 'Refinement konnte nicht gestartet werden.' };
-    }
-
-    const result = await response.json();
-    revalidatePath('/dashboard');
-    return { success: true, data: result };
-  } catch (error: any) {
-    console.error('Error creating lesefluss refinement:', error);
-    return { success: false, error: error?.message || 'Failed to create lesefluss refinement' };
-  }
+export async function createLeseflussRefinement(kapitelId: string, runId: string, parentVersionId: string, userMessage: string) {
+  return fetchFastApi('/api/refine/lesefluss', {
+    kapitel_id: kapitelId,
+    run_id: runId,
+    parent_version_id: parentVersionId,
+    user_message: userMessage,
+  });
 }
 
 export async function initResultRefinement(kapitelId: string, runId: string, quelleId: string) {
-  await requireAuth();
-
-  try {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-    const cookieStore = await cookies();
-    const authToken = cookieStore.get('__session')?.value;
-
-    if (!authToken) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    let response: Response;
-    try {
-      response = await fetch(`${apiBaseUrl}/api/refine/result/init`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          kapitel_id: kapitelId,
-          run_id: runId,
-          quelle_id: quelleId,
-        }),
-      });
-    } catch (err) {
-      return {
-        success: false,
-        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
-      };
-    }
-
-    if (response.status === 401) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    if (response.status >= 500) {
-      return {
-        success: false,
-        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
-      };
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: errorText || 'Refinement konnte nicht initialisiert werden.' };
-    }
-
-    const result = await response.json();
-    revalidatePath('/dashboard');
-    return { success: true, data: result };
-  } catch (error: any) {
-    console.error('Error initializing result refinement:', error);
-    return { success: false, error: error?.message || 'Failed to init result refinement' };
-  }
+  return fetchFastApi('/api/refine/result/init', { kapitel_id: kapitelId, run_id: runId, quelle_id: quelleId });
 }
 
 export async function createResultRefinement(
@@ -1460,168 +884,181 @@ export async function createResultRefinement(
   parentVersionId: string,
   userMessage: string
 ) {
-  await requireAuth();
-
-  try {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-    const cookieStore = await cookies();
-    const authToken = cookieStore.get('__session')?.value;
-
-    if (!authToken) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    let response: Response;
-    try {
-      response = await fetch(`${apiBaseUrl}/api/refine/result`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          kapitel_id: kapitelId,
-          run_id: runId,
-          quelle_id: quelleId,
-          parent_version_id: parentVersionId,
-          user_message: userMessage,
-        }),
-      });
-    } catch (err) {
-      return {
-        success: false,
-        error: 'FastAPI-Server ist nicht erreichbar. Das ist ein Server-Problem - bitte sp?er erneut versuchen.',
-      };
-    }
-
-    if (response.status === 401) {
-      return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
-    }
-
-    if (response.status >= 500) {
-      return {
-        success: false,
-        error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es sp?er erneut.',
-      };
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: errorText || 'Refinement konnte nicht gestartet werden.' };
-    }
-
-    const result = await response.json();
-    revalidatePath('/dashboard');
-    return { success: true, data: result };
-  } catch (error: any) {
-    console.error('Error creating result refinement:', error);
-    return { success: false, error: error?.message || 'Failed to create result refinement' };
-  }
+  return fetchFastApi('/api/refine/result', {
+    kapitel_id: kapitelId,
+    run_id: runId,
+    quelle_id: quelleId,
+    parent_version_id: parentVersionId,
+    user_message: userMessage,
+  });
 }
 
-/**
- * Get the shortened result for a specific run
- */
-export async function getShortenedResult(
-  kapitelId: string,
-  runId: string
-): Promise<ShortenedResult | null> {
+export async function getShortenedResult(kapitelId: string, runId: string): Promise<ShortenedResult | null> {
   const user = await requireAuth();
-  if (!user) {
-    return null;
-  }
-
+  if (!user) return null;
   try {
     const db = await getFirestoreForUser();
-
-    const shortenedRef = doc(
-      db,
-      'users',
-      user.uid,
-      'kapitels',
-      kapitelId,
-      'runs',
-      runId,
-      'shortened',
-      'shortened'
-    );
-
-    const shortenedDoc = await getDoc(shortenedRef);
-
-    if (!shortenedDoc.exists()) {
-      return null;
-    }
-
-    const data = shortenedDoc.data();
-
+    const snap = await getDoc(doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId, 'artifacts', 'shortened'));
+    if (!snap.exists()) return null;
+    const s = snap.data() as DocumentData;
     return {
-      id: shortenedDoc.id,
-      shortenedContent: data.shortened_content || '',
-      originalLength: data.original_length || 0,
-      shortenedLength: data.shortened_length || 0,
-      usedKapitelIds: data.used_kapitel_ids || [],
-      model: data.model || '',
-      cost: data.cost || 0,
-      tokensUsed: data.tokens_used || { input: 0, cachedInput: 0, output: 0 },
-      createdAt: data.created_at || new Date().toISOString(),
+      id: 'shortened',
+      content: String(s.content ?? ''),
+      explanation: s.explanation
+        ? {
+            lengthDecision: String(s.explanation.lengthDecision ?? ''),
+            omittedTopics: Array.isArray(s.explanation.omittedTopics) ? s.explanation.omittedTopics : [],
+            preservedFocus: Array.isArray(s.explanation.preservedFocus) ? s.explanation.preservedFocus : [],
+            compressionNotes: String(s.explanation.compressionNotes ?? ''),
+          }
+        : undefined,
+      originalLength: Number(s.originalLength ?? 0),
+      shortenedLength: Number(s.shortenedLength ?? 0),
+      usedKapitelIds: Array.isArray(s.usedKapitelIds) ? s.usedKapitelIds : [],
+      model: String(s.model ?? ''),
+      usage: normalizeUsage(s.usage),
+      costUsd: Number(s.costUsd ?? 0),
+      createdAt: toIso(s.createdAt),
+      updatedAt: s.updatedAt ? toIso(s.updatedAt) : undefined,
+      refinement: normalizeRefinement(s.refinement),
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error getting shortened result:', error);
     return null;
   }
 }
 
-/**
- * Get all summaries for a run
- */
-export async function getSummaries(
-  kapitelId: string,
-  runId: string
-): Promise<SummaryResult[]> {
+export async function getSummaries(kapitelId: string, runId: string): Promise<SummaryResult[]> {
   const user = await requireAuth();
-  if (!user) {
+  if (!user) return [];
+  try {
+    const db = await getFirestoreForUser();
+    const snap = await getDocs(summariesCol(db, user.uid, kapitelId, runId));
+    return snap.docs.map((d) => {
+      const s = d.data() as DocumentData;
+      return {
+        id: d.id,
+        content: String(s.content ?? ''),
+        sourceKapitelId: String(s.sourceKapitelId ?? ''),
+        sourceRunId: String(s.sourceRunId ?? ''),
+        sourceType: normalizeSummarySourceType(s.sourceType),
+        originalLength: Number(s.originalLength ?? 0),
+        summaryLength: Number(s.summaryLength ?? 0),
+        model: String(s.model ?? ''),
+        costUsd: Number(s.costUsd ?? 0),
+        usage: {
+          inputTokens: Number((s.usage as Record<string, unknown> | undefined)?.inputTokens ?? 0),
+          outputTokens: Number((s.usage as Record<string, unknown> | undefined)?.outputTokens ?? 0),
+          totalTokens: Number((s.usage as Record<string, unknown> | undefined)?.totalTokens ?? 0),
+        },
+        createdAt: toIso(s.createdAt),
+      };
+    });
+  } catch (error: unknown) {
+    console.error('Error getting summaries:', error);
     return [];
   }
+}
+
+export async function getKapitelsWithCombinedText(
+  kapitelIds: string[],
+  runScanLimit = 20
+): Promise<Record<string, boolean>> {
+  const user = await requireAuth();
+  if (!user) return {};
+
+  const uniqueIds = Array.from(new Set(kapitelIds.filter(Boolean)));
+  if (uniqueIds.length === 0) return {};
 
   try {
     const db = await getFirestoreForUser();
 
-    const summariesRef = collection(
-      db,
-      'users',
-      user.uid,
-      'kapitels',
-      kapitelId,
-      'runs',
-      runId,
-      'summaries'
+    const entries = await Promise.all(
+      uniqueIds.map(async (kapitelId) => {
+        try {
+          const runsSnapshot = await getDocs(
+            query(runsCol(db, user.uid, kapitelId), where('archived', '==', false), orderBy('index', 'desc'), limit(runScanLimit))
+          );
+
+          for (const runSnap of runsSnapshot.docs) {
+            const runData = runSnap.data() as DocumentData;
+            const combinedStatus = (runData.artifactsStatus as { combined?: unknown } | undefined)?.combined;
+            if (combinedStatus === 'success') {
+              return [kapitelId, true] as const;
+            }
+
+            const combinedSnap = await getDoc(artifactDoc(db, user.uid, kapitelId, runSnap.id, 'combined'));
+            if (combinedSnap.exists()) {
+              const combined = combinedSnap.data() as DocumentData;
+              const content = typeof combined.content === 'string' ? combined.content : String(combined.content ?? '');
+              if (content.trim().length > 0) return [kapitelId, true] as const;
+            }
+          }
+        } catch (e) {
+          console.error(`Error checking combined text for kapitel ${kapitelId}:`, e);
+        }
+
+        return [kapitelId, false] as const;
+      })
     );
 
-    const snapshot = await getDocs(summariesRef);
+    return Object.fromEntries(entries);
+  } catch (error) {
+    console.error('Error checking combined text availability:', error);
+    return Object.fromEntries(uniqueIds.map((id) => [id, false] as const));
+  }
+}
 
-    const summaries: SummaryResult[] = [];
+export async function getKapitelsWithShortenedText(
+  kapitelIds: string[],
+  runScanLimit = 20
+): Promise<Record<string, boolean>> {
+  const user = await requireAuth();
+  if (!user) return {};
 
-    for (const summaryDoc of snapshot.docs) {
-      const data = summaryDoc.data();
-      summaries.push({
-        id: summaryDoc.id,
-        summaryContent: data.summary_content || '',
-        sourceKapitelId: data.source_kapitel_id || '',
-        sourceRunId: data.source_run_id || '',
-        sourceType: data.source_type || 'combined',
-        originalLength: data.original_length || 0,
-        summaryLength: data.summary_length || 0,
-        model: data.model || '',
-        cost: data.cost || 0,
-        tokensUsed: data.tokens_used || { input: 0, output: 0 },
-        createdAt: data.created_at || new Date().toISOString(),
-      });
-    }
+  const uniqueIds = Array.from(new Set(kapitelIds.filter(Boolean)));
+  if (uniqueIds.length === 0) return {};
 
-    return summaries;
-  } catch (error: any) {
-    console.error('Error getting summaries:', error);
-    return [];
+  try {
+    const db = await getFirestoreForUser();
+
+    const entries = await Promise.all(
+      uniqueIds.map(async (kapitelId) => {
+        try {
+          const runsSnapshot = await getDocs(
+            query(
+              runsCol(db, user.uid, kapitelId),
+              where('archived', '==', false),
+              orderBy('index', 'desc'),
+              limit(runScanLimit)
+            )
+          );
+
+          for (const runSnap of runsSnapshot.docs) {
+            const runData = runSnap.data() as DocumentData;
+            const shortenedStatus = (runData.artifactsStatus as { shortened?: unknown } | undefined)?.shortened;
+            if (shortenedStatus === 'success') {
+              return [kapitelId, true] as const;
+            }
+
+            const shortenedSnap = await getDoc(artifactDoc(db, user.uid, kapitelId, runSnap.id, 'shortened'));
+            if (shortenedSnap.exists()) {
+              const shortened = shortenedSnap.data() as DocumentData;
+              const content = typeof shortened.content === 'string' ? shortened.content : String(shortened.content ?? '');
+              if (content.trim().length > 0) return [kapitelId, true] as const;
+            }
+          }
+        } catch (e) {
+          console.error(`Error checking shortened text for kapitel ${kapitelId}:`, e);
+        }
+
+        return [kapitelId, false] as const;
+      })
+    );
+
+    return Object.fromEntries(entries);
+  } catch (error) {
+    console.error('Error checking shortened text availability:', error);
+    return Object.fromEntries(uniqueIds.map((id) => [id, false] as const));
   }
 }

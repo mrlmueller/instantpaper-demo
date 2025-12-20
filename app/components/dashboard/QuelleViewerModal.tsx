@@ -14,12 +14,14 @@ import type { Quelle } from "@/app/types/ui";
 
 interface QuelleViewerModalProps {
   quelle: Quelle | null;
+  loading?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
 export function QuelleViewerModal({
   quelle,
+  loading = false,
   open,
   onOpenChange,
 }: QuelleViewerModalProps) {
@@ -59,6 +61,7 @@ export function QuelleViewerModal({
   };
 
   const wordCount = quelle?.text.split(/\s+/).filter(Boolean).length || 0;
+  const showTextLoading = loading && (!quelle?.text || quelle.text.length === 0);
 
   return (
     <>
@@ -135,7 +138,16 @@ export function QuelleViewerModal({
             )}
 
             <div className="text-foreground/90 leading-relaxed whitespace-pre-wrap text-sm">
-              {quelle?.text}
+              {showTextLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-11/12" />
+                  <Skeleton className="h-4 w-10/12" />
+                  <Skeleton className="h-4 w-9/12" />
+                </div>
+              ) : (
+                quelle?.text
+              )}
             </div>
           </div>
         </DialogContent>

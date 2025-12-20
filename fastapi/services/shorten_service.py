@@ -1,10 +1,11 @@
 from services.firebase_service import firebase_service
 from services.openai_service import openai_service
-from services.quelle_service import calculate_cost
+from services.cost_service import get_cost_service, TokenUsage
 from services.user_key_service import user_key_service
 from services.prompt_service import prompt_service
 import logging
 import asyncio
+import uuid
 from datetime import datetime
 import services.openai_service as openai_module
 from typing import Optional, List, Tuple, Dict
@@ -43,7 +44,11 @@ class ShortenService:
             raise ValueError(f"No runs found for Kapitel {kapitel_id}")
 
         # Sort by createdAt (most recent first)
-        sorted_runs = sorted(runs, key=lambda r: r.get('createdAt', ''), reverse=True)
+        sorted_runs = sorted(
+            runs,
+            key=lambda r: r.get("createdAt") or datetime(1970, 1, 1),
+            reverse=True,
+        )
 
         # Try to find text with priority: lesefluss > shortened > combined
         for run in sorted_runs:
@@ -51,21 +56,21 @@ class ShortenService:
 
             # 1. Check for lesefluss text FIRST
             lesefluss = await firebase_service.get_lesefluss_result(user_id, kapitel_id, run_id)
-            if lesefluss and lesefluss.get('lesefluss_content'):
+            if lesefluss and (lesefluss.get("content") or "").strip():
                 logger.info(f"Found lesefluss text for Kapitel {kapitel_id} in run {run_id}")
-                return (lesefluss['lesefluss_content'], run_id, 'lesefluss')
+                return (lesefluss["content"], run_id, "lesefluss")
 
             # 2. Check for shortened text SECOND
             shortened = await firebase_service.get_shortened_result(user_id, kapitel_id, run_id)
-            if shortened and shortened.get('shortened_content'):
+            if shortened and (shortened.get("content") or "").strip():
                 logger.info(f"Found shortened text for Kapitel {kapitel_id} in run {run_id}")
-                return (shortened['shortened_content'], run_id, 'shortened')
+                return (shortened["content"], run_id, "shortened")
 
             # 3. Check for combined text LAST
             combined = await firebase_service.get_combined_result(user_id, kapitel_id, run_id)
-            if combined and combined.get('combined_content'):
+            if combined and (combined.get("content") or "").strip():
                 logger.info(f"Found combined text for Kapitel {kapitel_id} in run {run_id}")
-                return (combined['combined_content'], run_id, 'combined')
+                return (combined["content"], run_id, "combined")
 
         raise ValueError(f"No text found for Kapitel {kapitel_id}")
 
@@ -81,14 +86,14 @@ class ShortenService:
         Valid if: same run AND same text type
         text_type can be: 'combined' | 'shortened' | 'lesefluss'
         """
-        source_run_id = summary.get('source_run_id')
-        source_type = summary.get('source_type')
+        source_run_id = summary.get("sourceRunId")
+        source_type = summary.get("sourceType")
 
         is_valid = (source_run_id == current_run_id and source_type == current_text_type)
 
         logger.info(
-            f"Summary validation: source_run_id={source_run_id}, source_type={source_type}, "
-            f"current_run_id={current_run_id}, current_type={current_text_type} -> {is_valid}"
+            f"Summary validation: sourceRunId={source_run_id}, sourceType={source_type}, "
+            f"currentRunId={current_run_id}, currentType={current_text_type} -> {is_valid}"
         )
 
         return is_valid
@@ -102,6 +107,7 @@ class ShortenService:
         model: str,
         api_key: str,
         key_source: str,
+        user_action_id: str,
     ) -> str:
         """
         Get cached summary or create new one.
@@ -133,63 +139,139 @@ class ShortenService:
 
             if is_valid:
                 logger.info(f"Using cached summary for Kapitel {source_kapitel_id}")
-                return cached_summary['summary_content']
+                return cached_summary["content"]
             else:
                 logger.info(f"Cached summary invalid for Kapitel {source_kapitel_id}, regenerating")
 
         # Generate new summary
         logger.info(f"Generating new summary for Kapitel {source_kapitel_id}")
-        instructions = await prompt_service.get_rendered_instructions(
-            user_id, "summary", {"text": source_text}
-        )
-        summary_content, usage = await self.summarize_text(
-            source_text, model, source_kapitel_id, api_key=api_key, instructions=instructions
-        )
-
-        # Calculate cost
-        cost = calculate_cost(
-            model,
-            usage.get('prompt_tokens', 0),
-            usage.get('prompt_tokens_details', {}).get('cached_tokens', 0),
-            usage.get('completion_tokens', 0)
+        await firebase_service.mark_summary_running(
+            user_id,
+            target_kapitel_id,
+            target_run_id,
+            source_kapitel_id,
+            source_run_id=source_run_id,
+            source_type=source_type,
+            model=model,
+            key_source=key_source,
         )
 
-        # Convert to cents
-        cost_cents = int(cost * 100)
+        try:
+            instructions = await prompt_service.get_rendered_instructions(
+                user_id, "summary", {"text": source_text}
+            )
+            summary_content, usage = await self.summarize_text(
+                source_text, model, source_kapitel_id, api_key=api_key, instructions=instructions
+            )
+            input_tokens = int(usage.get("prompt_tokens", 0))
+            cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
+            output_tokens = int(usage.get("completion_tokens", 0))
 
-        # Count words
-        original_length = len(source_text.split())
-        summary_length = len(summary_content.split())
+            # Calculate cost and log immutable operation (costMetrics)
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(input_tokens, cached_input_tokens, output_tokens)
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=model,
+                usage=usage_obj,
+            )
 
-        # Save the summary
-        summary_data = {
-            'summary_content': summary_content,
-            'source_kapitel_id': source_kapitel_id,
-            'source_run_id': source_run_id,
-            'source_type': source_type,
-            'original_length': original_length,
-            'summary_length': summary_length,
-            'model': model,
-            'cost': cost_cents,
-            'tokens_used': {
-                'input': usage.get('prompt_tokens', 0),
-                'output': usage.get('completion_tokens', 0),
-            },
-            'created_at': datetime.utcnow().isoformat() + 'Z',
-            'key_source': key_source,
-        }
+            target_kapitel = await firebase_service.get_kapitel(user_id, target_kapitel_id)
+            projekt_id = (target_kapitel or {}).get("projektId")
 
-        await firebase_service.save_summary_result(
-            user_id, target_kapitel_id, target_run_id, source_kapitel_id, summary_data
-        )
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
 
-        logger.info(
-            f"Summary created for Kapitel {source_kapitel_id}: "
-            f"{original_length} -> {summary_length} words ({summary_length/original_length*100:.1f}%), "
-            f"cost: ${cost:.4f}"
-        )
+            kapitel_snapshot = (
+                {
+                    "id": target_kapitel_id,
+                    "nummer": (target_kapitel or {}).get("nummer", "?"),
+                    "title": (target_kapitel or {}).get("title", "Untitled"),
+                }
+                if target_kapitel
+                else None
+            )
 
-        return summary_content
+            run_snapshot = {
+                "id": target_run_id,
+                "index": None,
+            }
+
+            await cost_service.log_operation(
+                operation_type="summary",
+                user_id=user_id,
+                user_action_id=user_action_id,
+                operation_details={
+                    "sourceKapitelId": source_kapitel_id,
+                    "sourceRunId": source_run_id,
+                    "sourceType": source_type,
+                },
+                model=model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=target_kapitel_id,
+                run_id=target_run_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
+
+            # Count words
+            original_length = len(source_text.split())
+            summary_length = len(summary_content.split())
+
+            # Save the summary
+            summary_data = {
+                "content": summary_content,
+                "sourceKapitelId": source_kapitel_id,
+                "sourceRunId": source_run_id,
+                "sourceType": source_type,
+                "originalLength": original_length,
+                "summaryLength": summary_length,
+                "model": model,
+                "usage": {
+                    "inputTokens": input_tokens,
+                    "cachedInputTokens": cached_input_tokens,
+                    "outputTokens": output_tokens,
+                    "reasoningTokens": 0,
+                    "totalTokens": input_tokens + output_tokens,
+                },
+                "costUsd": float(cost),
+                "keySource": key_source,
+            }
+
+            await firebase_service.save_summary_result(
+                user_id, target_kapitel_id, target_run_id, source_kapitel_id, summary_data
+            )
+
+            logger.info(
+                f"Summary created for Kapitel {source_kapitel_id}: "
+                f"{original_length} -> {summary_length} words ({summary_length/original_length*100:.1f}%), "
+                f"cost: ${cost:.4f}"
+            )
+
+            return summary_content
+        except Exception:
+            await firebase_service.mark_summary_error(
+                user_id,
+                target_kapitel_id,
+                target_run_id,
+                source_kapitel_id,
+                key_source=key_source,
+            )
+            raise
 
     async def summarize_text(
         self,
@@ -311,6 +393,7 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
         """
         try:
             api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+            user_action_id = str(uuid.uuid4())
             logger.info(
                 f"Starting shorten process for Kapitel {kapitel_id}, run {run_id}, "
                 f"with {len(context_kapitel_ids)} context Kapitels"
@@ -318,20 +401,32 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
 
             # Get the target Kapitel's combined text from the specific run
             combined = await firebase_service.get_combined_result(user_id, kapitel_id, run_id)
-            if not combined or not combined.get('combined_content'):
+            if not combined or not (combined.get("content") or "").strip():
                 raise ValueError(
                     f"No combined text found for Kapitel {kapitel_id} in run {run_id}. "
                     f"Please ensure the Kapitel has been processed first."
                 )
 
-            target_text = combined['combined_content']
-            target_run_id = run_id
-            target_type = 'combined'
+            target_text = combined["content"]
 
             # Get the target Kapitel's run metadata for ueberschrift and thema
             run_data = await firebase_service.get_kapitel_run(user_id, kapitel_id, run_id)
             if not run_data:
                 raise ValueError(f"Run {run_id} not found for Kapitel {kapitel_id}")
+
+            # Enforce run-level model for all actions tied to this run.
+            run_model = (run_data.get("model") or "").strip()
+            if run_model:
+                if model and model != run_model:
+                    logger.info(
+                        f"Overriding requested model '{model}' with run model '{run_model}' "
+                        f"(Kapitel {kapitel_id}, run {run_id})"
+                    )
+                model = run_model
+            else:
+                logger.warning(
+                    f"Run {run_id} for Kapitel {kapitel_id} has no model; falling back to requested model '{model}'"
+                )
 
             ueberschrift = run_data.get('ueberschrift', 'Untitled')
             thema = run_data.get('thema', '')
@@ -340,7 +435,16 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
             logger.info(f"Generating summaries for {len(context_kapitel_ids)} context Kapitels")
 
             summary_tasks = [
-                self.get_or_create_summary(user_id, kapitel_id, run_id, ctx_id, model, api_key, key_source)
+                self.get_or_create_summary(
+                    user_id,
+                    kapitel_id,
+                    run_id,
+                    ctx_id,
+                    model,
+                    api_key,
+                    key_source,
+                    user_action_id,
+                )
                 for ctx_id in context_kapitel_ids
             ]
 
@@ -390,16 +494,69 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
                 instructions=shorten_instructions
             )
 
-            # Calculate cost
-            cost = calculate_cost(
-                model,
-                usage.get('prompt_tokens', 0),
-                usage.get('prompt_tokens_details', {}).get('cached_tokens', 0),
-                usage.get('completion_tokens', 0)
+            input_tokens = int(usage.get("prompt_tokens", 0))
+            cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
+            output_tokens = int(usage.get("completion_tokens", 0))
+            total_tokens = input_tokens + output_tokens
+
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(input_tokens, cached_input_tokens, output_tokens)
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=model,
+                usage=usage_obj,
             )
 
-            # Convert to cents
-            cost_cents = int(cost * 100)
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run_snapshot = {
+                "id": run_id,
+                "index": (run_data or {}).get("index"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="shorten",
+                user_id=user_id,
+                user_action_id=user_action_id,
+                operation_details={
+                    "usedKapitelIds": valid_context_ids,
+                    "summaryCount": len(summaries),
+                },
+                model=model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
 
             # Count words
             original_length = len(target_text.split())
@@ -409,26 +566,27 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
             logger.info("Saving shortened result")
 
             shortened_data = {
-                'shortened_content': shortened_content,
-                'explanation': {
-                    'length_decision': explanation.get('length_decision', ''),
-                    'omitted_topics': explanation.get('omitted_topics', []),
-                    'preserved_focus': explanation.get('preserved_focus', []),
-                    'compression_notes': explanation.get('compression_notes', '')
+                "content": shortened_content,
+                "explanation": {
+                    "lengthDecision": explanation.get("length_decision", ""),
+                    "omittedTopics": explanation.get("omitted_topics", []),
+                    "preservedFocus": explanation.get("preserved_focus", []),
+                    "compressionNotes": explanation.get("compression_notes", ""),
                 },
-                'original_length': original_length,
-                'shortened_length': shortened_length,
-                'compression_ratio': shortened_length / original_length if original_length > 0 else 0,
-                'used_kapitel_ids': valid_context_ids,
-                'model': model,
-                'cost': cost_cents,
-                'tokens_used': {
-                    'input': usage.get('prompt_tokens', 0),
-                    'cached_input': usage.get('prompt_tokens_details', {}).get('cached_tokens', 0),
-                    'output': usage.get('completion_tokens', 0),
+                "originalLength": original_length,
+                "shortenedLength": shortened_length,
+                "compressionRatio": shortened_length / original_length if original_length > 0 else 0,
+                "usedKapitelIds": valid_context_ids,
+                "model": model,
+                "usage": {
+                    "inputTokens": input_tokens,
+                    "cachedInputTokens": cached_input_tokens,
+                    "outputTokens": output_tokens,
+                    "reasoningTokens": 0,
+                    "totalTokens": total_tokens,
                 },
-                'created_at': datetime.utcnow().isoformat() + 'Z',
-                'key_source': key_source,
+                "costUsd": float(cost),
+                "keySource": key_source,
             }
 
             await firebase_service.save_shortened_result(
@@ -615,6 +773,7 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
         5. Saves the result
         """
         try:
+            user_action_id = str(uuid.uuid4())
             logger.info(
                 f"Starting lesefluss process for Kapitel {kapitel_id}, run {run_id}, "
                 f"with {len(context_kapitel_ids)} context Kapitels"
@@ -622,18 +781,32 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
 
             # Step 1: Get the target Kapitel's SHORTENED text from the specific run
             shortened = await firebase_service.get_shortened_result(user_id, kapitel_id, run_id)
-            if not shortened or not shortened.get('shortened_content'):
+            if not shortened or not (shortened.get("content") or "").strip():
                 raise ValueError(
                     f"No shortened text found for Kapitel {kapitel_id} in run {run_id}. "
                     f"Please shorten the text first before improving reading flow."
                 )
 
-            target_text = shortened['shortened_content']
+            target_text = shortened["content"]
 
             # Get the target Kapitel's metadata
             run_data = await firebase_service.get_kapitel_run(user_id, kapitel_id, run_id)
             if not run_data:
                 raise ValueError(f"Run {run_id} not found for Kapitel {kapitel_id}")
+
+            # Enforce run-level model for all actions tied to this run.
+            run_model = (run_data.get("model") or "").strip()
+            if run_model:
+                if model and model != run_model:
+                    logger.info(
+                        f"Overriding requested model '{model}' with run model '{run_model}' "
+                        f"(Kapitel {kapitel_id}, run {run_id})"
+                    )
+                model = run_model
+            else:
+                logger.warning(
+                    f"Run {run_id} for Kapitel {kapitel_id} has no model; falling back to requested model '{model}'"
+                )
 
             kapitel_nummer = run_data.get('nummer', '?')
 
@@ -641,7 +814,16 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
             logger.info(f"Generating summaries for {len(context_kapitel_ids)} context Kapitels")
 
             summary_tasks = [
-                self.get_or_create_summary(user_id, kapitel_id, run_id, ctx_id, model, api_key, key_source)
+                self.get_or_create_summary(
+                    user_id,
+                    kapitel_id,
+                    run_id,
+                    ctx_id,
+                    model,
+                    api_key,
+                    key_source,
+                    user_action_id,
+                )
                 for ctx_id in context_kapitel_ids
             ]
 
@@ -700,16 +882,69 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
                 instructions=lesefluss_instructions,
             )
 
-            # Calculate cost
-            cost = calculate_cost(
-                model,
-                usage.get('prompt_tokens', 0),
-                usage.get('prompt_tokens_details', {}).get('cached_tokens', 0),
-                usage.get('completion_tokens', 0)
+            input_tokens = int(usage.get("prompt_tokens", 0))
+            cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
+            output_tokens = int(usage.get("completion_tokens", 0))
+            total_tokens = input_tokens + output_tokens
+
+            cost_service = get_cost_service(firebase_service)
+            usage_obj = TokenUsage.from_any(input_tokens, cached_input_tokens, output_tokens)
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=model,
+                usage=usage_obj,
             )
 
-            # Convert to cents
-            cost_cents = int(cost * 100)
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            projekt_snapshot = None
+            if projekt_id:
+                project = await firebase_service.get_project(user_id, projekt_id)
+                if project:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": project.get("name"),
+                        "archived": bool(project.get("archived", False)),
+                    }
+
+            kapitel_snapshot = (
+                {
+                    "id": kapitel_id,
+                    "nummer": (kapitel or {}).get("nummer", "?"),
+                    "title": (kapitel or {}).get("title", "Untitled"),
+                }
+                if kapitel
+                else None
+            )
+
+            run_snapshot = {
+                "id": run_id,
+                "index": (run_data or {}).get("index"),
+            }
+
+            await cost_service.log_operation(
+                operation_type="lesefluss",
+                user_id=user_id,
+                user_action_id=user_action_id,
+                operation_details={
+                    "usedKapitelIds": valid_context_ids,
+                    "summaryCount": len(summaries),
+                },
+                model=model,
+                usage=usage_obj,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+            )
+
+            cost = float(cost_breakdown.total_cost_usd)
 
             # Count words
             original_length = len(target_text.split())
@@ -719,21 +954,22 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
             logger.info("Saving lesefluss result")
 
             lesefluss_data = {
-                'lesefluss_content': lesefluss_content,
-                'aufgabenstellung': aufgabenstellung,
-                'explanation': explanation,
-                'original_length': original_length,
-                'lesefluss_length': lesefluss_length,
-                'used_kapitel_ids': valid_context_ids,
-                'model': model,
-                'cost': cost_cents,
-                'tokens_used': {
-                    'input': usage.get('prompt_tokens', 0),
-                    'cached_input': usage.get('prompt_tokens_details', {}).get('cached_tokens', 0),
-                    'output': usage.get('completion_tokens', 0),
+                "content": lesefluss_content,
+                "aufgabenstellung": aufgabenstellung,
+                "explanation": explanation,
+                "originalLength": original_length,
+                "leseflussLength": lesefluss_length,
+                "usedKapitelIds": valid_context_ids,
+                "model": model,
+                "usage": {
+                    "inputTokens": input_tokens,
+                    "cachedInputTokens": cached_input_tokens,
+                    "outputTokens": output_tokens,
+                    "reasoningTokens": 0,
+                    "totalTokens": total_tokens,
                 },
-                'created_at': datetime.utcnow().isoformat() + 'Z',
-                'key_source': key_source,
+                "costUsd": float(cost),
+                "keySource": key_source,
             }
 
             await firebase_service.save_lesefluss_result(

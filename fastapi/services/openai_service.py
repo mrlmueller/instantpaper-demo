@@ -140,6 +140,7 @@ class OpenAIService:
 
             response = await client.responses.create(
                 model=model,
+                service_tier="default",
                 input=[
                     {
                         "role": "system",
@@ -172,40 +173,23 @@ class OpenAIService:
                 logger.info("Model returned NO_CONTENT sentinel (no useful information detected)")
                 result_text = "ChatGPT sagt da sind keine infos in dem Text die Brauchbar sind"
 
-            # Extract token usage from response
+            # Extract token usage from response (input, cached input, output only)
             usage = getattr(response, "usage", None)
-            input_tokens = (
-                getattr(usage, "input_tokens", None)
-                or getattr(usage, "prompt_tokens", 0)
-                or 0
-            )
-            output_tokens = (
-                getattr(usage, "output_tokens", None)
-                or getattr(usage, "completion_tokens", 0)
-                or 0
-            )
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
 
-            # Extract cached input tokens (charged at lower rate)
             cached_input_tokens = 0
-            input_details = getattr(usage, "input_tokens_details", None)
-            if input_details:
-                cached_input_tokens = getattr(input_details, "cached_tokens", 0) or 0
+            input_details = getattr(usage, "input_tokens_details", None) if usage else None
+            if input_details is not None:
+                cached_input_tokens = int(getattr(input_details, "cached_tokens", 0) or 0)
 
-            # Extract reasoning tokens (for reasoning models like o1, o1-mini, etc.)
-            reasoning_tokens = 0
-            completion_details = getattr(usage, "completion_tokens_details", None)
-            if completion_details:
-                reasoning_tokens = (
-                    getattr(completion_details, "reasoning_tokens", 0) or 0
-                )
-
-            tokens_used = input_tokens + output_tokens + reasoning_tokens
+            tokens_used = input_tokens + output_tokens
             model_used = response.model
 
             logger.info(
                 f"OpenAI processing complete. "
                 f"Input: {input_tokens} (cached: {cached_input_tokens}), "
-                f"Output: {output_tokens}, Reasoning: {reasoning_tokens}, "
+                f"Output: {output_tokens}, "
                 f"Total: {tokens_used} tokens, Has content: {has_content}"
             )
 
@@ -216,7 +200,7 @@ class OpenAIService:
                 "input_tokens": input_tokens,
                 "cached_input_tokens": cached_input_tokens,
                 "output_tokens": output_tokens,
-                "reasoning_tokens": reasoning_tokens,
+                "reasoning_tokens": 0,
                 "model": model_used,
             }
 
@@ -266,6 +250,7 @@ class OpenAIService:
 
             response = await client.responses.create(
                 model=model,
+                service_tier="default",
                 input=[
                     {
                         "role": "system",
@@ -295,36 +280,21 @@ class OpenAIService:
                 raise ValueError("No text output returned from OpenAI response")
 
             usage = getattr(response, "usage", None)
-            input_tokens = (
-                getattr(usage, "input_tokens", None)
-                or getattr(usage, "prompt_tokens", 0)
-                or 0
-            )
-            output_tokens = (
-                getattr(usage, "output_tokens", None)
-                or getattr(usage, "completion_tokens", 0)
-                or 0
-            )
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
 
             cached_input_tokens = 0
-            input_details = getattr(usage, "input_tokens_details", None)
-            if input_details:
-                cached_input_tokens = getattr(input_details, "cached_tokens", 0) or 0
+            input_details = getattr(usage, "input_tokens_details", None) if usage else None
+            if input_details is not None:
+                cached_input_tokens = int(getattr(input_details, "cached_tokens", 0) or 0)
 
-            reasoning_tokens = 0
-            completion_details = getattr(usage, "completion_tokens_details", None)
-            if completion_details:
-                reasoning_tokens = (
-                    getattr(completion_details, "reasoning_tokens", 0) or 0
-                )
-
-            tokens_used = input_tokens + output_tokens + reasoning_tokens
+            tokens_used = input_tokens + output_tokens
             model_used = response.model
 
             logger.info(
                 f"OpenAI combination complete. "
                 f"Input: {input_tokens} (cached: {cached_input_tokens}), "
-                f"Output: {output_tokens}, Reasoning: {reasoning_tokens}, "
+                f"Output: {output_tokens}, "
                 f"Total: {tokens_used} tokens"
             )
 
@@ -335,7 +305,7 @@ class OpenAIService:
                 "input_tokens": input_tokens,
                 "cached_input_tokens": cached_input_tokens,
                 "output_tokens": output_tokens,
-                "reasoning_tokens": reasoning_tokens,
+                "reasoning_tokens": 0,
                 "model": model_used,
             }
 
@@ -351,6 +321,7 @@ class OpenAIService:
 
             response = await client.responses.create(
                 model=model,
+                service_tier="default",
                 input=[
                     {
                         "role": "system",
@@ -375,30 +346,15 @@ class OpenAIService:
                 raise ValueError("No text output returned from OpenAI response")
 
             usage = getattr(response, "usage", None)
-            input_tokens = (
-                getattr(usage, "input_tokens", None)
-                or getattr(usage, "prompt_tokens", 0)
-                or 0
-            )
-            output_tokens = (
-                getattr(usage, "output_tokens", None)
-                or getattr(usage, "completion_tokens", 0)
-                or 0
-            )
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
 
             cached_input_tokens = 0
-            input_details = getattr(usage, "input_tokens_details", None)
-            if input_details:
-                cached_input_tokens = getattr(input_details, "cached_tokens", 0) or 0
+            input_details = getattr(usage, "input_tokens_details", None) if usage else None
+            if input_details is not None:
+                cached_input_tokens = int(getattr(input_details, "cached_tokens", 0) or 0)
 
-            reasoning_tokens = 0
-            completion_details = getattr(usage, "completion_tokens_details", None)
-            if completion_details:
-                reasoning_tokens = (
-                    getattr(completion_details, "reasoning_tokens", 0) or 0
-                )
-
-            tokens_used = input_tokens + output_tokens + reasoning_tokens
+            tokens_used = input_tokens + output_tokens
 
             logger.info(
                 f"Summarization complete. "
@@ -432,6 +388,7 @@ class OpenAIService:
 
             response = await client.responses.create(
                 model=model,
+                service_tier="default",
                 input=[
                     {
                         "role": "system",
@@ -477,30 +434,15 @@ class OpenAIService:
                 # Keep shortened_text as result_text and explanation_dict as empty
 
             usage = getattr(response, "usage", None)
-            input_tokens = (
-                getattr(usage, "input_tokens", None)
-                or getattr(usage, "prompt_tokens", 0)
-                or 0
-            )
-            output_tokens = (
-                getattr(usage, "output_tokens", None)
-                or getattr(usage, "completion_tokens", 0)
-                or 0
-            )
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
 
             cached_input_tokens = 0
-            input_details = getattr(usage, "input_tokens_details", None)
-            if input_details:
-                cached_input_tokens = getattr(input_details, "cached_tokens", 0) or 0
+            input_details = getattr(usage, "input_tokens_details", None) if usage else None
+            if input_details is not None:
+                cached_input_tokens = int(getattr(input_details, "cached_tokens", 0) or 0)
 
-            reasoning_tokens = 0
-            completion_details = getattr(usage, "completion_tokens_details", None)
-            if completion_details:
-                reasoning_tokens = (
-                    getattr(completion_details, "reasoning_tokens", 0) or 0
-                )
-
-            tokens_used = input_tokens + output_tokens + reasoning_tokens
+            tokens_used = input_tokens + output_tokens
 
             logger.info(
                 f"Shortening complete. "
@@ -547,6 +489,7 @@ class OpenAIService:
 
             response = await client.responses.create(
                 model=model,
+                service_tier="default",
                 input=[
                     {
                         "role": "system",
@@ -571,30 +514,15 @@ class OpenAIService:
                 raise ValueError("No text output returned from OpenAI response")
 
             usage = getattr(response, "usage", None)
-            input_tokens = (
-                getattr(usage, "input_tokens", None)
-                or getattr(usage, "prompt_tokens", 0)
-                or 0
-            )
-            output_tokens = (
-                getattr(usage, "output_tokens", None)
-                or getattr(usage, "completion_tokens", 0)
-                or 0
-            )
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
 
             cached_input_tokens = 0
-            input_details = getattr(usage, "input_tokens_details", None)
-            if input_details:
-                cached_input_tokens = getattr(input_details, "cached_tokens", 0) or 0
+            input_details = getattr(usage, "input_tokens_details", None) if usage else None
+            if input_details is not None:
+                cached_input_tokens = int(getattr(input_details, "cached_tokens", 0) or 0)
 
-            reasoning_tokens = 0
-            completion_details = getattr(usage, "completion_tokens_details", None)
-            if completion_details:
-                reasoning_tokens = (
-                    getattr(completion_details, "reasoning_tokens", 0) or 0
-                )
-
-            tokens_used = input_tokens + output_tokens + reasoning_tokens
+            tokens_used = input_tokens + output_tokens
 
             logger.info(
                 f"Reading flow improvement complete. "

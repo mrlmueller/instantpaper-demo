@@ -23,8 +23,6 @@ export async function getAuthenticatedAppForUser() {
     // Token might be expired - client will refresh it automatically
     // Return unauthenticated state, let client-side handle token refresh
     const firebaseServerApp = initializeServerApp(firebaseApp.options, {});
-    const auth = getAuth(firebaseServerApp);
-
     return { firebaseServerApp, currentUser: null };
   }
 }

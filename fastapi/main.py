@@ -30,15 +30,10 @@ import logging
 import base64
 import json
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO if config.DEBUG else logging.WARNING,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('fastapi.log'),
-        logging.StreamHandler()
-    ]
-)
+from utils.logging_config import configure_logging
+
+# Configure logging early (no file logs; keep uvicorn access logs).
+configure_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +54,14 @@ class RevokeSessionRequest(BaseModel):
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown"""
     # Startup
-    logger.info("Starting InstantPaper API server...")
-    logger.info(f"Debug mode: {config.DEBUG}")
-    logger.info(f"Allowed origins: {config.ALLOWED_ORIGINS}")
+    logger.debug("Starting InstantPaper API server...")
+    logger.debug(f"Debug mode: {config.DEBUG}")
+    logger.debug(f"Allowed origins: {config.ALLOWED_ORIGINS}")
 
     yield
 
     # Shutdown (if needed in the future)
-    logger.info("Shutting down InstantPaper API server...")
+    logger.debug("Shutting down InstantPaper API server...")
 
 
 # Initialize FastAPI app with lifespan
@@ -221,6 +216,25 @@ async def process_quelle(
     """
     logger.info(f"Processing Quelle {request.quelle_id} for user {user_id} (Kapitel {request.kapitel_id}, run {request.run_id})")
 
+    # Block duplicate processing while already running (prevents double charges + weird UI states).
+    existing_result = await firebase_service.get_run_result(user_id, request.kapitel_id, request.run_id, request.quelle_id)
+    if existing_result and existing_result.get("status") == "running":
+        raise HTTPException(status_code=400, detail="Diese Quelle wird bereits verarbeitet.")
+
+    run_doc = await firebase_service.get_run(user_id, request.kapitel_id, request.run_id)
+    run_model = (run_doc.get("model") or "").strip() if run_doc else ""
+    model_to_use = run_model or request.model
+
+    # Create/merge placeholder result doc immediately so the UI can show running/error state.
+    await firebase_service.mark_result_running(
+        user_id=user_id,
+        kapitel_id=request.kapitel_id,
+        run_id=request.run_id,
+        quelle_id=request.quelle_id,
+        user_input=request.user_input,
+        model=model_to_use,
+    )
+
     async def _run_process_single_quelle() -> None:
         try:
             await quelle_service.process_single_quelle(
@@ -229,13 +243,19 @@ async def process_quelle(
                 request.kapitel_id,
                 request.run_id,
                 request.user_input,
-                request.model,
+                model_to_use,
             )
         except Exception as e:
             logger.error(
                 f"Background processing failed for Quelle {request.quelle_id} "
                 f"(Kapitel {request.kapitel_id}, run {request.run_id}, user {user_id}): {e}",
                 exc_info=True,
+            )
+            await firebase_service.mark_result_error(
+                user_id=user_id,
+                kapitel_id=request.kapitel_id,
+                run_id=request.run_id,
+                quelle_id=request.quelle_id,
             )
 
     # Process Quelle in the background to return immediately
@@ -263,6 +283,27 @@ async def combine_run(
     """
     logger.info(f"Combining run {request.run_id} for user {user_id} (Kapitel {request.kapitel_id})")
 
+    existing_combined = await firebase_service.get_combined_result(user_id, request.kapitel_id, request.run_id)
+    if existing_combined:
+        existing_status = (existing_combined.get("status") or "").strip()
+        existing_content = (existing_combined.get("content") or "").strip()
+        if existing_status == "running":
+            raise HTTPException(status_code=400, detail="Kombination läuft bereits.")
+        if existing_content and (existing_status == "success" or not existing_status):
+            raise HTTPException(status_code=400, detail="Kombinierter Text existiert bereits für diesen Run.")
+
+    run_doc = await firebase_service.get_run(user_id, request.kapitel_id, request.run_id)
+    run_model = (run_doc.get("model") or "").strip() if run_doc else None
+
+    # Create/merge placeholder artifact doc immediately so the UI can show running/error state.
+    await firebase_service.mark_artifact_running(
+        user_id=user_id,
+        kapitel_id=request.kapitel_id,
+        run_id=request.run_id,
+        artifact_id="combined",
+        model=run_model,
+    )
+
     async def _run_combine_run_results() -> None:
         try:
             await quelle_service.combine_run_results(
@@ -275,6 +316,12 @@ async def combine_run(
                 f"Background combine failed for run {request.run_id} "
                 f"(Kapitel {request.kapitel_id}, user {user_id}): {e}",
                 exc_info=True,
+            )
+            await firebase_service.mark_artifact_error(
+                user_id=user_id,
+                kapitel_id=request.kapitel_id,
+                run_id=request.run_id,
+                artifact_id="combined",
             )
 
     background_tasks.add_task(_run_combine_run_results)
@@ -303,6 +350,20 @@ async def shorten_kapitel(
         f"with {len(request.context_kapitel_ids)} context Kapitels"
     )
 
+    existing_shortened = await firebase_service.get_shortened_result(user_id, request.kapitel_id, request.run_id)
+    if existing_shortened and (existing_shortened.get("status") or "").strip() == "running":
+        raise HTTPException(status_code=400, detail="Text wird bereits gekürzt.")
+
+    # Create/merge placeholder artifact doc immediately so the UI can show running/error state.
+    await firebase_service.mark_artifact_running(
+        user_id=user_id,
+        kapitel_id=request.kapitel_id,
+        run_id=request.run_id,
+        artifact_id="shortened",
+        model=request.model,
+        used_kapitel_ids=request.context_kapitel_ids,
+    )
+
     async def _run_shorten_process() -> None:
         try:
             await shorten_service.process_shorten_request(
@@ -317,6 +378,12 @@ async def shorten_kapitel(
                 f"Background shortening failed for Kapitel {request.kapitel_id} "
                 f"(run {request.run_id}, user {user_id}): {e}",
                 exc_info=True,
+            )
+            await firebase_service.mark_artifact_error(
+                user_id=user_id,
+                kapitel_id=request.kapitel_id,
+                run_id=request.run_id,
+                artifact_id="shortened",
             )
 
     background_tasks.add_task(_run_shorten_process)
@@ -351,8 +418,23 @@ async def improve_lesefluss(
             f"run {request.run_id}, user {user_id}"
         )
 
+        existing_lesefluss = await firebase_service.get_lesefluss_result(user_id, request.kapitel_id, request.run_id)
+        if existing_lesefluss and (existing_lesefluss.get("status") or "").strip() == "running":
+            raise HTTPException(status_code=400, detail="Lesefluss wird bereits erstellt.")
+
         # Resolve API key (user key or platform key)
         api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+
+        # Create/merge placeholder artifact doc immediately so the UI can show running/error state.
+        await firebase_service.mark_artifact_running(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            artifact_id="lesefluss",
+            model=request.model,
+            used_kapitel_ids=request.context_kapitel_ids,
+            aufgabenstellung=request.aufgabenstellung,
+        )
 
         # Queue the lesefluss process as a background task
         async def _run_lesefluss_process() -> None:
@@ -372,6 +454,13 @@ async def improve_lesefluss(
                     f"Background lesefluss failed for Kapitel {request.kapitel_id} "
                     f"(run {request.run_id}, user {user_id}): {e}",
                     exc_info=True,
+                )
+                await firebase_service.mark_artifact_error(
+                    user_id=user_id,
+                    kapitel_id=request.kapitel_id,
+                    run_id=request.run_id,
+                    artifact_id="lesefluss",
+                    key_source=key_source,
                 )
 
         background_tasks.add_task(_run_lesefluss_process)
@@ -688,5 +777,8 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=config.PORT,
-        reload=config.DEBUG
+        reload=config.DEBUG,
+        # Use our in-app logging config; keep access logs.
+        log_config=None,
+        access_log=True,
     )
