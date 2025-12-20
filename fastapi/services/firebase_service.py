@@ -663,6 +663,35 @@ class FirebaseService:
             logger.error(f"Error fetching combined result for run {run_id}: {str(e)}")
             raise
 
+    async def set_run_artifact_status(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        artifact_id: str,
+        status: str,
+    ) -> None:
+        """Update runs/{runId}.artifactsStatus.{artifactId} (used to drive UI states)."""
+        try:
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            run_ref.set(
+                {
+                    f"artifactsStatus.{artifact_id}": status,
+                    "lastActivityAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+        except Exception as e:
+            logger.error(f"Error setting run artifact status ({artifact_id}={status}): {e}")
+
     async def mark_artifact_running(
         self,
         user_id: str,

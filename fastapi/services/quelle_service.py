@@ -297,6 +297,15 @@ class QuelleService:
                     f"Auto-combine skipped for run {run_id}: only {content_count} text(s) with content "
                     "(need at least 2)"
                 )
+                # Auto-combine is enabled, but we can't combine. Reset combined stage status so the UI
+                # does not show an infinite "combining..." state.
+                await self.firebase.set_run_artifact_status(
+                    user_id=user_id,
+                    kapitel_id=kapitel_id,
+                    run_id=run_id,
+                    artifact_id="combined",
+                    status="empty",
+                )
                 return
 
             # All conditions met - trigger auto-combine after delay

@@ -122,6 +122,10 @@ export function KapitelWorkspace({
   const shortenedStatus = selectedRun?.shortenedStatus ?? (hasGekuerzt ? "success" : "empty");
   const leseflussStatus = selectedRun?.leseflussStatus ?? (hasVerbessert ? "success" : "empty");
   const canShowIntermediateGroups = Boolean(selectedRun?.combinedText && selectedRun.combinedText.length > 0);
+  const combineEligibleCount = (selectedRun?.quellenErgebnisse || []).filter(
+    (qe) => qe.status === "success" && Boolean(qe.text && qe.text.trim().length > 0)
+  ).length;
+  const canCombineFromResults = combineEligibleCount >= 2;
 
   // Reset intermediate groups when selected run changes
   useEffect(() => {
@@ -1166,7 +1170,7 @@ export function KapitelWorkspace({
         )}
 
         {/* Combine Button (if only quellen exist) */}
-        {hasQuellenErgebnisse && !hasContent && combinedStatus !== "running" && (
+        {hasQuellenErgebnisse && !hasContent && combinedStatus !== "running" && canCombineFromResults && (
           <Card className="mb-8 bg-accent/30 border-border border-dashed">
             <div className="p-8 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
@@ -1228,7 +1232,7 @@ export function KapitelWorkspace({
               </h3>
               {!hasContent &&
                 combinedStatus !== "running" &&
-                selectedRun!.quellenErgebnisse.some((qe) => qe.status === "success") && (
+                canCombineFromResults && (
                 <Button
                   size="sm"
                   variant="outline"
