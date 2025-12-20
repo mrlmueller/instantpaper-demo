@@ -38,6 +38,11 @@ class Config:
     # Development
     DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"
 
+    # Admin approval endpoint (Basic Auth)
+    # Used to set Firebase Auth custom claims (e.g. {"approved": true}) for allowlisting users.
+    ADMIN_BASIC_USER: str = os.getenv("ADMIN_BASIC_USER", "admin").strip() or "admin"
+    ADMIN_BASIC_PASSWORD: str = os.getenv("ADMIN_BASIC_PASSWORD", "").strip()
+
     # Text refinement flow
     TEXT_REFINEMENT_MAX_DEPTH: int = int(os.getenv("TEXT_REFINEMENT_MAX_DEPTH", "4"))
     DUMP_REFINEMENT_PROMPTS: bool = (

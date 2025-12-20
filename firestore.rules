@@ -7,7 +7,7 @@ service cloud.firestore {
     // ---------------------------------------------------------------------
 
     function isAuthenticated() {
-      return request.auth != null;
+      return request.auth != null && request.auth.token.approved == true;
     }
 
     function isOwner(userId) {

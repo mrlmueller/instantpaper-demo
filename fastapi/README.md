@@ -362,6 +362,24 @@ Default log level is `WARNING` to keep background processing quiet. To temporari
 
 Uvicorn access logs (HTTP requests) stay enabled at `INFO`.
 
+## User Approval (Allowlist)
+
+This app is restricted to manually approved Google accounts using a Firebase Auth custom claim (`approved: true`).
+
+### Configure Admin Credentials
+
+Set these env vars on the FastAPI server:
+- `ADMIN_BASIC_USER` (default: `admin`)
+- `ADMIN_BASIC_PASSWORD` (required)
+
+### Approve / Revoke a User
+
+Open (browser prompts for basic auth):
+- Approve: `/api/admin/approve?email=user@gmail.com&approved=true`
+- Revoke: `/api/admin/approve?email=user@gmail.com&approved=false`
+
+Users must sign out/in (or refresh token) after approval for the claim to apply.
+
 ## Development
 
 ### Code Structure

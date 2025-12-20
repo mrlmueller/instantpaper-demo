@@ -4,6 +4,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def _is_approved(decoded_token: dict) -> bool:
+    # Firebase Admin returns custom claims as top-level keys in decoded tokens/session cookies.
+    return bool(decoded_token.get("approved") is True)
+
 
 async def verify_firebase_token(
     authorization: str = Header(None),
@@ -30,7 +34,9 @@ async def verify_firebase_token(
         try:
             decoded_token = await firebase_service.verify_session_cookie(__session)
             user_id = decoded_token['uid']
-            logger.info(f"Session cookie verified for user {user_id}")
+            if not _is_approved(decoded_token):
+                raise HTTPException(status_code=403, detail="Account not authorized")
+            logger.debug(f"Session cookie verified for user {user_id}")
             return user_id
         except Exception as e:
             logger.warning(f"Session cookie verification failed: {str(e)}")
@@ -59,10 +65,15 @@ async def verify_firebase_token(
         decoded_token = await firebase_service.verify_token(token)
         user_id = decoded_token['uid']
 
-        logger.info(f"ID token verified successfully for user {user_id}")
+        if not _is_approved(decoded_token):
+            raise HTTPException(status_code=403, detail="Account not authorized")
+
+        logger.debug(f"ID token verified successfully for user {user_id}")
         return user_id
 
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
         logger.error(f"Token verification failed: {str(e)}")
         raise HTTPException(
             status_code=401,

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { FileText } from 'lucide-react';
-import { signInWithGoogle } from '@/app/lib/firebase/auth';
+import { signInWithGoogle, signOut } from '@/app/lib/firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -37,7 +37,22 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      await signInWithGoogle();
+      const user = await signInWithGoogle();
+      if (!user) {
+        throw new Error('Login fehlgeschlagen. Bitte erneut versuchen.');
+      }
+
+      // Enforce allowlist via custom claim.
+      // If not approved, immediately sign out and show a generic message.
+      const tokenResult = await user.getIdTokenResult(true);
+      const approved = Boolean((tokenResult.claims as any)?.approved === true);
+      if (!approved) {
+        await signOut();
+        setError('Dein Account ist nicht freigeschaltet. Bitte kontaktiere den Admin.');
+        setLoading(false);
+        return;
+      }
+
       window.location.href = '/dashboard';
     } catch (err: any) {
       console.error('Login failed:', err);

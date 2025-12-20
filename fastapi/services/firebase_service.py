@@ -139,6 +139,29 @@ class FirebaseService:
             logger.error(f"Session cookie verification failed: {str(e)}")
             raise
 
+    async def set_user_approved_by_email(self, email: str, approved: bool) -> dict:
+        """
+        Set the Firebase Auth custom claim `approved` for a user identified by email.
+
+        Note: custom claims are embedded into ID tokens; users must refresh/re-login to receive updates.
+        """
+        self._ensure_initialized()
+        email_norm = (email or "").strip()
+        if not email_norm:
+            raise ValueError("email is required")
+
+        user = auth.get_user_by_email(email_norm)
+        existing_claims = user.custom_claims or {}
+        next_claims = {**existing_claims, "approved": bool(approved)}
+        auth.set_custom_user_claims(user.uid, next_claims)
+
+        return {
+            "uid": user.uid,
+            "email": user.email,
+            "approved": bool(approved),
+            "customClaims": next_claims,
+        }
+
     async def get_quelle_meta(self, user_id: str, quelle_id: str) -> Optional[dict]:
         """Fetch a Quelle metadata doc (`users/{uid}/quellen/{quelleId}`)."""
         try:

@@ -86,9 +86,24 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
 
     return onIdTokenChanged(auth, async (user) => {
       if (user) {
-        // User is signed in - store fresh ID token
-        const idToken = await user.getIdToken();
-        Cookies.set("__session", idToken, {
+        // Force-refresh token so custom claims (approved) are present.
+        const idTokenResult = await user.getIdTokenResult(true);
+        const approved = Boolean((idTokenResult.claims as any)?.approved === true);
+
+        // Not approved -> immediately sign out and clear cookie.
+        if (!approved) {
+          Cookies.remove("__session");
+          try {
+            await firebaseSignOut(auth);
+          } catch (err) {
+            console.error("Sign out after unauthorized login failed:", err);
+          }
+          callback(null);
+          return;
+        }
+
+        // Approved user: store fresh ID token for server components (cookie is read by Next.js server).
+        Cookies.set("__session", idTokenResult.token, {
           expires: 14, // Cookie lasts 14 days, but token auto-refreshes
           sameSite: "lax",
           secure: process.env.NODE_ENV === "production",

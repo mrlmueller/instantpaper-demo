@@ -29,6 +29,8 @@ from pydantic import BaseModel
 import logging
 import base64
 import json
+import secrets
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from utils.logging_config import configure_logging
 
@@ -36,6 +38,7 @@ from utils.logging_config import configure_logging
 configure_logging()
 
 logger = logging.getLogger(__name__)
+basic_security = HTTPBasic()
 
 
 class SaveOpenAIKeyRequest(BaseModel):
@@ -104,6 +107,48 @@ async def health_check():
         "openai": "connected" if config.OPENAI_API_KEY else "not configured"
     }
 
+def _require_admin(credentials: HTTPBasicCredentials = Depends(basic_security)) -> None:
+    """
+    Basic-auth gate for admin endpoints.
+
+    Browser-friendly: opening the URL prompts for username/password.
+    """
+    if not config.ADMIN_BASIC_PASSWORD:
+        raise HTTPException(status_code=500, detail="ADMIN_BASIC_PASSWORD is not configured on the server.")
+
+    username_ok = secrets.compare_digest(credentials.username or "", config.ADMIN_BASIC_USER)
+    password_ok = secrets.compare_digest(credentials.password or "", config.ADMIN_BASIC_PASSWORD)
+    if not (username_ok and password_ok):
+        raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Basic"})
+
+
+@app.get("/api/admin/approve")
+@app.get("/approve")
+async def admin_set_user_approved(
+    email: str,
+    approved: bool = True,
+    _: None = Depends(_require_admin),
+):
+    """
+    Approve/revoke a Google user by setting a Firebase Auth custom claim.
+
+    Usage (browser will prompt for basic auth):
+      /api/admin/approve?email=user@gmail.com&approved=true
+    """
+    try:
+        result = await firebase_service.set_user_approved_by_email(email=email, approved=approved)
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "uid": result.get("uid"),
+            "approved": result.get("approved"),
+            "note": "User must sign out/in (or refresh token) for the claim to take effect.",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to update user approval.") from None
+
 
 @app.post("/api/auth/session")
 async def create_session(request: CreateSessionRequest):
@@ -115,6 +160,8 @@ async def create_session(request: CreateSessionRequest):
     try:
         # Verify ID token first
         decoded_token = await firebase_service.verify_token(request.idToken)
+        if not bool(decoded_token.get("approved") is True):
+            raise HTTPException(status_code=403, detail="Account not authorized")
 
         # Create session cookie (14 days)
         session_cookie = await firebase_service.create_session_cookie(request.idToken, expires_in_days=14)
