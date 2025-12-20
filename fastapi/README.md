@@ -377,6 +377,7 @@ Set these env vars on the FastAPI server:
 Open (browser prompts for basic auth):
 - Approve: `/api/admin/approve?email=user@gmail.com&approved=true`
 - Revoke: `/api/admin/approve?email=user@gmail.com&approved=false`
+- Web form (no email in URL): open `/approve` and submit the form (Basic Auth protected).
 - Quick approve (no query string): `/api/admin/quick-approve` (Basic Auth username=email, password=`ADMIN_BASIC_PASSWORD`)
 - Quick revoke (no query string): `/api/admin/quick-revoke` (Basic Auth username=email, password=`ADMIN_BASIC_PASSWORD`)
 

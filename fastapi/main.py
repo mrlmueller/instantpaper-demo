@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, BackgroundTasks, status, HTTPException
+from fastapi import FastAPI, Depends, BackgroundTasks, status, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
@@ -34,6 +34,7 @@ import secrets
 import os
 from pathlib import Path
 import html as html_lib
+from urllib.parse import parse_qs
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from utils.logging_config import configure_logging
@@ -171,11 +172,20 @@ def _require_admin_password_and_get_target_email(
 
     password_ok = secrets.compare_digest(credentials.password or "", config.ADMIN_BASIC_PASSWORD)
     if not password_ok:
-        raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Basic"})
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": 'Basic realm="InstantPaper Admin (password required)"'},
+        )
 
     email = (credentials.username or "").strip()
     if not email or "@" not in email:
-        raise HTTPException(status_code=400, detail="Basic auth username must be the user's email.")
+        # Use 401 so the browser re-prompts, with a realm hint that username must be the target email.
+        raise HTTPException(
+            status_code=401,
+            detail="Basic auth username must be the user's email.",
+            headers={"WWW-Authenticate": 'Basic realm="InstantPaper Approve: username = user email"'},
+        )
     return email
 
 
@@ -265,8 +275,27 @@ async def approve_page(
     """
     Browser-friendly approval page (Basic Auth protected).
 
-    Uses GET params so it works without extra dependencies.
+    Uses POST (form) so email doesn't end up in the URL.
     """
+    return _render_approve_page(email=email, approved=approved, message_html="")
+
+
+@app.post("/approve", response_class=HTMLResponse)
+async def approve_page_submit(
+    request: Request,
+    _: None = Depends(_require_admin),
+):
+    """
+    Handle approval form submission.
+
+    Avoids extra deps by manually parsing x-www-form-urlencoded body.
+    """
+    body = (await request.body()).decode("utf-8", errors="ignore")
+    params = parse_qs(body)
+    email = (params.get("email", [""]) or [""])[0].strip() or None
+    approved_raw = ((params.get("approved", ["true"]) or ["true"])[0] or "true").strip().lower()
+    approved = approved_raw in {"true", "1", "yes", "on"}
+
     message_html = ""
     if email is not None and email.strip():
         try:
@@ -288,6 +317,10 @@ async def approve_page(
               </div>
             """
 
+    return _render_approve_page(email=email, approved=approved, message_html=message_html)
+
+
+def _render_approve_page(email: str | None, approved: bool, message_html: str) -> HTMLResponse:
     selected_true = "selected" if approved else ""
     selected_false = "selected" if not approved else ""
 
@@ -318,7 +351,7 @@ async def approve_page(
       <body>
         <div class="card">
           <h1>User Approval</h1>
-          <form method="get" action="/approve">
+          <form method="post" action="/approve">
             <label for="email">Google Email</label>
             <input id="email" name="email" type="email" placeholder="name@gmail.com" required value="{html_lib.escape(email or "")}" />
             <div class="row">
