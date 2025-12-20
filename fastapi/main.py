@@ -154,6 +154,31 @@ def _require_admin(credentials: HTTPBasicCredentials = Depends(basic_security)) 
         raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Basic"})
 
 
+def _require_admin_password_and_get_target_email(
+    credentials: HTTPBasicCredentials = Depends(basic_security),
+) -> str:
+    """
+    Alternative admin flow:
+
+    - Basic Auth username = target user's email
+    - Basic Auth password = ADMIN_BASIC_PASSWORD
+
+    This avoids passing the email in the query string (URL).
+    """
+    if not config.ADMIN_BASIC_PASSWORD:
+        logger.error("ADMIN_BASIC_PASSWORD is not configured. env_diag=%s", _safe_env_diagnostics())
+        raise HTTPException(status_code=500, detail="ADMIN_BASIC_PASSWORD is not configured on the server.")
+
+    password_ok = secrets.compare_digest(credentials.password or "", config.ADMIN_BASIC_PASSWORD)
+    if not password_ok:
+        raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Basic"})
+
+    email = (credentials.username or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Basic auth username must be the user's email.")
+    return email
+
+
 @app.get("/api/admin/approve")
 async def admin_set_user_approved(
     email: str,
@@ -173,6 +198,56 @@ async def admin_set_user_approved(
             "email": result.get("email"),
             "uid": result.get("uid"),
             "approved": result.get("approved"),
+            "note": "User must sign out/in (or refresh token) for the claim to take effect.",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to update user approval.") from None
+
+
+@app.get("/api/admin/quick-approve")
+async def admin_quick_approve(
+    email: str = Depends(_require_admin_password_and_get_target_email),
+):
+    """
+    Quick approve without query params:
+
+    - Open /api/admin/quick-approve in a browser
+    - Basic Auth prompt: username = target email, password = ADMIN_BASIC_PASSWORD
+    """
+    try:
+        result = await firebase_service.set_user_approved_by_email(email=email, approved=True)
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "uid": result.get("uid"),
+            "approved": True,
+            "note": "User must sign out/in (or refresh token) for the claim to take effect.",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to update user approval.") from None
+
+
+@app.get("/api/admin/quick-revoke")
+async def admin_quick_revoke(
+    email: str = Depends(_require_admin_password_and_get_target_email),
+):
+    """
+    Quick revoke without query params:
+
+    - Open /api/admin/quick-revoke in a browser
+    - Basic Auth prompt: username = target email, password = ADMIN_BASIC_PASSWORD
+    """
+    try:
+        result = await firebase_service.set_user_approved_by_email(email=email, approved=False)
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "uid": result.get("uid"),
+            "approved": False,
             "note": "User must sign out/in (or refresh token) for the claim to take effect.",
         }
     except ValueError as exc:

@@ -377,6 +377,8 @@ Set these env vars on the FastAPI server:
 Open (browser prompts for basic auth):
 - Approve: `/api/admin/approve?email=user@gmail.com&approved=true`
 - Revoke: `/api/admin/approve?email=user@gmail.com&approved=false`
+- Quick approve (no query string): `/api/admin/quick-approve` (Basic Auth username=email, password=`ADMIN_BASIC_PASSWORD`)
+- Quick revoke (no query string): `/api/admin/quick-revoke` (Basic Auth username=email, password=`ADMIN_BASIC_PASSWORD`)
 
 Users must sign out/in (or refresh token) after approval for the claim to apply.
 
