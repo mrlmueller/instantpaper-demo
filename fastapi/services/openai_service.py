@@ -110,19 +110,13 @@ class OpenAIService:
                 "Otherwise, return only the final answer without any extra commentary."
             )
 
-            dump_sections = [
-                ("System Prompt", system_message),
-                ("Instructions", user_input),
-                ("Quelle Content", quelle_content),
-            ]
-            if grundlegende_informationen and grundlegende_informationen.strip():
-                dump_sections.append(("Grundlegende Informationen", grundlegende_informationen))
-            dump_sections.append(("Full User Message (text)", prompt))
-
             dump_prompt_markdown(
                 stage="process_quelle",
                 model=model,
-                sections=dump_sections,
+                sections=[
+                    ("System Prompt", system_message),
+                    ("Instructions", prompt),
+                ],
                 images=quelle_images,
                 dump_path=debug_prompt_dump_path,
             )
@@ -250,9 +244,7 @@ class OpenAIService:
                 model=model,
                 sections=[
                     ("System Prompt", system_message),
-                    ("Instructions", prompt_body),
-                    ("Combined Texts", combined_texts),
-                    ("Full User Message (text)", prompt),
+                    ("Instructions", prompt),
                 ],
                 dump_path=debug_prompt_dump_path,
             )
@@ -328,23 +320,14 @@ class OpenAIService:
             client = self._get_client(api_key)
             logger.info(f"Summarizing Kapitel with model {model}")
 
-            instructions_text = prompt
-            context_text = ""
-            marker = "### Text:"
-            marker_idx = (prompt or "").find(marker)
-            if marker_idx != -1:
-                instructions_text = (prompt or "")[:marker_idx].rstrip()
-                context_text = (prompt or "")[marker_idx:].lstrip()
-
-            dump_sections = [
-                ("System Prompt", SUMMARIZE_SYSTEM_MESSAGE),
-                ("Instructions", instructions_text),
-            ]
-            if context_text:
-                dump_sections.append(("Context", context_text))
-            dump_sections.append(("Full User Message (text)", prompt))
-
-            dump_prompt_markdown(stage="summary", model=model, sections=dump_sections)
+            dump_prompt_markdown(
+                stage="summary",
+                model=model,
+                sections=[
+                    ("System Prompt", SUMMARIZE_SYSTEM_MESSAGE),
+                    ("Instructions", prompt),
+                ],
+            )
 
             response = await client.responses.create(
                 model=model,
@@ -413,23 +396,14 @@ class OpenAIService:
             client = self._get_client(api_key)
             logger.info(f"Shortening and deduplicating Kapitel with model {model}")
 
-            instructions_text = prompt
-            context_text = ""
-            marker = "### Gliederung:"
-            marker_idx = (prompt or "").find(marker)
-            if marker_idx != -1:
-                instructions_text = (prompt or "")[:marker_idx].rstrip()
-                context_text = (prompt or "")[marker_idx:].lstrip()
-
-            dump_sections = [
-                ("System Prompt", SHORTEN_SYSTEM_MESSAGE),
-                ("Instructions", instructions_text),
-            ]
-            if context_text:
-                dump_sections.append(("Context", context_text))
-            dump_sections.append(("Full User Message (text)", prompt))
-
-            dump_prompt_markdown(stage="shorten", model=model, sections=dump_sections)
+            dump_prompt_markdown(
+                stage="shorten",
+                model=model,
+                sections=[
+                    ("System Prompt", SHORTEN_SYSTEM_MESSAGE),
+                    ("Instructions", prompt),
+                ],
+            )
 
             response = await client.responses.create(
                 model=model,
@@ -523,26 +497,13 @@ class OpenAIService:
             client = self._get_client(api_key)
             logger.info(f"Improving reading flow with model {model}")
 
-            instructions_text = prompt
-            context_text = ""
-            marker = "### Gliederung:"
-            marker_idx = (prompt or "").find(marker)
-            if marker_idx != -1:
-                instructions_text = (prompt or "")[:marker_idx].rstrip()
-                context_text = (prompt or "")[marker_idx:].lstrip()
-
-            dump_sections = [
-                ("System Prompt", LESEFLUSS_SYSTEM_MESSAGE),
-                ("Instructions", instructions_text),
-            ]
-            if context_text:
-                dump_sections.append(("Context", context_text))
-            dump_sections.append(("Full User Message (text)", prompt))
-
             dump_prompt_markdown(
                 stage="lesefluss",
                 model=model,
-                sections=dump_sections,
+                sections=[
+                    ("System Prompt", LESEFLUSS_SYSTEM_MESSAGE),
+                    ("Instructions", prompt),
+                ],
                 dump_path=debug_prompt_dump_path,
             )
 
