@@ -98,6 +98,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // System prompt templates contain proprietary prompt text and must never be readable from clients.
+    match /systemPromptTemplates/{docId} {
+      allow read, write: if false;
+    }
+
     // ---------------------------------------------------------------------
     // users/{uid}
     // ---------------------------------------------------------------------

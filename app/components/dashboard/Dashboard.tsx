@@ -139,6 +139,9 @@ function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCanc
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="default">System-Standard</SelectItem>
+                      {stage === 'process_quelle' && (
+                        <SelectItem value="default_v2">System-Standard (v2)</SelectItem>
+                      )}
                       {stageTemplates.map((tpl) => (
                         <SelectItem key={tpl.id} value={tpl.id}>
                           {tpl.name}
@@ -148,7 +151,12 @@ function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCanc
                   </Select>
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2 font-mono">
-                  {stageTemplates.find((t) => t.id === choices[stage])?.instructions?.slice(0, 160) || 'System-Standard'}
+                  {choices[stage] === 'default'
+                    ? 'System-Standard'
+                    : choices[stage] === 'default_v2'
+                      ? 'System-Standard (v2)'
+                      : stageTemplates.find((t) => t.id === choices[stage])?.instructions?.slice(0, 160) ||
+                        'System-Standard'}
                 </p>
               </Card>
             );
@@ -1319,14 +1327,6 @@ export function Dashboard({
     }
   }, [kapiteln, updateKapitelTitleClient, isEditingKapitel]);
 
-  const renderPromptTemplate = useCallback((template: string, payload: Record<string, string>) => {
-    let result = template;
-    Object.entries(payload).forEach(([key, value]) => {
-      result = result.replaceAll(`{${key}}`, value ?? '');
-    });
-    return result;
-  }, []);
-
   useEffect(() => {
     const loadPrompts = async () => {
       try {
@@ -1356,18 +1356,6 @@ export function Dashboard({
       console.error('Aktives Prompt setzen fehlgeschlagen', err);
     }
   }, []);
-
-  const getInstructionsFor = useCallback(
-    (stage: PromptStage, templateId?: string | 'default') => {
-      const targetId = templateId ?? (promptActive[stage] as string | 'default') ?? 'default';
-      if (targetId && targetId !== 'default') {
-        const tpl = promptTemplates.find((t) => t.id === targetId && t.stage === stage);
-        if (tpl?.instructions) return tpl.instructions;
-      }
-      return STAGE_CONFIG[stage].defaultInstructions;
-    },
-    [promptActive, promptTemplates]
-  );
 
   const requestPromptChoice = useCallback(
     async (stages: PromptStage[]): Promise<Record<PromptStage, string | 'default'> | null> => {
@@ -1434,15 +1422,34 @@ export function Dashboard({
         return;
       }
 
+      // If the user changed their standard prompt in another tab (Profil), refresh selections once.
+      let activeSnapshot = promptActive;
+      if (!providedChoices && !choices) {
+        try {
+          const res = await fetch('/api/prompt-templates', { cache: 'no-store' });
+          const data = await res.json();
+          if (res.ok) {
+            if (Array.isArray(data.templates)) setPromptTemplates(data.templates);
+            if (data.active) {
+              setPromptActive(data.active);
+              activeSnapshot = data.active;
+            }
+            if (typeof data.askOnEachProcess === 'boolean') setAskOnEachProcess(Boolean(data.askOnEachProcess));
+          }
+        } catch (err) {
+          console.error('Prompt templates refresh failed', err);
+        }
+      }
+
       const processChoice =
         providedChoices?.process_quelle ??
         choices?.process_quelle ??
-        (promptActive.process_quelle as string | 'default') ??
+        (activeSnapshot.process_quelle as string | 'default') ??
         'default';
       const combineChoice = settings.directCombine
         ? providedChoices?.combine ??
           choices?.combine ??
-          (promptActive.combine as string | 'default') ??
+          (activeSnapshot.combine as string | 'default') ??
           'default'
         : undefined;
 
@@ -1454,13 +1461,7 @@ export function Dashboard({
         }
       }
 
-      const promptTemplate = getInstructionsFor('process_quelle', processChoice);
-
-      const prompt = renderPromptTemplate(promptTemplate, {
-        heading: settings.ueberschrift.trim(),
-        topic: settings.thema.trim(),
-        grundlegende_infos: settings.grundlegendeInfos?.trim() || '',
-      });
+      const runInstruction = settings.thema.trim();
 
       setIsProcessingRun(true);
       setProcessingDialogOpen(false);
@@ -1469,7 +1470,7 @@ export function Dashboard({
       });
 
       try {
-        const result = await createKapitelRun(activeKapitelId, prompt, settings.model, {
+        const result = await createKapitelRun(activeKapitelId, runInstruction, settings.model, {
           autoCombine: settings.directCombine,
           promptTemplateId: processChoice,
           promptPayload: {
@@ -1493,7 +1494,7 @@ export function Dashboard({
             {
               id: result.runId!,
               index: result.index ?? (prev[0]?.index || 0) + 1,
-              instruction: prompt,
+              instruction: runInstruction,
               model: settings.model,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
@@ -1546,7 +1547,6 @@ export function Dashboard({
                   quelle_id: nextQuelle.id,
                   kapitel_id: activeKapitelId,
                   run_id: result.runId,
-                  user_input: prompt,
                   model: settings.model,
                 }),
               });
@@ -1627,12 +1627,10 @@ export function Dashboard({
       handleSelectRun,
       notifyServerDown,
       quellen,
-      renderPromptTemplate,
       requestPromptChoice,
       askOnEachProcess,
       promptActive,
       applyActivePrompt,
-      getInstructionsFor,
       isProcessingRun,
     ]
   );
@@ -2250,17 +2248,6 @@ export function Dashboard({
       <ViewportWarning />
     </div>
   );
-}
-
-function buildPrompt(heading: string, topic: string, basicInfo?: string) {
-  const prompt = `### Aufgabe:
-Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz ist, schreibe keine Einleitung oder Schlussfolgerung/Zusammenfassung. Der Absatz hat die Überschrift "${heading}" und soll genauer das Thema "${topic}" behandeln. Beziehe dich beim Schreiben des Absatzes nur auf die oben gegebenen Informationen und nutze nichts aus deinem eigenen Wissen. Fokussiere dich außerdem genau auf das Thema, das ich vorgegeben habe, da andere Informationen hierzu bereits behandelt worden sind oder noch behandelt werden; kurzum, schreibe wirklich nur über das vorgegebene Thema. Wichtig ist, dass Informationen, die aus dem obigen Text übernommen werden, so umgeschrieben werden sollen, dass der obige Text nicht mehr zu erkennen ist – das Ergebnis also einzigartig ist. Der Text soll so lang sein, wie er sein muss, um alle relevanten Informationen zu integrieren; ziehe ihn nicht unnötig in die Länge, aber lasse auch nichts Relevantes weg. Sollte der Text keine sinnvollen Informationen zu dem gegebenen Thema enthalten, kannst du mir das sagen und den Text dann nicht schreiben; gib mir dann eine kurze Erklärung, warum der Text nicht zum Thema gepasst hat. Integriere außerdem die Quellen (mit Seitenzahlen, wenn diese gegeben wurden) aus dem oberen Text an den richtigen Stellen. Der gegebene Text hat sicherlich mehr Informationen zu manchen Themen und weniger zu anderen. Fokussiere dich auf die Themen, zu denen du wirklich konkrete und tiefe Einblicke geben kannst. Dieser Text ist nur einer von 10, die ich zu diesem Thema habe. Das bedeutet, wenn du eine Dimension nur wenig oder gar nicht behandelst, habe ich dennoch viele Informationen zu dieser in einem anderen Text. Genauer ausgedrückt, schreibst du gerade einen von 10 Texten, die später das Kapitel ergeben werden. Das bedeutet auch, dass du dich wirklich auf das Wichtigste beschränken kannst und nicht unnötiges schreiben musst. Schreibe keine Zusammenfassung oder Schlussfolgerung am Ende. Nur reine Informationen. Formuliere den Text ohne dass du ; verwendest, außer zwischen zwei Quellen.`;
-
-  const grundInfo = basicInfo?.trim()
-    ? `\n\nGrundlegende Informationen, die durchgehend berücksichtigt werden sollen:\n${basicInfo.trim()}`
-    : '';
-
-  return `${prompt}${grundInfo}`;
 }
 
 // Status is now maintained via lightweight live listeners per Kapitel

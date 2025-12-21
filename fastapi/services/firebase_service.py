@@ -217,7 +217,6 @@ class FirebaseService:
         quelle_id: str,
         kapitel_id: str,
         run_id: str,
-        user_input: str,
         result_content: str,
         has_content: bool,
         model_used: str,
@@ -237,7 +236,6 @@ class FirebaseService:
             quelle_id: Source Quelle ID
             kapitel_id: Kapitel ID that initiated the run
             run_id: Run ID for grouping this result
-            user_input: User's instructions
             result_content: AI-generated content
             model_used: OpenAI model used
             tokens_used: Total number of tokens consumed
@@ -297,7 +295,7 @@ class FirebaseService:
 
             result_data = {
                 "quelleId": quelle_id,
-                "userInput": user_input,
+                "userInput": "",
                 "content": result_content,
                 "hasContent": bool(has_content),
                 "status": status_value,
@@ -375,7 +373,6 @@ class FirebaseService:
         kapitel_id: str,
         run_id: str,
         quelle_id: str,
-        user_input: str,
         model: str,
         key_source: Optional[str] = None,
     ) -> None:
@@ -409,7 +406,7 @@ class FirebaseService:
 
             placeholder = {
                 "quelleId": quelle_id,
-                "userInput": user_input,
+                "userInput": "",
                 "content": "",
                 "hasContent": True,
                 "status": "running",
@@ -2274,6 +2271,54 @@ class FirebaseService:
         except Exception as e:
             logger.error(f"Error deleting OpenAI secret for user {user_id}: {str(e)}")
             raise
+
+    def _system_prompt_ref(self, stage: str, template_key: str):
+        doc_id = f"{stage}__{template_key}"
+        return self.db.collection("systemPromptTemplates").document(doc_id)
+
+    async def get_system_prompt_template(self, stage: str, template_key: str) -> Optional[dict]:
+        """
+        Fetch a server-only system prompt template by stage and key.
+
+        Stored at: systemPromptTemplates/{stage}__{template_key}
+        """
+        try:
+            ref = self._system_prompt_ref(stage, template_key)
+            doc = ref.get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Error fetching system prompt template {stage}/{template_key}: {e}")
+            return None
+
+    async def upsert_system_prompt_template(
+        self,
+        *,
+        stage: str,
+        template_key: str,
+        name: str,
+        instructions: str,
+        system_prompt: Optional[str] = None,
+    ) -> None:
+        """
+        Create or update a server-only system prompt template.
+        """
+        try:
+            ref = self._system_prompt_ref(stage, template_key)
+            existing = ref.get()
+            payload = {
+                "stage": stage,
+                "templateKey": template_key,
+                "name": name,
+                "instructions": instructions,
+                "updatedAt": SERVER_TIMESTAMP,
+            }
+            if system_prompt is not None:
+                payload["systemPrompt"] = system_prompt
+            if not existing.exists:
+                payload["createdAt"] = SERVER_TIMESTAMP
+            ref.set(payload, merge=True)
+        except Exception as e:
+            logger.error(f"Error upserting system prompt template {stage}/{template_key}: {e}")
 
     async def get_prompt_template(self, user_id: str, template_id: str) -> Optional[dict]:
         """Fetch a prompt template by id."""

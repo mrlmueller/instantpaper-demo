@@ -480,7 +480,7 @@ async def process_quelle(
     Fetches the Quelle, processes it with OpenAI, and saves the result.
 
     Args:
-        request: ProcessQuelleRequest containing quelle_id, user_input, model, kapitel_id, and run_id
+        request: ProcessQuelleRequest containing quelle_id, model, kapitel_id, and run_id
         user_id: Extracted from verified Firebase token (dependency)
 
     Returns:
@@ -503,7 +503,6 @@ async def process_quelle(
         kapitel_id=request.kapitel_id,
         run_id=request.run_id,
         quelle_id=request.quelle_id,
-        user_input=request.user_input,
         model=model_to_use,
     )
 
@@ -514,7 +513,6 @@ async def process_quelle(
                 request.quelle_id,
                 request.kapitel_id,
                 request.run_id,
-                request.user_input,
                 model_to_use,
             )
         except Exception as e:

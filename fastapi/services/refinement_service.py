@@ -1363,9 +1363,47 @@ WICHTIG:
             if not result_doc:
                 raise ValueError("Result not found.")
 
+            run = await firebase_service.get_run(user_id, kapitel_id, run_id)
+            grundlegende_informationen = (run or {}).get("grundlegendeInformationen")
+
             base_user_input = (result_doc.get("userInput") or "").strip()
+            # Prompts are no longer stored on result docs (hidden from user). Reconstruct from run settings.
+            prompt_template_id = ((run or {}).get("promptTemplateId") or "").strip() or "default"
+
             if not base_user_input:
-                raise ValueError("Result userInput is empty.")
+
+                payload: dict = {}
+                raw_payload = (run or {}).get("promptPayload") or (run or {}).get("prompt_payload") or {}
+                if isinstance(raw_payload, dict):
+                    payload = {k: v for k, v in raw_payload.items()}
+
+                # Backward-compat fallback for older runs.
+                if run and not payload.get("heading") and (run.get("ueberschrift") or "").strip():
+                    payload["heading"] = (run.get("ueberschrift") or "").strip()
+                if run and not payload.get("topic") and (run.get("thema") or "").strip():
+                    payload["topic"] = (run.get("thema") or "").strip()
+
+                payload.setdefault("grundlegende_infos", (grundlegende_informationen or "").strip())
+
+                heading = str(payload.get("heading") or "").strip()
+                topic = str(payload.get("topic") or "").strip()
+                grund_infos = str(payload.get("grundlegende_infos") or "").strip()
+                if not heading or not topic:
+                    raise ValueError("Run promptPayload is missing heading/topic.")
+
+                base_user_input = await prompt_service.get_rendered_instructions_for_template(
+                    user_id=user_id,
+                    stage="process_quelle",
+                    template_id=prompt_template_id,
+                    payload={
+                        "heading": heading,
+                        "topic": topic,
+                        "grundlegende_infos": grund_infos,
+                        "KAPITEL_TITEL": heading,
+                        "KAPITEL_BESCHREIBUNG": topic,
+                        "ANWEISUNGEN": topic,
+                    },
+                )
 
             history_path = await self._get_result_version_path(
                 user_id, kapitel_id, run_id, quelle_id, parent_version_id
@@ -1383,9 +1421,6 @@ WICHTIG:
             )
             model = (pending or {}).get("model") or "gpt-5-mini"
 
-            run = await firebase_service.get_run(user_id, kapitel_id, run_id)
-            grundlegende_informationen = (run or {}).get("grundlegendeInformationen")
-
             quelle = await firebase_service.get_quelle(user_id, quelle_id)
             if not quelle:
                 raise ValueError("Quelle not found.")
@@ -1400,6 +1435,11 @@ WICHTIG:
 
             debug_dump_path = self._get_prompt_dump_path("refine_result", version_id)
 
+            system_prompt = await prompt_service.get_system_prompt_for_template(
+                stage="process_quelle",
+                template_id=prompt_template_id,
+            )
+
             openai_result = await openai_service.process_quelle(
                 quelle_content_doc.get("text") or "",
                 refined_user_input,
@@ -1408,6 +1448,7 @@ WICHTIG:
                 api_key=api_key,
                 quelle_images=quelle_images,
                 debug_prompt_dump_path=debug_dump_path,
+                system_prompt=system_prompt,
             )
 
             cost_service = get_cost_service(firebase_service)

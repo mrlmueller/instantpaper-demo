@@ -106,11 +106,12 @@ export function ProcessingDialog({
     onOpenChange(open)
   }
 
-  const showPromptSelectors = askOnEachProcess && promptTemplates.length > 0
+  const showPromptSelectors = askOnEachProcess
 
   const renderPromptSelect = (stage: PromptStage, label: string) => {
     const stageTemplates = templatesByStage(stage)
-    if (stageTemplates.length === 0) return null
+    const hasSystemOptions = stage === "process_quelle"
+    if (!hasSystemOptions && stageTemplates.length === 0) return null
     const value = promptChoice[stage] || "default"
     return (
       <div className="space-y-2">
@@ -134,6 +135,11 @@ export function ProcessingDialog({
             <SelectItem value="default">
               <span className="text-muted-foreground">System-Standard</span>
             </SelectItem>
+            {stage === "process_quelle" && (
+              <SelectItem value="default_v2">
+                <span className="text-muted-foreground">System-Standard (v2)</span>
+              </SelectItem>
+            )}
             {stageTemplates.map((tpl) => (
               <SelectItem key={tpl.id} value={tpl.id}>
                 {tpl.name}

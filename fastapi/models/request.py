@@ -8,7 +8,6 @@ class ProcessQuelleRequest(BaseModel):
     quelle_id: str = Field(..., description="ID of the Quelle to process")
     kapitel_id: str = Field(..., description="Kapitel ID this run belongs to")
     run_id: str = Field(..., description="Kapitel run ID for grouping results")
-    user_input: str = Field(..., description="User instructions for the AI", min_length=1)
     model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
         default="gpt-5.2",
         description="OpenAI model to use for processing"
@@ -20,7 +19,6 @@ class ProcessQuelleRequest(BaseModel):
                 "quelle_id": "abc123",
                 "kapitel_id": "kap456",
                 "run_id": "run789",
-                "user_input": "Summarize the main points of this Quelle",
                 "model": "gpt-5.2"
             }
         }

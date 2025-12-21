@@ -155,7 +155,13 @@ export function PromptManager() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Aktiv setzen fehlgeschlagen.");
       setActive((prev) => ({ ...prev, [s]: templateId }));
-      toast.success(templateId === "default" ? "System-Standard verwendet" : "Aktives Prompt gesetzt");
+      toast.success(
+        templateId === "default"
+          ? "System-Standard verwendet"
+          : templateId === "default_v2"
+            ? "System-Standard (v2) verwendet"
+            : "Aktives Prompt gesetzt"
+      );
     } catch (err: any) {
       toast.error("Fehler beim Setzen", { description: err?.message });
     }
@@ -266,12 +272,96 @@ export function PromptManager() {
                 </Button>
               </div>
 
+              <div className="space-y-3">
+                <Card
+                  className={cn(
+                    "p-4 transition-colors",
+                    (!activeId || activeId === "default") && "ring-2 ring-primary/50 bg-primary/5"
+                  )}
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-medium text-sm text-foreground">System-Standard</h4>
+                        {(!activeId || activeId === "default") && (
+                          <Badge variant="default" className="h-5 text-[10px]">
+                            Standard
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleSetActive("default", opt.value)}
+                        disabled={!activeId || activeId === "default"}
+                        title={!activeId || activeId === "default" ? "Aktiv" : "Als Standard setzen"}
+                      >
+                        {!activeId || activeId === "default" ? (
+                          <Check className="h-4 w-4 text-primary" />
+                        ) : (
+                          <Star className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+
+                {opt.value === "process_quelle" && (
+                  <Card
+                    className={cn(
+                      "p-4 transition-colors",
+                      activeId === "default_v2" && "ring-2 ring-primary/50 bg-primary/5"
+                    )}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-medium text-sm text-foreground">System-Standard (v2)</h4>
+                          {activeId === "default_v2" && (
+                            <Badge variant="default" className="h-5 text-[10px]">
+                              Standard
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleSetActive("default_v2", opt.value)}
+                          disabled={activeId === "default_v2"}
+                          title={activeId === "default_v2" ? "Aktiv" : "Als Standard setzen"}
+                        >
+                          {activeId === "default_v2" ? (
+                            <Check className="h-4 w-4 text-primary" />
+                          ) : (
+                            <Star className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+              </div>
+
               {stageTemplates.length === 0 ? (
                 <Card className="p-6 text-center">
                   <p className="text-sm text-muted-foreground">
                     Du hast noch keine eigenen Prompts für diese Stufe erstellt.
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">Der System-Standard wird automatisch verwendet.</p>
+                  {opt.value === "process_quelle" ? (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Wähle oben zwischen System-Standard und System-Standard (v2).
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Der System-Standard wird automatisch verwendet.
+                    </p>
+                  )}
                 </Card>
               ) : (
                 <div className="space-y-3">

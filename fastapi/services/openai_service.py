@@ -73,36 +73,50 @@ class OpenAIService:
         user_input: str,
         model: str,
         grundlegende_informationen: str = None,
-
-      api_key: Optional[str] = None,
-      quelle_images: Optional[List[str]] = None,
-      debug_prompt_dump_path: Optional[str] = None,
-
-      
-      
+        api_key: Optional[str] = None,
+        quelle_images: Optional[List[str]] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
             client = self._get_client(api_key)
-            # Build prompt with optional grundlegende informationen
-            if grundlegende_informationen and grundlegende_informationen.strip():
-                prompt = f"""{quelle_content}
+
+            template = user_input or ""
+            has_quelltext_placeholder = "{QUELLTEXT}" in template
+            has_basic_info_placeholder = "{GRUNDLEGENDE_INFOS_ODER_LEER}" in template
+            has_image_info_placeholder = "{BILDINHALT_ODER_LEER}" in template
+
+            if has_basic_info_placeholder:
+                template = template.replace(
+                    "{GRUNDLEGENDE_INFOS_ODER_LEER}",
+                    (grundlegende_informationen or "").strip(),
+                )
+            if has_image_info_placeholder:
+                template = template.replace("{BILDINHALT_ODER_LEER}", "")
+
+            if has_quelltext_placeholder:
+                prompt = template.replace("{QUELLTEXT}", quelle_content)
+            else:
+                # Backward-compatible v1 layout: source text first, optional basic info, then instructions.
+                if grundlegende_informationen and grundlegende_informationen.strip() and not has_basic_info_placeholder:
+                    prompt = f"""{quelle_content}
 
 ### Grundlegende Informationen
 {grundlegende_informationen}
 
-{user_input}"""
-            else:
-                prompt = f"""{quelle_content}
+{template}"""
+                else:
+                    prompt = f"""{quelle_content}
 
-{user_input}"""
+{template}"""
 
             logger.info(f"Processing Quelle with {model}")
             logger.debug(f"Prompt length: {len(prompt)} characters")
             if quelle_images:
                 logger.info(f"Including {len(quelle_images)} image(s) in request")
 
-            system_message = (
+            system_message = (system_prompt or "").strip() or (
                 "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
                 "You can analyze both text and images provided. "
                 "Think step-by-step to ensure correctness. "

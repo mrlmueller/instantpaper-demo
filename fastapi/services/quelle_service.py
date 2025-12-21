@@ -61,7 +61,6 @@ class QuelleService:
         quelle_id: str,
         kapitel_id: str,
         run_id: str,
-        user_input: str,
         model: str
     ) -> dict:
         """
@@ -72,7 +71,6 @@ class QuelleService:
             quelle_id: ID of the Quelle to process
             kapitel_id: ID of the Kapitel this run belongs to
             run_id: Run ID for grouping results
-            user_input: User instructions for processing
             model: OpenAI model to use
 
         Returns:
@@ -108,6 +106,51 @@ class QuelleService:
             # Step 1.5: Fetch run to get grundlegendeInformationen
             run = await self.firebase.get_run(user_id, kapitel_id, run_id)
             grundlegende_informationen = run.get('grundlegendeInformationen') if run else None
+
+            # Resolve and render the prompt server-side (prompts are not sent from the client).
+            prompt_template_id = (run.get("promptTemplateId") or "").strip() if run else ""
+            prompt_template_id = prompt_template_id or "default"
+
+            payload: dict = {}
+            raw_payload = (run.get("promptPayload") or run.get("prompt_payload")) if run else None
+            if isinstance(raw_payload, dict):
+                payload = {k: v for k, v in raw_payload.items()}
+
+            # Backward-compat fallback for older runs.
+            if run and not payload.get("heading") and (run.get("ueberschrift") or "").strip():
+                payload["heading"] = (run.get("ueberschrift") or "").strip()
+            if run and not payload.get("topic") and (run.get("thema") or "").strip():
+                payload["topic"] = (run.get("thema") or "").strip()
+
+            # Optional placeholder support (kept for user templates).
+            payload.setdefault("grundlegende_infos", (grundlegende_informationen or "").strip())
+
+            if not (str(payload.get("heading") or "").strip()):
+                raise HTTPException(status_code=400, detail="Run is missing heading/promptPayload.heading.")
+            if not (str(payload.get("topic") or "").strip()):
+                raise HTTPException(status_code=400, detail="Run is missing topic/promptPayload.topic.")
+
+            heading = str(payload.get("heading") or "").strip()
+            topic = str(payload.get("topic") or "").strip()
+            grund_infos = str(payload.get("grundlegende_infos") or "").strip()
+
+            rendered_instructions = await prompt_service.get_rendered_instructions_for_template(
+                user_id=user_id,
+                stage="process_quelle",
+                template_id=prompt_template_id,
+                payload={
+                    "heading": heading,
+                    "topic": topic,
+                    "grundlegende_infos": grund_infos,
+                    "KAPITEL_TITEL": heading,
+                    "KAPITEL_BESCHREIBUNG": topic,
+                    "ANWEISUNGEN": topic,
+                },
+            )
+            system_prompt = await prompt_service.get_system_prompt_for_template(
+                stage="process_quelle",
+                template_id=prompt_template_id,
+            )
             run_model = (run.get("model") or "").strip() if run else ""
             if run_model:
                 if model and model != run_model:
@@ -128,11 +171,12 @@ class QuelleService:
             logger.info(f"Processing Quelle {quelle_id} with OpenAI model {model}")
             openai_result = await self.openai.process_quelle(
                 quelle_content_doc.get("text") or "",
-                user_input,
+                rendered_instructions,
                 model,
                 grundlegende_informationen,
                 api_key=api_key,
-                quelle_images=quelle_images
+                quelle_images=quelle_images,
+                system_prompt=system_prompt,
             )
 
             # Step 2.5: Calculate cost and log immutable operation (costMetrics)
@@ -214,7 +258,6 @@ class QuelleService:
                 quelle_id=quelle_id,
                 kapitel_id=kapitel_id,
                 run_id=run_id,
-                user_input=user_input,
                 result_content=openai_result['content'],
                 has_content=openai_result.get('has_content', True),
                 model_used=openai_result['model'],
