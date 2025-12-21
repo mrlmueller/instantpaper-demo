@@ -407,6 +407,12 @@ class QuelleService:
             combine_instructions = await prompt_service.get_rendered_instructions(
                 user_id, "combine", {"heading": heading, "topic": topic}
             )
+            combine_template_id = await self.firebase.get_active_prompt_id(user_id, "combine")
+            combine_template_id = (combine_template_id or "").strip() or "default"
+            combine_system_prompt = await prompt_service.get_system_prompt_for_template(
+                stage="combine",
+                template_id=combine_template_id,
+            )
             eligible = []
             for res in results:
                 if not res.get("hasContent", True):
@@ -439,7 +445,17 @@ class QuelleService:
                 # Hierarchical combining for large sets
                 logger.info(f"Using hierarchical combining for {len(eligible)} sources")
                 return await self._hierarchical_combine(
-                    user_id, kapitel_id, run_id, eligible, heading, topic, model, api_key, key_source, combine_instructions
+                    user_id,
+                    kapitel_id,
+                    run_id,
+                    eligible,
+                    heading,
+                    topic,
+                    model,
+                    api_key,
+                    key_source,
+                    combine_instructions,
+                    combine_system_prompt,
                 )
 
             # Single-level combining (existing logic for ≤5 sources)
@@ -447,7 +463,13 @@ class QuelleService:
             texts = [res["content"] for res in eligible]
 
             openai_result = await self.openai.combine_texts(
-                texts, heading, topic, model, api_key=api_key, instructions=combine_instructions
+                texts,
+                heading,
+                topic,
+                model,
+                api_key=api_key,
+                instructions=combine_instructions,
+                system_prompt=combine_system_prompt,
             )
 
             cost_service = get_cost_service(firebase_service)
@@ -579,6 +601,7 @@ class QuelleService:
         api_key: str,
         key_source: str,
         instructions: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> dict:
         """
         Perform hierarchical combining:
@@ -641,7 +664,13 @@ class QuelleService:
 
             # Call OpenAI to combine this group
             openai_result = await self.openai.combine_texts(
-                group_texts, heading, topic, model, api_key=api_key, instructions=instructions
+                group_texts,
+                heading,
+                topic,
+                model,
+                api_key=api_key,
+                instructions=instructions,
+                system_prompt=system_prompt,
             )
 
             usage = TokenUsage.from_any(
@@ -717,7 +746,13 @@ class QuelleService:
         intermediate_texts = [r['content'] for r in intermediate_results]
 
         final_openai_result = await self.openai.combine_texts(
-            intermediate_texts, heading, topic, model, api_key=api_key, instructions=instructions
+            intermediate_texts,
+            heading,
+            topic,
+            model,
+            api_key=api_key,
+            instructions=instructions,
+            system_prompt=system_prompt,
         )
 
         final_usage = TokenUsage.from_any(

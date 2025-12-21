@@ -137,14 +137,14 @@ function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCanc
                     <SelectTrigger className="w-64">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">System-Standard</SelectItem>
-                      {stage === 'process_quelle' && (
-                        <SelectItem value="default_v2">System-Standard (v2)</SelectItem>
-                      )}
-                      {stageTemplates.map((tpl) => (
-                        <SelectItem key={tpl.id} value={tpl.id}>
-                          {tpl.name}
+                      <SelectContent>
+                        <SelectItem value="default">System-Standard</SelectItem>
+                        {(stage === 'process_quelle' || stage === 'combine') && (
+                          <SelectItem value="default_v2">System-Standard (v2)</SelectItem>
+                        )}
+                        {stageTemplates.map((tpl) => (
+                          <SelectItem key={tpl.id} value={tpl.id}>
+                            {tpl.name}
                         </SelectItem>
                       ))}
                     </SelectContent>

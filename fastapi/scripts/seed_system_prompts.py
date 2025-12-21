@@ -11,6 +11,9 @@ from firebase_admin import credentials, firestore
 
 from services.prompt_service import DEFAULT_INSTRUCTIONS
 from services.prompt_service import (
+    COMBINE_DEFAULT_SYSTEM_PROMPT,
+    COMBINE_DEFAULT_V2_INSTRUCTIONS,
+    COMBINE_DEFAULT_V2_SYSTEM_PROMPT,
     PROCESS_QUELLE_DEFAULT_SYSTEM_PROMPT,
     PROCESS_QUELLE_DEFAULT_V2_INSTRUCTIONS,
     PROCESS_QUELLE_DEFAULT_V2_SYSTEM_PROMPT,
@@ -82,14 +85,22 @@ def main() -> int:
     if not default_v1_instructions:
         raise RuntimeError(f"No DEFAULT_INSTRUCTIONS found for stage '{stage}'")
 
-    default_v1_system_prompt = PROCESS_QUELLE_DEFAULT_SYSTEM_PROMPT if stage == "process_quelle" else ""
+    if stage == "process_quelle":
+        default_v1_system_prompt = PROCESS_QUELLE_DEFAULT_SYSTEM_PROMPT
+    elif stage == "combine":
+        default_v1_system_prompt = COMBINE_DEFAULT_SYSTEM_PROMPT
+    else:
+        default_v1_system_prompt = ""
 
-    default_v2_instructions = (
-        PROCESS_QUELLE_DEFAULT_V2_INSTRUCTIONS if stage == "process_quelle" else default_v1_instructions
-    )
-    default_v2_system_prompt = (
-        PROCESS_QUELLE_DEFAULT_V2_SYSTEM_PROMPT if stage == "process_quelle" else default_v1_system_prompt
-    )
+    if stage == "process_quelle":
+        default_v2_instructions = PROCESS_QUELLE_DEFAULT_V2_INSTRUCTIONS
+        default_v2_system_prompt = PROCESS_QUELLE_DEFAULT_V2_SYSTEM_PROMPT
+    elif stage == "combine":
+        default_v2_instructions = COMBINE_DEFAULT_V2_INSTRUCTIONS
+        default_v2_system_prompt = COMBINE_DEFAULT_V2_SYSTEM_PROMPT
+    else:
+        default_v2_instructions = default_v1_instructions
+        default_v2_system_prompt = default_v1_system_prompt
 
     templates = [
         ("default", "System-Standard", default_v1_system_prompt, default_v1_instructions),

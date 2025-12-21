@@ -553,6 +553,12 @@ WICHTIG:
             combine_instructions = await prompt_service.get_rendered_instructions(
                 user_id, "combine", {"heading": heading, "topic": topic}
             )
+            combine_template_id = await firebase_service.get_active_prompt_id(user_id, "combine")
+            combine_template_id = (combine_template_id or "").strip() or "default"
+            combine_system_prompt = await prompt_service.get_system_prompt_for_template(
+                stage="combine",
+                template_id=combine_template_id,
+            )
 
             history_path = await self._get_version_path(
                 user_id, kapitel_id, run_id, parent_version_id
@@ -576,6 +582,7 @@ WICHTIG:
                 api_key=api_key,
                 instructions=prompt_body,
                 debug_prompt_dump_path=debug_dump_path,
+                system_prompt=combine_system_prompt,
             )
 
             cost_service = get_cost_service(firebase_service)

@@ -50,6 +50,32 @@ Bildinhalte (falls vorhanden):
 """
 
 
+COMBINE_DEFAULT_SYSTEM_PROMPT = "<Prompt entfernt>"
+
+COMBINE_DEFAULT_V2_SYSTEM_PROMPT = """<Prompt entfernt>"""
+
+COMBINE_DEFAULT_V2_INSTRUCTIONS = """[AUFGABE]
+Füge die folgenden Entwürfe zu einem kohärenten wissenschaftlichen Fließtext zusammen. Der Fließtext ist Teil einer großeren Arbeit. Das Kapitel das du schreiben sollst, 
+hat den titel den du unten siehst und behandelt das Thema das du ebenfalls unten siehst. Thema ist einfach nur ein kleiner Text der beschreibt um was es in dem Kapitel genau gehen soll.
+
+Titel (nur Kontext, NICHT ausgeben): {heading}
+Thema: {topic}
+
+Anforderungen:
+- Integriere alle relevanten Informationen aus den Entwürfen. Entferne Dopplungen konsequent.
+- Schreibe nicht „Thema A, Thema B, Thema C“ hintereinander, sondern baue eine sinnvolle argumentative Reihenfolge mit klaren Übergängen.
+- Du darfst Informationen synthetisieren und logisch verbinden, aber keine neuen Fakten hinzufügen.
+- Jede fachliche Aussage muss mit einer im Input vorhandenen Quelle belegt sein. Wenn eine Aussage im Input vorkommt, dort aber keine Quelle dafür steht, lasse diese Aussage weg.
+- Vermeide interne Abschnittsverweise oder Nummerierungen aus den Entwürfen.
+- Kein „Wir/Ich haben herausgefunden“.
+- Keine Zusammenfassung am Ende.
+- Ausgabe: nur Fließtext, keine Überschrift.
+
+[ENTWÜRFE]
+{DRAFTS}
+"""
+
+
 DEFAULT_INSTRUCTIONS = {
     "process_quelle": (
         "### Aufgabe:\n"
@@ -76,7 +102,7 @@ DEFAULT_INSTRUCTIONS = {
         "deinem eigenen Wissen mit einbeziehen! Schreibe keine Zusammenfassung am Ende, da dies nur ein Teil eines längeren Textes ist. Habe Spaß mit der Findung deines Textes, untersuche "
         "verschiedene Aspekte deiner Argumente und gib somit eine Antwort mit sehr viel Nuance. Schreibe einen zusammenhängenden Text ohne Zwischenüberschriften. Du musst dich bei deinem Text nicht "
         "kurz fassen, schreibe deinen Text so lange, wie er sein muss, bis du alle Informationen integriert und alle Argumente ausreichend beschrieben hast, ich begrüße es sogar, wenn du einen "
-        "längeren Text schreibst; wichtig ist aber auch, dass du deinen Text nicht künstlich in die Länge ziehst. Schreibe ohne \"Wir/Ich haben herausgefunden\". Integriere auch hier die Quellen "
+        'längeren Text schreibst; wichtig ist aber auch, dass du deinen Text nicht künstlich in die Länge ziehst. Schreibe ohne "Wir/Ich haben herausgefunden". Integriere auch hier die Quellen '
         "mit Seitenzahlen. Nutze nur die Informationen, die in den Texten gegeben sind, ergänze nichts dazu, das nicht in den Texten steht. Wenn du Argumente beschreibst, gehe sicher, immer eine "
         "Quelle zu integrieren. Formuliere den Text ohne dass du ; verwendest, außer zwischen zwei Quellen."
     ),
@@ -87,12 +113,12 @@ DEFAULT_INSTRUCTIONS = {
     "lesefluss": (
         "### Aufgabe\n"
         "Ich schreibe gerade meine Wissenschaftlichen Arbeit.\n"
-        "Momentan sind die Texte aus den verschiedenen Unterkapiteln noch sehr \"alleinstehend\" was ich meine ist das in den einzelnen Unterkapitel nicht auf die Folgenden oder kommenden Kapitel eingegangen wird und der Text somit noch sehr gestückelt und keine Gesamtheit ist. Auch kommen Informationen doppelt vor oder das Thema wird unterschiedlich behandelt in verschiedenen Unterkapiteln.\n"
+        'Momentan sind die Texte aus den verschiedenen Unterkapiteln noch sehr "alleinstehend" was ich meine ist das in den einzelnen Unterkapitel nicht auf die Folgenden oder kommenden Kapitel eingegangen wird und der Text somit noch sehr gestückelt und keine Gesamtheit ist. Auch kommen Informationen doppelt vor oder das Thema wird unterschiedlich behandelt in verschiedenen Unterkapiteln.\n'
         "Für einen besseren Kontext für dich ist hier die Aufgabenstellung für die gesamte Arbeit:\n\n"
         "AUFGABENSTELLUNG:\n{aufgabenstellung}\nAUFGABENSTELLUNG ENDE\n\n"
         "Ich werde dir außerdem eine zusammengefasste Version der ganzen Arbeit geben. Zu jedem Unterkapitel gibt es einen am Anfang kleinen Text der beschreibt was in diesem Unterkapitel für Informationen behandelt werden. Allerdings sind die Texte zusammengefasst, da die ganze Arbeit zu lang wäre. Berücksichtige diese Information wenn die auf ein Kapitel verweist. Dies ist damit du einen besseren Kontext für die ganze Arbeit hast. Du kannst auch auf Informationen die hier bearbeitet wurden verweisen.\n"
-        "Ich will von dir das du einen fließenden Text aus dem ganzen machst, dass in dem Text an dem du gerade Arbeitest auf bereits behandelte Informationen verwiesen werden kann, wenn das Sinn macht, oder das darauf verwiesen wird, das etwas noch tiefer bearbeitet werden wird in einem kommenden Kapitel. Wenn du auf ein anderes Kapitel verweist, dann schreibe nicht \"wie in 2.2 beschrieben.\" sondern \"wie in Kapitel 2.2 beschrieben.\" also schreibe dazu das du auf das Kapitel xy verweist.\n"
-        "Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das nächste Kapitel einzuweben. Schreibe nicht einfach am ende einen kurzen Absatz in dem du überleitest. Der Lesefluss soll nicht unterbrochen werden. Schreibe auch nicht \"dies leitet über\". Gebe dir Mühe bei der Überleitung da dies den Text Charakter verleiht. Habe Spaß mit der Findung. Nutze nur die Informationen die in den Texten gegeben sind, ergänze nichts dazu, das nicht in den Texten steht.. Übernehme außerdem die angegebenen Quellen (mit Seitenzahlen, wenn Seitenzahlen in der Quelle vorhanden sind) in deinen Text. Gehe sicher, dass keine Informationen weggelassen werden. Erfinde aber auch keine zusätzlichen Kapitel oder Informationen hinzu. Was du aber machen kannst ist zusätzliche Informationen so zu nutzen das neue Schlüsse gezogen werden, gehe aber sicher diese dann immer so zu formulieren das klar wird das es sich hier um dein Gedankengut und nicht um Wissenschaftlich bewiesenes geht. Formuliere den Text ohne das du ; verwendest, außer zwischen zwei Quellen.\n"
+        'Ich will von dir das du einen fließenden Text aus dem ganzen machst, dass in dem Text an dem du gerade Arbeitest auf bereits behandelte Informationen verwiesen werden kann, wenn das Sinn macht, oder das darauf verwiesen wird, das etwas noch tiefer bearbeitet werden wird in einem kommenden Kapitel. Wenn du auf ein anderes Kapitel verweist, dann schreibe nicht "wie in 2.2 beschrieben." sondern "wie in Kapitel 2.2 beschrieben." also schreibe dazu das du auf das Kapitel xy verweist.\n'
+        'Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das nächste Kapitel einzuweben. Schreibe nicht einfach am ende einen kurzen Absatz in dem du überleitest. Der Lesefluss soll nicht unterbrochen werden. Schreibe auch nicht "dies leitet über". Gebe dir Mühe bei der Überleitung da dies den Text Charakter verleiht. Habe Spaß mit der Findung. Nutze nur die Informationen die in den Texten gegeben sind, ergänze nichts dazu, das nicht in den Texten steht.. Übernehme außerdem die angegebenen Quellen (mit Seitenzahlen, wenn Seitenzahlen in der Quelle vorhanden sind) in deinen Text. Gehe sicher, dass keine Informationen weggelassen werden. Erfinde aber auch keine zusätzlichen Kapitel oder Informationen hinzu. Was du aber machen kannst ist zusätzliche Informationen so zu nutzen das neue Schlüsse gezogen werden, gehe aber sicher diese dann immer so zu formulieren das klar wird das es sich hier um dein Gedankengut und nicht um Wissenschaftlich bewiesenes geht. Formuliere den Text ohne das du ; verwendest, außer zwischen zwei Quellen.\n'
         "Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze, zu was du verändert hast."
     ),
     "summary": (
@@ -114,7 +140,9 @@ class PromptService:
     def __init__(self):
         pass
 
-    async def get_instructions_for_template(self, user_id: str, stage: str, template_id: str | None) -> str:
+    async def get_instructions_for_template(
+        self, user_id: str, stage: str, template_id: str | None
+    ) -> str:
         """
         Return instructions for a specific template choice.
 
@@ -132,6 +160,8 @@ class PromptService:
             # Fallback to code default if Firestore template is missing.
             if stage == "process_quelle" and tid == "default_v2":
                 return PROCESS_QUELLE_DEFAULT_V2_INSTRUCTIONS
+            if stage == "combine" and tid == "default_v2":
+                return COMBINE_DEFAULT_V2_INSTRUCTIONS
             return DEFAULT_INSTRUCTIONS.get(stage, "")
 
         tpl = await firebase_service.get_prompt_template(user_id, tid)
@@ -177,6 +207,12 @@ class PromptService:
             if tid == "default":
                 return PROCESS_QUELLE_DEFAULT_SYSTEM_PROMPT
 
+        if stage == "combine":
+            if tid == "default_v2":
+                return COMBINE_DEFAULT_V2_SYSTEM_PROMPT
+            if tid == "default":
+                return COMBINE_DEFAULT_SYSTEM_PROMPT
+
         return None
 
     def render(self, instructions: str, payload: dict) -> str:
@@ -185,7 +221,9 @@ class PromptService:
             rendered = rendered.replace(f"{{{key}}}", str(value or ""))
         return rendered
 
-    async def get_rendered_instructions(self, user_id: str, stage: str, payload: dict) -> str:
+    async def get_rendered_instructions(
+        self, user_id: str, stage: str, payload: dict
+    ) -> str:
         base = await self.get_instructions(user_id, stage)
         return self.render(base, payload)
 

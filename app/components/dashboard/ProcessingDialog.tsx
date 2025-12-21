@@ -110,7 +110,7 @@ export function ProcessingDialog({
 
   const renderPromptSelect = (stage: PromptStage, label: string) => {
     const stageTemplates = templatesByStage(stage)
-    const hasSystemOptions = stage === "process_quelle"
+    const hasSystemOptions = stage === "process_quelle" || stage === "combine"
     if (!hasSystemOptions && stageTemplates.length === 0) return null
     const value = promptChoice[stage] || "default"
     return (
@@ -135,7 +135,7 @@ export function ProcessingDialog({
             <SelectItem value="default">
               <span className="text-muted-foreground">System-Standard</span>
             </SelectItem>
-            {stage === "process_quelle" && (
+            {(stage === "process_quelle" || stage === "combine") && (
               <SelectItem value="default_v2">
                 <span className="text-muted-foreground">System-Standard (v2)</span>
               </SelectItem>

@@ -226,30 +226,31 @@ class OpenAIService:
         topic: str,
         model: str,
         instructions: Optional[str] = None,
-
-      api_key: Optional[str] = None,
-      quelle_images: Optional[List[str]] = None,
-      debug_prompt_dump_path: Optional[str] = None,
-
-      
-
-      
+        api_key: Optional[str] = None,
+        quelle_images: Optional[List[str]] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> dict:
         """
         Combine multiple texts into one consolidated text.
         """
         try:
             client = self._get_client(api_key)
-            combined_texts = "\n\n".join(
-                [f"### Text {i+1}:\n{texts[i]}" for i in range(len(texts))]
-            )
+            draft_parts: list[str] = []
+            for idx, text in enumerate(texts, start=1):
+                draft_parts.append(f"Text {idx}:\n{text}")
+            drafts_content = "\n\n".join(draft_parts)
 
             prompt_body = instructions or "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
-            prompt = f"{prompt_body}\n\n{combined_texts}"
+            if "{DRAFTS}" in (prompt_body or ""):
+                prompt = (prompt_body or "").replace("{DRAFTS}", drafts_content)
+            else:
+                drafts_block = f"[ENTWÜRFE]\n{drafts_content}"
+                prompt = f"{prompt_body}\n\n{drafts_block}"
 
             logger.info(f"Combining {len(texts)} texts with model {model}")
 
-            system_message = (
+            system_message = (system_prompt or "").strip() or (
                 "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
             )
 

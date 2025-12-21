@@ -309,7 +309,7 @@ export function PromptManager() {
                   </div>
                 </Card>
 
-                {opt.value === "process_quelle" && (
+                {(opt.value === "process_quelle" || opt.value === "combine") && (
                   <Card
                     className={cn(
                       "p-4 transition-colors",
@@ -353,7 +353,7 @@ export function PromptManager() {
                   <p className="text-sm text-muted-foreground">
                     Du hast noch keine eigenen Prompts für diese Stufe erstellt.
                   </p>
-                  {opt.value === "process_quelle" ? (
+                  {opt.value === "process_quelle" || opt.value === "combine" ? (
                     <p className="text-xs text-muted-foreground mt-1">
                       Wähle oben zwischen System-Standard und System-Standard (v2).
                     </p>
