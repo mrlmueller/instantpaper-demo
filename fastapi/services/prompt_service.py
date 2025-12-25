@@ -76,6 +76,40 @@ Anforderungen:
 """
 
 
+SUMMARY_DEFAULT_SYSTEM_PROMPT = (
+    "<Prompt entfernt>"
+)
+
+SUMMARY_DEFAULT_V2_SYSTEM_PROMPT = """<Prompt entfernt>"""
+
+SUMMARY_DEFAULT_V2_INSTRUCTIONS = """### Aufgabe
+Komprimiere den folgenden wissenschaftlichen Text zu einer deutlich kürzeren Fassung (Richtwert ca. 30% der Wortzahl), aber dynamisch:
+- Wenn der Text sehr informationsdicht ist, darf die Ausgabe länger sein (z. B. bis ~40%).
+- Wenn der Text wenig Informationsgehalt hat, kürze stärker (z. B. bis ~20%).
+Wichtig: Lieber etwas länger als dass zentrale Informationen fehlen.
+
+### Was du behalten sollst
+- Behalte die inhaltlichen Kernaussagen, Definitionen, zentrale Konzepte, Prozesslogik, Abgrenzungen, Bedingungen und Einschränkungen, soweit sie im Text enthalten sind.
+- Behalte Namen/Jahreszahlen nur, wenn sie für das Verständnis oder die inhaltliche Aussage relevant sind.
+- Behalte die Reihenfolge der Inhalte wie im Original (es soll eine kürzere Version desselben Textes bleiben).
+
+### Was du entfernen sollst
+- Entferne Rhetorik, Ausschmückungen, Wiederholungen, Beispiele, Füllwörter und Meta-Formulierungen, sofern sie nicht essenziell für die Aussage sind.
+- Entferne Quellenangaben/Zitate und Seitenzahlen (z. B. (Autor, Jahr), S. X), außer Namen/Jahre sind inhaltlich notwendig (dann ohne Zitierklammern formulieren).
+- Keine Verweise auf externe Inhalte, Abbildungen oder „siehe oben/unten“.
+
+### Stilvorgaben
+- Schreibe Fließtext (keine Bulletpoints), mehrere Absätze sind erlaubt.
+- Maximale Informationsdichte: kurze Sätze, wenig Stoppwörter, „telegrammstil“ ist okay.
+- Keine neuen Erklärungen hinzufügen. Wenn eine Präzisierung nötig ist, nur dann, wenn sie eindeutig aus dem Text hervorgeht.
+
+### Ausgabe
+Gib ausschließlich den komprimierten Text aus.
+
+### Text
+{text}
+"""
+
 DEFAULT_INSTRUCTIONS = {
     "process_quelle": (
         "### Aufgabe:\n"
@@ -162,6 +196,8 @@ class PromptService:
                 return PROCESS_QUELLE_DEFAULT_V2_INSTRUCTIONS
             if stage == "combine" and tid == "default_v2":
                 return COMBINE_DEFAULT_V2_INSTRUCTIONS
+            if stage == "summary" and tid == "default_v2":
+                return SUMMARY_DEFAULT_V2_INSTRUCTIONS
             return DEFAULT_INSTRUCTIONS.get(stage, "")
 
         tpl = await firebase_service.get_prompt_template(user_id, tid)
@@ -212,6 +248,12 @@ class PromptService:
                 return COMBINE_DEFAULT_V2_SYSTEM_PROMPT
             if tid == "default":
                 return COMBINE_DEFAULT_SYSTEM_PROMPT
+
+        if stage == "summary":
+            if tid == "default_v2":
+                return SUMMARY_DEFAULT_V2_SYSTEM_PROMPT
+            if tid == "default":
+                return SUMMARY_DEFAULT_SYSTEM_PROMPT
 
         return None
 

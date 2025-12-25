@@ -329,17 +329,25 @@ class OpenAIService:
             logger.error(f"OpenAI combine error: {str(e)}")
             raise
 
-    async def summarize_kapitel(self, prompt: str, model: str, api_key: Optional[str] = None) -> Tuple[str, dict]:
+    async def summarize_kapitel(
+        self,
+        prompt: str,
+        model: str,
+        api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+    ) -> Tuple[str, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
             client = self._get_client(api_key)
             logger.info(f"Summarizing Kapitel with model {model}")
 
+            system_message = (system_prompt or "").strip() or SUMMARIZE_SYSTEM_MESSAGE
+
             dump_prompt_markdown(
                 stage="summary",
                 model=model,
                 sections=[
-                    ("System Prompt", SUMMARIZE_SYSTEM_MESSAGE),
+                    ("System Prompt", system_message),
                     ("Instructions", prompt),
                 ],
             )
@@ -350,7 +358,7 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": [{"type": "input_text", "text": SUMMARIZE_SYSTEM_MESSAGE}],
+                        "content": [{"type": "input_text", "text": system_message}],
                     },
                     {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
                 ],

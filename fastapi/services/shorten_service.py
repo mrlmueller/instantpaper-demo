@@ -160,8 +160,19 @@ class ShortenService:
             instructions = await prompt_service.get_rendered_instructions(
                 user_id, "summary", {"text": source_text}
             )
+            summary_template_id = await firebase_service.get_active_prompt_id(user_id, "summary")
+            summary_template_id = (summary_template_id or "").strip() or "default"
+            summary_system_prompt = await prompt_service.get_system_prompt_for_template(
+                stage="summary",
+                template_id=summary_template_id,
+            )
             summary_content, usage = await self.summarize_text(
-                source_text, model, source_kapitel_id, api_key=api_key, instructions=instructions
+                source_text,
+                model,
+                source_kapitel_id,
+                api_key=api_key,
+                instructions=instructions,
+                system_prompt=summary_system_prompt,
             )
             input_tokens = int(usage.get("prompt_tokens", 0))
             cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
@@ -279,7 +290,8 @@ class ShortenService:
         model: str,
         source_kapitel_id: str = None,
         api_key: Optional[str] = None,
-        instructions: Optional[str] = None
+        instructions: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> Tuple[str, dict]:
         """
         Summarize text to ~30% of original using OpenAI.
@@ -295,7 +307,12 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
         if instructions:
             prompt = instructions
 
-        return await openai_service.summarize_kapitel(prompt, model, api_key=api_key)
+        return await openai_service.summarize_kapitel(
+            prompt,
+            model,
+            api_key=api_key,
+            system_prompt=system_prompt,
+        )
 
     async def build_gliederung(
         self,
