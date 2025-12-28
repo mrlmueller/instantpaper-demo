@@ -807,7 +807,6 @@ class FirebaseService:
                         "shortenedLength": 0,
                         "compressionRatio": 0.0,
                         "usedKapitelIds": used_kapitel_ids or [],
-                        "explanation": None,
                     }
                 )
             elif artifact_id == "lesefluss":
@@ -1712,7 +1711,6 @@ class FirebaseService:
                 "shortenedLength": int(shortened_data.get("shortenedLength") or 0),
                 "compressionRatio": float(shortened_data.get("compressionRatio") or 0.0),
                 "usedKapitelIds": shortened_data.get("usedKapitelIds") or [],
-                "explanation": shortened_data.get("explanation"),
                 "model": shortened_data.get("model") or "",
                 "usage": {
                     "inputTokens": int(usage.get("inputTokens", 0)),
@@ -2158,6 +2156,38 @@ class FirebaseService:
         except Exception as e:
             logger.error(f"Error fetching Kapitel metadata for {kapitel_id}: {str(e)}")
             raise
+
+    async def list_kapitel_metadata_for_project(self, user_id: str, projekt_id: str) -> list[dict]:
+        """
+        List Kapitel metadata (id, nummer, title) for a given project.
+
+        Returns:
+            list[dict]: [{'id': str, 'nummer': str, 'title': str}, ...]
+        """
+        try:
+            if not (projekt_id or "").strip():
+                return []
+
+            kapitels_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+            )
+            docs = kapitels_ref.where('projektId', '==', projekt_id).stream()
+            out: list[dict] = []
+            for doc in docs:
+                data = doc.to_dict() or {}
+                out.append(
+                    {
+                        "id": doc.id,
+                        "nummer": data.get("nummer", "?"),
+                        "title": data.get("title", "Untitled"),
+                    }
+                )
+            return out
+        except Exception as e:
+            logger.error(f"Error listing Kapitels for project {projekt_id}: {e}")
+            return []
 
     async def get_kapitel_runs(self, user_id: str, kapitel_id: str) -> list:
         """

@@ -95,12 +95,6 @@ export type ShortenedResult = {
   id: 'shortened';
   content: string;
   status?: 'running' | 'success' | 'error';
-  explanation?: {
-    lengthDecision: string;
-    omittedTopics: string[];
-    preservedFocus: string[];
-    compressionNotes: string;
-  };
   originalLength: number;
   shortenedLength: number;
   usedKapitelIds: string[];
@@ -609,22 +603,14 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10, ctx?: Act
               updatedAt: a.updatedAt ? toIso(a.updatedAt) : undefined,
             };
            } else if (artifactId === 'shortened') {
-             shortened = {
-               id: 'shortened',
-               content: String(a.content ?? ''),
-               status: normalizeArtifactDocStatus(a.status),
-               explanation: a.explanation
-                 ? {
-                     lengthDecision: String(a.explanation.lengthDecision ?? ''),
-                     omittedTopics: Array.isArray(a.explanation.omittedTopics) ? a.explanation.omittedTopics : [],
-                     preservedFocus: Array.isArray(a.explanation.preservedFocus) ? a.explanation.preservedFocus : [],
-                    compressionNotes: String(a.explanation.compressionNotes ?? ''),
-                  }
-                : undefined,
-              originalLength: Number(a.originalLength ?? 0),
-              shortenedLength: Number(a.shortenedLength ?? 0),
-              usedKapitelIds: Array.isArray(a.usedKapitelIds) ? a.usedKapitelIds : [],
-              model: String(a.model ?? ''),
+              shortened = {
+                id: 'shortened',
+                content: String(a.content ?? ''),
+                status: normalizeArtifactDocStatus(a.status),
+               originalLength: Number(a.originalLength ?? 0),
+               shortenedLength: Number(a.shortenedLength ?? 0),
+               usedKapitelIds: Array.isArray(a.usedKapitelIds) ? a.usedKapitelIds : [],
+               model: String(a.model ?? ''),
               usage: normalizeUsage(a.usage),
               costUsd: Number(a.costUsd ?? 0),
               refinement: normalizeRefinement(a.refinement),
@@ -904,14 +890,6 @@ export async function getShortenedResult(kapitelId: string, runId: string): Prom
     return {
       id: 'shortened',
       content: String(s.content ?? ''),
-      explanation: s.explanation
-        ? {
-            lengthDecision: String(s.explanation.lengthDecision ?? ''),
-            omittedTopics: Array.isArray(s.explanation.omittedTopics) ? s.explanation.omittedTopics : [],
-            preservedFocus: Array.isArray(s.explanation.preservedFocus) ? s.explanation.preservedFocus : [],
-            compressionNotes: String(s.explanation.compressionNotes ?? ''),
-          }
-        : undefined,
       originalLength: Number(s.originalLength ?? 0),
       shortenedLength: Number(s.shortenedLength ?? 0),
       usedKapitelIds: Array.isArray(s.usedKapitelIds) ? s.usedKapitelIds : [],

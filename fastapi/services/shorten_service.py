@@ -341,55 +341,61 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
             # Add the Kapitel header
             lines.append(f"{nummer}. {title}")
 
-            # Add the summary if available
-            if kapitel_id in summaries:
-                lines.append(summaries[kapitel_id])
-            else:
-                lines.append("[Keine Zusammenfassung verfügbar]")
+            if kapitel_id == target_kapitel_id:
+                lines.append("Das ist das Kapitel an dem wir gerade Arbeiten")
+            elif kapitel_id in summaries:
+                lines.append((summaries.get(kapitel_id) or "").strip())
 
             lines.append("")  # Empty line between Kapitels
 
         return "\n".join(lines)
 
+    def _nummer_sort_key(self, nummer: str) -> tuple:
+        parts = [p.strip() for p in str(nummer or "").split(".") if p.strip()]
+        if not parts:
+            return ((2, ""),)
+
+        key = []
+        for part in parts:
+            digits = ""
+            rest = ""
+            for ch in part:
+                if ch.isdigit() and not rest:
+                    digits += ch
+                else:
+                    rest += ch
+
+            if digits:
+                key.append((0, int(digits)))
+                if rest:
+                    key.append((1, rest))
+            else:
+                key.append((1, part))
+
+        return tuple(key)
+
     async def shorten_and_deduplicate(
         self,
-        ueberschrift: str,
-        thema: str,
-        gliederung: str,
-        target_text: str,
+        prompt: str,
         model: str,
-        target_kapitel_id: str = None,
-        context_kapitel_ids: list = None,
+        *,
         api_key: Optional[str] = None,
-        instructions: Optional[str] = None,
-    ) -> Tuple[str, dict, dict]:
+        system_prompt: Optional[str] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+    ) -> Tuple[str, dict]:
         """
         Shorten and deduplicate text using OpenAI.
 
         Returns:
-            tuple: (shortened_content, usage_dict, explanation_dict)
+            tuple: (shortened_content, usage_dict)
         """
-        prompt = f"""### Aufgabe:
-Ich schreibe gerade eine Wissenschaftliche Arbeit. Der folgende Text ist bereits gut, so wie er ist, allerding ist er noch zu lang. Aber damit du optimal den Text kürzen kannst, also das du den Fokus auf die richtigen Fakten und Themen legen kannst werde ich dir die Überschrift „{ueberschrift}" und auch das Thema des Textes geben „{thema}". Zusätzlich werde ich dir Folgend einen Teil meiner Gliederung geben zusammen mit einer zusammengefassten Version der Texte von den anderen Kapitel und Unterpunkten der Kapitel. All dies gebe ich dir damit du perfekt entscheiden kannst auf was der Fokus gelegt werden sollte in der Arbeit. Konkret ist deine Aufgabe den Text auf die hälft oder noch etwas weniger zu kürzen, aber dabei alle wichtigen Informationen bei zu behalten. Behalte auch sämtliche Quellen an den richtigen Stellen bei außer, wenn du eine Information zu einer Quelle komplett eliminierst. Du sollst nur die gegebenen Informationen nutzen, und keine Informationen aus deinem eigenen wissen mit einbeziezen! Schreibe keine Zusammenfassung am Ende, da dies nur ein Teil eines längeren Textes ist. Habe Spaß mit der Findung deines Textes. Schreibe ohne "Wir/Ich haben herausgefunden". Schreibe aber dennoch das es Spaß macht den Text zu lesen, also dass es kein zu trockener Text wird, aber behalte dennoch die Wissenschaftliche Schreibweise bei. Wenn du Argumente beschreibst, gehe sicher immer eine Quelle zu integrieren. Formuliere den Text ohne das du ; verwendest, außer zwischen zwei Quellen.
-
-WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe eine kurze Erklärung deiner Entscheidungen im explanation-Feld und den gekürzten Text im shortened_text-Feld.
-
-### Gliederung:
-{gliederung}
-
-### Text zum Kürzen:
-{target_text}"""
-
-        if instructions:
-            prompt = f"""{instructions}
-
-### Gliederung:
-{gliederung}
-
-### Text zum Kürzen:
-{target_text}"""
-
-        return await openai_service.shorten_and_deduplicate(prompt, model, api_key=api_key)
+        return await openai_service.shorten_and_deduplicate(
+            prompt,
+            model,
+            api_key=api_key,
+            system_prompt=system_prompt,
+            debug_prompt_dump_path=debug_prompt_dump_path,
+        )
 
     async def process_shorten_request(
         self,
@@ -448,67 +454,94 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
             ueberschrift = run_data.get('ueberschrift', 'Untitled')
             thema = run_data.get('thema', '')
 
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
             # Step 1: Generate/fetch summaries for context Kapitels (in parallel)
-            logger.info(f"Generating summaries for {len(context_kapitel_ids)} context Kapitels")
+            context_ids = [str(cid) for cid in (context_kapitel_ids or []) if str(cid) != str(kapitel_id)]
+            logger.info(f"Generating summaries for {len(context_ids)} context Kapitels")
 
-            summary_tasks = [
-                self.get_or_create_summary(
-                    user_id,
-                    kapitel_id,
-                    run_id,
-                    ctx_id,
-                    model,
-                    api_key,
-                    key_source,
-                    user_action_id,
-                )
-                for ctx_id in context_kapitel_ids
-            ]
+            summaries: dict[str, str] = {}
+            valid_context_ids: list[str] = []
 
-            summaries_list = await asyncio.gather(*summary_tasks, return_exceptions=True)
+            if context_ids:
+                summary_tasks = [
+                    self.get_or_create_summary(
+                        user_id,
+                        kapitel_id,
+                        run_id,
+                        ctx_id,
+                        model,
+                        api_key,
+                        key_source,
+                        user_action_id,
+                    )
+                    for ctx_id in context_ids
+                ]
+                summaries_list = await asyncio.gather(*summary_tasks, return_exceptions=True)
 
-            # Build summaries dict, filtering out errors
-            summaries = {}
-            valid_context_ids = []
-            for ctx_id, summary_result in zip(context_kapitel_ids, summaries_list):
-                if isinstance(summary_result, Exception):
-                    logger.error(f"Failed to get summary for Kapitel {ctx_id}: {summary_result}")
-                else:
-                    summaries[ctx_id] = summary_result
-                    valid_context_ids.append(ctx_id)
+                for ctx_id, summary_result in zip(context_ids, summaries_list):
+                    if isinstance(summary_result, Exception):
+                        logger.error(f"Failed to get summary for Kapitel {ctx_id}: {summary_result}")
+                    else:
+                        summaries[str(ctx_id)] = str(summary_result or "")
+                        valid_context_ids.append(str(ctx_id))
 
-            if not summaries:
-                raise ValueError("No valid summaries could be generated for context Kapitels")
-
-            # Step 2: Get metadata for context Kapitels to build Gliederung
+            # Step 2: Build full Gliederung for the entire project (summaries only where available)
             logger.info("Building Gliederung")
 
-            context_kapitels = []
-            for ctx_id in valid_context_ids:
-                metadata = await firebase_service.get_kapitel_metadata(user_id, ctx_id)
-                if metadata:
-                    context_kapitels.append(metadata)
+            all_kapitels: list[dict] = []
+            if (projekt_id or "").strip():
+                all_kapitels = await firebase_service.list_kapitel_metadata_for_project(user_id, projekt_id)
 
-            # Sort by nummer for proper ordering
-            context_kapitels.sort(key=lambda k: k.get('nummer', ''))
+            if not all_kapitels:
+                fallback_ids = list(dict.fromkeys([kapitel_id] + valid_context_ids))
+                for kid in fallback_ids:
+                    metadata = await firebase_service.get_kapitel_metadata(user_id, kid)
+                    if metadata:
+                        all_kapitels.append(metadata)
 
-            gliederung = await self.build_gliederung(
-                user_id, kapitel_id, context_kapitels, summaries
-            )
+            all_kapitels.sort(key=lambda k: self._nummer_sort_key(k.get("nummer", "")))
+            gliederung = await self.build_gliederung(user_id, kapitel_id, all_kapitels, summaries)
 
             # Step 3: Shorten the target text
             logger.info("Shortening target Kapitel text")
 
-            shorten_instructions = await prompt_service.get_rendered_instructions(
-                user_id, "shorten", {"ueberschrift": ueberschrift, "thema": thema}
+            active_template_id = await firebase_service.get_active_prompt_id(user_id, "shorten")
+            template_instructions = await prompt_service.get_instructions_for_template(
+                user_id, "shorten", active_template_id
+            )
+            template_system_prompt = await prompt_service.get_system_prompt_for_template(
+                stage="shorten",
+                template_id=active_template_id,
             )
 
-            shortened_content, usage, explanation = await self.shorten_and_deduplicate(
-                ueberschrift, thema, gliederung, target_text, model,
-                target_kapitel_id=kapitel_id,
-                context_kapitel_ids=valid_context_ids,
+            payload = {
+                "ueberschrift": ueberschrift,
+                "thema": thema,
+                "KONTEXT_ANDERE_KAPITEL": gliederung,
+                "TEXT_ZUM_KUERZEN": target_text,
+            }
+            rendered = prompt_service.render(template_instructions, payload)
+            uses_inline_inputs = ("{KONTEXT_ANDERE_KAPITEL}" in template_instructions) and (
+                "{TEXT_ZUM_KUERZEN}" in template_instructions
+            )
+
+            prompt_body = rendered
+            if not uses_inline_inputs:
+                prompt_body = f"""{rendered}
+
+### Gliederung:
+{gliederung}
+
+### Text zum Kürzen:
+{target_text}"""
+
+            shortened_content, usage = await self.shorten_and_deduplicate(
+                prompt_body,
+                model,
                 api_key=api_key,
-                instructions=shorten_instructions
+                system_prompt=template_system_prompt,
             )
 
             input_tokens = int(usage.get("prompt_tokens", 0))
@@ -522,9 +555,6 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
                 model=model,
                 usage=usage_obj,
             )
-
-            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
-            projekt_id = (kapitel or {}).get("projektId")
 
             projekt_snapshot = None
             if projekt_id:
@@ -584,12 +614,6 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
 
             shortened_data = {
                 "content": shortened_content,
-                "explanation": {
-                    "lengthDecision": explanation.get("length_decision", ""),
-                    "omittedTopics": explanation.get("omitted_topics", []),
-                    "preservedFocus": explanation.get("preserved_focus", []),
-                    "compressionNotes": explanation.get("compression_notes", ""),
-                },
                 "originalLength": original_length,
                 "shortenedLength": shortened_length,
                 "compressionRatio": shortened_length / original_length if original_length > 0 else 0,

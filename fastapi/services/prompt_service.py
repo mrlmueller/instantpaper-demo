@@ -76,9 +76,7 @@ Anforderungen:
 """
 
 
-SUMMARY_DEFAULT_SYSTEM_PROMPT = (
-    "<Prompt entfernt>"
-)
+SUMMARY_DEFAULT_SYSTEM_PROMPT = "<Prompt entfernt>"
 
 SUMMARY_DEFAULT_V2_SYSTEM_PROMPT = """<Prompt entfernt>"""
 
@@ -108,6 +106,68 @@ Gib ausschließlich den komprimierten Text aus.
 
 ### Text
 {text}
+"""
+
+SHORTEN_DEFAULT_V2_SYSTEM_PROMPT = """<Prompt entfernt>"""
+
+SHORTEN_DEFAULT_V2_INSTRUCTIONS = """# ZIEL
+Kürze den Text, ohne den Grundstil umzubauen. Kein fixes Kürzungsziel.
+Fokus: Qualität erhöhen durch Entfernen/Kürzen von unnötigen, schwachen, redundanten oder offensichtlich off-topic Passagen.
+Lieber etwas weniger kürzen als Informationsverlust.
+
+# ENTSCHEIDUNGSLOGIK (wichtig)
+1) Themen-Fit: Behalte Inhalte, die direkt zur Überschrift und zum Thema passen.
+2) Kapitel-Kontext nutzen, aber NICHT als Quelle:
+   - Der Kontext anderer Kapitel dient nur dazu zu entscheiden, was hier redundant ist.
+   - Aus dem Kontext darf nichts neu in den Text übernommen werden (keine Ergänzungen).
+3) Redundanzregel:
+   - Wiederholungen im Text selbst dürfen zusammengeführt/verkürzt werden.
+   - Wiederholungen dürfen bleiben, wenn sie kurz und bewusst zur Klarstellung beitragen.
+4) Deduplizierung über Kapitel:
+   - Wenn etwas in einem vorherigen Kapitel bereits ausführlich behandelt wurde: hier nur kurz erwähnen oder streichen.
+   - Wenn die Formulierung hier deutlich besser/konkreter ist: nicht streichen, sondern kürzer fassen.
+
+# ZITATE/QUELLEN (Autor-Jahr bleibt)
+- Behalte alle Zitate inhaltlich passend bei (z. B. (Name, Jahr)).
+- Keine neuen Quellen, keine neuen Seitenzahlen, keine erfundenen Angaben.
+- Seitenangaben lokalisieren:
+  - p. X → S. X
+  - pp. X–Y → S. X–Y
+- Entferne eine Quelle nur, wenn die dazugehörige Aussage vollständig entfernt wurde.
+- Wenn unklar, ob eine Quelle noch passt: Quelle beibehalten.
+- Keine Semikolons im Fließtext. Ausnahme: nur zur Trennung mehrerer Quellen innerhalb einer Klammer (Autor, Jahr; Autor, Jahr).
+
+# STIL/FORMAT
+- Output: nur Fließtext, Absätze erlaubt.
+- Keine Überschrift ausgeben, keine Schlusszusammenfassung, keine Meta-Kommentare.
+- Kein „Wir/Ich haben herausgefunden“.
+- Keine Listen/Bullets.
+
+# INPUTS
+Der Text an dem du arbeiten sollst ist ein Kapitel einer längeren Wissenschaftlichen Arbeit. Das Kapitel hat die Überschrift die du unten siehst und das topic ist ein kleiner Text zu dem Kapitel der beschreibt um was es in dem Kapitel gehen soll:
+<heading>
+{ueberschrift}
+</heading>
+
+<topic>
+{thema}
+</topic>
+
+Das folgende ist Quasi die Gliederung der gesamten arbeit und zu manchen Kapitel gebe ich dir eine gekürzte Version des Textes damit du verstehst wie sich der Text an dem wir arbeiten in den Rest der gesamten Arbeit einordnet und du verstehen kannst was schon bahndelt wurde oder was noch behandelt wird.
+<context_other_chapters>
+{KONTEXT_ANDERE_KAPITEL}
+</context_other_chapters>
+
+Das ist der Text an dem wir Arbeiten:
+<text_to_shorten>
+{TEXT_ZUM_KUERZEN}
+</text_to_shorten>
+
+# LETZTE PRÜFUNG (intern, nicht ausgeben)
+- Nichts ergänzt? Keine neuen Fakten?
+- Zitate noch passend und korrekt (p./pp. → S.)?
+- Keine Semikolons außer in Quellenklammern?
+- Keine Überschrift im Output?
 """
 
 DEFAULT_INSTRUCTIONS = {
@@ -198,6 +258,8 @@ class PromptService:
                 return COMBINE_DEFAULT_V2_INSTRUCTIONS
             if stage == "summary" and tid == "default_v2":
                 return SUMMARY_DEFAULT_V2_INSTRUCTIONS
+            if stage == "shorten" and tid == "default_v2":
+                return SHORTEN_DEFAULT_V2_INSTRUCTIONS
             return DEFAULT_INSTRUCTIONS.get(stage, "")
 
         tpl = await firebase_service.get_prompt_template(user_id, tid)
@@ -254,6 +316,11 @@ class PromptService:
                 return SUMMARY_DEFAULT_V2_SYSTEM_PROMPT
             if tid == "default":
                 return SUMMARY_DEFAULT_SYSTEM_PROMPT
+
+        if stage == "shorten":
+            if tid == "default_v2":
+                return SHORTEN_DEFAULT_V2_SYSTEM_PROMPT
+            return None
 
         return None
 

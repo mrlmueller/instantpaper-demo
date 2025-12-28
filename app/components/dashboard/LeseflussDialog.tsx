@@ -157,11 +157,10 @@ export function LeseflussDialog({
   }
 
   const getIndentLevel = (nummer: string) => nummer.split(".").length - 1
-  const showPromptSelectors = askOnEachProcess && promptTemplates.length > 0
+  const showPromptSelectors = askOnEachProcess
 
   const renderPromptSelect = (stage: PromptStage, label: string) => {
     const options = promptTemplates.filter((p) => p.stage === stage)
-    if (options.length === 0) return null
     return (
       <div className="space-y-2">
         <Label className="text-sm">Prompt für {label}</Label>
@@ -184,6 +183,11 @@ export function LeseflussDialog({
             <SelectItem value="default">
               <span className="text-muted-foreground">System-Standard</span>
             </SelectItem>
+            {stage === "summary" && (
+              <SelectItem value="default_v2">
+                <span className="text-muted-foreground">System-Standard (v2)</span>
+              </SelectItem>
+            )}
             {options.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.name}

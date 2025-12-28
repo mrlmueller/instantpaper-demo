@@ -412,20 +412,25 @@ class OpenAIService:
         self,
         prompt: str,
         model: str,
-        api_key: Optional[str] = None
-    ) -> Tuple[str, dict, dict]:
+        api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+    ) -> Tuple[str, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
             client = self._get_client(api_key)
             logger.info(f"Shortening and deduplicating Kapitel with model {model}")
 
+            system_message = (system_prompt or "").strip() or SHORTEN_SYSTEM_MESSAGE
+
             dump_prompt_markdown(
                 stage="shorten",
                 model=model,
                 sections=[
-                    ("System Prompt", SHORTEN_SYSTEM_MESSAGE),
+                    ("System Prompt", system_message),
                     ("Instructions", prompt),
                 ],
+                dump_path=debug_prompt_dump_path,
             )
 
             response = await client.responses.create(
@@ -434,7 +439,7 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": [{"type": "input_text", "text": SHORTEN_SYSTEM_MESSAGE}],
+                        "content": [{"type": "input_text", "text": system_message}],
                     },
                     {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
                 ],
@@ -454,26 +459,22 @@ class OpenAIService:
             if not result_text:
                 raise ValueError("No text output returned from OpenAI response")
 
-            # Try to parse as JSON
-            import json
+            # Backward compatible: some prompts may still return JSON; extract shortened_text when present.
             shortened_text = result_text
-            explanation_dict = {}
 
             try:
-                # Attempt to parse JSON response
+                import json
+
                 json_response = json.loads(result_text.strip())
 
                 if isinstance(json_response, dict) and 'shortened_text' in json_response:
                     shortened_text = json_response.get('shortened_text', '')
-                    explanation_dict = json_response.get('explanation', {})
-
-                    logger.info("Successfully parsed JSON response with structured explanation")
+                    logger.info("Successfully parsed JSON response with 'shortened_text'")
                 else:
                     logger.warning("JSON response missing 'shortened_text' field, using plain text fallback")
 
             except json.JSONDecodeError:
                 logger.info("Response is not JSON, using plain text (backward compatibility)")
-                # Keep shortened_text as result_text and explanation_dict as empty
 
             usage = getattr(response, "usage", None)
             input_tokens = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
@@ -499,7 +500,7 @@ class OpenAIService:
                 'completion_tokens': output_tokens,
             }
 
-            return shortened_text, usage_dict, explanation_dict
+            return shortened_text, usage_dict
 
         except Exception as e:
             logger.error(f"OpenAI shortening error: {str(e)}")

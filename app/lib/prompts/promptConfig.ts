@@ -9,7 +9,7 @@ type StageConfig = {
   tooltip?: string;
 };
 
-const DEFAULT_PROMPT_STUB = `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`;
+const DEFAULT_PROMPT_STUB = ``;
 
 export const STAGE_CONFIG: Record<PromptStage, StageConfig> = {
   process_quelle: {

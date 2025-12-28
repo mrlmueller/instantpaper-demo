@@ -87,12 +87,6 @@ export interface Run {
   shortenedStatus?: "empty" | "running" | "success" | "error";
   shortenedOriginalLength?: number; // Original word count before shortening
   shortenedLength?: number; // Word count after shortening
-  explanation?: {
-    lengthDecision: string;
-    omittedTopics: string[];
-    preservedFocus: string[];
-    compressionNotes: string;
-  };
   leseflussText?: string | null;
   leseflussExplanation?: string;
   leseflussAufgabenstellung?: string;

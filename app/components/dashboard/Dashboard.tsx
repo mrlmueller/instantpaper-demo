@@ -139,7 +139,7 @@ function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCanc
                     </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="default">System-Standard</SelectItem>
-                        {(stage === 'process_quelle' || stage === 'combine') && (
+                        {(stage === 'process_quelle' || stage === 'combine' || stage === 'summary' || stage === 'shorten') && (
                           <SelectItem value="default_v2">System-Standard (v2)</SelectItem>
                         )}
                         {stageTemplates.map((tpl) => (
@@ -731,7 +731,6 @@ export function Dashboard({
               id: 'shortened',
               content: data.content ?? '',
               status: data.status,
-              explanation: data.explanation,
               originalLength: data.originalLength ?? 0,
               shortenedLength: data.shortenedLength ?? 0,
               usedKapitelIds: data.usedKapitelIds ?? [],

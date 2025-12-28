@@ -141,12 +141,6 @@ export type ShortenedArtifactDoc = {
   originalLength: number;
   shortenedLength: number;
   compressionRatio?: number;
-  explanation?: {
-    lengthDecision: string;
-    omittedTopics: string[];
-    preservedFocus: string[];
-    compressionNotes: string;
-  };
   model: string;
   usage: Usage;
   costUsd: number;

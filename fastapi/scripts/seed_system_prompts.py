@@ -20,6 +20,8 @@ from services.prompt_service import (
     SUMMARY_DEFAULT_SYSTEM_PROMPT,
     SUMMARY_DEFAULT_V2_INSTRUCTIONS,
     SUMMARY_DEFAULT_V2_SYSTEM_PROMPT,
+    SHORTEN_DEFAULT_V2_INSTRUCTIONS,
+    SHORTEN_DEFAULT_V2_SYSTEM_PROMPT,
 )
 
 
@@ -94,6 +96,8 @@ def main() -> int:
         default_v1_system_prompt = COMBINE_DEFAULT_SYSTEM_PROMPT
     elif stage == "summary":
         default_v1_system_prompt = SUMMARY_DEFAULT_SYSTEM_PROMPT
+    elif stage == "shorten":
+        default_v1_system_prompt = ""
     else:
         default_v1_system_prompt = ""
 
@@ -106,6 +110,9 @@ def main() -> int:
     elif stage == "summary":
         default_v2_instructions = SUMMARY_DEFAULT_V2_INSTRUCTIONS
         default_v2_system_prompt = SUMMARY_DEFAULT_V2_SYSTEM_PROMPT
+    elif stage == "shorten":
+        default_v2_instructions = SHORTEN_DEFAULT_V2_INSTRUCTIONS
+        default_v2_system_prompt = SHORTEN_DEFAULT_V2_SYSTEM_PROMPT
     else:
         default_v2_instructions = default_v1_instructions
         default_v2_system_prompt = default_v1_system_prompt
