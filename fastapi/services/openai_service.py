@@ -16,6 +16,18 @@ LESEFLUSS_SYSTEM_MESSAGE = "<Prompt entfernt: wird zur Laufzeit aus Firebase gel
 NO_CONTENT_SENTINEL = "NO_CONTENT"
 
 
+def _prompt_cache_kwargs(model: str) -> dict:
+    """
+    Enable prompt caching for supported models only.
+
+    OpenAI currently supports prompt caching for gpt-5.1 and gpt-5.2.
+    """
+    model = (model or "").strip()
+    if model in {"gpt-5.1", "gpt-5.2"}:
+        return {"extra_body": {"prompt_cache_retention": "24h"}}
+    return {}
+
+
 class OpenAIService:
     """Service for OpenAI API operations"""
 
@@ -160,6 +172,7 @@ class OpenAIService:
                 ],
                 reasoning={"effort": "high"},
                 max_output_tokens=None,  # allow model to decide; adjust if you want a hard cap
+                **_prompt_cache_kwargs(model),
             )
 
             # Extract text output safely
@@ -281,6 +294,7 @@ class OpenAIService:
                 ],
                 reasoning={"effort": "high"},
                 max_output_tokens=None,
+                **_prompt_cache_kwargs(model),
             )
 
             result_text = None
@@ -364,6 +378,7 @@ class OpenAIService:
                 ],
                 reasoning={"effort": "low"},
                 max_output_tokens=None,
+                **_prompt_cache_kwargs(model),
             )
 
             result_text = None
@@ -445,6 +460,7 @@ class OpenAIService:
                 ],
                 reasoning={"effort": "high"},
                 max_output_tokens=None,
+                **_prompt_cache_kwargs(model),
             )
 
             result_text = None
@@ -546,6 +562,7 @@ class OpenAIService:
                 ],
                 reasoning={"effort": "high"},  # High effort for narrative quality
                 max_output_tokens=None,
+                **_prompt_cache_kwargs(model),
             )
 
             result_text = None
@@ -588,6 +605,88 @@ class OpenAIService:
 
         except Exception as e:
             logger.error(f"OpenAI reading flow improvement error: {str(e)}")
+            raise
+
+    async def generate_text(
+        self,
+        prompt: str,
+        model: str,
+        *,
+        api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+        stage: str = "refine",
+        reasoning_effort: str = "high",
+    ) -> dict:
+        "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+        try:
+            client = self._get_client(api_key)
+            logger.info(f"Generating text with model {model} (stage={stage})")
+
+            system_message = (system_prompt or "").strip() or "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+
+            dump_prompt_markdown(
+                stage=stage,
+                model=model,
+                sections=[
+                    ("System Prompt", system_message),
+                    ("Instructions", prompt),
+                ],
+                dump_path=debug_prompt_dump_path,
+            )
+
+            response = await client.responses.create(
+                model=model,
+                service_tier="default",
+                input=[
+                    {
+                        "role": "system",
+                        "content": [{"type": "input_text", "text": system_message}],
+                    },
+                    {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
+                ],
+                reasoning={"effort": reasoning_effort},
+                max_output_tokens=None,
+                **_prompt_cache_kwargs(model),
+            )
+
+            result_text = None
+            if hasattr(response, "output_text") and response.output_text is not None:
+                result_text = response.output_text
+            elif hasattr(response, "output") and response.output:
+                try:
+                    result_text = response.output[0].content[0].text
+                except Exception:
+                    pass
+
+            if not result_text:
+                raise ValueError("No text output returned from OpenAI response")
+
+            usage = getattr(response, "usage", None)
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
+
+            cached_input_tokens = 0
+            input_details = getattr(usage, "input_tokens_details", None) if usage else None
+            if input_details is not None:
+                cached_input_tokens = int(getattr(input_details, "cached_tokens", 0) or 0)
+
+            tokens_used = input_tokens + output_tokens
+            model_used = getattr(response, "model", None) or model
+
+            return {
+                "content": result_text,
+                "has_content": True,
+                "tokens": tokens_used,
+                "input_tokens": input_tokens,
+                "cached_input_tokens": cached_input_tokens,
+                "output_tokens": output_tokens,
+                "reasoning_tokens": 0,
+                "model": model_used,
+            }
+
+        except Exception as e:
+            logger.error(f"OpenAI text generation error: {str(e)}")
             raise
 
 # Create singleton instance

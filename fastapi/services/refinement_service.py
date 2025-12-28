@@ -17,6 +17,28 @@ from utils.config import config
 
 logger = logging.getLogger(__name__)
 
+REFINEMENT_SYSTEM_PROMPT = (
+    "Mache die änderungen die von der -Aktuelle Nutzeranweisung- verlangt werden "
+    "an dem neuesten -Generated Text-."
+)
+
+_ORDINAL_EN = {
+    1: "First",
+    2: "Second",
+    3: "Third",
+    4: "Fourth",
+    5: "Fifth",
+    6: "Sixth",
+    7: "Seventh",
+    8: "Eighth",
+    9: "Ninth",
+    10: "Tenth",
+}
+
+
+def _ordinal_en(n: int) -> str:
+    return _ORDINAL_EN.get(n, str(n))
+
 
 class RefinementService:
     """Text refinement flow service (phase 1+: combined + shortened + lesefluss + per-result texts)."""
@@ -24,7 +46,50 @@ class RefinementService:
     def __init__(self) -> None:
         pass
 
-    async def init_combined_refinement(self, user_id: str, kapitel_id: str, run_id: str) -> dict:
+    def _build_refinement_conversation_prompt(
+        self,
+        *,
+        base_user_message: str,
+        history_path: list[dict],
+        new_user_message: str,
+    ) -> str:
+        """
+        Build a single long user prompt for refinement.
+
+        Order:
+        - Erste User Message: (the original stage prompt that generated the root text)
+        - First Generated Text: (root output)
+        - Second/Third/... User Message + Generated Text: (prior refinements)
+        - Aktuelle Nutzeranweisung: (the new instruction for this refinement call)
+        """
+        blocks: list[str] = []
+
+        blocks.append("Erste User Message:\n" + (base_user_message or "").strip())
+
+        root_text = ""
+        if history_path:
+            root_text = (history_path[0].get("assistantText") or "").strip()
+        blocks.append("First Generated Text:\n" + root_text)
+
+        # Subsequent refinement iterations (already executed)
+        for idx, v in enumerate(history_path[1:], start=2):
+            ordinal = _ordinal_en(idx)
+            blocks.append(
+                f"{ordinal} User Message:\n" + ((v.get("userMessage") or "").strip())
+            )
+            blocks.append(
+                f"{ordinal} Generated Text:\n"
+                + ((v.get("assistantText") or "").strip())
+            )
+
+        blocks.append("Aktuelle Nutzeranweisung:\n" + (new_user_message or "").strip())
+        blocks.append("Gib ausschließlich den finalen Text aus.")
+
+        return ("\n\n".join(blocks)).strip() + "\n"
+
+    async def init_combined_refinement(
+        self, user_id: str, kapitel_id: str, run_id: str
+    ) -> dict:
         """Ensure root version + metadata exist for this run's combined text."""
         try:
             return await firebase_service.ensure_combined_refinement_root_version(
@@ -36,7 +101,9 @@ class RefinementService:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    async def init_shortened_refinement(self, user_id: str, kapitel_id: str, run_id: str) -> dict:
+    async def init_shortened_refinement(
+        self, user_id: str, kapitel_id: str, run_id: str
+    ) -> dict:
         """Ensure root version + metadata exist for this run's shortened text."""
         try:
             return await firebase_service.ensure_shortened_refinement_root_version(
@@ -48,7 +115,9 @@ class RefinementService:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    async def init_lesefluss_refinement(self, user_id: str, kapitel_id: str, run_id: str) -> dict:
+    async def init_lesefluss_refinement(
+        self, user_id: str, kapitel_id: str, run_id: str
+    ) -> dict:
         """Ensure root version + metadata exist for this run's lesefluss text."""
         try:
             return await firebase_service.ensure_lesefluss_refinement_root_version(
@@ -97,7 +166,9 @@ class RefinementService:
                 eligible.append({"id": res.get("id"), "content": content})
 
         if len(eligible) < 2:
-            raise ValueError("Not enough eligible texts to refine (need at least 2 with content).")
+            raise ValueError(
+                "Not enough eligible texts to refine (need at least 2 with content)."
+            )
 
         # Deterministic ordering (useful for caching/debugging)
         eligible.sort(key=lambda item: str(item.get("id") or ""))
@@ -112,7 +183,11 @@ class RefinementService:
             raise ValueError("Run not found.")
 
         ueberschrift = (run.get("ueberschrift", "") or "").strip() or "Kapitel"
-        thema = (run.get("thema", "") or "").strip() or (run.get("instruction", "") or "").strip() or "Thema"
+        thema = (
+            (run.get("thema", "") or "").strip()
+            or (run.get("instruction", "") or "").strip()
+            or "Thema"
+        )
 
         results = await firebase_service.get_run_results(user_id, kapitel_id, run_id)
         eligible: list[dict] = []
@@ -124,7 +199,9 @@ class RefinementService:
                 eligible.append({"id": res.get("id"), "content": content})
 
         if len(eligible) < 2:
-            raise ValueError("Not enough eligible texts to refine (need at least 2 with content).")
+            raise ValueError(
+                "Not enough eligible texts to refine (need at least 2 with content)."
+            )
 
         eligible.sort(key=lambda item: str(item.get("id") or ""))
         return ueberschrift, thema, eligible
@@ -195,7 +272,12 @@ class RefinementService:
         return path
 
     async def _get_result_version_path(
-        self, user_id: str, kapitel_id: str, run_id: str, quelle_id: str, head_version_id: str
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        quelle_id: str,
+        head_version_id: str,
     ) -> list[dict]:
         """Return per-result versions from root -> head (inclusive), following parent_version_id."""
         path: list[dict] = []
@@ -217,49 +299,16 @@ class RefinementService:
 
     def _build_refinement_prompt_body(
         self,
-        combine_instructions: str,
+        *,
+        base_user_message: str,
         history_path: list[dict],
-        parent_text: str,
         user_message: str,
     ) -> str:
-        history_blocks: list[str] = []
-        for v in history_path:
-            version_id = v.get("id")
-            if version_id == "root":
-                history_blocks.append(
-                    "ASSISTANT (Root / Ausgangstext):\n" + (v.get("assistantText") or "")
-                )
-                continue
-            history_blocks.append(
-                "USER:\n"
-                + (v.get("userMessage") or "")
-                + "\n\nASSISTANT:\n"
-                + (v.get("assistantText") or "")
-            )
-
-        history_text = "\n\n---\n\n".join(history_blocks) if history_blocks else "Keine bisherigen Iterationen."
-
-        return f"""{combine_instructions}
-
-### Text Refinement Flow (Kombinierter Text)
-Du wirst gleich die ursprünglichen Einzeltexte sehen, aus denen der kombinierte Text erstellt wurde.
-
-### Bisheriger Verlauf
-{history_text}
-
-### Aktueller Text (zu überarbeiten)
-{parent_text}
-
-### Neue Nutzeranweisung
-{user_message}
-
-### Aufgabe
-Schreibe den kombinierten Text neu und setze die neue Nutzeranweisung um.
-WICHTIG:
-- Nutze ausschließlich Informationen aus den gleich folgenden Einzeltexten.
-- Behalte Zitate/Quellen wie [1] bei, sofern die Information erhalten bleibt.
-- Gib ausschließlich den finalen Text aus (keine Erklärungen).
-"""
+        return self._build_refinement_conversation_prompt(
+            base_user_message=base_user_message,
+            history_path=history_path,
+            new_user_message=user_message,
+        )
 
     def _get_prompt_dump_path(self, prefix: str, version_id: str) -> str | None:
         if not config.DUMP_REFINEMENT_PROMPTS:
@@ -273,150 +322,42 @@ WICHTIG:
 
     def _build_lesefluss_refinement_prompt_body(
         self,
-        lesefluss_instructions: str,
-        gliederung: str,
-        base_target_text: str,
+        *,
+        base_user_message: str,
         history_path: list[dict],
-        parent_text: str,
         user_message: str,
-        kapitel_nummer: str,
     ) -> str:
-        history_blocks: list[str] = []
-        for v in history_path:
-            version_id = v.get("id")
-            if version_id == "root":
-                history_blocks.append(
-                    "ASSISTANT (Root / Ausgangstext):\n" + (v.get("assistantText") or "")
-                )
-                continue
-            history_blocks.append(
-                "USER:\n"
-                + (v.get("userMessage") or "")
-                + "\n\nASSISTANT:\n"
-                + (v.get("assistantText") or "")
-            )
-
-        history_text = "\n\n---\n\n".join(history_blocks) if history_blocks else "Keine bisherigen Iterationen."
-
-        return f"""{lesefluss_instructions}
-
-### Text Refinement Flow (Verbesserter Text / Lesefluss)
-
-### Gliederung (Kontext-Zusammenfassungen)
-{gliederung}
-
-### Ausgangstext (Gekuerzter Text)
-{base_target_text}
-
-### Bisheriger Verlauf
-{history_text}
-
-### Aktueller Text (Kapitel {kapitel_nummer}, zu ueberarbeiten)
-{parent_text}
-
-### Neue Nutzeranweisung
-{user_message}
-
-### Aufgabe
-Schreibe den verbesserten Text neu und setze die neue Nutzeranweisung um.
-WICHTIG:
-- Nutze ausschliesslich Informationen aus dem Ausgangstext und der Gliederung.
-- Behalte Zitate/Quellen wie [1] bei, sofern die Information erhalten bleibt.
-- Erfinde keine neuen Informationen oder Kapitel.
-- Gib ausschliesslich den finalen Text aus (keine Erklaerungen).
-"""
+        return self._build_refinement_conversation_prompt(
+            base_user_message=base_user_message,
+            history_path=history_path,
+            new_user_message=user_message,
+        )
 
     def _build_result_refinement_user_input(
         self,
+        *,
         base_user_input: str,
         history_path: list[dict],
-        parent_text: str,
         user_message: str,
     ) -> str:
-        history_blocks: list[str] = []
-        for v in history_path:
-            version_id = v.get("id")
-            if version_id == "root":
-                history_blocks.append(
-                    "ASSISTANT (Root / Ausgangstext):\n" + (v.get("assistantText") or "")
-                )
-                continue
-            history_blocks.append(
-                "USER:\n"
-                + (v.get("userMessage") or "")
-                + "\n\nASSISTANT:\n"
-                + (v.get("assistantText") or "")
-            )
-
-        history_text = "\n\n---\n\n".join(history_blocks) if history_blocks else "Keine bisherigen Iterationen."
-
-        return f"""{base_user_input}
-
-### Text Refinement Flow (Quellen-Text)
-
-### Bisheriger Verlauf
-{history_text}
-
-### Aktueller Text (zu ueberarbeiten)
-{parent_text}
-
-### Neue Nutzeranweisung
-{user_message}
-
-### Aufgabe
-Schreibe den Text neu und setze die neue Nutzeranweisung um.
-WICHTIG:
-- Nutze ausschliesslich Informationen aus der Quelle (Text + Bilder) und den obigen Anweisungen.
-- Wenn die Quelle keine relevanten Infos enthaelt, antworte mit dem NO_CONTENT Sentinel wie im System-Prompt beschrieben.
-- Gib ausschliesslich den finalen Text aus (keine Erklaerungen).
-"""
+        return self._build_refinement_conversation_prompt(
+            base_user_message=base_user_input,
+            history_path=history_path,
+            new_user_message=user_message,
+        )
 
     def _build_shortened_refinement_prompt_body(
         self,
-        shorten_instructions: str,
+        *,
+        base_user_message: str,
         history_path: list[dict],
-        parent_text: str,
         user_message: str,
     ) -> str:
-        history_blocks: list[str] = []
-        for v in history_path:
-            version_id = v.get("id")
-            if version_id == "root":
-                history_blocks.append(
-                    "ASSISTANT (Root / Ausgangstext):\n" + (v.get("assistantText") or "")
-                )
-                continue
-            history_blocks.append(
-                "USER:\n"
-                + (v.get("userMessage") or "")
-                + "\n\nASSISTANT:\n"
-                + (v.get("assistantText") or "")
-            )
-
-        history_text = "\n\n---\n\n".join(history_blocks) if history_blocks else "Keine bisherigen Iterationen."
-
-        return f"""{shorten_instructions}
-
-### Text Refinement Flow (Gekuerzter Text)
-Du wirst gleich die urspruenglichen Einzeltexte sehen, aus denen der kombinierte Text erstellt wurde.
-
-### Bisheriger Verlauf
-{history_text}
-
-### Aktueller Text (gekuerzt, zu ueberarbeiten)
-{parent_text}
-
-### Neue Nutzeranweisung
-{user_message}
-
-### Aufgabe
-Schreibe den gekuerzten Text neu und setze die neue Nutzeranweisung um.
-WICHTIG:
-- Nutze ausschliesslich Informationen aus den gleich folgenden Einzeltexten.
-- Bleibe kurz, vermeide Wiederholungen und behalte die wissenschaftliche Schreibweise bei.
-- Behalte Zitate/Quellen wie [1] bei, sofern die Information erhalten bleibt.
-- Gib ausschliesslich den finalen Text aus (keine Erklaerungen, kein JSON).
-"""
+        return self._build_refinement_conversation_prompt(
+            base_user_message=base_user_message,
+            history_path=history_path,
+            new_user_message=user_message,
+        )
 
     async def queue_combined_refinement(
         self,
@@ -451,7 +392,9 @@ WICHTIG:
         parent_depth = int(parent.get("depth") or 0)
         next_depth = parent_depth + 1
         if next_depth > int(init_state["max_depth"]):
-            raise ValueError(f"Max refinement depth reached ({init_state['max_depth']}).")
+            raise ValueError(
+                f"Max refinement depth reached ({init_state['max_depth']})."
+            )
 
         version_id = str(uuid4())
         pending = {
@@ -501,7 +444,9 @@ WICHTIG:
         Execute the combined text refinement and persist results into versions/{version_id}.
         """
         try:
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+            api_key, key_source = await user_key_service.resolve_api_key_for_user(
+                user_id
+            )
 
             # Ensure root exists
             await firebase_service.ensure_combined_refinement_root_version(
@@ -521,43 +466,51 @@ WICHTIG:
             if not parent_text:
                 raise ValueError("Parent text is empty.")
 
-            heading, topic, model, eligible = await self._get_heading_topic_and_base_texts(
-                user_id, kapitel_id, run_id
+            heading, topic, model, eligible = (
+                await self._get_heading_topic_and_base_texts(
+                    user_id, kapitel_id, run_id
+                )
             )
 
             combine_instructions = await prompt_service.get_rendered_instructions(
                 user_id, "combine", {"heading": heading, "topic": topic}
             )
-            combine_template_id = await firebase_service.get_active_prompt_id(user_id, "combine")
-            combine_template_id = (combine_template_id or "").strip() or "default"
-            combine_system_prompt = await prompt_service.get_system_prompt_for_template(
-                stage="combine",
-                template_id=combine_template_id,
-            )
+            source_texts = [e["content"] for e in eligible]
+
+            draft_parts: list[str] = []
+            for idx, text in enumerate(source_texts, start=1):
+                draft_parts.append(f"Text {idx}:\n{text}")
+            drafts_content = "\n\n".join(draft_parts)
+
+            base_user_message = combine_instructions or ""
+            if "{DRAFTS}" in base_user_message:
+                base_user_message = base_user_message.replace(
+                    "{DRAFTS}", drafts_content
+                )
+            else:
+                base_user_message = (
+                    f"{base_user_message}\n\n[ENTWÜRFE]\n{drafts_content}"
+                )
 
             history_path = await self._get_version_path(
                 user_id, kapitel_id, run_id, parent_version_id
             )
 
             prompt_body = self._build_refinement_prompt_body(
-                combine_instructions=combine_instructions,
+                base_user_message=base_user_message,
                 history_path=history_path,
-                parent_text=parent_text,
                 user_message=user_message,
             )
 
-            source_texts = [e["content"] for e in eligible]
             debug_dump_path = self._get_prompt_dump_path("refine_combined", version_id)
 
-            openai_result = await openai_service.combine_texts(
-                source_texts,
-                heading,
-                topic,
+            openai_result = await openai_service.generate_text(
+                prompt_body,
                 model,
                 api_key=api_key,
-                instructions=prompt_body,
                 debug_prompt_dump_path=debug_dump_path,
-                system_prompt=combine_system_prompt,
+                system_prompt=REFINEMENT_SYSTEM_PROMPT,
+                stage="refine_combined",
             )
 
             cost_service = get_cost_service(firebase_service)
@@ -566,9 +519,11 @@ WICHTIG:
                 openai_result.get("cached_input_tokens", 0),
                 openai_result.get("output_tokens", 0),
             )
-            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
-                model=openai_result.get("model") or model,
-                usage=usage_obj,
+            cost_breakdown, matched_model, pricing, _match_type = (
+                await cost_service.calculate_cost(
+                    model=openai_result.get("model") or model,
+                    usage=usage_obj,
+                )
             )
 
             kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
@@ -633,7 +588,9 @@ WICHTIG:
                 "model": openai_result["model"],
                 "usage": {
                     "inputTokens": int(openai_result["input_tokens"]),
-                    "cachedInputTokens": int(openai_result.get("cached_input_tokens", 0)),
+                    "cachedInputTokens": int(
+                        openai_result.get("cached_input_tokens", 0)
+                    ),
                     "outputTokens": int(openai_result["output_tokens"]),
                     "reasoningTokens": int(openai_result.get("reasoning_tokens", 0)),
                     "totalTokens": int(openai_result["tokens"]),
@@ -699,7 +656,9 @@ WICHTIG:
         parent_depth = int(parent.get("depth") or 0)
         next_depth = parent_depth + 1
         if next_depth > int(init_state["max_depth"]):
-            raise ValueError(f"Max refinement depth reached ({init_state['max_depth']}).")
+            raise ValueError(
+                f"Max refinement depth reached ({init_state['max_depth']})."
+            )
 
         root = await firebase_service.get_shortened_refinement_version(
             user_id, kapitel_id, run_id, "root"
@@ -752,7 +711,9 @@ WICHTIG:
     ) -> None:
         """Execute the shortened text refinement and persist results into versions/{version_id}."""
         try:
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+            api_key, key_source = await user_key_service.resolve_api_key_for_user(
+                user_id
+            )
 
             await firebase_service.ensure_shortened_refinement_root_version(
                 user_id=user_id,
@@ -771,26 +732,114 @@ WICHTIG:
             if not parent_text:
                 raise ValueError("Parent text is empty.")
 
-            ueberschrift, thema, eligible = await self._get_ueberschrift_thema_and_base_texts(
-                user_id, kapitel_id, run_id
+            run = await firebase_service.get_run(user_id, kapitel_id, run_id)
+            if not run:
+                raise ValueError("Run not found.")
+
+            ueberschrift = (run.get("ueberschrift") or "").strip() or "Kapitel"
+            thema = (
+                (run.get("thema") or "").strip()
+                or (run.get("instruction") or "").strip()
+                or "Thema"
             )
 
-            shorten_instructions = await prompt_service.get_rendered_instructions(
-                user_id, "shorten", {"ueberschrift": ueberschrift, "thema": thema}
+            combined = await firebase_service.get_combined_result(
+                user_id, kapitel_id, run_id
             )
+            if not combined or not (combined.get("content") or "").strip():
+                raise ValueError("No combined result found for this run.")
+            base_target_text = (combined.get("content") or "").strip()
+
+            shortened = await firebase_service.get_shortened_result(
+                user_id, kapitel_id, run_id
+            )
+            if not shortened:
+                raise ValueError("No shortened result found for this run.")
+
+            context_kapitel_ids = shortened.get("usedKapitelIds") or []
+            if not isinstance(context_kapitel_ids, list):
+                context_kapitel_ids = []
+
+            valid_context_ids: list[str] = [
+                str(cid) for cid in context_kapitel_ids if str(cid) != str(kapitel_id)
+            ]
+
+            summaries: dict[str, str] = {}
+            for ctx_id in valid_context_ids:
+                summary_doc = await firebase_service.get_summary_result(
+                    user_id, kapitel_id, run_id, ctx_id
+                )
+                content = (
+                    (summary_doc or {}).get("content")
+                    if isinstance(summary_doc, dict)
+                    else ""
+                )
+                content = (content or "").strip()
+                if content:
+                    summaries[str(ctx_id)] = content
+
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            all_kapitels: list[dict] = []
+            if (projekt_id or "").strip():
+                all_kapitels = await firebase_service.list_kapitel_metadata_for_project(
+                    user_id, projekt_id
+                )
+
+            if not all_kapitels:
+                fallback_ids = list(dict.fromkeys([kapitel_id] + valid_context_ids))
+                for kid in fallback_ids:
+                    metadata = await firebase_service.get_kapitel_metadata(user_id, kid)
+                    if metadata:
+                        all_kapitels.append(metadata)
+
+            all_kapitels.sort(
+                key=lambda k: shorten_service._nummer_sort_key(k.get("nummer", ""))
+            )
+            gliederung = await shorten_service.build_gliederung(
+                user_id, kapitel_id, all_kapitels, summaries
+            )
+
+            active_template_id = await firebase_service.get_active_prompt_id(
+                user_id, "shorten"
+            )
+            template_instructions = await prompt_service.get_instructions_for_template(
+                user_id, "shorten", active_template_id
+            )
+
+            rendered = prompt_service.render(
+                template_instructions,
+                {
+                    "ueberschrift": ueberschrift,
+                    "thema": thema,
+                    "KONTEXT_ANDERE_KAPITEL": gliederung,
+                    "TEXT_ZUM_KUERZEN": base_target_text,
+                },
+            )
+            uses_inline_inputs = (
+                "{KONTEXT_ANDERE_KAPITEL}" in template_instructions
+            ) and ("{TEXT_ZUM_KUERZEN}" in template_instructions)
+
+            base_user_message = rendered
+            if not uses_inline_inputs:
+                base_user_message = f"""{rendered}
+
+### Gliederung:
+{gliederung}
+
+### Text zum Kürzen:
+{base_target_text}"""
 
             history_path = await self._get_shortened_version_path(
                 user_id, kapitel_id, run_id, parent_version_id
             )
 
             prompt_body = self._build_shortened_refinement_prompt_body(
-                shorten_instructions=shorten_instructions,
+                base_user_message=base_user_message,
                 history_path=history_path,
-                parent_text=parent_text,
                 user_message=user_message,
             )
-
-            source_texts = [e["content"] for e in eligible]
 
             pending = await firebase_service.get_shortened_refinement_version(
                 user_id, kapitel_id, run_id, version_id
@@ -799,14 +848,13 @@ WICHTIG:
 
             debug_dump_path = self._get_prompt_dump_path("refine_shortened", version_id)
 
-            openai_result = await openai_service.combine_texts(
-                source_texts,
-                ueberschrift,
-                thema,
+            openai_result = await openai_service.generate_text(
+                prompt_body,
                 model,
                 api_key=api_key,
-                instructions=prompt_body,
                 debug_prompt_dump_path=debug_dump_path,
+                system_prompt=REFINEMENT_SYSTEM_PROMPT,
+                stage="refine_shortened",
             )
 
             cost_service = get_cost_service(firebase_service)
@@ -815,13 +863,12 @@ WICHTIG:
                 openai_result.get("cached_input_tokens", 0),
                 openai_result.get("output_tokens", 0),
             )
-            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
-                model=openai_result.get("model") or model,
-                usage=usage_obj,
+            cost_breakdown, matched_model, pricing, _match_type = (
+                await cost_service.calculate_cost(
+                    model=openai_result.get("model") or model,
+                    usage=usage_obj,
+                )
             )
-
-            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
-            projekt_id = (kapitel or {}).get("projektId")
 
             projekt_snapshot = None
             if projekt_id:
@@ -843,7 +890,6 @@ WICHTIG:
                 else None
             )
 
-            run = await firebase_service.get_run(user_id, kapitel_id, run_id)
             run_snapshot = {
                 "id": run_id,
                 "index": (run or {}).get("index"),
@@ -856,7 +902,8 @@ WICHTIG:
                 operation_details={
                     "versionId": version_id,
                     "parentVersionId": parent_version_id,
-                    "baseTextCount": len(source_texts),
+                    "usedKapitelIds": valid_context_ids,
+                    "summaryCount": len(summaries),
                     "hasUserMessage": bool((user_message or "").strip()),
                 },
                 model=openai_result.get("model") or model,
@@ -882,7 +929,9 @@ WICHTIG:
                 "model": openai_result["model"],
                 "usage": {
                     "inputTokens": int(openai_result["input_tokens"]),
-                    "cachedInputTokens": int(openai_result.get("cached_input_tokens", 0)),
+                    "cachedInputTokens": int(
+                        openai_result.get("cached_input_tokens", 0)
+                    ),
                     "outputTokens": int(openai_result["output_tokens"]),
                     "reasoningTokens": int(openai_result.get("reasoning_tokens", 0)),
                     "totalTokens": int(openai_result["tokens"]),
@@ -948,7 +997,9 @@ WICHTIG:
         parent_depth = int(parent.get("depth") or 0)
         next_depth = parent_depth + 1
         if next_depth > int(init_state["max_depth"]):
-            raise ValueError(f"Max refinement depth reached ({init_state['max_depth']}).")
+            raise ValueError(
+                f"Max refinement depth reached ({init_state['max_depth']})."
+            )
 
         root = await firebase_service.get_lesefluss_refinement_version(
             user_id, kapitel_id, run_id, "root"
@@ -1001,7 +1052,9 @@ WICHTIG:
     ) -> None:
         """Execute the lesefluss text refinement and persist results into versions/{version_id}."""
         try:
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+            api_key, key_source = await user_key_service.resolve_api_key_for_user(
+                user_id
+            )
 
             await firebase_service.ensure_lesefluss_refinement_root_version(
                 user_id=user_id,
@@ -1020,7 +1073,9 @@ WICHTIG:
             if not parent_text:
                 raise ValueError("Parent text is empty.")
 
-            lesefluss_doc = await firebase_service.get_lesefluss_result(user_id, kapitel_id, run_id)
+            lesefluss_doc = await firebase_service.get_lesefluss_result(
+                user_id, kapitel_id, run_id
+            )
             if not lesefluss_doc:
                 raise ValueError("No lesefluss result found for this run.")
 
@@ -1029,10 +1084,17 @@ WICHTIG:
                 raise ValueError("Lesefluss aufgabenstellung is missing.")
 
             context_kapitel_ids = lesefluss_doc.get("usedKapitelIds") or []
-            if not isinstance(context_kapitel_ids, list) or len(context_kapitel_ids) == 0:
-                raise ValueError("Lesefluss context chapters are missing (usedKapitelIds).")
+            if (
+                not isinstance(context_kapitel_ids, list)
+                or len(context_kapitel_ids) == 0
+            ):
+                raise ValueError(
+                    "Lesefluss context chapters are missing (usedKapitelIds)."
+                )
 
-            shortened = await firebase_service.get_shortened_result(user_id, kapitel_id, run_id)
+            shortened = await firebase_service.get_shortened_result(
+                user_id, kapitel_id, run_id
+            )
             if not shortened:
                 raise ValueError("No shortened result found for this run.")
             base_target_text = (shortened.get("content") or "").strip()
@@ -1058,26 +1120,34 @@ WICHTIG:
                 )
                 for ctx_id in context_kapitel_ids
             ]
-            summaries_list = await asyncio.gather(*summary_tasks, return_exceptions=True)
+            summaries_list = await asyncio.gather(
+                *summary_tasks, return_exceptions=True
+            )
 
             summaries: dict[str, str] = {}
             valid_context_ids: list[str] = []
             for ctx_id, summary_result in zip(context_kapitel_ids, summaries_list):
                 if isinstance(summary_result, Exception):
-                    logger.error(f"Failed to get summary for Kapitel {ctx_id}: {summary_result}")
+                    logger.error(
+                        f"Failed to get summary for Kapitel {ctx_id}: {summary_result}"
+                    )
                 else:
                     summaries[str(ctx_id)] = str(summary_result)
                     valid_context_ids.append(str(ctx_id))
 
             if not summaries:
-                raise ValueError("No valid summaries could be generated for context Kapitels.")
+                raise ValueError(
+                    "No valid summaries could be generated for context Kapitels."
+                )
 
             kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
             projekt_id = (kapitel or {}).get("projektId")
 
             all_kapitels: list[dict] = []
             if (projekt_id or "").strip():
-                all_kapitels = await firebase_service.list_kapitel_metadata_for_project(user_id, projekt_id)
+                all_kapitels = await firebase_service.list_kapitel_metadata_for_project(
+                    user_id, projekt_id
+                )
 
             if not all_kapitels:
                 fallback_ids = list(dict.fromkeys([kapitel_id] + valid_context_ids))
@@ -1086,7 +1156,9 @@ WICHTIG:
                     if metadata:
                         all_kapitels.append(metadata)
 
-            all_kapitels.sort(key=lambda k: shorten_service._nummer_sort_key(k.get("nummer", "")))
+            all_kapitels.sort(
+                key=lambda k: shorten_service._nummer_sort_key(k.get("nummer", ""))
+            )
 
             kapitel_nummer = (kapitel or {}).get("nummer") or "?"
             next_kapitel_nummer = ""
@@ -1095,75 +1167,96 @@ WICHTIG:
                 if str(k.get("id")) == str(kapitel_id):
                     kapitel_nummer = str(k.get("nummer") or kapitel_nummer or "?")
                     if idx + 1 < len(all_kapitels):
-                        next_kapitel_nummer = str(all_kapitels[idx + 1].get("nummer") or "")
+                        next_kapitel_nummer = str(
+                            all_kapitels[idx + 1].get("nummer") or ""
+                        )
                     if idx + 2 < len(all_kapitels):
-                        uebernaechstes_kapitel_nummer = str(all_kapitels[idx + 2].get("nummer") or "")
+                        uebernaechstes_kapitel_nummer = str(
+                            all_kapitels[idx + 2].get("nummer") or ""
+                        )
                     break
 
-            gliederung = await shorten_service.build_gliederung(user_id, kapitel_id, all_kapitels, summaries)
+            gliederung = await shorten_service.build_gliederung(
+                user_id, kapitel_id, all_kapitels, summaries
+            )
 
-            active_template_id = await firebase_service.get_active_prompt_id(user_id, "lesefluss")
+            active_template_id = await firebase_service.get_active_prompt_id(
+                user_id, "lesefluss"
+            )
             template_instructions = await prompt_service.get_instructions_for_template(
                 user_id, "lesefluss", active_template_id
             )
-            template_system_prompt = await prompt_service.get_system_prompt_for_template(
-                stage="lesefluss",
-                template_id=active_template_id,
-            )
 
-            payload = {
+            base_payload = {
                 "aufgabenstellung": aufgabenstellung,
                 "gliederung": gliederung,
                 "kapitel_nummer": str(kapitel_nummer),
-                "target_text": parent_text,
+                "target_text": base_target_text,
                 "AUFGABENSTELLUNG": aufgabenstellung,
                 "GLIEDERUNG_SUMMARY": gliederung,
                 "AKTUELLES_KAPITEL_NUMMER": str(kapitel_nummer),
                 "NAECHSTES_KAPITEL_NUMMER": next_kapitel_nummer,
                 "UEBERNAECHSTES_KAPITEL_NUMMER": uebernaechstes_kapitel_nummer,
-                "KAPITELTEXT": parent_text,
+                "KAPITELTEXT": base_target_text,
             }
 
-            lesefluss_instructions = prompt_service.render(template_instructions, payload)
+            rendered_base = prompt_service.render(template_instructions, base_payload)
+            uses_inline_inputs = (
+                "{GLIEDERUNG_SUMMARY}" in template_instructions
+                and "{KAPITELTEXT}" in template_instructions
+            ) or (
+                "{gliederung}" in template_instructions
+                and "{target_text}" in template_instructions
+            )
+
+            base_user_message = rendered_base
+            if not uses_inline_inputs:
+                base_user_message = f"""{rendered_base}
+
+### Gliederung:
+{gliederung}
+
+### Kapitel {kapitel_nummer} (TEXT AN DEM DU ARBEITEN SOLLST)
+{base_target_text}"""
 
             history_path = await self._get_lesefluss_version_path(
                 user_id, kapitel_id, run_id, parent_version_id
             )
 
             prompt_body = self._build_lesefluss_refinement_prompt_body(
-                lesefluss_instructions=lesefluss_instructions,
-                gliederung=gliederung,
-                base_target_text=base_target_text,
+                base_user_message=base_user_message,
                 history_path=history_path,
-                parent_text=parent_text,
                 user_message=user_message,
-                kapitel_nummer=str(kapitel_nummer),
             )
 
             debug_dump_path = self._get_prompt_dump_path("refine_lesefluss", version_id)
 
-            output_text, usage = await openai_service.improve_reading_flow(
+            openai_result = await openai_service.generate_text(
                 prompt_body,
                 model,
                 api_key=api_key,
-                system_prompt=template_system_prompt,
                 debug_prompt_dump_path=debug_dump_path,
+                system_prompt=REFINEMENT_SYSTEM_PROMPT,
+                stage="refine_lesefluss",
             )
 
-            content = (output_text or "").strip()
+            content = (openai_result.get("content") or "").strip()
 
-            input_tokens = int(usage.get("prompt_tokens", 0) or 0)
-            cached_input_tokens = int(
-                (usage.get("prompt_tokens_details", {}) or {}).get("cached_tokens", 0) or 0
-            )
-            output_tokens = int(usage.get("completion_tokens", 0) or 0)
+            input_tokens = int(openai_result.get("input_tokens", 0) or 0)
+            cached_input_tokens = int(openai_result.get("cached_input_tokens", 0) or 0)
+            output_tokens = int(openai_result.get("output_tokens", 0) or 0)
             total_tokens = input_tokens + output_tokens
 
             cost_service = get_cost_service(firebase_service)
-            usage_obj = TokenUsage.from_any(input_tokens, cached_input_tokens, output_tokens)
-            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
-                model=model,
-                usage=usage_obj,
+            usage_obj = TokenUsage.from_any(
+                input_tokens, cached_input_tokens, output_tokens
+            )
+            model_used = (openai_result.get("model") or model).strip() or model
+            cost_breakdown, matched_model, pricing, _match_type = (
+                await cost_service.calculate_cost(
+                    model=model_used,
+                    usage=usage_obj,
+                )
             )
 
             projekt_snapshot = None
@@ -1203,7 +1296,7 @@ WICHTIG:
                     "summaryCount": len(summaries),
                     "hasUserMessage": bool((user_message or "").strip()),
                 },
-                model=model,
+                model=model_used,
                 usage=usage_obj,
                 cost_breakdown=cost_breakdown,
                 matched_model_key=matched_model,
@@ -1223,7 +1316,7 @@ WICHTIG:
                 "assistantText": content,
                 "hasContent": True,
                 "status": "success",
-                "model": model,
+                "model": model_used,
                 "usage": {
                     "inputTokens": input_tokens,
                     "cachedInputTokens": cached_input_tokens,
@@ -1294,7 +1387,9 @@ WICHTIG:
         parent_depth = int(parent.get("depth") or 0)
         next_depth = parent_depth + 1
         if next_depth > int(init_state["max_depth"]):
-            raise ValueError(f"Max refinement depth reached ({init_state['max_depth']}).")
+            raise ValueError(
+                f"Max refinement depth reached ({init_state['max_depth']})."
+            )
 
         root = await firebase_service.get_result_refinement_version(
             user_id, kapitel_id, run_id, quelle_id, "root"
@@ -1348,7 +1443,9 @@ WICHTIG:
     ) -> None:
         """Execute the per-result refinement and persist results into versions/{version_id}."""
         try:
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+            api_key, key_source = await user_key_service.resolve_api_key_for_user(
+                user_id
+            )
 
             await firebase_service.ensure_result_refinement_root_version(
                 user_id=user_id,
@@ -1366,7 +1463,9 @@ WICHTIG:
 
             parent_text = parent.get("assistantText") or ""
 
-            result_doc = await firebase_service.get_run_result(user_id, kapitel_id, run_id, quelle_id)
+            result_doc = await firebase_service.get_run_result(
+                user_id, kapitel_id, run_id, quelle_id
+            )
             if not result_doc:
                 raise ValueError("Result not found.")
 
@@ -1375,22 +1474,38 @@ WICHTIG:
 
             base_user_input = (result_doc.get("userInput") or "").strip()
             # Prompts are no longer stored on result docs (hidden from user). Reconstruct from run settings.
-            prompt_template_id = ((run or {}).get("promptTemplateId") or "").strip() or "default"
+            prompt_template_id = (
+                (run or {}).get("promptTemplateId") or ""
+            ).strip() or "default"
 
             if not base_user_input:
 
                 payload: dict = {}
-                raw_payload = (run or {}).get("promptPayload") or (run or {}).get("prompt_payload") or {}
+                raw_payload = (
+                    (run or {}).get("promptPayload")
+                    or (run or {}).get("prompt_payload")
+                    or {}
+                )
                 if isinstance(raw_payload, dict):
                     payload = {k: v for k, v in raw_payload.items()}
 
                 # Backward-compat fallback for older runs.
-                if run and not payload.get("heading") and (run.get("ueberschrift") or "").strip():
+                if (
+                    run
+                    and not payload.get("heading")
+                    and (run.get("ueberschrift") or "").strip()
+                ):
                     payload["heading"] = (run.get("ueberschrift") or "").strip()
-                if run and not payload.get("topic") and (run.get("thema") or "").strip():
+                if (
+                    run
+                    and not payload.get("topic")
+                    and (run.get("thema") or "").strip()
+                ):
                     payload["topic"] = (run.get("thema") or "").strip()
 
-                payload.setdefault("grundlegende_infos", (grundlegende_informationen or "").strip())
+                payload.setdefault(
+                    "grundlegende_infos", (grundlegende_informationen or "").strip()
+                )
 
                 heading = str(payload.get("heading") or "").strip()
                 topic = str(payload.get("topic") or "").strip()
@@ -1398,18 +1513,20 @@ WICHTIG:
                 if not heading or not topic:
                     raise ValueError("Run promptPayload is missing heading/topic.")
 
-                base_user_input = await prompt_service.get_rendered_instructions_for_template(
-                    user_id=user_id,
-                    stage="process_quelle",
-                    template_id=prompt_template_id,
-                    payload={
-                        "heading": heading,
-                        "topic": topic,
-                        "grundlegende_infos": grund_infos,
-                        "KAPITEL_TITEL": heading,
-                        "KAPITEL_BESCHREIBUNG": topic,
-                        "ANWEISUNGEN": topic,
-                    },
+                base_user_input = (
+                    await prompt_service.get_rendered_instructions_for_template(
+                        user_id=user_id,
+                        stage="process_quelle",
+                        template_id=prompt_template_id,
+                        payload={
+                            "heading": heading,
+                            "topic": topic,
+                            "grundlegende_infos": grund_infos,
+                            "KAPITEL_TITEL": heading,
+                            "KAPITEL_BESCHREIBUNG": topic,
+                            "ANWEISUNGEN": topic,
+                        },
+                    )
                 )
 
             history_path = await self._get_result_version_path(
@@ -1419,7 +1536,6 @@ WICHTIG:
             refined_user_input = self._build_result_refinement_user_input(
                 base_user_input=base_user_input,
                 history_path=history_path,
-                parent_text=parent_text,
                 user_message=user_message,
             )
 
@@ -1432,20 +1548,20 @@ WICHTIG:
             if not quelle:
                 raise ValueError("Quelle not found.")
 
-            quelle_content_doc = await firebase_service.get_quelle_content(user_id, quelle_id)
-            if not quelle_content_doc or not (quelle_content_doc.get("text") or "").strip():
+            quelle_content_doc = await firebase_service.get_quelle_content(
+                user_id, quelle_id
+            )
+            if (
+                not quelle_content_doc
+                or not (quelle_content_doc.get("text") or "").strip()
+            ):
                 raise ValueError("Quelle content is empty.")
 
             quelle_images = None
-            if 'images' in quelle and isinstance(quelle['images'], list):
-                quelle_images = [img['url'] for img in quelle['images'] if 'url' in img]
+            if "images" in quelle and isinstance(quelle["images"], list):
+                quelle_images = [img["url"] for img in quelle["images"] if "url" in img]
 
             debug_dump_path = self._get_prompt_dump_path("refine_result", version_id)
-
-            system_prompt = await prompt_service.get_system_prompt_for_template(
-                stage="process_quelle",
-                template_id=prompt_template_id,
-            )
 
             openai_result = await openai_service.process_quelle(
                 quelle_content_doc.get("text") or "",
@@ -1455,7 +1571,7 @@ WICHTIG:
                 api_key=api_key,
                 quelle_images=quelle_images,
                 debug_prompt_dump_path=debug_dump_path,
-                system_prompt=system_prompt,
+                system_prompt=REFINEMENT_SYSTEM_PROMPT,
             )
 
             cost_service = get_cost_service(firebase_service)
@@ -1464,9 +1580,11 @@ WICHTIG:
                 openai_result.get("cached_input_tokens", 0),
                 openai_result.get("output_tokens", 0),
             )
-            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
-                model=openai_result.get("model") or model,
-                usage=usage_obj,
+            cost_breakdown, matched_model, pricing, _match_type = (
+                await cost_service.calculate_cost(
+                    model=openai_result.get("model") or model,
+                    usage=usage_obj,
+                )
             )
 
             kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
@@ -1537,7 +1655,9 @@ WICHTIG:
                 "model": openai_result["model"],
                 "usage": {
                     "inputTokens": int(openai_result["input_tokens"]),
-                    "cachedInputTokens": int(openai_result.get("cached_input_tokens", 0)),
+                    "cachedInputTokens": int(
+                        openai_result.get("cached_input_tokens", 0)
+                    ),
                     "outputTokens": int(openai_result["output_tokens"]),
                     "reasoningTokens": int(openai_result.get("reasoning_tokens", 0)),
                     "totalTokens": int(openai_result["tokens"]),
