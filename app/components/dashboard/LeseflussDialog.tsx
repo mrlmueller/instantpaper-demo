@@ -183,7 +183,7 @@ export function LeseflussDialog({
             <SelectItem value="default">
               <span className="text-muted-foreground">System-Standard</span>
             </SelectItem>
-            {stage === "summary" && (
+            {(stage === "summary" || stage === "lesefluss") && (
               <SelectItem value="default_v2">
                 <span className="text-muted-foreground">System-Standard (v2)</span>
               </SelectItem>

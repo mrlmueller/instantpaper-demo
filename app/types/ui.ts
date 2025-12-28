@@ -88,7 +88,6 @@ export interface Run {
   shortenedOriginalLength?: number; // Original word count before shortening
   shortenedLength?: number; // Word count after shortening
   leseflussText?: string | null;
-  leseflussExplanation?: string;
   leseflussAufgabenstellung?: string;
   leseflussOriginalLength?: number;
   leseflussLength?: number;

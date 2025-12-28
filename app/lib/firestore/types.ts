@@ -157,7 +157,6 @@ export type LeseflussArtifactDoc = {
   aufgabenstellung: string;
   leseflussLength: number;
   originalLength?: number;
-  explanation?: string;
   model: string;
   usage: Usage;
   costUsd: number;

@@ -170,6 +170,76 @@ Das ist der Text an dem wir Arbeiten:
 - Keine Überschrift im Output?
 """
 
+LESEFLUSS_DEFAULT_V2_SYSTEM_PROMPT = """<Prompt entfernt>"""
+
+LESEFLUSS_DEFAULT_V2_INSTRUCTIONS = """# ZIEL
+Überarbeite den angegebenen Kapiteltext so, dass er sich nahtlos in die Gesamtarbeit einfügt: besserer Lesefluss, konsistente Erzähl- und Argumentationslinie, weniger Wiederholungen über Kapitel hinweg, klare Querverweise auf bereits behandelte oder kommende Inhalte und eine organische Überleitung zum nächsten Kapitel. Keine Meta-Kommentare, keine zusätzlichen Erklärungen, nur der finale Kapiteltext.
+
+# INPUTS (klar getrennt)
+<aufgabenstellung>
+{AUFGABENSTELLUNG}
+</aufgabenstellung>
+
+<gliederung_und_kapitelzusammenfassungen>
+{GLIEDERUNG_SUMMARY}
+</gliederung_und_kapitelzusammenfassungen>
+
+<kapiteltext_zu_ueberarbeiten>
+{KAPITELTEXT}
+</kapiteltext_zu_ueberarbeiten>
+
+# KERNREGELN
+1) Nur bereitgestellte Informationen nutzen
+- Nutze ausschließlich Informationen aus dem Kapiteltext und aus der Gliederung/Zusammenfassung.
+- Du darfst Inhalte aus anderen Kapiteln in knapper Form in den aktuellen Kapiteltext integrieren, WENN diese Inhalte in der Gliederung/Zusammenfassung stehen.
+- Keine Ergänzungen aus eigenem Wissen. Keine neuen Konzepte, Definitionen, Beispiele, Zahlen oder Behauptungen, die nicht in den Inputs stehen.
+- Keine neuen Kapitel erfinden.
+
+2) Kohärenz und Querverweise (Kapitel als „roter Faden“)
+- Verweise auf andere Kapitel nur im Format: „wie in Kapitel X.Y beschrieben“ oder „wie in Kapitel X erläutert“.
+- Entscheide kontextabhängig:
+  a) Nur Verweis ohne Wiederholung, wenn die Info dort ausreichend behandelt ist und hier nicht kritisch gebraucht wird.
+  b) Kurze Wiederholung + Verweis, wenn die Info für die lokale Argumentation wichtig ist oder das referenzierte Kapitel deutlich weiter entfernt liegt.
+- Wenn ein Inhalt in späteren Kapiteln vertieft wird, bereite ihn im aktuellen Kapitel so vor, dass die Vertiefung natürlich wirkt, ohne anzukündigen „dies leitet über“.
+
+3) Redundanz-Management über Kapitel hinweg
+- Identifiziere Wiederholungen zwischen dem Kapiteltext und der Gliederung/Zusammenfassung anderer Kapitel.
+- Kürze oder streiche Wiederholungen, wenn sie nicht nötig sind.
+- Wenn die Formulierung im aktuellen Kapitel besonders präzise ist, behalte sie in verkürzter Form und setze ggf. einen Verweis.
+- Wiederholungen dürfen bleiben, wenn sie bewusst kurz zur Klarstellung beitragen und den Lesefluss verbessern.
+
+4) Harmonisierung ohne Aggressivität
+- Wenn Darstellung oder Schwerpunktsetzung zwischen Kapiteln leicht abweicht, harmonisiere vorsichtig:
+  - Formuliere so um, dass Begriffe und Logik konsistent wirken.
+  - Keine starken inhaltlichen „Uminterpretationen“.
+  - Wenn eine Spannung bestehen bleibt, deute sie dezent an und verweise auf das Kapitel, in dem es differenziert wird.
+
+5) Überleitung zum nächsten Kapitel (integriert, nicht angehängt)
+- Baue in den letzten Absätzen des Kapiteltexts einen spürbaren, aber subtilen Übergang zum nächsten Kapitel ein.
+- Keine separaten Überleitungsabsätze, keine Formulierungen wie „dies leitet über“.
+- Der Übergang soll motivieren weiterzulesen und klar machen, warum das nächste Kapitel anschließt, ohne explizit zu erklären, dass ein Kapitelwechsel folgt.
+- Nutze dafür nur Inhalte/Anknüpfungspunkte, die aus den Inputs hervorgehen, insbesondere aus dem „Nächstes Kapitel“ in der Gliederung.
+
+# QUELLEN UND ZITATE (APA, ohne Semikolon außer zwischen Quellen)
+- Behalte alle Quellen aus dem Kapiteltext bei und platziere sie an passenden Stellen, wenn Sätze umgestellt oder zusammengeführt werden.
+- Du darfst Zitate APA-konformer straffen, ohne Informationsverlust:
+  - z. B. „S. 43 und S. 46“ → „S. 43, 46“
+  - „S. 256, 226ff.“ darfst du konsistent machen, z. B. „S. 226 ff., 256“, sofern keine Bedeutung verändert wird.
+- Entferne eine Quelle nur, wenn die zugehörige Aussage vollständig gestrichen wird.
+- Keine neuen Quellen hinzufügen.
+- Keine Semikolons im Fließtext. Ausnahme: ausschließlich zur Trennung mehrerer Quellen innerhalb einer Klammer (Autor, Jahr; Autor, Jahr).
+
+# STIL UND FORM
+- Wissenschaftlicher Stil, gut lesbar, kohärent.
+- Keine Überschriften ausgeben (die Kapitelüberschrift wird bei euch separat gehandhabt).
+- Kein „Wir/Ich haben herausgefunden“.
+- Keine Listen oder Bulletpoints, Fließtext mit Absätzen ist erlaubt.
+- Stil soll grundsätzlich erhalten bleiben, aber Übergänge, Reihenfolge, Satzverknüpfung und Konsistenz dürfen verbessert werden.
+
+# AUSGABE
+Gib ausschließlich den final überarbeiteten Kapiteltext aus.
+"""
+
 DEFAULT_INSTRUCTIONS = {
     "process_quelle": (
         "### Aufgabe:\n"
@@ -213,7 +283,7 @@ DEFAULT_INSTRUCTIONS = {
         "Ich werde dir außerdem eine zusammengefasste Version der ganzen Arbeit geben. Zu jedem Unterkapitel gibt es einen am Anfang kleinen Text der beschreibt was in diesem Unterkapitel für Informationen behandelt werden. Allerdings sind die Texte zusammengefasst, da die ganze Arbeit zu lang wäre. Berücksichtige diese Information wenn die auf ein Kapitel verweist. Dies ist damit du einen besseren Kontext für die ganze Arbeit hast. Du kannst auch auf Informationen die hier bearbeitet wurden verweisen.\n"
         'Ich will von dir das du einen fließenden Text aus dem ganzen machst, dass in dem Text an dem du gerade Arbeitest auf bereits behandelte Informationen verwiesen werden kann, wenn das Sinn macht, oder das darauf verwiesen wird, das etwas noch tiefer bearbeitet werden wird in einem kommenden Kapitel. Wenn du auf ein anderes Kapitel verweist, dann schreibe nicht "wie in 2.2 beschrieben." sondern "wie in Kapitel 2.2 beschrieben." also schreibe dazu das du auf das Kapitel xy verweist.\n'
         'Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das nächste Kapitel einzuweben. Schreibe nicht einfach am ende einen kurzen Absatz in dem du überleitest. Der Lesefluss soll nicht unterbrochen werden. Schreibe auch nicht "dies leitet über". Gebe dir Mühe bei der Überleitung da dies den Text Charakter verleiht. Habe Spaß mit der Findung. Nutze nur die Informationen die in den Texten gegeben sind, ergänze nichts dazu, das nicht in den Texten steht.. Übernehme außerdem die angegebenen Quellen (mit Seitenzahlen, wenn Seitenzahlen in der Quelle vorhanden sind) in deinen Text. Gehe sicher, dass keine Informationen weggelassen werden. Erfinde aber auch keine zusätzlichen Kapitel oder Informationen hinzu. Was du aber machen kannst ist zusätzliche Informationen so zu nutzen das neue Schlüsse gezogen werden, gehe aber sicher diese dann immer so zu formulieren das klar wird das es sich hier um dein Gedankengut und nicht um Wissenschaftlich bewiesenes geht. Formuliere den Text ohne das du ; verwendest, außer zwischen zwei Quellen.\n'
-        "Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze, zu was du verändert hast."
+        ""
     ),
     "summary": (
         "### Aufgabe:\n"
@@ -260,6 +330,8 @@ class PromptService:
                 return SUMMARY_DEFAULT_V2_INSTRUCTIONS
             if stage == "shorten" and tid == "default_v2":
                 return SHORTEN_DEFAULT_V2_INSTRUCTIONS
+            if stage == "lesefluss" and tid == "default_v2":
+                return LESEFLUSS_DEFAULT_V2_INSTRUCTIONS
             return DEFAULT_INSTRUCTIONS.get(stage, "")
 
         tpl = await firebase_service.get_prompt_template(user_id, tid)
@@ -320,6 +392,11 @@ class PromptService:
         if stage == "shorten":
             if tid == "default_v2":
                 return SHORTEN_DEFAULT_V2_SYSTEM_PROMPT
+            return None
+
+        if stage == "lesefluss":
+            if tid == "default_v2":
+                return LESEFLUSS_DEFAULT_V2_SYSTEM_PROMPT
             return None
 
         return None

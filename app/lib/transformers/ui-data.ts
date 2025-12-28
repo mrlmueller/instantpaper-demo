@@ -186,7 +186,6 @@ export function transformRunToUI(
     shortenedOriginalLength: shortened?.originalLength,
     shortenedLength: shortened?.shortenedLength,
     leseflussText: lesefluss?.content || null,
-    leseflussExplanation: lesefluss?.explanation,
     leseflussAufgabenstellung: lesefluss?.aufgabenstellung,
     leseflussOriginalLength: lesefluss?.originalLength,
     leseflussLength: lesefluss?.leseflussLength,

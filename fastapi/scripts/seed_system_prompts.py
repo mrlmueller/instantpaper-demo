@@ -14,6 +14,8 @@ from services.prompt_service import (
     COMBINE_DEFAULT_SYSTEM_PROMPT,
     COMBINE_DEFAULT_V2_INSTRUCTIONS,
     COMBINE_DEFAULT_V2_SYSTEM_PROMPT,
+    LESEFLUSS_DEFAULT_V2_INSTRUCTIONS,
+    LESEFLUSS_DEFAULT_V2_SYSTEM_PROMPT,
     PROCESS_QUELLE_DEFAULT_SYSTEM_PROMPT,
     PROCESS_QUELLE_DEFAULT_V2_INSTRUCTIONS,
     PROCESS_QUELLE_DEFAULT_V2_SYSTEM_PROMPT,
@@ -98,6 +100,8 @@ def main() -> int:
         default_v1_system_prompt = SUMMARY_DEFAULT_SYSTEM_PROMPT
     elif stage == "shorten":
         default_v1_system_prompt = ""
+    elif stage == "lesefluss":
+        default_v1_system_prompt = ""
     else:
         default_v1_system_prompt = ""
 
@@ -113,6 +117,9 @@ def main() -> int:
     elif stage == "shorten":
         default_v2_instructions = SHORTEN_DEFAULT_V2_INSTRUCTIONS
         default_v2_system_prompt = SHORTEN_DEFAULT_V2_SYSTEM_PROMPT
+    elif stage == "lesefluss":
+        default_v2_instructions = LESEFLUSS_DEFAULT_V2_INSTRUCTIONS
+        default_v2_system_prompt = LESEFLUSS_DEFAULT_V2_SYSTEM_PROMPT
     else:
         default_v2_instructions = default_v1_instructions
         default_v2_system_prompt = default_v1_system_prompt

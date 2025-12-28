@@ -511,6 +511,7 @@ class OpenAIService:
         prompt: str,
         model: str,
         api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None,
         debug_prompt_dump_path: Optional[str] = None,
     ) -> Tuple[str, dict]:
 
@@ -521,11 +522,13 @@ class OpenAIService:
             client = self._get_client(api_key)
             logger.info(f"Improving reading flow with model {model}")
 
+            system_message = (system_prompt or "").strip() or LESEFLUSS_SYSTEM_MESSAGE
+
             dump_prompt_markdown(
                 stage="lesefluss",
                 model=model,
                 sections=[
-                    ("System Prompt", LESEFLUSS_SYSTEM_MESSAGE),
+                    ("System Prompt", system_message),
                     ("Instructions", prompt),
                 ],
                 dump_path=debug_prompt_dump_path,
@@ -537,7 +540,7 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": [{"type": "input_text", "text": LESEFLUSS_SYSTEM_MESSAGE}],
+                        "content": [{"type": "input_text", "text": system_message}],
                     },
                     {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
                 ],

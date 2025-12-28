@@ -125,7 +125,6 @@ export type LeseflussResult = {
   content: string;
   status?: 'running' | 'success' | 'error';
   aufgabenstellung: string;
-  explanation?: string;
   originalLength?: number;
   leseflussLength: number;
   usedKapitelIds: string[];
@@ -618,16 +617,15 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10, ctx?: Act
               updatedAt: a.updatedAt ? toIso(a.updatedAt) : undefined,
             };
            } else if (artifactId === 'lesefluss') {
-             lesefluss = {
-               id: 'lesefluss',
-               content: String(a.content ?? ''),
-               status: normalizeArtifactDocStatus(a.status),
-               aufgabenstellung: String(a.aufgabenstellung ?? ''),
-               explanation: typeof a.explanation === 'string' ? a.explanation : undefined,
-               originalLength: typeof a.originalLength === 'number' ? a.originalLength : undefined,
-               leseflussLength: Number(a.leseflussLength ?? 0),
-              usedKapitelIds: Array.isArray(a.usedKapitelIds) ? a.usedKapitelIds : [],
-              model: String(a.model ?? ''),
+              lesefluss = {
+                id: 'lesefluss',
+                content: String(a.content ?? ''),
+                status: normalizeArtifactDocStatus(a.status),
+                aufgabenstellung: String(a.aufgabenstellung ?? ''),
+                originalLength: typeof a.originalLength === 'number' ? a.originalLength : undefined,
+                leseflussLength: Number(a.leseflussLength ?? 0),
+               usedKapitelIds: Array.isArray(a.usedKapitelIds) ? a.usedKapitelIds : [],
+               model: String(a.model ?? ''),
               usage: normalizeUsage(a.usage),
               costUsd: Number(a.costUsd ?? 0),
               refinement: normalizeRefinement(a.refinement),

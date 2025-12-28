@@ -271,31 +271,6 @@ WICHTIG:
         filename = f"{prefix}_{timestamp}_{version_id}.md"
         return str(base_dir / filename)
 
-    def _split_lesefluss_output(self, output_text: str) -> tuple[str, str]:
-        """
-        Split lesefluss output into (content, explanation).
-        The system prompt asks for 2 sentences at the end; we heuristically take the last paragraph.
-        """
-        lines = (output_text or "").split("\n")
-        last_empty_idx = -1
-        for i in range(len(lines) - 1, -1, -1):
-            if lines[i].strip() == "":
-                last_empty_idx = i
-                break
-
-        if last_empty_idx > 0:
-            content_lines = lines[:last_empty_idx]
-            explanation_lines = lines[last_empty_idx + 1 :]
-        else:
-            content_lines = lines
-            explanation_lines = []
-
-        content = "\n".join(content_lines).strip()
-        explanation = " ".join([l.strip() for l in explanation_lines if l.strip()]).strip()
-        if not explanation:
-            explanation = "Keine Erklärung gefunden."
-        return content, explanation
-
     def _build_lesefluss_refinement_prompt_body(
         self,
         lesefluss_instructions: str,
@@ -348,7 +323,7 @@ WICHTIG:
 - Nutze ausschliesslich Informationen aus dem Ausgangstext und der Gliederung.
 - Behalte Zitate/Quellen wie [1] bei, sofern die Information erhalten bleibt.
 - Erfinde keine neuen Informationen oder Kapitel.
-- Gib ausschliesslich den finalen Text aus (keine Erklaerungen im Text; die 2 Saetze am Ende sind ok).
+- Gib ausschliesslich den finalen Text aus (keine Erklaerungen).
 """
 
     def _build_result_refinement_user_input(
@@ -986,7 +961,6 @@ WICHTIG:
             "depth": next_depth,
             "userMessage": user_message,
             "assistantText": "",
-            "assistantExplanation": "",
             "hasContent": True,
             "status": "running",
             "model": stage_model,
@@ -1098,30 +1072,59 @@ WICHTIG:
             if not summaries:
                 raise ValueError("No valid summaries could be generated for context Kapitels.")
 
-            context_kapitels: list[dict] = []
-            for ctx_id in valid_context_ids:
-                metadata = await firebase_service.get_kapitel_metadata(user_id, ctx_id)
-                if metadata:
-                    context_kapitels.append(metadata)
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
 
-            context_kapitels.sort(key=lambda k: k.get('nummer', ''))
-            gliederung = await shorten_service.build_gliederung_with_descriptions(
-                user_id, kapitel_id, context_kapitels, summaries
+            all_kapitels: list[dict] = []
+            if (projekt_id or "").strip():
+                all_kapitels = await firebase_service.list_kapitel_metadata_for_project(user_id, projekt_id)
+
+            if not all_kapitels:
+                fallback_ids = list(dict.fromkeys([kapitel_id] + valid_context_ids))
+                for kid in fallback_ids:
+                    metadata = await firebase_service.get_kapitel_metadata(user_id, kid)
+                    if metadata:
+                        all_kapitels.append(metadata)
+
+            all_kapitels.sort(key=lambda k: shorten_service._nummer_sort_key(k.get("nummer", "")))
+
+            kapitel_nummer = (kapitel or {}).get("nummer") or "?"
+            next_kapitel_nummer = ""
+            uebernaechstes_kapitel_nummer = ""
+            for idx, k in enumerate(all_kapitels):
+                if str(k.get("id")) == str(kapitel_id):
+                    kapitel_nummer = str(k.get("nummer") or kapitel_nummer or "?")
+                    if idx + 1 < len(all_kapitels):
+                        next_kapitel_nummer = str(all_kapitels[idx + 1].get("nummer") or "")
+                    if idx + 2 < len(all_kapitels):
+                        uebernaechstes_kapitel_nummer = str(all_kapitels[idx + 2].get("nummer") or "")
+                    break
+
+            gliederung = await shorten_service.build_gliederung(user_id, kapitel_id, all_kapitels, summaries)
+
+            active_template_id = await firebase_service.get_active_prompt_id(user_id, "lesefluss")
+            template_instructions = await prompt_service.get_instructions_for_template(
+                user_id, "lesefluss", active_template_id
+            )
+            template_system_prompt = await prompt_service.get_system_prompt_for_template(
+                stage="lesefluss",
+                template_id=active_template_id,
             )
 
-            target_meta = await firebase_service.get_kapitel_metadata(user_id, kapitel_id)
-            kapitel_nummer = (target_meta or {}).get("nummer") or "?"
+            payload = {
+                "aufgabenstellung": aufgabenstellung,
+                "gliederung": gliederung,
+                "kapitel_nummer": str(kapitel_nummer),
+                "target_text": parent_text,
+                "AUFGABENSTELLUNG": aufgabenstellung,
+                "GLIEDERUNG_SUMMARY": gliederung,
+                "AKTUELLES_KAPITEL_NUMMER": str(kapitel_nummer),
+                "NAECHSTES_KAPITEL_NUMMER": next_kapitel_nummer,
+                "UEBERNAECHSTES_KAPITEL_NUMMER": uebernaechstes_kapitel_nummer,
+                "KAPITELTEXT": parent_text,
+            }
 
-            lesefluss_instructions = await prompt_service.get_rendered_instructions(
-                user_id,
-                "lesefluss",
-                {
-                    "aufgabenstellung": aufgabenstellung,
-                    "gliederung": gliederung,
-                    "kapitel_nummer": str(kapitel_nummer),
-                    "target_text": base_target_text,
-                },
-            )
+            lesefluss_instructions = prompt_service.render(template_instructions, payload)
 
             history_path = await self._get_lesefluss_version_path(
                 user_id, kapitel_id, run_id, parent_version_id
@@ -1143,10 +1146,11 @@ WICHTIG:
                 prompt_body,
                 model,
                 api_key=api_key,
+                system_prompt=template_system_prompt,
                 debug_prompt_dump_path=debug_dump_path,
             )
 
-            content, explanation = self._split_lesefluss_output(output_text)
+            content = (output_text or "").strip()
 
             input_tokens = int(usage.get("prompt_tokens", 0) or 0)
             cached_input_tokens = int(
@@ -1161,9 +1165,6 @@ WICHTIG:
                 model=model,
                 usage=usage_obj,
             )
-
-            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
-            projekt_id = (kapitel or {}).get("projektId")
 
             projekt_snapshot = None
             if projekt_id:
@@ -1220,7 +1221,6 @@ WICHTIG:
 
             version_update = {
                 "assistantText": content,
-                "assistantExplanation": explanation,
                 "hasContent": True,
                 "status": "success",
                 "model": model,

@@ -17,7 +17,6 @@ import {
   History,
   Layers,
   Check,
-  CheckCircle,
   ChevronDown,
   ChevronUp,
   Loader2,
@@ -576,23 +575,6 @@ export function KapitelWorkspace({
 
         {hasVerbessert && leseflussStatus === "success" && (
           <>
-            {/* Explanation Card */}
-            {selectedRun.leseflussExplanation && (
-              <Card className="mb-4 bg-green-50/50 dark:bg-green-950/20 border-green-200/70 dark:border-green-800/50">
-                <div className="p-6">
-                  <div className="flex items-center gap-2 mb-3">
-                    <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-500" />
-                    <h3 className="text-base font-medium text-foreground">
-                      Was wurde verändert
-                    </h3>
-                  </div>
-                  <p className="text-sm text-foreground/80 leading-relaxed">
-                    {selectedRun.leseflussExplanation}
-                  </p>
-                </div>
-              </Card>
-            )}
-
             {/* Verbesserter Text Card */}
             <Card className="mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20">
               <div className="p-8">

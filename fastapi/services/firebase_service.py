@@ -814,7 +814,6 @@ class FirebaseService:
                     {
                         "content": "",
                         "aufgabenstellung": aufgabenstellung or (existing_data.get("aufgabenstellung") or ""),
-                        "explanation": "",
                         "originalLength": 0,
                         "leseflussLength": 0,
                         "usedKapitelIds": used_kapitel_ids or [],
@@ -1232,7 +1231,6 @@ class FirebaseService:
                 "depth": 0,
                 "userMessage": None,
                 "assistantText": lesefluss_content,
-                "assistantExplanation": lesefluss.get("explanation") or "",
                 "hasContent": True,
                 "status": "success",
                 "model": lesefluss.get("model") or "",
@@ -1834,7 +1832,6 @@ class FirebaseService:
                 "errorAt": None,
                 "content": lesefluss_data.get("content") or "",
                 "aufgabenstellung": lesefluss_data.get("aufgabenstellung") or "",
-                "explanation": lesefluss_data.get("explanation") or "",
                 "originalLength": int(lesefluss_data.get("originalLength") or 0),
                 "leseflussLength": int(lesefluss_data.get("leseflussLength") or 0),
                 "usedKapitelIds": lesefluss_data.get("usedKapitelIds") or [],
