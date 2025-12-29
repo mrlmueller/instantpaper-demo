@@ -38,7 +38,8 @@ class Config:
     ]
 
     # Development
-    DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    IS_CLOUD_RUN: bool = bool(os.getenv("K_SERVICE", "").strip())
 
     # Admin approval endpoint (Basic Auth)
     # Used to set Firebase Auth custom claims (e.g. {"approved": true}) for allowlisting users.
@@ -48,12 +49,20 @@ class Config:
     # Text refinement flow
     TEXT_REFINEMENT_MAX_DEPTH: int = int(os.getenv("TEXT_REFINEMENT_MAX_DEPTH", "4"))
     DUMP_REFINEMENT_PROMPTS: bool = (
-        os.getenv("DUMP_REFINEMENT_PROMPTS", "true" if DEBUG else "false").lower() == "true"
+        os.getenv(
+            "DUMP_REFINEMENT_PROMPTS",
+            "true" if (DEBUG and not IS_CLOUD_RUN) else "false",
+        ).lower()
+        == "true"
     )
 
     # Prompt dumps (all OpenAI requests)
     DUMP_OPENAI_PROMPTS: bool = (
-        os.getenv("DUMP_OPENAI_PROMPTS", "true" if DEBUG else "false").lower() == "true"
+        os.getenv(
+            "DUMP_OPENAI_PROMPTS",
+            "true" if (DEBUG and not IS_CLOUD_RUN) else "false",
+        ).lower()
+        == "true"
     )
     OPENAI_PROMPT_DUMP_DIR: str = os.getenv("OPENAI_PROMPT_DUMP_DIR", "").strip()
 

@@ -52,7 +52,7 @@ def main() -> int:
 
     md.append("## Runtime prompt dumps\n")
     md.append(
-        "When `DUMP_OPENAI_PROMPTS=true`, the backend writes a markdown file for every OpenAI request into `fastapi/.prompt_dumps/`.\n"
+        "In local development (`DEBUG=true`), when `DUMP_OPENAI_PROMPTS=true`, the backend writes a markdown file for every OpenAI request into `fastapi/.prompt_dumps/` (disabled on Cloud Run).\n"
     )
     md.append(
         "Each dump file separates `System Prompt` vs `Instructions` (user input) so you can iteratively improve prompts one-by-one.\n"
@@ -92,4 +92,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
