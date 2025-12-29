@@ -53,7 +53,6 @@ import {
   createKapitelRun,
   createShortenRun,
   createLeseflussRun,
-  getKapitelRuns,
   getUserKapitels,
   type KapitelRun as FirebaseKapitelRun,
   type Kapitel as FirebaseKapitel,
@@ -81,6 +80,7 @@ import Cookies from 'js-cookie';
 import { fetchOpenAIKeyStatus, type OpenAIKeyStatus } from '@/app/lib/api/openaiKeyClient';
 import { getQuellenPanelState, setQuellenPanelState } from '@/app/lib/storage/preferences';
 import { getActiveKapitelCookieName } from '@/app/lib/ui/kapitelSelection';
+import { getActiveProjektCookieName } from '@/app/lib/ui/projektSelection';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
 const RUN_HISTORY_LIMIT = 10;
@@ -417,13 +417,9 @@ export function Dashboard({
     setSelectedRunId(null);
     selectedRunIdRef.current = null;
     setFbRuns([]);
+    keepInitialRunsRef.current = false;
 
-    if (nextKapitelId) {
-      const runs = await getKapitelRuns(nextKapitelId, RUN_HISTORY_LIMIT);
-      setFbRuns(runs);
-      keepInitialRunsRef.current = runs.length > 0;
-      setIsKapitelLoading(runs.length === 0);
-    } else {
+    if (!nextKapitelId) {
       setIsKapitelLoading(false);
     }
   }, []);
@@ -448,6 +444,21 @@ export function Dashboard({
     }
 
     Cookies.set(cookieName, kapitelId, {
+      expires: 365,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+    });
+  }, []);
+
+  const persistActiveProjektCookie = useCallback((projektId: string | null) => {
+    const cookieName = getActiveProjektCookieName();
+    if (!projektId) {
+      Cookies.remove(cookieName, { path: '/' });
+      return;
+    }
+
+    Cookies.set(cookieName, projektId, {
       expires: 365,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
@@ -488,6 +499,10 @@ export function Dashboard({
   useEffect(() => {
     persistActiveKapitelCookie(loadedProjektId, activeKapitelId || null);
   }, [loadedProjektId, activeKapitelId, persistActiveKapitelCookie]);
+
+  useEffect(() => {
+    persistActiveProjektCookie(projekt.id);
+  }, [projekt.id, persistActiveProjektCookie]);
 
   const handleKapitelSelect = useCallback(
     (kapitelId: string) => {
@@ -1097,6 +1112,7 @@ export function Dashboard({
     async (projektId: string, fallbackProjekt?: Projekt) => {
       if (projektId === projekt.id) return;
       try {
+        persistActiveProjektCookie(projektId);
         setIsLoading(true);
         await loadProjektData(projektId);
         const next = projekte.find((p) => p.id === projektId) || fallbackProjekt;
@@ -1113,7 +1129,7 @@ export function Dashboard({
         setIsLoading(false);
       }
     },
-    [loadProjektData, projekt.id, projekte]
+    [loadProjektData, persistActiveProjektCookie, projekt.id, projekte]
   );
 
   const handleCreateProjekt = useCallback(
@@ -1134,6 +1150,7 @@ export function Dashboard({
         };
         setProjekte((prev) => [newProjekt, ...prev]);
         // Switch immediately using the newly created project
+        persistActiveProjektCookie(result.id);
         setProjekt(newProjekt);
         await loadProjektData(result.id);
         toast.success('Projekt erstellt', { description: `"${name}" wurde erstellt.`, id: toastId });
@@ -1144,7 +1161,7 @@ export function Dashboard({
         setIsCreatingProjekt(false);
       }
     },
-    [loadProjektData, isCreatingProjekt]
+    [loadProjektData, isCreatingProjekt, persistActiveProjektCookie]
   );
 
   const handleDeleteProjekt = useCallback(
@@ -1158,6 +1175,7 @@ export function Dashboard({
         const remaining = projekte.filter((p) => p.id !== projektId);
         setProjekte(remaining);
         if (projekt.id === projektId && remaining.length > 0) {
+          persistActiveProjektCookie(remaining[0].id);
           setProjekt(remaining[0]);
           await loadProjektData(remaining[0].id);
         }
@@ -1167,7 +1185,7 @@ export function Dashboard({
         toast.error('Projekt konnte nicht gelöscht werden', { description: error.message });
       }
     },
-    [loadProjektData, projekt.id, projekte]
+    [loadProjektData, persistActiveProjektCookie, projekt.id, projekte]
   );
 
   const handleAddQuelle = useCallback(
