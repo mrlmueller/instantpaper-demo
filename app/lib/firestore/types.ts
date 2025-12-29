@@ -76,6 +76,7 @@ export type KapitelDoc = ArchiveFields & {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   latestRun?: LatestRun;
+  activeRunId?: string;
 };
 
 export type ArtifactsStatus = {
@@ -88,6 +89,7 @@ export type RunDoc = ArchiveFields & {
   projektId: string;
   index: number;
   instruction: string;
+  name?: string;
   model: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -141,12 +143,6 @@ export type ShortenedArtifactDoc = {
   originalLength: number;
   shortenedLength: number;
   compressionRatio?: number;
-  explanation?: {
-    lengthDecision: string;
-    omittedTopics: string[];
-    preservedFocus: string[];
-    compressionNotes: string;
-  };
   model: string;
   usage: Usage;
   costUsd: number;
@@ -163,7 +159,6 @@ export type LeseflussArtifactDoc = {
   aufgabenstellung: string;
   leseflussLength: number;
   originalLength?: number;
-  explanation?: string;
   model: string;
   usage: Usage;
   costUsd: number;

@@ -899,7 +899,7 @@ export function CombinedRefinementDialog({
                 <div className="flex-1 min-w-0 pr-2">
                   <DialogTitle className="text-xl leading-tight text-balance">{viewingFullText.title}</DialogTitle>
                   <div className="text-sm text-muted-foreground mt-1">
-                    {viewingFullText.text.split(/\\s+/).filter(Boolean).length.toLocaleString("de-DE")} Wörter
+                    {viewingFullText.text.split(/\s+/).filter(Boolean).length.toLocaleString("de-DE")} Wörter
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

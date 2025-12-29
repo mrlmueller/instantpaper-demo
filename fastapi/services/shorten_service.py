@@ -37,6 +37,9 @@ class ShortenService:
         """
         logger.info(f"Getting latest text for Kapitel {kapitel_id}")
 
+        kapitel_doc = await firebase_service.get_kapitel(user_id, kapitel_id)
+        active_run_id = str((kapitel_doc or {}).get("activeRunId") or "").strip()
+
         # Get all runs for this Kapitel
         runs = await firebase_service.get_kapitel_runs(user_id, kapitel_id)
 
@@ -49,6 +52,11 @@ class ShortenService:
             key=lambda r: r.get("createdAt") or datetime(1970, 1, 1),
             reverse=True,
         )
+
+        if active_run_id:
+            active_run = next((r for r in sorted_runs if str(r.get("id")) == active_run_id), None)
+            if active_run:
+                sorted_runs = [active_run]
 
         # Try to find text with priority: lesefluss > shortened > combined
         for run in sorted_runs:
@@ -160,8 +168,19 @@ class ShortenService:
             instructions = await prompt_service.get_rendered_instructions(
                 user_id, "summary", {"text": source_text}
             )
+            summary_template_id = await firebase_service.get_active_prompt_id(user_id, "summary")
+            summary_template_id = (summary_template_id or "").strip() or "default"
+            summary_system_prompt = await prompt_service.get_system_prompt_for_template(
+                stage="summary",
+                template_id=summary_template_id,
+            )
             summary_content, usage = await self.summarize_text(
-                source_text, model, source_kapitel_id, api_key=api_key, instructions=instructions
+                source_text,
+                model,
+                source_kapitel_id,
+                api_key=api_key,
+                instructions=instructions,
+                system_prompt=summary_system_prompt,
             )
             input_tokens = int(usage.get("prompt_tokens", 0))
             cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
@@ -279,7 +298,8 @@ class ShortenService:
         model: str,
         source_kapitel_id: str = None,
         api_key: Optional[str] = None,
-        instructions: Optional[str] = None
+        instructions: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> Tuple[str, dict]:
         """
         Summarize text to ~30% of original using OpenAI.
@@ -295,7 +315,12 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
         if instructions:
             prompt = instructions
 
-        return await openai_service.summarize_kapitel(prompt, model, api_key=api_key)
+        return await openai_service.summarize_kapitel(
+            prompt,
+            model,
+            api_key=api_key,
+            system_prompt=system_prompt,
+        )
 
     async def build_gliederung(
         self,
@@ -322,57 +347,67 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
             title = kapitel.get('title', 'Untitled')
 
             # Add the Kapitel header
-            lines.append(f"{nummer}. {title}")
-
-            # Add the summary if available
-            if kapitel_id in summaries:
-                lines.append(summaries[kapitel_id])
+            nummer_str = str(nummer or "?").strip() or "?"
+            if nummer_str.isdigit():
+                lines.append(f"{nummer_str}. {title}")
             else:
-                lines.append("[Keine Zusammenfassung verfügbar]")
+                lines.append(f"{nummer_str} {title}")
+
+            if kapitel_id == target_kapitel_id:
+                lines.append("Das ist das Kapitel an dem wir gerade Arbeiten")
+            elif kapitel_id in summaries:
+                lines.append((summaries.get(kapitel_id) or "").strip())
 
             lines.append("")  # Empty line between Kapitels
 
         return "\n".join(lines)
 
+    def _nummer_sort_key(self, nummer: str) -> tuple:
+        parts = [p.strip() for p in str(nummer or "").split(".") if p.strip()]
+        if not parts:
+            return ((2, ""),)
+
+        key = []
+        for part in parts:
+            digits = ""
+            rest = ""
+            for ch in part:
+                if ch.isdigit() and not rest:
+                    digits += ch
+                else:
+                    rest += ch
+
+            if digits:
+                key.append((0, int(digits)))
+                if rest:
+                    key.append((1, rest))
+            else:
+                key.append((1, part))
+
+        return tuple(key)
+
     async def shorten_and_deduplicate(
         self,
-        ueberschrift: str,
-        thema: str,
-        gliederung: str,
-        target_text: str,
+        prompt: str,
         model: str,
-        target_kapitel_id: str = None,
-        context_kapitel_ids: list = None,
+        *,
         api_key: Optional[str] = None,
-        instructions: Optional[str] = None,
-    ) -> Tuple[str, dict, dict]:
+        system_prompt: Optional[str] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+    ) -> Tuple[str, dict]:
         """
         Shorten and deduplicate text using OpenAI.
 
         Returns:
-            tuple: (shortened_content, usage_dict, explanation_dict)
+            tuple: (shortened_content, usage_dict)
         """
-        prompt = f"""### Aufgabe:
-Ich schreibe gerade eine Wissenschaftliche Arbeit. Der folgende Text ist bereits gut, so wie er ist, allerding ist er noch zu lang. Aber damit du optimal den Text kürzen kannst, also das du den Fokus auf die richtigen Fakten und Themen legen kannst werde ich dir die Überschrift „{ueberschrift}" und auch das Thema des Textes geben „{thema}". Zusätzlich werde ich dir Folgend einen Teil meiner Gliederung geben zusammen mit einer zusammengefassten Version der Texte von den anderen Kapitel und Unterpunkten der Kapitel. All dies gebe ich dir damit du perfekt entscheiden kannst auf was der Fokus gelegt werden sollte in der Arbeit. Konkret ist deine Aufgabe den Text auf die hälft oder noch etwas weniger zu kürzen, aber dabei alle wichtigen Informationen bei zu behalten. Behalte auch sämtliche Quellen an den richtigen Stellen bei außer, wenn du eine Information zu einer Quelle komplett eliminierst. Du sollst nur die gegebenen Informationen nutzen, und keine Informationen aus deinem eigenen wissen mit einbeziezen! Schreibe keine Zusammenfassung am Ende, da dies nur ein Teil eines längeren Textes ist. Habe Spaß mit der Findung deines Textes. Schreibe ohne "Wir/Ich haben herausgefunden". Schreibe aber dennoch das es Spaß macht den Text zu lesen, also dass es kein zu trockener Text wird, aber behalte dennoch die Wissenschaftliche Schreibweise bei. Wenn du Argumente beschreibst, gehe sicher immer eine Quelle zu integrieren. Formuliere den Text ohne das du ; verwendest, außer zwischen zwei Quellen.
-
-WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe eine kurze Erklärung deiner Entscheidungen im explanation-Feld und den gekürzten Text im shortened_text-Feld.
-
-### Gliederung:
-{gliederung}
-
-### Text zum Kürzen:
-{target_text}"""
-
-        if instructions:
-            prompt = f"""{instructions}
-
-### Gliederung:
-{gliederung}
-
-### Text zum Kürzen:
-{target_text}"""
-
-        return await openai_service.shorten_and_deduplicate(prompt, model, api_key=api_key)
+        return await openai_service.shorten_and_deduplicate(
+            prompt,
+            model,
+            api_key=api_key,
+            system_prompt=system_prompt,
+            debug_prompt_dump_path=debug_prompt_dump_path,
+        )
 
     async def process_shorten_request(
         self,
@@ -431,67 +466,94 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
             ueberschrift = run_data.get('ueberschrift', 'Untitled')
             thema = run_data.get('thema', '')
 
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
             # Step 1: Generate/fetch summaries for context Kapitels (in parallel)
-            logger.info(f"Generating summaries for {len(context_kapitel_ids)} context Kapitels")
+            context_ids = [str(cid) for cid in (context_kapitel_ids or []) if str(cid) != str(kapitel_id)]
+            logger.info(f"Generating summaries for {len(context_ids)} context Kapitels")
 
-            summary_tasks = [
-                self.get_or_create_summary(
-                    user_id,
-                    kapitel_id,
-                    run_id,
-                    ctx_id,
-                    model,
-                    api_key,
-                    key_source,
-                    user_action_id,
-                )
-                for ctx_id in context_kapitel_ids
-            ]
+            summaries: dict[str, str] = {}
+            valid_context_ids: list[str] = []
 
-            summaries_list = await asyncio.gather(*summary_tasks, return_exceptions=True)
+            if context_ids:
+                summary_tasks = [
+                    self.get_or_create_summary(
+                        user_id,
+                        kapitel_id,
+                        run_id,
+                        ctx_id,
+                        model,
+                        api_key,
+                        key_source,
+                        user_action_id,
+                    )
+                    for ctx_id in context_ids
+                ]
+                summaries_list = await asyncio.gather(*summary_tasks, return_exceptions=True)
 
-            # Build summaries dict, filtering out errors
-            summaries = {}
-            valid_context_ids = []
-            for ctx_id, summary_result in zip(context_kapitel_ids, summaries_list):
-                if isinstance(summary_result, Exception):
-                    logger.error(f"Failed to get summary for Kapitel {ctx_id}: {summary_result}")
-                else:
-                    summaries[ctx_id] = summary_result
-                    valid_context_ids.append(ctx_id)
+                for ctx_id, summary_result in zip(context_ids, summaries_list):
+                    if isinstance(summary_result, Exception):
+                        logger.error(f"Failed to get summary for Kapitel {ctx_id}: {summary_result}")
+                    else:
+                        summaries[str(ctx_id)] = str(summary_result or "")
+                        valid_context_ids.append(str(ctx_id))
 
-            if not summaries:
-                raise ValueError("No valid summaries could be generated for context Kapitels")
-
-            # Step 2: Get metadata for context Kapitels to build Gliederung
+            # Step 2: Build full Gliederung for the entire project (summaries only where available)
             logger.info("Building Gliederung")
 
-            context_kapitels = []
-            for ctx_id in valid_context_ids:
-                metadata = await firebase_service.get_kapitel_metadata(user_id, ctx_id)
-                if metadata:
-                    context_kapitels.append(metadata)
+            all_kapitels: list[dict] = []
+            if (projekt_id or "").strip():
+                all_kapitels = await firebase_service.list_kapitel_metadata_for_project(user_id, projekt_id)
 
-            # Sort by nummer for proper ordering
-            context_kapitels.sort(key=lambda k: k.get('nummer', ''))
+            if not all_kapitels:
+                fallback_ids = list(dict.fromkeys([kapitel_id] + valid_context_ids))
+                for kid in fallback_ids:
+                    metadata = await firebase_service.get_kapitel_metadata(user_id, kid)
+                    if metadata:
+                        all_kapitels.append(metadata)
 
-            gliederung = await self.build_gliederung(
-                user_id, kapitel_id, context_kapitels, summaries
-            )
+            all_kapitels.sort(key=lambda k: self._nummer_sort_key(k.get("nummer", "")))
+            gliederung = await self.build_gliederung(user_id, kapitel_id, all_kapitels, summaries)
 
             # Step 3: Shorten the target text
             logger.info("Shortening target Kapitel text")
 
-            shorten_instructions = await prompt_service.get_rendered_instructions(
-                user_id, "shorten", {"ueberschrift": ueberschrift, "thema": thema}
+            active_template_id = await firebase_service.get_active_prompt_id(user_id, "shorten")
+            template_instructions = await prompt_service.get_instructions_for_template(
+                user_id, "shorten", active_template_id
+            )
+            template_system_prompt = await prompt_service.get_system_prompt_for_template(
+                stage="shorten",
+                template_id=active_template_id,
             )
 
-            shortened_content, usage, explanation = await self.shorten_and_deduplicate(
-                ueberschrift, thema, gliederung, target_text, model,
-                target_kapitel_id=kapitel_id,
-                context_kapitel_ids=valid_context_ids,
+            payload = {
+                "ueberschrift": ueberschrift,
+                "thema": thema,
+                "KONTEXT_ANDERE_KAPITEL": gliederung,
+                "TEXT_ZUM_KUERZEN": target_text,
+            }
+            rendered = prompt_service.render(template_instructions, payload)
+            uses_inline_inputs = ("{KONTEXT_ANDERE_KAPITEL}" in template_instructions) and (
+                "{TEXT_ZUM_KUERZEN}" in template_instructions
+            )
+
+            prompt_body = rendered
+            if not uses_inline_inputs:
+                prompt_body = f"""{rendered}
+
+### Gliederung:
+{gliederung}
+
+### Text zum Kürzen:
+{target_text}"""
+
+            shortened_content, usage = await self.shorten_and_deduplicate(
+                prompt_body,
+                model,
                 api_key=api_key,
-                instructions=shorten_instructions
+                system_prompt=template_system_prompt,
             )
 
             input_tokens = int(usage.get("prompt_tokens", 0))
@@ -505,9 +567,6 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
                 model=model,
                 usage=usage_obj,
             )
-
-            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
-            projekt_id = (kapitel or {}).get("projektId")
 
             projekt_snapshot = None
             if projekt_id:
@@ -567,12 +626,6 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
 
             shortened_data = {
                 "content": shortened_content,
-                "explanation": {
-                    "lengthDecision": explanation.get("length_decision", ""),
-                    "omittedTopics": explanation.get("omitted_topics", []),
-                    "preservedFocus": explanation.get("preserved_focus", []),
-                    "compressionNotes": explanation.get("compression_notes", ""),
-                },
                 "originalLength": original_length,
                 "shortenedLength": shortened_length,
                 "compressionRatio": shortened_length / original_length if original_length > 0 else 0,
@@ -683,13 +736,15 @@ WICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe e
         target_text: str,
         model: str,
         api_key: Optional[str] = None,
-        instructions: Optional[str] = None
-    ) -> Tuple[str, str, dict]:
+        instructions: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+    ) -> Tuple[str, dict]:
         """
         Improve reading flow using OpenAI.
 
         Returns:
-            tuple: (lesefluss_content, explanation, usage_dict)
+            tuple: (lesefluss_content, usage_dict)
         """
         prompt = f"""### Aufgabe
 Ich schreibe gerade meine Wissenschaftlichen Arbeit.
@@ -703,7 +758,7 @@ AUFGABENSTELLUNG ENDE
 Ich werde dir außerdem eine zusammengefasste Version der ganzen Arbeit geben. Zu jedem Unterkapitel gibt es einen am Anfang kleinen Text der beschreibt was in diesem Unterkapitel für Informationen behandelt werden. Allerdings sind die Texte zusammengefasst, da die ganze Arbeit zu lang wäre. Berücksichtige diese Information wenn die auf ein Kapitel verweist. Dies ist damit du einen besseren Kontext für die ganze Arbeit hast. Du kannst auch auf Informationen die hier bearbeitet wurden verweisen.
 Ich will von dir das du einen fließenden Text aus dem ganzen machst, dass in dem Text an dem du gerade Arbeitest auf bereits behandelte Informationen verwiesen werden kann, wenn das Sinn macht, oder das darauf verwiesen wird, das etwas noch tiefer bearbeitet werden wird in einem kommenden Kapitel. Wenn du auf ein anderes Kapitel verweißt, dann schreibe nicht „wie in 2.2 beschrieben…" sondern „wie in Kapitel 2.2 beschrieben …" also schreibe dazu das du auf das Kapitel xy verweist.
 Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das nächste Kapitel einzuweben. Schreibe nicht einfach am ende einen kurzen Absatz in dem du überleitest. Der Lesefluss soll nicht unterbrochen werden. Schreibe auch nicht "dies leitet über". Gebe dir mühe bei der Überleitung da dies den Text Charakter verleiht. Habe Spaß mit der Findung. Nutze nur die Informationen die in den Texten gegeben sind, ergänze nichts dazu, das nicht in den Texten steht.. Übernehme außerdem die angegebenen Quellen (mit Seitenzahlen, wenn Seitenzahlen in der Quelle vorhanden sind) in deinen Text. Gehe sicher, dass keine Informationen weggelassen werden. Erfinde aber auch keine zusätzlichen Kapitel oder Informationen hinzu. Was du aber machen kannst ist zusätzliche Informationen so zu nutzen das neue Schlüsse gezogen werden, gehe aber sicher diese dann immer so zu formulieren das klar wird das es sich hier um dein Gedankengut und nicht um Wissenschaftlich bewiesenes geht. Formuliere den Text ohne das du ; verwendest, außer zwischen zwei Quellen.
-Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze, zu was du verändert hast.
+
 
 {gliederung}
 
@@ -719,37 +774,15 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
 ### Kapitel {kapitel_nummer} (TEXT AN DEM DU ARBEITEN SOLLST)
 {target_text}"""
 
-        result = await openai_service.improve_reading_flow(prompt, model, api_key)
+        result_text, usage = await openai_service.improve_reading_flow(
+            prompt,
+            model,
+            api_key=api_key,
+            system_prompt=system_prompt,
+            debug_prompt_dump_path=debug_prompt_dump_path,
+        )
 
-        # Parse the result to extract explanation
-        # The model is instructed to write explanation at the end
-        # We need to extract it
-        lines = result[0].split('\n')
-
-        # Last non-empty lines should be the explanation (2 sentences)
-        explanation_lines = []
-        content_lines = []
-
-        # Simple heuristic: last paragraph is likely the explanation
-        # Find last empty line and take everything after
-        last_empty_idx = -1
-        for i in range(len(lines) - 1, -1, -1):
-            if lines[i].strip() == '':
-                last_empty_idx = i
-                break
-
-        if last_empty_idx > 0:
-            content_lines = lines[:last_empty_idx]
-            explanation_lines = lines[last_empty_idx + 1:]
-        else:
-            # No clear separation, keep everything as content
-            content_lines = lines
-            explanation_lines = ["Keine Erklärung gefunden."]
-
-        lesefluss_content = '\n'.join(content_lines).strip()
-        explanation = ' '.join(explanation_lines).strip()
-
-        return lesefluss_content, explanation, result[1]
+        return (result_text or "").strip(), usage
 
     async def process_lesefluss_request(
         self,
@@ -808,78 +841,119 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
                     f"Run {run_id} for Kapitel {kapitel_id} has no model; falling back to requested model '{model}'"
                 )
 
-            kapitel_nummer = run_data.get('nummer', '?')
+            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+            projekt_id = (kapitel or {}).get("projektId")
+
+            kapitel_nummer = (kapitel or {}).get("nummer") or run_data.get("nummer") or "?"
 
             # Step 2: Generate/fetch summaries for context Kapitels (in parallel)
-            logger.info(f"Generating summaries for {len(context_kapitel_ids)} context Kapitels")
+            context_ids = [str(cid) for cid in (context_kapitel_ids or []) if str(cid) != str(kapitel_id)]
+            logger.info(f"Generating summaries for {len(context_ids)} context Kapitels")
 
-            summary_tasks = [
-                self.get_or_create_summary(
-                    user_id,
-                    kapitel_id,
-                    run_id,
-                    ctx_id,
-                    model,
-                    api_key,
-                    key_source,
-                    user_action_id,
-                )
-                for ctx_id in context_kapitel_ids
-            ]
+            summaries: dict[str, str] = {}
+            valid_context_ids: list[str] = []
 
-            summaries_list = await asyncio.gather(*summary_tasks, return_exceptions=True)
+            if context_ids:
+                summary_tasks = [
+                    self.get_or_create_summary(
+                        user_id,
+                        kapitel_id,
+                        run_id,
+                        ctx_id,
+                        model,
+                        api_key,
+                        key_source,
+                        user_action_id,
+                    )
+                    for ctx_id in context_ids
+                ]
+                summaries_list = await asyncio.gather(*summary_tasks, return_exceptions=True)
 
-            # Build summaries dict, filtering out errors
-            summaries = {}
-            valid_context_ids = []
-            for ctx_id, summary_result in zip(context_kapitel_ids, summaries_list):
-                if isinstance(summary_result, Exception):
-                    logger.error(f"Failed to get summary for Kapitel {ctx_id}: {summary_result}")
-                else:
-                    summaries[ctx_id] = summary_result
-                    valid_context_ids.append(ctx_id)
+                for ctx_id, summary_result in zip(context_ids, summaries_list):
+                    if isinstance(summary_result, Exception):
+                        logger.error(f"Failed to get summary for Kapitel {ctx_id}: {summary_result}")
+                    else:
+                        summaries[str(ctx_id)] = str(summary_result or "")
+                        valid_context_ids.append(str(ctx_id))
 
             if not summaries:
                 raise ValueError("No valid summaries could be generated for context Kapitels")
 
-            # Step 3: Get metadata for context Kapitels to build Gliederung
+            # Step 3: Build full Gliederung for the entire project (summaries only where available)
             logger.info("Building Gliederung")
 
-            context_kapitels = []
-            for ctx_id in valid_context_ids:
-                metadata = await firebase_service.get_kapitel_metadata(user_id, ctx_id)
-                if metadata:
-                    context_kapitels.append(metadata)
+            all_kapitels: list[dict] = []
+            if (projekt_id or "").strip():
+                all_kapitels = await firebase_service.list_kapitel_metadata_for_project(user_id, projekt_id)
 
-            # Sort by nummer for proper ordering
-            context_kapitels.sort(key=lambda k: k.get('nummer', ''))
+            if not all_kapitels:
+                fallback_ids = list(dict.fromkeys([kapitel_id] + valid_context_ids))
+                for kid in fallback_ids:
+                    metadata = await firebase_service.get_kapitel_metadata(user_id, kid)
+                    if metadata:
+                        all_kapitels.append(metadata)
 
-            gliederung = await self.build_gliederung_with_descriptions(
-                user_id, kapitel_id, context_kapitels, summaries
-            )
+            all_kapitels.sort(key=lambda k: self._nummer_sort_key(k.get("nummer", "")))
+
+            next_kapitel_nummer = ""
+            uebernaechstes_kapitel_nummer = ""
+            for idx, k in enumerate(all_kapitels):
+                if str(k.get("id")) == str(kapitel_id):
+                    kapitel_nummer = str(k.get("nummer") or kapitel_nummer or "?")
+                    if idx + 1 < len(all_kapitels):
+                        next_kapitel_nummer = str(all_kapitels[idx + 1].get("nummer") or "")
+                    if idx + 2 < len(all_kapitels):
+                        uebernaechstes_kapitel_nummer = str(all_kapitels[idx + 2].get("nummer") or "")
+                    break
+
+            gliederung = await self.build_gliederung(user_id, kapitel_id, all_kapitels, summaries)
 
             # Step 4: Call OpenAI to improve reading flow
             logger.info("Improving reading flow for target Kapitel text")
 
-            lesefluss_instructions = await prompt_service.get_rendered_instructions(
-                user_id,
-                "lesefluss",
-                {
-                    "aufgabenstellung": aufgabenstellung,
-                    "gliederung": gliederung,
-                    "kapitel_nummer": kapitel_nummer,
-                    "target_text": target_text,
-                },
+            active_template_id = await firebase_service.get_active_prompt_id(user_id, "lesefluss")
+            template_instructions = await prompt_service.get_instructions_for_template(
+                user_id, "lesefluss", active_template_id
+            )
+            template_system_prompt = await prompt_service.get_system_prompt_for_template(
+                stage="lesefluss",
+                template_id=active_template_id,
             )
 
-            lesefluss_content, explanation, usage = await self.improve_reading_flow(
-                aufgabenstellung=aufgabenstellung,
-                gliederung=gliederung,
-                kapitel_nummer=kapitel_nummer,
-                target_text=target_text,
-                model=model,
+            payload = {
+                "aufgabenstellung": aufgabenstellung,
+                "gliederung": gliederung,
+                "kapitel_nummer": str(kapitel_nummer),
+                "target_text": target_text,
+                "AUFGABENSTELLUNG": aufgabenstellung,
+                "GLIEDERUNG_SUMMARY": gliederung,
+                "AKTUELLES_KAPITEL_NUMMER": str(kapitel_nummer),
+                "NAECHSTES_KAPITEL_NUMMER": next_kapitel_nummer,
+                "UEBERNAECHSTES_KAPITEL_NUMMER": uebernaechstes_kapitel_nummer,
+                "KAPITELTEXT": target_text,
+            }
+
+            rendered = prompt_service.render(template_instructions, payload)
+            uses_inline_inputs = (
+                ("{GLIEDERUNG_SUMMARY}" in template_instructions and "{KAPITELTEXT}" in template_instructions)
+                or ("{gliederung}" in template_instructions and "{target_text}" in template_instructions)
+            )
+
+            prompt_body = rendered
+            if not uses_inline_inputs:
+                prompt_body = f"""{rendered}
+
+### Gliederung:
+{gliederung}
+
+### Kapitel {kapitel_nummer} (TEXT AN DEM DU ARBEITEN SOLLST)
+{target_text}"""
+
+            lesefluss_content, usage = await openai_service.improve_reading_flow(
+                prompt_body,
+                model,
                 api_key=api_key,
-                instructions=lesefluss_instructions,
+                system_prompt=template_system_prompt,
             )
 
             input_tokens = int(usage.get("prompt_tokens", 0))
@@ -893,9 +967,6 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
                 model=model,
                 usage=usage_obj,
             )
-
-            kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
-            projekt_id = (kapitel or {}).get("projektId")
 
             projekt_snapshot = None
             if projekt_id:
@@ -956,7 +1027,6 @@ Schreibe am Ende, wenn du den Text komplett überarbeitet hast, kurz zwei Sätze
             lesefluss_data = {
                 "content": lesefluss_content,
                 "aufgabenstellung": aufgabenstellung,
-                "explanation": explanation,
                 "originalLength": original_length,
                 "leseflussLength": lesefluss_length,
                 "usedKapitelIds": valid_context_ids,

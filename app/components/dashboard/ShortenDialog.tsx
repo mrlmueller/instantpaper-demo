@@ -148,11 +148,10 @@ export function ShortenDialog({
 
   const getIndentLevel = (nummer: string) => nummer.split(".").length - 1
 
-  const showPromptSelectors = askOnEachProcess && promptTemplates.length > 0
+  const showPromptSelectors = askOnEachProcess
 
   const renderPromptSelect = (stage: PromptStage, label: string) => {
     const options = promptTemplates.filter((p) => p.stage === stage)
-    if (options.length === 0) return null
     return (
       <div className="space-y-2">
         <Label className="text-sm">{label}</Label>
@@ -175,6 +174,11 @@ export function ShortenDialog({
             <SelectItem value="default">
               <span className="text-muted-foreground">System-Standard</span>
             </SelectItem>
+            {(stage === "summary" || stage === "shorten") && (
+              <SelectItem value="default_v2">
+                <span className="text-muted-foreground">System-Standard (v2)</span>
+              </SelectItem>
+            )}
             {options.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.name}

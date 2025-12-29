@@ -9,13 +9,15 @@ type StageConfig = {
   tooltip?: string;
 };
 
+const DEFAULT_PROMPT_STUB = ``;
+
 export const STAGE_CONFIG: Record<PromptStage, StageConfig> = {
   process_quelle: {
     label: "Quellen verarbeiten",
     requiredPlaceholders: ["{heading}", "{topic}"],
     optionalPlaceholders: ["{grundlegende_infos}"],
     tooltip:
-      "Pflicht-Platzhalter: {heading}, {topic}. Optional: {grundlegende_infos}. Der Quellentext wird automatisch vor die Instructions gesetzt.",
+      "Pflicht-Platzhalter: {heading}, {topic}. Optional: {grundlegende_infos}. Der Quellentext wird automatisch in den Request eingefuegt.",
     sampleData: {
       heading: "Digitale Transformation in KMU",
       topic: "Einfluss von KI auf Effizienzgewinne",
@@ -27,20 +29,20 @@ export const STAGE_CONFIG: Record<PromptStage, StageConfig> = {
     label: "Texte kombinieren",
     requiredPlaceholders: ["{heading}", "{topic}"],
     tooltip:
-      "Pflicht-Platzhalter: {heading}, {topic}. Alle Einzeltexte werden automatisch unten angehängt.",
+      "Pflicht-Platzhalter: {heading}, {topic}. Alle Einzeltexte werden automatisch unten angehaengt.",
     sampleData: {
       heading: "Auswirkungen von KI",
-      topic: "Produktivitätsgewinne in der Industrie",
+      topic: "Produktivitaetsgewinne in der Industrie",
     },
     defaultInstructions: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`,
   },
   shorten: {
-    label: "Kürzen & Entduplizieren",
+    label: "Kuerzen & Entduplizieren",
     requiredPlaceholders: [],
     tooltip:
-      "Kein Pflicht-Platzhalter. Gliederung, Kontext-Zusammenfassungen und Zieltext werden automatisch angehängt.",
+      "Kein Pflicht-Platzhalter. Gliederung, Kontext-Zusammenfassungen und Zieltext werden automatisch angehaengt.",
     sampleData: {
-      ueberschrift: "Kapitel 2.1 – Methodik",
+      ueberschrift: "Kapitel 2.1 - Methodik",
       thema: "Vergleich von Klassifikationsverfahren",
       gliederung: "2.1 Methodik\n2.1.1 Datenerhebung ...",
       target_text: "Langer Beispieltext ...",
@@ -51,7 +53,7 @@ export const STAGE_CONFIG: Record<PromptStage, StageConfig> = {
     label: "Lesefluss verbessern",
     requiredPlaceholders: [],
     tooltip:
-      "Kein Pflicht-Platzhalter. Aufgabenstellung, Gliederung, Kapitelnummer und Zieltext werden automatisch angehängt.",
+      "Kein Pflicht-Platzhalter. Aufgabenstellung, Gliederung, Kapitelnummer und Zieltext werden automatisch angehaengt.",
     sampleData: {
       aufgabenstellung: "Analyse der Auswirkungen von KI auf die Arbeitswelt.",
       gliederung: "Kapitel 1 ...",

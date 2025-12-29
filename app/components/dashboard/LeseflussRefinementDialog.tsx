@@ -41,7 +41,6 @@ type RefinementVersion = {
   depth: number;
   userMessage?: string | null;
   assistantText?: string;
-  assistantExplanation?: string;
   status: "running" | "success" | "error";
   model?: string;
   usage?: {
@@ -240,7 +239,6 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
             depth: Number(data.depth ?? 0),
             userMessage: data.userMessage ?? null,
             assistantText: data.assistantText ?? "",
-            assistantExplanation: data.assistantExplanation ?? "",
             status: data.status ?? "success",
             model: data.model ?? "",
             usage: data.usage ?? null,
@@ -597,267 +595,7 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
               </div>
             )}
 
-            {/*
-              const isRoot = v.id === "root";
-              const isActive = v.id === activeVersionId;
-              const assistantText = (v.assistantText || "").trim();
-              const assistantExplanation = (v.assistantExplanation || "").trim();
-
-              const children = tree.childrenByParentId.get(v.id) ?? [];
-              const selectedChildId = selectedChildByParentId[v.id];
-              let selectedIndex = -1;
-              if (children.length > 0) {
-                selectedIndex = selectedChildId ? children.findIndex((c) => c.id === selectedChildId) : -1;
-                if (selectedIndex === -1) selectedIndex = children.length - 1;
-              }
-              const showBranchNav = children.length > 1;
-
-              return (
-                <div key={v.id} className="space-y-3">
-                  {isRoot ? (
-                    <div className="flex justify-start">
-                      <Card className="max-w-[85%] p-4 bg-muted/30 border-border">
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                          <div className="text-xs text-muted-foreground">ASSISTANT \u00b7 Ausgangstext</div>
-                          <div className="flex items-center gap-2">
-                            {isActive && (
-                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                                Aktiv
-                              </span>
-                            )}
-                            {showBranchNav && (
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => handleCycleBranch(v.id, -1)}
-                                  aria-label="Vorheriger Branch"
-                                >
-                                  <ChevronLeft className="h-4 w-4" />
-                                </Button>
-                                <span className="text-[11px] text-muted-foreground">
-                                  Branch {selectedIndex + 1}/{children.length}
-                                </span>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => handleCycleBranch(v.id, 1)}
-                                  aria-label="N\u00e4chster Branch"
-                                >
-                                  <ChevronRight className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            )}
-                            <Button size="sm" variant="ghost" onClick={() => handleCopy(assistantText)} disabled={!assistantText}>
-                              <Copy className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                onOpenTextViewer({
-                                  title: `${kapitelLabel} - Lesefluss Refinement (Root)`,
-                                  text: assistantText,
-                                })
-                              }
-                              disabled={!assistantText}
-                            >
-                              Volltext
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="default"
-                              onClick={() => handleUseVersion(v)}
-                              disabled={isActive || !assistantText}
-                            >
-                              <CheckCircle2 className="h-4 w-4 mr-2" />
-                              \u00dcbernehmen
-                            </Button>
-                          </div>
-                        </div>
-
-                        <div className={cn("text-sm whitespace-pre-wrap leading-relaxed", "line-clamp-[12]")}>
-                          {assistantText}
-                        </div>
-                        {assistantExplanation && (
-                          <div className="mt-3 pt-3 border-t border-border/50">
-                            <div className="text-xs text-muted-foreground mb-1">Erkl\u00e4rung</div>
-                            <div className="text-sm whitespace-pre-wrap leading-relaxed">{assistantExplanation}</div>
-                          </div>
-                        )}
-                      </Card>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex justify-end">
-                        <Card className="max-w-[85%] p-4 bg-primary text-primary-foreground border-primary/20">
-                          <div className="flex items-center justify-between gap-3 mb-2">
-                            <div className="text-xs text-primary-foreground/70">USER \u00b7 Iteration {v.depth}</div>
-                            <div className="flex items-center gap-2">
-                              {showBranchNav && (
-                                <div className="flex items-center gap-1">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => handleCycleBranch(v.id, -1)}
-                                    aria-label="Vorheriger Branch"
-                                  >
-                                    <ChevronLeft className="h-4 w-4" />
-                                  </Button>
-                                  <span className="text-[11px] text-primary-foreground/70">
-                                    Branch {selectedIndex + 1}/{children.length}
-                                  </span>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => handleCycleBranch(v.id, 1)}
-                                    aria-label="N\u00e4chster Branch"
-                                  >
-                                    <ChevronRight className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              )}
-                              {editingVersionId === v.id ? (
-                                <>
-                                  <Button size="sm" variant="ghost" onClick={cancelEdit} disabled={editSending}>
-                                    <X className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    onClick={() => submitEdit(v)}
-                                    disabled={editSending}
-                                  >
-                                    {editSending ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <Check className="h-4 w-4" />
-                                    )}
-                                  </Button>
-                                </>
-                              ) : (
-                                <Button size="sm" variant="ghost" onClick={() => startEdit(v)} disabled={v.status === "running"}>
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-
-                          {editingVersionId === v.id ? (
-                            <Textarea
-                              value={editMessage}
-                              onChange={(e) => setEditMessage(e.target.value)}
-                              className="min-h-[80px] max-h-[220px] overflow-y-auto resize-none bg-background/10 text-primary-foreground placeholder:text-primary-foreground/50"
-                              placeholder="Nachricht bearbeiten..."
-                              disabled={editSending}
-                            />
-                          ) : (
-                            <div className="text-sm whitespace-pre-wrap leading-relaxed">{v.userMessage || ""}</div>
-                          )}
-                        </Card>
-                      </div>
-
-                      <div className="flex justify-start">
-                        <Card className="max-w-[85%] p-4 bg-muted/30 border-border">
-                          <div className="flex items-center justify-between gap-3 mb-2">
-                            <div className="text-xs text-muted-foreground">
-                              ASSISTANT <span className="mx-1">·</span> Iteration {v.depth}
-                              {v.status === "running" && " · läuft."}
-                              {v.status === "error" && " · Fehler"}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {isActive && (
-                                <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                                  Aktiv
-                                </span>
-                              )}
-                              {showBranchNav && (
-                                <div className="flex items-center gap-1">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => handleCycleBranch(v.id, -1)}
-                                    aria-label="Vorheriger Branch"
-                                  >
-                                    <ChevronLeft className="h-4 w-4" />
-                                  </Button>
-                                  <span className="text-[11px] text-muted-foreground">
-                                    Branch {selectedIndex + 1}/{children.length}
-                                  </span>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => handleCycleBranch(v.id, 1)}
-                                    aria-label="Naechster Branch"
-                                  >
-                                    <ChevronRight className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              )}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleCopy(assistantText)}
-                                disabled={!assistantText || v.status !== "success"}
-                              >
-                                <Copy className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  onOpenTextViewer({
-                                    title: `${kapitelLabel} - Lesefluss Refinement (Iteration ${v.depth})`,
-                                    text: assistantText,
-                                  })
-                                }
-                                disabled={!assistantText || v.status !== "success"}
-                              >
-                                Volltext
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="default"
-                                onClick={() => handleUseVersion(v)}
-                                disabled={v.status !== "success" || isActive || !assistantText}
-                              >
-                                <CheckCircle2 className="h-4 w-4 mr-2" />
-                                \u00dcbernehmen
-                              </Button>
-                            </div>
-                          </div>
-
-                          {v.status === "running" ? (
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              Antwort wird generiert.
-                            </div>
-                          ) : v.status === "error" ? (
-                            <div className="text-sm text-destructive whitespace-pre-wrap">
-                              {AI_GENERIC_ERROR_MESSAGE}
-                            </div>
-                          ) : (
-                            <>
-                              <div className={cn("text-sm whitespace-pre-wrap leading-relaxed", "line-clamp-[12]")}>
-                                {assistantText}
-                              </div>
-                              {assistantExplanation && (
-                                <div className="mt-3 pt-3 border-t border-border/50">
-                                  <div className="text-xs text-muted-foreground mb-1">Erkl\u00e4rung</div>
-                                  <div className="text-sm whitespace-pre-wrap leading-relaxed">{assistantExplanation}</div>
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </Card>
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })}
-
-            */}
+            
 
             <Card
               className={cn(
@@ -1166,7 +904,7 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
                 <div className="flex-1 min-w-0 pr-2">
                   <DialogTitle className="text-xl leading-tight text-balance">{viewingFullText.title}</DialogTitle>
                   <div className="text-sm text-muted-foreground mt-1">
-                    {viewingFullText.text.split(/\\s+/).filter(Boolean).length.toLocaleString("de-DE")} Wörter
+                    {viewingFullText.text.split(/\s+/).filter(Boolean).length.toLocaleString("de-DE")} Wörter
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

@@ -137,18 +137,26 @@ function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCanc
                     <SelectTrigger className="w-64">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">System-Standard</SelectItem>
-                      {stageTemplates.map((tpl) => (
-                        <SelectItem key={tpl.id} value={tpl.id}>
-                          {tpl.name}
+                      <SelectContent>
+                        <SelectItem value="default">System-Standard</SelectItem>
+                        {(stage === 'process_quelle' || stage === 'combine' || stage === 'summary' || stage === 'shorten' || stage === 'lesefluss') && (
+                          <SelectItem value="default_v2">System-Standard (v2)</SelectItem>
+                        )}
+                        {stageTemplates.map((tpl) => (
+                          <SelectItem key={tpl.id} value={tpl.id}>
+                            {tpl.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2 font-mono">
-                  {stageTemplates.find((t) => t.id === choices[stage])?.instructions?.slice(0, 160) || 'System-Standard'}
+                  {choices[stage] === 'default'
+                    ? 'System-Standard'
+                    : choices[stage] === 'default_v2'
+                      ? 'System-Standard (v2)'
+                      : stageTemplates.find((t) => t.id === choices[stage])?.instructions?.slice(0, 160) ||
+                        'System-Standard'}
                 </p>
               </Card>
             );
@@ -222,6 +230,7 @@ export function Dashboard({
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const selectedRunIdRef = useRef<string | null>(null);
+  const userSelectedRunRef = useRef(false);
   const selectedRun = runs.find((r) => r.id === selectedRunId);
   const hasShownNoticeRef = useRef(false);
   const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
@@ -328,6 +337,14 @@ export function Dashboard({
     selectedRunIdRef.current = id;
     setSelectedRunId((prev) => (prev === id ? prev : id));
   }, []);
+
+  const handleUserSelectRun = useCallback(
+    (id: string) => {
+      userSelectedRunRef.current = true;
+      handleSelectRun(id);
+    },
+    [handleSelectRun]
+  );
 
   useEffect(() => {
     selectedRunIdRef.current = selectedRunId;
@@ -482,6 +499,7 @@ export function Dashboard({
       setRuns([]);
       setSelectedRunId(null);
       selectedRunIdRef.current = null;
+      userSelectedRunRef.current = false;
       setIsKapitelLoading(false);
       return;
     }
@@ -491,6 +509,7 @@ export function Dashboard({
     // Prevent a race where the runs listener fires before `selectedRunId` state clears,
     // which can block auto-selecting the first run and leave the Kapitel stuck loading.
     selectedRunIdRef.current = null;
+    userSelectedRunRef.current = false;
     setRunListLimit(RUN_HISTORY_LIMIT);
     setAllRunsLoaded(false);
 
@@ -531,6 +550,7 @@ export function Dashboard({
               id: doc.id,
               index: data.index || 0,
               instruction: data.instruction || '',
+              name: typeof data.name === 'string' ? data.name : existing?.name,
               model: data.model || '',
               createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
               updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
@@ -555,12 +575,15 @@ export function Dashboard({
 
         if (!snapshot.empty) {
           const firstRunId = snapshot.docs[0].id;
+          const activeRunId = activeKapitel?.activeRunId;
+          const preferredRunId =
+            activeRunId && snapshot.docs.some((d) => d.id === activeRunId) ? activeRunId : firstRunId;
           const currentSelected = selectedRunIdRef.current;
           const currentIsInSnapshot =
             currentSelected != null && snapshot.docs.some((d) => d.id === currentSelected);
 
           if (!currentSelected || !currentIsInSnapshot) {
-            handleSelectRun(firstRunId);
+            handleSelectRun(preferredRunId);
           }
         }
 
@@ -581,7 +604,59 @@ export function Dashboard({
     return () => {
       unsubscribeRuns();
     };
-  }, [user?.uid, activeKapitelId, runListLimit, handleSelectRun]);
+  }, [user?.uid, activeKapitelId, runListLimit, handleSelectRun, activeKapitel?.activeRunId]);
+
+  useEffect(() => {
+    if (!user?.uid || !activeKapitelId) return;
+    const activeRunId = activeKapitel?.activeRunId;
+    if (!activeRunId) return;
+
+    const db = firestoreClient;
+    const activeRunRef = doc(db, 'users', user.uid, 'kapitels', activeKapitelId, 'runs', activeRunId);
+
+    const unsub = onSnapshot(
+      activeRunRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const data: any = snap.data();
+        setFbRuns((prev) => {
+          const prevMap = new Map(prev.map((run) => [run.id, run]));
+          const existing = prevMap.get(snap.id);
+          const next: FirebaseKapitelRun = {
+            id: snap.id,
+            index: data.index || 0,
+            instruction: data.instruction || '',
+            name: typeof data.name === 'string' ? data.name : existing?.name,
+            model: data.model || '',
+            createdAt: data.createdAt?.toDate?.()?.toISOString() || existing?.createdAt || new Date().toISOString(),
+            updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
+            promptTemplateId: data.promptTemplateId,
+            promptPayload: data.promptPayload,
+            autoCombine: data.autoCombine ?? false,
+            results: existing?.results || [],
+            artifacts: existing?.artifacts,
+            artifactsStatus: data.artifactsStatus,
+            resultsExpectedCount: data.resultsExpectedCount,
+            resultsCompletedCount: data.resultsCompletedCount,
+            resultsWithContentCount: data.resultsWithContentCount,
+            lastResultAt: data.lastResultAt?.toDate?.()?.toISOString() ?? null,
+            lastActivityAt: data.lastActivityAt?.toDate?.()?.toISOString() ?? null,
+            ueberschrift: data.ueberschrift || existing?.ueberschrift || '',
+            thema: data.thema || existing?.thema || '',
+            grundlegendeInformationen: data.grundlegendeInformationen ?? existing?.grundlegendeInformationen ?? null,
+          } as FirebaseKapitelRun;
+
+          const merged = existing ? prev.map((r) => (r.id === snap.id ? next : r)) : [...prev, next];
+          return merged.sort((a, b) => Number(b.index ?? 0) - Number(a.index ?? 0));
+        });
+      },
+      (err) => {
+        console.error('Error listening to active run:', err);
+      }
+    );
+
+    return () => unsub();
+  }, [user?.uid, activeKapitelId, activeKapitel?.activeRunId]);
 
   // Load data (artifacts/results) only for the selected run
   useEffect(() => {
@@ -723,7 +798,6 @@ export function Dashboard({
               id: 'shortened',
               content: data.content ?? '',
               status: data.status,
-              explanation: data.explanation,
               originalLength: data.originalLength ?? 0,
               shortenedLength: data.shortenedLength ?? 0,
               usedKapitelIds: data.usedKapitelIds ?? [],
@@ -740,7 +814,6 @@ export function Dashboard({
               content: data.content ?? '',
               status: data.status,
               aufgabenstellung: data.aufgabenstellung ?? '',
-              explanation: data.explanation,
               originalLength: data.originalLength,
               leseflussLength: data.leseflussLength ?? 0,
               usedKapitelIds: data.usedKapitelIds ?? [],
@@ -848,6 +921,7 @@ export function Dashboard({
                   updatedAt: data.latestRun.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
                 }
               : undefined,
+            activeRunId: typeof data.activeRunId === 'string' ? data.activeRunId : undefined,
           };
         });
 
@@ -889,6 +963,7 @@ export function Dashboard({
       fbRuns.reduce((map, run) => (map.has(run.id) ? map : map.set(run.id, run)), new Map<string, FirebaseKapitelRun>())
         .values()
     );
+    uniqueFbRuns.sort((a, b) => Number(b.index ?? 0) - Number(a.index ?? 0));
 
     const uiRuns = uniqueFbRuns.map((fbRun) => {
       const uiRun = transformRunToUI(fbRun, activeKapitelId, quellenMap);
@@ -914,11 +989,21 @@ export function Dashboard({
 
     if (uiRuns.length === 0) {
       setSelectedRunId(null);
-    } else if (!selectedRunId || !uiRuns.some((run) => run.id === selectedRunId)) {
-      handleSelectRun(uiRuns[0].id);
+      userSelectedRunRef.current = false;
+    } else {
+      const activeRunId = activeKapitel?.activeRunId;
+      const preferredRunId =
+        activeRunId && uiRuns.some((run) => run.id === activeRunId) ? activeRunId : uiRuns[0].id;
+      const currentSelectedExists = selectedRunId != null && uiRuns.some((run) => run.id === selectedRunId);
+
+      if (!currentSelectedExists) {
+        handleSelectRun(preferredRunId);
+      } else if (!userSelectedRunRef.current && selectedRunId !== preferredRunId) {
+        handleSelectRun(preferredRunId);
+      }
     }
 
-  }, [fbRuns, quellen, activeKapitelId, activeKapitel?.assignedQuellenIds, selectedRunId, handleSelectRun]);
+  }, [fbRuns, quellen, activeKapitelId, activeKapitel?.assignedQuellenIds, activeKapitel?.activeRunId, selectedRunId, handleSelectRun]);
 
   // Handlers
   const handleSwitchProjekt = useCallback(
@@ -1319,14 +1404,6 @@ export function Dashboard({
     }
   }, [kapiteln, updateKapitelTitleClient, isEditingKapitel]);
 
-  const renderPromptTemplate = useCallback((template: string, payload: Record<string, string>) => {
-    let result = template;
-    Object.entries(payload).forEach(([key, value]) => {
-      result = result.replaceAll(`{${key}}`, value ?? '');
-    });
-    return result;
-  }, []);
-
   useEffect(() => {
     const loadPrompts = async () => {
       try {
@@ -1356,18 +1433,6 @@ export function Dashboard({
       console.error('Aktives Prompt setzen fehlgeschlagen', err);
     }
   }, []);
-
-  const getInstructionsFor = useCallback(
-    (stage: PromptStage, templateId?: string | 'default') => {
-      const targetId = templateId ?? (promptActive[stage] as string | 'default') ?? 'default';
-      if (targetId && targetId !== 'default') {
-        const tpl = promptTemplates.find((t) => t.id === targetId && t.stage === stage);
-        if (tpl?.instructions) return tpl.instructions;
-      }
-      return STAGE_CONFIG[stage].defaultInstructions;
-    },
-    [promptActive, promptTemplates]
-  );
 
   const requestPromptChoice = useCallback(
     async (stages: PromptStage[]): Promise<Record<PromptStage, string | 'default'> | null> => {
@@ -1434,15 +1499,34 @@ export function Dashboard({
         return;
       }
 
+      // If the user changed their standard prompt in another tab (Profil), refresh selections once.
+      let activeSnapshot = promptActive;
+      if (!providedChoices && !choices) {
+        try {
+          const res = await fetch('/api/prompt-templates', { cache: 'no-store' });
+          const data = await res.json();
+          if (res.ok) {
+            if (Array.isArray(data.templates)) setPromptTemplates(data.templates);
+            if (data.active) {
+              setPromptActive(data.active);
+              activeSnapshot = data.active;
+            }
+            if (typeof data.askOnEachProcess === 'boolean') setAskOnEachProcess(Boolean(data.askOnEachProcess));
+          }
+        } catch (err) {
+          console.error('Prompt templates refresh failed', err);
+        }
+      }
+
       const processChoice =
         providedChoices?.process_quelle ??
         choices?.process_quelle ??
-        (promptActive.process_quelle as string | 'default') ??
+        (activeSnapshot.process_quelle as string | 'default') ??
         'default';
       const combineChoice = settings.directCombine
         ? providedChoices?.combine ??
           choices?.combine ??
-          (promptActive.combine as string | 'default') ??
+          (activeSnapshot.combine as string | 'default') ??
           'default'
         : undefined;
 
@@ -1454,13 +1538,7 @@ export function Dashboard({
         }
       }
 
-      const promptTemplate = getInstructionsFor('process_quelle', processChoice);
-
-      const prompt = renderPromptTemplate(promptTemplate, {
-        heading: settings.ueberschrift.trim(),
-        topic: settings.thema.trim(),
-        grundlegende_infos: settings.grundlegendeInfos?.trim() || '',
-      });
+      const runInstruction = settings.thema.trim();
 
       setIsProcessingRun(true);
       setProcessingDialogOpen(false);
@@ -1469,7 +1547,7 @@ export function Dashboard({
       });
 
       try {
-        const result = await createKapitelRun(activeKapitelId, prompt, settings.model, {
+        const result = await createKapitelRun(activeKapitelId, runInstruction, settings.model, {
           autoCombine: settings.directCombine,
           promptTemplateId: processChoice,
           promptPayload: {
@@ -1493,7 +1571,7 @@ export function Dashboard({
             {
               id: result.runId!,
               index: result.index ?? (prev[0]?.index || 0) + 1,
-              instruction: prompt,
+              instruction: runInstruction,
               model: settings.model,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
@@ -1546,7 +1624,6 @@ export function Dashboard({
                   quelle_id: nextQuelle.id,
                   kapitel_id: activeKapitelId,
                   run_id: result.runId,
-                  user_input: prompt,
                   model: settings.model,
                 }),
               });
@@ -1627,12 +1704,10 @@ export function Dashboard({
       handleSelectRun,
       notifyServerDown,
       quellen,
-      renderPromptTemplate,
       requestPromptChoice,
       askOnEachProcess,
       promptActive,
       applyActivePrompt,
-      getInstructionsFor,
       isProcessingRun,
     ]
   );
@@ -2049,7 +2124,7 @@ export function Dashboard({
                   setAllRunsLoaded(true);
                 }}
                 allRunsLoaded={allRunsLoaded}
-                onSelectRun={handleSelectRun}
+                onSelectRun={handleUserSelectRun}
                 onOpenTextViewer={setTextViewerContent}
                 onOpenProcessing={() => setProcessingDialogOpen(true)}
                 onCombineTexts={handleCombineTexts}
@@ -2250,17 +2325,6 @@ export function Dashboard({
       <ViewportWarning />
     </div>
   );
-}
-
-function buildPrompt(heading: string, topic: string, basicInfo?: string) {
-  const prompt = `### Aufgabe:
-Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz ist, schreibe keine Einleitung oder Schlussfolgerung/Zusammenfassung. Der Absatz hat die Überschrift "${heading}" und soll genauer das Thema "${topic}" behandeln. Beziehe dich beim Schreiben des Absatzes nur auf die oben gegebenen Informationen und nutze nichts aus deinem eigenen Wissen. Fokussiere dich außerdem genau auf das Thema, das ich vorgegeben habe, da andere Informationen hierzu bereits behandelt worden sind oder noch behandelt werden; kurzum, schreibe wirklich nur über das vorgegebene Thema. Wichtig ist, dass Informationen, die aus dem obigen Text übernommen werden, so umgeschrieben werden sollen, dass der obige Text nicht mehr zu erkennen ist – das Ergebnis also einzigartig ist. Der Text soll so lang sein, wie er sein muss, um alle relevanten Informationen zu integrieren; ziehe ihn nicht unnötig in die Länge, aber lasse auch nichts Relevantes weg. Sollte der Text keine sinnvollen Informationen zu dem gegebenen Thema enthalten, kannst du mir das sagen und den Text dann nicht schreiben; gib mir dann eine kurze Erklärung, warum der Text nicht zum Thema gepasst hat. Integriere außerdem die Quellen (mit Seitenzahlen, wenn diese gegeben wurden) aus dem oberen Text an den richtigen Stellen. Der gegebene Text hat sicherlich mehr Informationen zu manchen Themen und weniger zu anderen. Fokussiere dich auf die Themen, zu denen du wirklich konkrete und tiefe Einblicke geben kannst. Dieser Text ist nur einer von 10, die ich zu diesem Thema habe. Das bedeutet, wenn du eine Dimension nur wenig oder gar nicht behandelst, habe ich dennoch viele Informationen zu dieser in einem anderen Text. Genauer ausgedrückt, schreibst du gerade einen von 10 Texten, die später das Kapitel ergeben werden. Das bedeutet auch, dass du dich wirklich auf das Wichtigste beschränken kannst und nicht unnötiges schreiben musst. Schreibe keine Zusammenfassung oder Schlussfolgerung am Ende. Nur reine Informationen. Formuliere den Text ohne dass du ; verwendest, außer zwischen zwei Quellen.`;
-
-  const grundInfo = basicInfo?.trim()
-    ? `\n\nGrundlegende Informationen, die durchgehend berücksichtigt werden sollen:\n${basicInfo.trim()}`
-    : '';
-
-  return `${prompt}${grundInfo}`;
 }
 
 // Status is now maintained via lightweight live listeners per Kapitel

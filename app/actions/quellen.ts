@@ -417,7 +417,8 @@ export async function bulkAssignQuellen(
   quelleIds: string[],
   kapitelIds: string[],
   projektId: string,
-  ctx?: ActionContext
+  ctx?: ActionContext,
+  replaceExisting: boolean = false
 ) {
   try {
     const { user, db } = await getContext(ctx);
@@ -425,19 +426,64 @@ export async function bulkAssignQuellen(
       return { success: false, error: 'Not authenticated' };
     }
 
-    // Fetch all Kapitels
-    const kapitelRefs = kapitelIds.map((id) =>
-      doc(db, 'users', user.uid, 'kapitels', id)
-    );
+    if (replaceExisting) {
+      const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
+      const q = query(kapitelsRef, where('projektId', '==', projektId));
+      const snap = await getDocs(q);
+
+      const selectedKapitelIdSet = new Set(kapitelIds);
+      const quelleIdSet = new Set(quelleIds);
+
+      const updates: Promise<unknown>[] = [];
+
+      snap.forEach((kapitelDoc) => {
+        const data = kapitelDoc.data() as { quelleIds?: string[] };
+        const existingQuelleIds: string[] = data.quelleIds || [];
+
+        const withoutTargetQuellen = existingQuelleIds.filter((id) => !quelleIdSet.has(id));
+        const updatedQuelleIds = selectedKapitelIdSet.has(kapitelDoc.id)
+          ? Array.from(new Set([...withoutTargetQuellen, ...quelleIds]))
+          : withoutTargetQuellen;
+
+        const unchanged =
+          updatedQuelleIds.length === existingQuelleIds.length &&
+          updatedQuelleIds.every((id, i) => id === existingQuelleIds[i]);
+        if (unchanged) return;
+
+        updates.push(
+          updateDoc(doc(db, 'users', user.uid, 'kapitels', kapitelDoc.id), {
+            quelleIds: updatedQuelleIds,
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      await Promise.all(updates);
+
+      revalidatePath('/dashboard');
+      revalidatePath('/quellen-manager');
+      return { success: true };
+    }
+
+    if (kapitelIds.length === 0) {
+      return { success: true };
+    }
+
+    // Additive mode: update selected Kapitels with union of existing + new Quellen
+    const kapitelRefs = kapitelIds.map((id) => doc(db, 'users', user.uid, 'kapitels', id));
     const kapitelDocs = await Promise.all(kapitelRefs.map(getDoc));
 
-    // Update each Kapitel with union of existing + new Quellen
     const updates = kapitelDocs.map((kapitelDoc, i) => {
       if (!kapitelDoc.exists()) {
         throw new Error(`Kapitel ${kapitelIds[i]} not found`);
       }
 
-      const existingQuelleIds = kapitelDoc.data().quelleIds || [];
+      const data = kapitelDoc.data() as { projektId?: string; quelleIds?: string[] };
+      if (data.projektId && data.projektId !== projektId) {
+        throw new Error(`Kapitel ${kapitelIds[i]} does not belong to projekt ${projektId}`);
+      }
+
+      const existingQuelleIds: string[] = data.quelleIds || [];
       const updatedQuelleIds = Array.from(new Set([...existingQuelleIds, ...quelleIds]));
 
       return updateDoc(kapitelRefs[i], {
@@ -449,6 +495,7 @@ export async function bulkAssignQuellen(
     await Promise.all(updates);
 
     revalidatePath('/dashboard');
+    revalidatePath('/quellen-manager');
     return { success: true };
   } catch (error: unknown) {
     console.error('Error bulk assigning Quellen:', error);

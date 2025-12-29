@@ -98,6 +98,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // System prompt templates contain proprietary prompt text and must never be readable from clients.
+    match /systemPromptTemplates/{docId} {
+      allow read, write: if false;
+    }
+
     // ---------------------------------------------------------------------
     // users/{uid}
     // ---------------------------------------------------------------------
@@ -276,7 +281,7 @@ service cloud.firestore {
           ])
           && request.resource.data.keys().hasOnly([
             'projektId', 'title', 'nummer', 'parentId', 'order', 'quelleIds',
-            'createdAt', 'updatedAt', 'archived', 'archivedAt', 'latestRun'
+            'createdAt', 'updatedAt', 'archived', 'archivedAt', 'latestRun', 'activeRunId'
           ])
           && projectExists(userId, request.resource.data.projektId)
           && isNonEmptyString(request.resource.data.title, 500)
@@ -288,7 +293,8 @@ service cloud.firestore {
           && isTs(request.resource.data.createdAt)
           && isTs(request.resource.data.updatedAt)
           && isValidArchiveState(request.resource.data)
-          && (!request.resource.data.keys().hasAny(['latestRun']) || isLatestRunMap(request.resource.data.latestRun));
+          && (!request.resource.data.keys().hasAny(['latestRun']) || isLatestRunMap(request.resource.data.latestRun))
+          && (!request.resource.data.keys().hasAny(['activeRunId']) || isNonEmptyString(request.resource.data.activeRunId, 200));
 
         allow update: if isOwner(userId)
           && request.resource.data.keys().hasAll([
@@ -296,7 +302,7 @@ service cloud.firestore {
           ])
           && request.resource.data.keys().hasOnly([
             'projektId', 'title', 'nummer', 'parentId', 'order', 'quelleIds',
-            'createdAt', 'updatedAt', 'archived', 'archivedAt', 'latestRun'
+            'createdAt', 'updatedAt', 'archived', 'archivedAt', 'latestRun', 'activeRunId'
           ])
           && projectExists(userId, request.resource.data.projektId)
           && isNonEmptyString(request.resource.data.title, 500)
@@ -308,7 +314,8 @@ service cloud.firestore {
           && request.resource.data.createdAt == resource.data.createdAt
           && isTs(request.resource.data.updatedAt)
           && isValidArchiveState(request.resource.data)
-          && (!request.resource.data.keys().hasAny(['latestRun']) || isLatestRunMap(request.resource.data.latestRun));
+          && (!request.resource.data.keys().hasAny(['latestRun']) || isLatestRunMap(request.resource.data.latestRun))
+          && (!request.resource.data.keys().hasAny(['activeRunId']) || isNonEmptyString(request.resource.data.activeRunId, 200));
 
         // Client hard-deletes are denied; use archive fields instead.
         allow delete: if false;
@@ -320,13 +327,14 @@ service cloud.firestore {
             && request.resource.data.keys().hasAll(['projektId', 'index', 'instruction', 'model', 'createdAt', 'updatedAt', 'archived', 'autoCombine'])
             && request.resource.data.keys().hasOnly([
               'projektId', 'index', 'instruction', 'model', 'createdAt', 'updatedAt', 'archived', 'archivedAt',
-              'promptTemplateId', 'promptPayload', 'autoCombine', 'grundlegendeInformationen', 'ueberschrift', 'thema',
+              'name', 'promptTemplateId', 'promptPayload', 'autoCombine', 'grundlegendeInformationen', 'ueberschrift', 'thema',
               'resultsExpectedCount', 'resultsCompletedCount', 'resultsWithContentCount', 'lastResultAt',
               'artifactsStatus', 'lastActivityAt'
             ])
             && projectExists(userId, request.resource.data.projektId)
             && request.resource.data.index is int
             && isNonEmptyString(request.resource.data.instruction, 50000)
+            && (!request.resource.data.keys().hasAny(['name']) || isNonEmptyString(request.resource.data.name, 30))
             && isNonEmptyString(request.resource.data.model, 100)
             && isTs(request.resource.data.createdAt)
             && isTs(request.resource.data.updatedAt)
@@ -339,20 +347,19 @@ service cloud.firestore {
 
           // Client updates are limited to "settings-like" fields + archiving.
           allow update: if isOwner(userId)
-            && request.resource.data.keys().hasOnly([
-              'projektId', 'index', 'instruction', 'model', 'createdAt', 'updatedAt', 'archived', 'archivedAt',
-              'promptTemplateId', 'promptPayload', 'autoCombine', 'grundlegendeInformationen', 'ueberschrift', 'thema',
-              'resultsExpectedCount', 'resultsCompletedCount', 'resultsWithContentCount', 'lastResultAt',
-              'artifactsStatus', 'lastActivityAt'
-            ])
             && request.resource.data.createdAt == resource.data.createdAt
             && request.resource.data.projektId == resource.data.projektId
             && request.resource.data.index == resource.data.index
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'instruction', 'model', 'updatedAt', 'archived', 'archivedAt',
+              'instruction', 'name', 'model', 'updatedAt', 'archived', 'archivedAt',
               'promptTemplateId', 'promptPayload', 'autoCombine', 'grundlegendeInformationen', 'ueberschrift', 'thema'
             ])
             && isNonEmptyString(request.resource.data.instruction, 50000)
+            && (
+              !request.resource.data.keys().hasAny(['name'])
+              || request.resource.data.name == resource.data.name
+              || isNonEmptyString(request.resource.data.name, 30)
+            )
             && isNonEmptyString(request.resource.data.model, 100)
             && isTs(request.resource.data.updatedAt)
             && isValidArchiveState(request.resource.data)

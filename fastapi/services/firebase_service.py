@@ -217,7 +217,6 @@ class FirebaseService:
         quelle_id: str,
         kapitel_id: str,
         run_id: str,
-        user_input: str,
         result_content: str,
         has_content: bool,
         model_used: str,
@@ -237,7 +236,6 @@ class FirebaseService:
             quelle_id: Source Quelle ID
             kapitel_id: Kapitel ID that initiated the run
             run_id: Run ID for grouping this result
-            user_input: User's instructions
             result_content: AI-generated content
             model_used: OpenAI model used
             tokens_used: Total number of tokens consumed
@@ -297,7 +295,7 @@ class FirebaseService:
 
             result_data = {
                 "quelleId": quelle_id,
-                "userInput": user_input,
+                "userInput": "",
                 "content": result_content,
                 "hasContent": bool(has_content),
                 "status": status_value,
@@ -375,7 +373,6 @@ class FirebaseService:
         kapitel_id: str,
         run_id: str,
         quelle_id: str,
-        user_input: str,
         model: str,
         key_source: Optional[str] = None,
     ) -> None:
@@ -409,7 +406,7 @@ class FirebaseService:
 
             placeholder = {
                 "quelleId": quelle_id,
-                "userInput": user_input,
+                "userInput": "",
                 "content": "",
                 "hasContent": True,
                 "status": "running",
@@ -810,7 +807,6 @@ class FirebaseService:
                         "shortenedLength": 0,
                         "compressionRatio": 0.0,
                         "usedKapitelIds": used_kapitel_ids or [],
-                        "explanation": None,
                     }
                 )
             elif artifact_id == "lesefluss":
@@ -818,7 +814,6 @@ class FirebaseService:
                     {
                         "content": "",
                         "aufgabenstellung": aufgabenstellung or (existing_data.get("aufgabenstellung") or ""),
-                        "explanation": "",
                         "originalLength": 0,
                         "leseflussLength": 0,
                         "usedKapitelIds": used_kapitel_ids or [],
@@ -1236,7 +1231,6 @@ class FirebaseService:
                 "depth": 0,
                 "userMessage": None,
                 "assistantText": lesefluss_content,
-                "assistantExplanation": lesefluss.get("explanation") or "",
                 "hasContent": True,
                 "status": "success",
                 "model": lesefluss.get("model") or "",
@@ -1715,7 +1709,6 @@ class FirebaseService:
                 "shortenedLength": int(shortened_data.get("shortenedLength") or 0),
                 "compressionRatio": float(shortened_data.get("compressionRatio") or 0.0),
                 "usedKapitelIds": shortened_data.get("usedKapitelIds") or [],
-                "explanation": shortened_data.get("explanation"),
                 "model": shortened_data.get("model") or "",
                 "usage": {
                     "inputTokens": int(usage.get("inputTokens", 0)),
@@ -1839,7 +1832,6 @@ class FirebaseService:
                 "errorAt": None,
                 "content": lesefluss_data.get("content") or "",
                 "aufgabenstellung": lesefluss_data.get("aufgabenstellung") or "",
-                "explanation": lesefluss_data.get("explanation") or "",
                 "originalLength": int(lesefluss_data.get("originalLength") or 0),
                 "leseflussLength": int(lesefluss_data.get("leseflussLength") or 0),
                 "usedKapitelIds": lesefluss_data.get("usedKapitelIds") or [],
@@ -2162,6 +2154,38 @@ class FirebaseService:
             logger.error(f"Error fetching Kapitel metadata for {kapitel_id}: {str(e)}")
             raise
 
+    async def list_kapitel_metadata_for_project(self, user_id: str, projekt_id: str) -> list[dict]:
+        """
+        List Kapitel metadata (id, nummer, title) for a given project.
+
+        Returns:
+            list[dict]: [{'id': str, 'nummer': str, 'title': str}, ...]
+        """
+        try:
+            if not (projekt_id or "").strip():
+                return []
+
+            kapitels_ref = (
+                self.db.collection('users')
+                .document(user_id)
+                .collection('kapitels')
+            )
+            docs = kapitels_ref.where('projektId', '==', projekt_id).stream()
+            out: list[dict] = []
+            for doc in docs:
+                data = doc.to_dict() or {}
+                out.append(
+                    {
+                        "id": doc.id,
+                        "nummer": data.get("nummer", "?"),
+                        "title": data.get("title", "Untitled"),
+                    }
+                )
+            return out
+        except Exception as e:
+            logger.error(f"Error listing Kapitels for project {projekt_id}: {e}")
+            return []
+
     async def get_kapitel_runs(self, user_id: str, kapitel_id: str) -> list:
         """
         Fetch all runs for a Kapitel.
@@ -2274,6 +2298,54 @@ class FirebaseService:
         except Exception as e:
             logger.error(f"Error deleting OpenAI secret for user {user_id}: {str(e)}")
             raise
+
+    def _system_prompt_ref(self, stage: str, template_key: str):
+        doc_id = f"{stage}__{template_key}"
+        return self.db.collection("systemPromptTemplates").document(doc_id)
+
+    async def get_system_prompt_template(self, stage: str, template_key: str) -> Optional[dict]:
+        """
+        Fetch a server-only system prompt template by stage and key.
+
+        Stored at: systemPromptTemplates/{stage}__{template_key}
+        """
+        try:
+            ref = self._system_prompt_ref(stage, template_key)
+            doc = ref.get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            logger.error(f"Error fetching system prompt template {stage}/{template_key}: {e}")
+            return None
+
+    async def upsert_system_prompt_template(
+        self,
+        *,
+        stage: str,
+        template_key: str,
+        name: str,
+        instructions: str,
+        system_prompt: Optional[str] = None,
+    ) -> None:
+        """
+        Create or update a server-only system prompt template.
+        """
+        try:
+            ref = self._system_prompt_ref(stage, template_key)
+            existing = ref.get()
+            payload = {
+                "stage": stage,
+                "templateKey": template_key,
+                "name": name,
+                "instructions": instructions,
+                "updatedAt": SERVER_TIMESTAMP,
+            }
+            if system_prompt is not None:
+                payload["systemPrompt"] = system_prompt
+            if not existing.exists:
+                payload["createdAt"] = SERVER_TIMESTAMP
+            ref.set(payload, merge=True)
+        except Exception as e:
+            logger.error(f"Error upserting system prompt template {stage}/{template_key}: {e}")
 
     async def get_prompt_template(self, user_id: str, template_id: str) -> Optional[dict]:
         """Fetch a prompt template by id."""

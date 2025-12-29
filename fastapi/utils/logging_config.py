@@ -1,6 +1,7 @@
 import os
 import logging
 import logging.config
+from pathlib import Path
 from dotenv import load_dotenv
 
 
@@ -21,11 +22,14 @@ def configure_logging() -> None:
     - Provide an env toggle via FASTAPI_LOG_LEVEL.
     - Avoid writing log files.
     """
-    # Ensure .env values are available even when this is called before utils.config import.
-    # override=False so Cloud Run env vars / secrets are never overwritten by a bundled .env file.
-    load_dotenv(override=False)
+    # Ensure `.env` values are available even when this is called before utils.config import.
+    # override=True so local dev uses the checked-in `fastapi/.env` consistently.
+    dotenv_path = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(dotenv_path=dotenv_path, override=True)
 
-    app_level = _parse_level(os.getenv("FASTAPI_LOG_LEVEL", "WARNING"), default="WARNING")
+    app_level = _parse_level(
+        os.getenv("FASTAPI_LOG_LEVEL", "WARNING"), default="WARNING"
+    )
 
     logging_config: dict = {
         "version": 1,

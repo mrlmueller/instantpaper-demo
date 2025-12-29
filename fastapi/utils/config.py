@@ -1,11 +1,13 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 import logging
 from typing import List
 
-# Load environment variables from .env file (for local dev).
-# override=False ensures real environment variables (e.g. Cloud Run secrets) win over any .env file.
-load_dotenv(override=False)
+# Load environment variables from `fastapi/.env` regardless of current working directory.
+# override=True ensures the local `.env` wins over any pre-set env vars (e.g. accidental system-wide OPENAI_API_KEY).
+_dotenv_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=_dotenv_path, override=True)
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +38,8 @@ class Config:
     ]
 
     # Development
-    DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    IS_CLOUD_RUN: bool = bool(os.getenv("K_SERVICE", "").strip())
 
     # Admin approval endpoint (Basic Auth)
     # Used to set Firebase Auth custom claims (e.g. {"approved": true}) for allowlisting users.
@@ -46,8 +49,22 @@ class Config:
     # Text refinement flow
     TEXT_REFINEMENT_MAX_DEPTH: int = int(os.getenv("TEXT_REFINEMENT_MAX_DEPTH", "4"))
     DUMP_REFINEMENT_PROMPTS: bool = (
-        os.getenv("DUMP_REFINEMENT_PROMPTS", "true" if DEBUG else "false").lower() == "true"
+        os.getenv(
+            "DUMP_REFINEMENT_PROMPTS",
+            "true" if (DEBUG and not IS_CLOUD_RUN) else "false",
+        ).lower()
+        == "true"
     )
+
+    # Prompt dumps (all OpenAI requests)
+    DUMP_OPENAI_PROMPTS: bool = (
+        os.getenv(
+            "DUMP_OPENAI_PROMPTS",
+            "true" if (DEBUG and not IS_CLOUD_RUN) else "false",
+        ).lower()
+        == "true"
+    )
+    OPENAI_PROMPT_DUMP_DIR: str = os.getenv("OPENAI_PROMPT_DUMP_DIR", "").strip()
 
     @classmethod
     def validate(cls) -> None:

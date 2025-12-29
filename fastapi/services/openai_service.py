@@ -1,7 +1,7 @@
 from openai import AsyncOpenAI
 from utils.config import config
+from utils.prompt_dumps import dump_prompt_markdown
 import logging
-from pathlib import Path
 from typing import Optional, List, Tuple
 
 logger = logging.getLogger(__name__)
@@ -14,6 +14,18 @@ SHORTEN_SYSTEM_MESSAGE = "<Prompt entfernt: wird zur Laufzeit aus Firebase gelad
 LESEFLUSS_SYSTEM_MESSAGE = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
 
 NO_CONTENT_SENTINEL = "NO_CONTENT"
+
+
+def _prompt_cache_kwargs(model: str) -> dict:
+    """
+    Enable prompt caching for supported models only.
+
+    OpenAI currently supports prompt caching for gpt-5.1 and gpt-5.2.
+    """
+    model = (model or "").strip()
+    if model in {"gpt-5.1", "gpt-5.2"}:
+        return {"extra_body": {"prompt_cache_retention": "24h"}}
+    return {}
 
 
 class OpenAIService:
@@ -73,48 +85,67 @@ class OpenAIService:
         user_input: str,
         model: str,
         grundlegende_informationen: str = None,
-
-      api_key: Optional[str] = None,
-      quelle_images: Optional[List[str]] = None,
-      debug_prompt_dump_path: Optional[str] = None,
-
-      
-      
+        api_key: Optional[str] = None,
+        quelle_images: Optional[List[str]] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
             client = self._get_client(api_key)
-            # Build prompt with optional grundlegende informationen
-            if grundlegende_informationen and grundlegende_informationen.strip():
-                prompt = f"""{quelle_content}
+
+            template = user_input or ""
+            has_quelltext_placeholder = "{QUELLTEXT}" in template
+            has_basic_info_placeholder = "{GRUNDLEGENDE_INFOS_ODER_LEER}" in template
+            has_image_info_placeholder = "{BILDINHALT_ODER_LEER}" in template
+
+            if has_basic_info_placeholder:
+                template = template.replace(
+                    "{GRUNDLEGENDE_INFOS_ODER_LEER}",
+                    (grundlegende_informationen or "").strip(),
+                )
+            if has_image_info_placeholder:
+                template = template.replace("{BILDINHALT_ODER_LEER}", "")
+
+            if has_quelltext_placeholder:
+                prompt = template.replace("{QUELLTEXT}", quelle_content)
+            else:
+                # Backward-compatible v1 layout: source text first, optional basic info, then instructions.
+                if grundlegende_informationen and grundlegende_informationen.strip() and not has_basic_info_placeholder:
+                    prompt = f"""{quelle_content}
 
 ### Grundlegende Informationen
 {grundlegende_informationen}
 
-{user_input}"""
-            else:
-                prompt = f"""{quelle_content}
+{template}"""
+                else:
+                    prompt = f"""{quelle_content}
 
-{user_input}"""
+{template}"""
 
             logger.info(f"Processing Quelle with {model}")
             logger.debug(f"Prompt length: {len(prompt)} characters")
             if quelle_images:
                 logger.info(f"Including {len(quelle_images)} image(s) in request")
 
-            if debug_prompt_dump_path:
-                try:
-                    dump_path = Path(debug_prompt_dump_path)
-                    dump_path.parent.mkdir(parents=True, exist_ok=True)
-                    dump_text = prompt
-                    if quelle_images:
-                        dump_text += "\n\n---\n\n### Images\n" + "\n".join(
-                            [f"- {u}" for u in quelle_images]
-                        )
-                    dump_path.write_text(dump_text, encoding="utf-8")
-                    logger.info(f"Saved prompt dump to {dump_path}")
-                except Exception as dump_exc:
-                    logger.warning(f"Failed to write prompt dump: {dump_exc}")
+            system_message = (system_prompt or "").strip() or (
+                "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+                "You can analyze both text and images provided. "
+                "Think step-by-step to ensure correctness. "
+                f"If the Quelle does NOT contain any useful information for the request, respond with the single token '{NO_CONTENT_SENTINEL}' only. "
+                "Otherwise, return only the final answer without any extra commentary."
+            )
+
+            dump_prompt_markdown(
+                stage="process_quelle",
+                model=model,
+                sections=[
+                    ("System Prompt", system_message),
+                    ("Instructions", prompt),
+                ],
+                images=quelle_images,
+                dump_path=debug_prompt_dump_path,
+            )
 
             # Build user message content (multimodal format)
             user_message_content = [
@@ -129,15 +160,6 @@ class OpenAIService:
                         "image_url": img_url
                     })
 
-            # Call OpenAI API
-            system_message = (
-                "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
-                "You can analyze both text and images provided. "
-                "Think step-by-step to ensure correctness. "
-                f"If the Quelle does NOT contain any useful information for the request, respond with the single token '{NO_CONTENT_SENTINEL}' only. "
-                "Otherwise, return only the final answer without any extra commentary."
-            )
-
             response = await client.responses.create(
                 model=model,
                 service_tier="default",
@@ -150,6 +172,7 @@ class OpenAIService:
                 ],
                 reasoning={"effort": "high"},
                 max_output_tokens=None,  # allow model to decide; adjust if you want a hard cap
+                **_prompt_cache_kwargs(model),
             )
 
             # Extract text output safely
@@ -216,37 +239,43 @@ class OpenAIService:
         topic: str,
         model: str,
         instructions: Optional[str] = None,
-
-      api_key: Optional[str] = None,
-      quelle_images: Optional[List[str]] = None,
-      debug_prompt_dump_path: Optional[str] = None,
-
-      
-
-      
+        api_key: Optional[str] = None,
+        quelle_images: Optional[List[str]] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> dict:
         """
         Combine multiple texts into one consolidated text.
         """
         try:
             client = self._get_client(api_key)
-            combined_texts = "\n\n".join(
-                [f"### Text {i+1}:\n{texts[i]}" for i in range(len(texts))]
-            )
+            draft_parts: list[str] = []
+            for idx, text in enumerate(texts, start=1):
+                draft_parts.append(f"Text {idx}:\n{text}")
+            drafts_content = "\n\n".join(draft_parts)
 
             prompt_body = instructions or "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
-            prompt = f"{prompt_body}\n\n{combined_texts}"
+            if "{DRAFTS}" in (prompt_body or ""):
+                prompt = (prompt_body or "").replace("{DRAFTS}", drafts_content)
+            else:
+                drafts_block = f"[ENTWÜRFE]\n{drafts_content}"
+                prompt = f"{prompt_body}\n\n{drafts_block}"
 
             logger.info(f"Combining {len(texts)} texts with model {model}")
 
-            if debug_prompt_dump_path:
-                try:
-                    dump_path = Path(debug_prompt_dump_path)
-                    dump_path.parent.mkdir(parents=True, exist_ok=True)
-                    dump_path.write_text(prompt, encoding="utf-8")
-                    logger.info(f"Saved prompt dump to {dump_path}")
-                except Exception as dump_exc:
-                    logger.warning(f"Failed to write prompt dump: {dump_exc}")
+            system_message = (system_prompt or "").strip() or (
+                "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+            )
+
+            dump_prompt_markdown(
+                stage="combine",
+                model=model,
+                sections=[
+                    ("System Prompt", system_message),
+                    ("Instructions", prompt),
+                ],
+                dump_path=debug_prompt_dump_path,
+            )
 
             response = await client.responses.create(
                 model=model,
@@ -257,7 +286,7 @@ class OpenAIService:
                         "content": [
                             {
                                 "type": "input_text",
-                                "text": "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>",
+                                "text": system_message,
                             }
                         ],
                     },
@@ -265,6 +294,7 @@ class OpenAIService:
                 ],
                 reasoning={"effort": "high"},
                 max_output_tokens=None,
+                **_prompt_cache_kwargs(model),
             )
 
             result_text = None
@@ -313,11 +343,28 @@ class OpenAIService:
             logger.error(f"OpenAI combine error: {str(e)}")
             raise
 
-    async def summarize_kapitel(self, prompt: str, model: str, api_key: Optional[str] = None) -> Tuple[str, dict]:
+    async def summarize_kapitel(
+        self,
+        prompt: str,
+        model: str,
+        api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+    ) -> Tuple[str, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
             client = self._get_client(api_key)
             logger.info(f"Summarizing Kapitel with model {model}")
+
+            system_message = (system_prompt or "").strip() or SUMMARIZE_SYSTEM_MESSAGE
+
+            dump_prompt_markdown(
+                stage="summary",
+                model=model,
+                sections=[
+                    ("System Prompt", system_message),
+                    ("Instructions", prompt),
+                ],
+            )
 
             response = await client.responses.create(
                 model=model,
@@ -325,12 +372,13 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": [{"type": "input_text", "text": SUMMARIZE_SYSTEM_MESSAGE}],
+                        "content": [{"type": "input_text", "text": system_message}],
                     },
                     {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
                 ],
                 reasoning={"effort": "low"},
                 max_output_tokens=None,
+                **_prompt_cache_kwargs(model),
             )
 
             result_text = None
@@ -379,12 +427,26 @@ class OpenAIService:
         self,
         prompt: str,
         model: str,
-        api_key: Optional[str] = None
-    ) -> Tuple[str, dict, dict]:
+        api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+    ) -> Tuple[str, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
             client = self._get_client(api_key)
             logger.info(f"Shortening and deduplicating Kapitel with model {model}")
+
+            system_message = (system_prompt or "").strip() or SHORTEN_SYSTEM_MESSAGE
+
+            dump_prompt_markdown(
+                stage="shorten",
+                model=model,
+                sections=[
+                    ("System Prompt", system_message),
+                    ("Instructions", prompt),
+                ],
+                dump_path=debug_prompt_dump_path,
+            )
 
             response = await client.responses.create(
                 model=model,
@@ -392,12 +454,13 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": [{"type": "input_text", "text": SHORTEN_SYSTEM_MESSAGE}],
+                        "content": [{"type": "input_text", "text": system_message}],
                     },
                     {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
                 ],
                 reasoning={"effort": "high"},
                 max_output_tokens=None,
+                **_prompt_cache_kwargs(model),
             )
 
             result_text = None
@@ -412,26 +475,22 @@ class OpenAIService:
             if not result_text:
                 raise ValueError("No text output returned from OpenAI response")
 
-            # Try to parse as JSON
-            import json
+            # Backward compatible: some prompts may still return JSON; extract shortened_text when present.
             shortened_text = result_text
-            explanation_dict = {}
 
             try:
-                # Attempt to parse JSON response
+                import json
+
                 json_response = json.loads(result_text.strip())
 
                 if isinstance(json_response, dict) and 'shortened_text' in json_response:
                     shortened_text = json_response.get('shortened_text', '')
-                    explanation_dict = json_response.get('explanation', {})
-
-                    logger.info("Successfully parsed JSON response with structured explanation")
+                    logger.info("Successfully parsed JSON response with 'shortened_text'")
                 else:
                     logger.warning("JSON response missing 'shortened_text' field, using plain text fallback")
 
             except json.JSONDecodeError:
                 logger.info("Response is not JSON, using plain text (backward compatibility)")
-                # Keep shortened_text as result_text and explanation_dict as empty
 
             usage = getattr(response, "usage", None)
             input_tokens = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
@@ -457,7 +516,7 @@ class OpenAIService:
                 'completion_tokens': output_tokens,
             }
 
-            return shortened_text, usage_dict, explanation_dict
+            return shortened_text, usage_dict
 
         except Exception as e:
             logger.error(f"OpenAI shortening error: {str(e)}")
@@ -468,6 +527,7 @@ class OpenAIService:
         prompt: str,
         model: str,
         api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None,
         debug_prompt_dump_path: Optional[str] = None,
     ) -> Tuple[str, dict]:
 
@@ -478,14 +538,17 @@ class OpenAIService:
             client = self._get_client(api_key)
             logger.info(f"Improving reading flow with model {model}")
 
-            if debug_prompt_dump_path:
-                try:
-                    dump_path = Path(debug_prompt_dump_path)
-                    dump_path.parent.mkdir(parents=True, exist_ok=True)
-                    dump_path.write_text(prompt, encoding="utf-8")
-                    logger.info(f"Saved prompt dump to {dump_path}")
-                except Exception as dump_exc:
-                    logger.warning(f"Failed to write prompt dump: {dump_exc}")
+            system_message = (system_prompt or "").strip() or LESEFLUSS_SYSTEM_MESSAGE
+
+            dump_prompt_markdown(
+                stage="lesefluss",
+                model=model,
+                sections=[
+                    ("System Prompt", system_message),
+                    ("Instructions", prompt),
+                ],
+                dump_path=debug_prompt_dump_path,
+            )
 
             response = await client.responses.create(
                 model=model,
@@ -493,12 +556,13 @@ class OpenAIService:
                 input=[
                     {
                         "role": "system",
-                        "content": [{"type": "input_text", "text": LESEFLUSS_SYSTEM_MESSAGE}],
+                        "content": [{"type": "input_text", "text": system_message}],
                     },
                     {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
                 ],
                 reasoning={"effort": "high"},  # High effort for narrative quality
                 max_output_tokens=None,
+                **_prompt_cache_kwargs(model),
             )
 
             result_text = None
@@ -541,6 +605,88 @@ class OpenAIService:
 
         except Exception as e:
             logger.error(f"OpenAI reading flow improvement error: {str(e)}")
+            raise
+
+    async def generate_text(
+        self,
+        prompt: str,
+        model: str,
+        *,
+        api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+        stage: str = "refine",
+        reasoning_effort: str = "high",
+    ) -> dict:
+        "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+        try:
+            client = self._get_client(api_key)
+            logger.info(f"Generating text with model {model} (stage={stage})")
+
+            system_message = (system_prompt or "").strip() or "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+
+            dump_prompt_markdown(
+                stage=stage,
+                model=model,
+                sections=[
+                    ("System Prompt", system_message),
+                    ("Instructions", prompt),
+                ],
+                dump_path=debug_prompt_dump_path,
+            )
+
+            response = await client.responses.create(
+                model=model,
+                service_tier="default",
+                input=[
+                    {
+                        "role": "system",
+                        "content": [{"type": "input_text", "text": system_message}],
+                    },
+                    {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
+                ],
+                reasoning={"effort": reasoning_effort},
+                max_output_tokens=None,
+                **_prompt_cache_kwargs(model),
+            )
+
+            result_text = None
+            if hasattr(response, "output_text") and response.output_text is not None:
+                result_text = response.output_text
+            elif hasattr(response, "output") and response.output:
+                try:
+                    result_text = response.output[0].content[0].text
+                except Exception:
+                    pass
+
+            if not result_text:
+                raise ValueError("No text output returned from OpenAI response")
+
+            usage = getattr(response, "usage", None)
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
+
+            cached_input_tokens = 0
+            input_details = getattr(usage, "input_tokens_details", None) if usage else None
+            if input_details is not None:
+                cached_input_tokens = int(getattr(input_details, "cached_tokens", 0) or 0)
+
+            tokens_used = input_tokens + output_tokens
+            model_used = getattr(response, "model", None) or model
+
+            return {
+                "content": result_text,
+                "has_content": True,
+                "tokens": tokens_used,
+                "input_tokens": input_tokens,
+                "cached_input_tokens": cached_input_tokens,
+                "output_tokens": output_tokens,
+                "reasoning_tokens": 0,
+                "model": model_used,
+            }
+
+        except Exception as e:
+            logger.error(f"OpenAI text generation error: {str(e)}")
             raise
 
 # Create singleton instance

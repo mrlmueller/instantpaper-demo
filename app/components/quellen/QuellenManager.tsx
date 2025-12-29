@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -106,7 +106,7 @@ export function QuellenManager({
   const [quellen, setQuellen] = useState<Quelle[]>(
     initialQuellen.map((q) => transformQuelleToUI(q, projektId))
   );
-  const [kapitels] = useState(initialKapitels);
+  const [kapitels, setKapitels] = useState(initialKapitels);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -233,7 +233,7 @@ export function QuellenManager({
     if (selectedIds.size === 1) {
       const quelleId = Array.from(selectedIds)[0];
       const linkedKapitels = kapitels.filter((k) =>
-        k.quelleIds.includes(quelleId)
+        (k.quelleIds ?? []).includes(quelleId)
       );
       setSelectedKapitelIds(new Set(linkedKapitels.map((k) => k.id)));
     } else {
@@ -247,7 +247,7 @@ export function QuellenManager({
     setAssigningQuelleId(quelleId);
     // Pre-select Kapitels that already have this Quelle
     const linkedKapitels = kapitels.filter((k) =>
-      k.quelleIds.includes(quelleId)
+      (k.quelleIds ?? []).includes(quelleId)
     );
     setSelectedKapitelIds(new Set(linkedKapitels.map((k) => k.id)));
     setAssignDialogOpen(true);
@@ -269,21 +269,70 @@ export function QuellenManager({
       ? [assigningQuelleId]
       : Array.from(selectedIds);
     const count = quelleIds.length;
-    const kapitelCount = selectedKapitelIds.size;
+    const kapitelIds = Array.from(selectedKapitelIds);
+    const kapitelCount = kapitelIds.length;
+    const isSingleQuelle = quelleIds.length === 1;
+
+    const previousKapitels = kapitels;
+
+    // Optimistic update: update Kapitel->Quelle links locally right away.
+    setKapitels((prev) => {
+      const selectedKapitelIdSet = new Set(kapitelIds);
+      const quelleIdSet = new Set(quelleIds);
+
+      return prev.map((kapitel) => {
+        const existingQuelleIds = kapitel.quelleIds ?? [];
+
+        if (!isSingleQuelle) {
+          if (!selectedKapitelIdSet.has(kapitel.id)) return kapitel;
+          const updatedQuelleIds = Array.from(
+            new Set([...existingQuelleIds, ...quelleIds])
+          );
+          if (updatedQuelleIds.length === existingQuelleIds.length) return kapitel;
+          return { ...kapitel, quelleIds: updatedQuelleIds };
+        }
+
+        const withoutTargetQuellen = existingQuelleIds.filter(
+          (id) => !quelleIdSet.has(id)
+        );
+        const updatedQuelleIds = selectedKapitelIdSet.has(kapitel.id)
+          ? Array.from(new Set([...withoutTargetQuellen, ...quelleIds]))
+          : withoutTargetQuellen;
+
+        if (
+          updatedQuelleIds.length === existingQuelleIds.length &&
+          updatedQuelleIds.every((id, i) => id === existingQuelleIds[i])
+        ) {
+          return kapitel;
+        }
+        return { ...kapitel, quelleIds: updatedQuelleIds };
+      });
+    });
+
+    setAssignDialogOpen(false);
+    setSelectedKapitelIds(new Set());
+    setAssigningQuelleId(null);
+    setSelectedIds(new Set());
 
     try {
-      await bulkAssignQuellen(
+      const result = await bulkAssignQuellen(
         quelleIds,
-        Array.from(selectedKapitelIds),
-        projektId
+        kapitelIds,
+        projektId,
+        undefined,
+        isSingleQuelle
       );
-      toast.success(`${count} Quellen zu ${kapitelCount} Kapiteln zugewiesen`);
-      setAssignDialogOpen(false);
-      setSelectedKapitelIds(new Set());
-      setAssigningQuelleId(null);
-      setSelectedIds(new Set());
-      router.refresh();
+      if (result?.success === false) {
+        throw new Error(result.error || "Unknown error");
+      }
+
+      if (kapitelCount === 0 && isSingleQuelle) {
+        toast.success("Kapitel-Zuweisung entfernt");
+      } else {
+        toast.success(`${count} Quellen zu ${kapitelCount} Kapiteln zugewiesen`);
+      }
     } catch (error) {
+      setKapitels(previousKapitels);
       toast.error("Fehler beim Zuweisen der Quellen");
     }
   };
@@ -410,8 +459,16 @@ export function QuellenManager({
   };
 
   const getLinkedKapiteln = (quelleId: string) => {
-    return kapitels.filter((k) => k.quelleIds.includes(quelleId));
+    return kapitels.filter((k) => (k.quelleIds ?? []).includes(quelleId));
   };
+
+  useEffect(() => {
+    setKapitels(initialKapitels);
+  }, [initialKapitels]);
+
+  useEffect(() => {
+    setQuellen(initialQuellen.map((q) => transformQuelleToUI(q, projektId)));
+  }, [initialQuellen, projektId]);
 
   const sortedKapiteln = useMemo(() => {
     return [...kapitels].sort((a, b) => {
@@ -831,13 +888,14 @@ export function QuellenManager({
           }
         }}
       >
-        <DialogContent className="max-w-md !max-h-[70vh] flex flex-col">
+      <DialogContent className="max-w-md !max-h-[70vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Zu Kapiteln zuweisen</DialogTitle>
           </DialogHeader>
           <div className="py-4 flex-1 min-h-0 overflow-hidden">
             <p className="text-sm text-muted-foreground mb-4">
-              {selectedIds.size} Quelle(n) zu folgenden Kapiteln zuweisen:
+              {(assigningQuelleId ? 1 : selectedIds.size)} Quelle(n) zu folgenden
+              Kapiteln zuweisen:
             </p>
             <div className="space-y-2 flex-1 min-h-0 overflow-y-auto">
               {sortedKapiteln.map((kapitel) => {
@@ -883,7 +941,10 @@ export function QuellenManager({
             </Button>
             <Button
               onClick={handleAssign}
-              disabled={selectedKapitelIds.size === 0}
+              disabled={
+                selectedKapitelIds.size === 0 &&
+                !(assigningQuelleId || selectedIds.size === 1)
+              }
             >
               Zuweisen
             </Button>

@@ -68,6 +68,7 @@ export function transformKapitelToUI(
     projektId,
     assignedQuellenIds: fbKapitel.quelleIds || [],
     parentId: fbKapitel.parentId ?? null,
+    activeRunId: fbKapitel.activeRunId ?? undefined,
   };
 }
 
@@ -161,6 +162,7 @@ export function transformRunToUI(
   return {
     id: fbRun.id,
     index: fbRun.index,
+    name: fbRun.name,
     kapitelId,
     timestamp: new Date(fbRun.createdAt),
     status,
@@ -185,9 +187,7 @@ export function transformRunToUI(
     shortenedStatus,
     shortenedOriginalLength: shortened?.originalLength,
     shortenedLength: shortened?.shortenedLength,
-    explanation: shortened?.explanation,
     leseflussText: lesefluss?.content || null,
-    leseflussExplanation: lesefluss?.explanation,
     leseflussAufgabenstellung: lesefluss?.aufgabenstellung,
     leseflussOriginalLength: lesefluss?.originalLength,
     leseflussLength: lesefluss?.leseflussLength,
