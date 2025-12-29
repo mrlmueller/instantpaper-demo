@@ -230,6 +230,7 @@ export function Dashboard({
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const selectedRunIdRef = useRef<string | null>(null);
+  const userSelectedRunRef = useRef(false);
   const selectedRun = runs.find((r) => r.id === selectedRunId);
   const hasShownNoticeRef = useRef(false);
   const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
@@ -336,6 +337,14 @@ export function Dashboard({
     selectedRunIdRef.current = id;
     setSelectedRunId((prev) => (prev === id ? prev : id));
   }, []);
+
+  const handleUserSelectRun = useCallback(
+    (id: string) => {
+      userSelectedRunRef.current = true;
+      handleSelectRun(id);
+    },
+    [handleSelectRun]
+  );
 
   useEffect(() => {
     selectedRunIdRef.current = selectedRunId;
@@ -490,6 +499,7 @@ export function Dashboard({
       setRuns([]);
       setSelectedRunId(null);
       selectedRunIdRef.current = null;
+      userSelectedRunRef.current = false;
       setIsKapitelLoading(false);
       return;
     }
@@ -499,6 +509,7 @@ export function Dashboard({
     // Prevent a race where the runs listener fires before `selectedRunId` state clears,
     // which can block auto-selecting the first run and leave the Kapitel stuck loading.
     selectedRunIdRef.current = null;
+    userSelectedRunRef.current = false;
     setRunListLimit(RUN_HISTORY_LIMIT);
     setAllRunsLoaded(false);
 
@@ -539,6 +550,7 @@ export function Dashboard({
               id: doc.id,
               index: data.index || 0,
               instruction: data.instruction || '',
+              name: typeof data.name === 'string' ? data.name : existing?.name,
               model: data.model || '',
               createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
               updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
@@ -563,12 +575,15 @@ export function Dashboard({
 
         if (!snapshot.empty) {
           const firstRunId = snapshot.docs[0].id;
+          const activeRunId = activeKapitel?.activeRunId;
+          const preferredRunId =
+            activeRunId && snapshot.docs.some((d) => d.id === activeRunId) ? activeRunId : firstRunId;
           const currentSelected = selectedRunIdRef.current;
           const currentIsInSnapshot =
             currentSelected != null && snapshot.docs.some((d) => d.id === currentSelected);
 
           if (!currentSelected || !currentIsInSnapshot) {
-            handleSelectRun(firstRunId);
+            handleSelectRun(preferredRunId);
           }
         }
 
@@ -589,7 +604,59 @@ export function Dashboard({
     return () => {
       unsubscribeRuns();
     };
-  }, [user?.uid, activeKapitelId, runListLimit, handleSelectRun]);
+  }, [user?.uid, activeKapitelId, runListLimit, handleSelectRun, activeKapitel?.activeRunId]);
+
+  useEffect(() => {
+    if (!user?.uid || !activeKapitelId) return;
+    const activeRunId = activeKapitel?.activeRunId;
+    if (!activeRunId) return;
+
+    const db = firestoreClient;
+    const activeRunRef = doc(db, 'users', user.uid, 'kapitels', activeKapitelId, 'runs', activeRunId);
+
+    const unsub = onSnapshot(
+      activeRunRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const data: any = snap.data();
+        setFbRuns((prev) => {
+          const prevMap = new Map(prev.map((run) => [run.id, run]));
+          const existing = prevMap.get(snap.id);
+          const next: FirebaseKapitelRun = {
+            id: snap.id,
+            index: data.index || 0,
+            instruction: data.instruction || '',
+            name: typeof data.name === 'string' ? data.name : existing?.name,
+            model: data.model || '',
+            createdAt: data.createdAt?.toDate?.()?.toISOString() || existing?.createdAt || new Date().toISOString(),
+            updatedAt: data.updatedAt?.toDate?.()?.toISOString(),
+            promptTemplateId: data.promptTemplateId,
+            promptPayload: data.promptPayload,
+            autoCombine: data.autoCombine ?? false,
+            results: existing?.results || [],
+            artifacts: existing?.artifacts,
+            artifactsStatus: data.artifactsStatus,
+            resultsExpectedCount: data.resultsExpectedCount,
+            resultsCompletedCount: data.resultsCompletedCount,
+            resultsWithContentCount: data.resultsWithContentCount,
+            lastResultAt: data.lastResultAt?.toDate?.()?.toISOString() ?? null,
+            lastActivityAt: data.lastActivityAt?.toDate?.()?.toISOString() ?? null,
+            ueberschrift: data.ueberschrift || existing?.ueberschrift || '',
+            thema: data.thema || existing?.thema || '',
+            grundlegendeInformationen: data.grundlegendeInformationen ?? existing?.grundlegendeInformationen ?? null,
+          } as FirebaseKapitelRun;
+
+          const merged = existing ? prev.map((r) => (r.id === snap.id ? next : r)) : [...prev, next];
+          return merged.sort((a, b) => Number(b.index ?? 0) - Number(a.index ?? 0));
+        });
+      },
+      (err) => {
+        console.error('Error listening to active run:', err);
+      }
+    );
+
+    return () => unsub();
+  }, [user?.uid, activeKapitelId, activeKapitel?.activeRunId]);
 
   // Load data (artifacts/results) only for the selected run
   useEffect(() => {
@@ -854,6 +921,7 @@ export function Dashboard({
                   updatedAt: data.latestRun.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
                 }
               : undefined,
+            activeRunId: typeof data.activeRunId === 'string' ? data.activeRunId : undefined,
           };
         });
 
@@ -895,6 +963,7 @@ export function Dashboard({
       fbRuns.reduce((map, run) => (map.has(run.id) ? map : map.set(run.id, run)), new Map<string, FirebaseKapitelRun>())
         .values()
     );
+    uniqueFbRuns.sort((a, b) => Number(b.index ?? 0) - Number(a.index ?? 0));
 
     const uiRuns = uniqueFbRuns.map((fbRun) => {
       const uiRun = transformRunToUI(fbRun, activeKapitelId, quellenMap);
@@ -920,11 +989,21 @@ export function Dashboard({
 
     if (uiRuns.length === 0) {
       setSelectedRunId(null);
-    } else if (!selectedRunId || !uiRuns.some((run) => run.id === selectedRunId)) {
-      handleSelectRun(uiRuns[0].id);
+      userSelectedRunRef.current = false;
+    } else {
+      const activeRunId = activeKapitel?.activeRunId;
+      const preferredRunId =
+        activeRunId && uiRuns.some((run) => run.id === activeRunId) ? activeRunId : uiRuns[0].id;
+      const currentSelectedExists = selectedRunId != null && uiRuns.some((run) => run.id === selectedRunId);
+
+      if (!currentSelectedExists) {
+        handleSelectRun(preferredRunId);
+      } else if (!userSelectedRunRef.current && selectedRunId !== preferredRunId) {
+        handleSelectRun(preferredRunId);
+      }
     }
 
-  }, [fbRuns, quellen, activeKapitelId, activeKapitel?.assignedQuellenIds, selectedRunId, handleSelectRun]);
+  }, [fbRuns, quellen, activeKapitelId, activeKapitel?.assignedQuellenIds, activeKapitel?.activeRunId, selectedRunId, handleSelectRun]);
 
   // Handlers
   const handleSwitchProjekt = useCallback(
@@ -2045,7 +2124,7 @@ export function Dashboard({
                   setAllRunsLoaded(true);
                 }}
                 allRunsLoaded={allRunsLoaded}
-                onSelectRun={handleSelectRun}
+                onSelectRun={handleUserSelectRun}
                 onOpenTextViewer={setTextViewerContent}
                 onOpenProcessing={() => setProcessingDialogOpen(true)}
                 onCombineTexts={handleCombineTexts}

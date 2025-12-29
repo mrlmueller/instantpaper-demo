@@ -37,6 +37,9 @@ class ShortenService:
         """
         logger.info(f"Getting latest text for Kapitel {kapitel_id}")
 
+        kapitel_doc = await firebase_service.get_kapitel(user_id, kapitel_id)
+        active_run_id = str((kapitel_doc or {}).get("activeRunId") or "").strip()
+
         # Get all runs for this Kapitel
         runs = await firebase_service.get_kapitel_runs(user_id, kapitel_id)
 
@@ -49,6 +52,11 @@ class ShortenService:
             key=lambda r: r.get("createdAt") or datetime(1970, 1, 1),
             reverse=True,
         )
+
+        if active_run_id:
+            active_run = next((r for r in sorted_runs if str(r.get("id")) == active_run_id), None)
+            if active_run:
+                sorted_runs = [active_run]
 
         # Try to find text with priority: lesefluss > shortened > combined
         for run in sorted_runs:

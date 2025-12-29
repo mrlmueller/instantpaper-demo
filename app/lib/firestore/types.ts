@@ -76,6 +76,7 @@ export type KapitelDoc = ArchiveFields & {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   latestRun?: LatestRun;
+  activeRunId?: string;
 };
 
 export type ArtifactsStatus = {
@@ -88,6 +89,7 @@ export type RunDoc = ArchiveFields & {
   projektId: string;
   index: number;
   instruction: string;
+  name?: string;
   model: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;

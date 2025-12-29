@@ -26,11 +26,20 @@ import {
   Sparkles,
   Library,
   Pencil,
+  MoreVertical,
+  Star,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -40,12 +49,23 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Kapitel, Quelle, Run, IntermediateGroup } from "@/app/types/ui";
-import { getCombinedGroups, getSummaries, hasCombinedGroups, type SummaryResult } from "@/app/actions/kapitels";
+import {
+  getCombinedGroups,
+  getSummaries,
+  hasCombinedGroups,
+  renameKapitelRun,
+  setKapitelActiveRun,
+  type SummaryResult,
+} from "@/app/actions/kapitels";
 import { AI_GENERIC_ERROR_MESSAGE } from "@/app/lib/ai/messages";
 import { ProcessingStepper } from "./ProcessingStepper";
+import { toast } from "sonner";
 
 interface KapitelWorkspaceProps {
   kapitel: Kapitel;
@@ -107,6 +127,13 @@ export function KapitelWorkspace({
   const [showAllQuellen, setShowAllQuellen] = useState(false);
   const [summaries, setSummaries] = useState<SummaryResult[]>([]);
   const [summariesLoading, setSummariesLoading] = useState(false);
+  const [runSelectOpen, setRunSelectOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<Run | null>(null);
+  const [renameFallbackIndex, setRenameFallbackIndex] = useState(0);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [activeRunSavingId, setActiveRunSavingId] = useState<string | null>(null);
 
   const hasContent =
     selectedRun?.combinedText && selectedRun.combinedText.length > 0;
@@ -126,6 +153,92 @@ export function KapitelWorkspace({
   ).length;
   const canCombineFromResults = combineEligibleCount >= 2;
 
+  const effectiveActiveRunId =
+    activeRunSavingId ?? kapitel.activeRunId ?? runs[0]?.id;
+
+  const getRunLabel = (run: Run, fallbackIndex: number) => {
+    const name = (run.name || "").trim();
+    if (name) return name;
+    if (typeof run.index === "number" && run.index > 0) return `Run ${run.index}`;
+    return `Run ${fallbackIndex}`;
+  };
+
+  const handleSetActiveRun = async (runId: string) => {
+    setActiveRunSavingId(runId);
+    try {
+      const result = await setKapitelActiveRun(kapitel.id, runId);
+      if (!result?.success) {
+        throw new Error(result?.error || "Run konnte nicht als Standard gesetzt werden.");
+      }
+      toast.success("Standard-Run gesetzt");
+    } catch (err) {
+      console.error("Error setting active run:", err);
+      toast.error("Fehler", {
+        description: err instanceof Error ? err.message : "Run konnte nicht als Standard gesetzt werden.",
+      });
+    } finally {
+      setActiveRunSavingId(null);
+    }
+  };
+
+  const openRename = (run: Run, fallbackIndex: number) => {
+    setRenameTarget(run);
+    setRenameFallbackIndex(fallbackIndex);
+    setRenameValue((run.name || "").trim());
+    setRenameDialogOpen(true);
+  };
+
+  const handleRenameSave = async () => {
+    if (!renameTarget) return;
+    setRenameSaving(true);
+    try {
+      const result = await renameKapitelRun(kapitel.id, renameTarget.id, renameValue);
+      if (!result?.success) {
+        throw new Error(result?.error || "Run konnte nicht umbenannt werden.");
+      }
+      setRenameDialogOpen(false);
+      toast.success("Run umbenannt");
+    } catch (err) {
+      console.error("Error renaming run:", err);
+      toast.error("Fehler", {
+        description: err instanceof Error ? err.message : "Run konnte nicht umbenannt werden.",
+      });
+    } finally {
+      setRenameSaving(false);
+    }
+  };
+
+  const renameTargetDefaultLabel = renameTarget
+    ? typeof renameTarget.index === "number" && renameTarget.index > 0
+      ? `Run ${renameTarget.index}`
+      : renameFallbackIndex > 0
+        ? `Run ${renameFallbackIndex}`
+        : "Run"
+    : "Run";
+
+  const renameTrimmed = renameValue.trim();
+  const renameCandidateLabel = renameTarget ? (renameTrimmed || renameTargetDefaultLabel).trim() : "";
+  const renameCandidateNormalized = renameCandidateLabel.toLowerCase();
+  const renameReservedRunName = Boolean(renameTrimmed && /^run\s*\d+$/i.test(renameTrimmed));
+  const renameDuplicateLabel = Boolean(
+    renameTarget &&
+      runs.some((run, index) => {
+        if (run.id === renameTarget.id) return false;
+        const fallbackIndex = runs.length - index;
+        const otherLabel = getRunLabel(run, fallbackIndex).trim();
+        return otherLabel.toLowerCase() === renameCandidateNormalized;
+      })
+  );
+
+  const renameValidationError =
+    renameTrimmed.length > 30
+      ? "Name ist zu lang (max. 30 Zeichen)."
+      : renameReservedRunName
+        ? "Bitte keinen Namen im Format „Run 12“ verwenden. Lass den Namen leer, um die Standardanzeige zu nutzen."
+      : renameDuplicateLabel
+        ? "Dieser Run-Name ist bereits vergeben."
+        : "";
+
   // Reset intermediate groups when selected run changes
   useEffect(() => {
     setShowFullAnweisung(false);
@@ -135,14 +248,6 @@ export function KapitelWorkspace({
     setIntermediateGroupsLoading(false);
     setIntermediateGroups(null);
   }, [selectedRun?.id]);
-
-  // Defensive: if runs exist but selectedRun is missing (can happen during Kapitel switches),
-  // auto-select the first run so the workspace doesn't get stuck showing only the header.
-  useEffect(() => {
-    if (selectedRun) return;
-    if (!runs || runs.length === 0) return;
-    onSelectRun(runs[0].id);
-  }, [selectedRun, runs, onSelectRun]);
 
   // Only show Zwischengruppen when there are actually group docs.
   useEffect(() => {
@@ -422,18 +527,87 @@ export function KapitelWorkspace({
         {/* Run Selector & Cost Display */}
         {selectedRun && (
           <div className="flex items-center justify-between mb-4 gap-4">
-            <Select value={selectedRun.id} onValueChange={onSelectRun}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Run auswählen" />
-              </SelectTrigger>
-              <SelectContent>
-                {runs.map((run, index) => (
-                  <SelectItem key={run.id} value={run.id}>
-                    Run {runs.length - index}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              <Select
+                value={selectedRun.id}
+                onValueChange={onSelectRun}
+                open={runSelectOpen}
+                onOpenChange={setRunSelectOpen}
+              >
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Run auswählen" />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  {runs.map((run, index) => {
+                    const fallbackIndex = runs.length - index;
+                    const isActive = run.id === effectiveActiveRunId;
+                    return (
+                      <SelectItem
+                        key={run.id}
+                        value={run.id}
+                        className={cn(
+                          isActive &&
+                            "bg-sky-50 text-sky-900 data-[state=checked]:bg-sky-100 data-[state=checked]:text-sky-900"
+                        )}
+                      >
+                        {getRunLabel(run, fallbackIndex)}
+                      </SelectItem>
+                    );
+                  })}
+
+                  {!allRunsLoaded && (
+                    <>
+                      <SelectSeparator />
+                      <div className="px-1 py-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="w-full justify-start"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onLoadAllRuns();
+                            setTimeout(() => setRunSelectOpen(true), 0);
+                          }}
+                        >
+                          <History className="h-4 w-4 mr-2" />
+                          Alle Runs laden
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </SelectContent>
+              </Select>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-9 w-9">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      const selectedIndex = runs.findIndex((r) => r.id === selectedRun.id);
+                      const fallbackIndex = selectedIndex >= 0 ? runs.length - selectedIndex : runs.length;
+                      openRename(selectedRun, fallbackIndex);
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Umbenennen
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={activeRunSavingId != null || effectiveActiveRunId === selectedRun.id}
+                    onSelect={async () => {
+                      await handleSetActiveRun(selectedRun.id);
+                    }}
+                  >
+                    <Star className="h-4 w-4" />
+                    Als Standard festlegen
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
 
             <div className="flex items-center gap-3">
               <span className="text-sm text-muted-foreground">{selectedRun.model}</span>
@@ -487,6 +661,46 @@ export function KapitelWorkspace({
             </div>
           </div>
         )}
+
+        <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Run umbenennen</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-2">
+              <Label htmlFor="run-name">Name</Label>
+              <Input
+                id="run-name"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                placeholder="z. B. Literatur v2"
+                maxLength={30}
+                disabled={renameSaving}
+              />
+              {renameValidationError && (
+                <p className="text-xs text-destructive">{renameValidationError}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Standardanzeige:{" "}
+                <span className="font-medium text-foreground">
+                  {renameTargetDefaultLabel}
+                </span>
+                . Leerer Name entfernt den Custom-Namen.
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRenameDialogOpen(false)} disabled={renameSaving}>
+                Abbrechen
+              </Button>
+              <Button onClick={handleRenameSave} disabled={renameSaving || Boolean(renameValidationError)}>
+                {renameSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Speichern
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {runs.length > 0 && !selectedRun && (
           <Card className="mb-6 bg-card border-border shadow-sm">

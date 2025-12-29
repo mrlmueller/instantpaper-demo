@@ -33,6 +33,7 @@ export interface Kapitel {
   projektId: string;
   assignedQuellenIds: string[]; // Maps to Firebase 'quelleIds'
   parentId?: string | null;
+  activeRunId?: string;
 }
 
 export interface QuellenErgebnis {
@@ -63,6 +64,7 @@ export interface IntermediateGroup {
 export interface Run {
   id: string;
   index?: number;
+  name?: string;
   kapitelId: string;
   timestamp: Date;
   status: "success" | "error" | "running";
