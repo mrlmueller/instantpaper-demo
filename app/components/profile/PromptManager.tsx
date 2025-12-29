@@ -95,7 +95,7 @@ export function PromptManager() {
 
   const loadData = async () => {
     try {
-      const res = await fetch("/api/prompt-templates");
+      const res = await fetch("/api/prompt-templates", { cache: "no-store" });
       const data: TemplatesResponse = await res.json();
       if (!res.ok) throw new Error((data as any).error || "Konnte Prompts nicht laden.");
       setTemplates(data.templates);

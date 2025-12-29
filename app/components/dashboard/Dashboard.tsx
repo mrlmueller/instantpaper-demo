@@ -1567,7 +1567,7 @@ export function Dashboard({
   useEffect(() => {
     const loadPrompts = async () => {
       try {
-        const res = await fetch('/api/prompt-templates');
+        const res = await fetch('/api/prompt-templates', { cache: 'no-store' });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Prompts konnten nicht geladen werden.');
         setPromptTemplates(data.templates || []);

@@ -41,20 +41,24 @@ function validatePlaceholders(stage: PromptStage, instructions: string): string 
 const SYSTEM_STAGES: PromptStage[] = ['process_quelle', 'combine', 'shorten', 'lesefluss', 'summary'];
 
 function fallbackSystemTemplates(): SystemPromptTemplateMeta[] {
-  return SYSTEM_STAGES.flatMap((stage) => [
-    { stage, templateKey: 'default', name: 'System-Standard', createdAt: null, updatedAt: null },
-    { stage, templateKey: 'default_v2', name: 'System-Standard (v2)', createdAt: null, updatedAt: null },
-  ]);
+  // Fail closed: if we can't reach the backend, don't guess which system templates exist
+  // (archived templates must not become selectable due to a transient error).
+  return [];
 }
 
 async function loadSystemTemplates(): Promise<{
   systemTemplates: SystemPromptTemplateMeta[];
   systemPermissions: SystemPromptPermissions;
+  source: 'backend' | 'fallback';
 }> {
   const store = await cookies();
   const token = store.get('__session')?.value;
   if (!token) {
-    return { systemTemplates: fallbackSystemTemplates(), systemPermissions: { canDuplicateSystemPrompts: false } };
+    return {
+      systemTemplates: fallbackSystemTemplates(),
+      systemPermissions: { canDuplicateSystemPrompts: false },
+      source: 'fallback',
+    };
   }
 
   try {
@@ -65,7 +69,11 @@ async function loadSystemTemplates(): Promise<{
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return { systemTemplates: fallbackSystemTemplates(), systemPermissions: { canDuplicateSystemPrompts: false } };
+      return {
+        systemTemplates: fallbackSystemTemplates(),
+        systemPermissions: { canDuplicateSystemPrompts: false },
+        source: 'fallback',
+      };
     }
 
     const raw = Array.isArray((data as any)?.templates) ? ((data as any).templates as any[]) : [];
@@ -86,33 +94,51 @@ async function loadSystemTemplates(): Promise<{
       })
       .filter(Boolean) as SystemPromptTemplateMeta[];
 
-    // Ensure defaults exist even if the backend is not seeded yet.
-    const byKey = new Set(templates.map((t) => `${t.stage}__${t.templateKey}`));
-    for (const stage of SYSTEM_STAGES) {
-      if (!byKey.has(`${stage}__default`)) {
-        templates.push({ stage, templateKey: 'default', name: 'System-Standard', createdAt: null, updatedAt: null });
-      }
-      if (!byKey.has(`${stage}__default_v2`)) {
-        templates.push({
-          stage,
-          templateKey: 'default_v2',
-          name: 'System-Standard (v2)',
-          createdAt: null,
-          updatedAt: null,
-        });
-      }
-    }
-
     const perms = (data as any)?.permissions;
     const canDuplicate = perms?.canDuplicateSystemPrompts === true;
 
     return {
       systemTemplates: templates,
       systemPermissions: { canDuplicateSystemPrompts: canDuplicate },
+      source: 'backend',
     };
   } catch {
-    return { systemTemplates: fallbackSystemTemplates(), systemPermissions: { canDuplicateSystemPrompts: false } };
+    return {
+      systemTemplates: fallbackSystemTemplates(),
+      systemPermissions: { canDuplicateSystemPrompts: false },
+      source: 'fallback',
+    };
   }
+}
+
+function isoToMs(iso: string | null): number {
+  if (!iso) return 0;
+  // Be tolerant of buggy server timestamps like "...+00:00Z" from older deployments.
+  const cleaned = iso.endsWith('Z') && iso.includes('+') ? iso.slice(0, -1) : iso;
+  const t = Date.parse(cleaned);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function pickNewestSystemTemplateKeyForStage(
+  stage: PromptStage,
+  systemTemplates: SystemPromptTemplateMeta[]
+): string | null {
+  const list = systemTemplates.filter((t) => t.stage === stage);
+  if (list.length === 0) return null;
+
+  const rank = (key: string) => (key === 'default_v2' ? 0 : key === 'default' ? 1 : 2);
+
+  list.sort((a, b) => {
+    const ta = isoToMs(a.updatedAt || a.createdAt);
+    const tb = isoToMs(b.updatedAt || b.createdAt);
+    if (ta !== tb) return tb - ta;
+    const ra = rank(a.templateKey);
+    const rb = rank(b.templateKey);
+    if (ra !== rb) return ra - rb;
+    return a.name.localeCompare(b.name, 'de');
+  });
+
+  return list[0].templateKey;
 }
 
 async function ensureLimits(stage: PromptStage, userId: string, db: any) {
@@ -152,13 +178,72 @@ export async function listPromptTemplates(): Promise<{
   });
 
   const settingsDoc = await getDoc(doc(db, 'users', user.uid, 'promptSettings', 'active'));
-  const active = (settingsDoc.exists() ? settingsDoc.data() : {}) as any;
+  const activeDoc = (settingsDoc.exists() ? settingsDoc.data() : {}) as any;
 
-  const { systemTemplates, systemPermissions } = await loadSystemTemplates();
+  const { systemTemplates, systemPermissions, source } = await loadSystemTemplates();
+
+  const userTemplateIdsByStage = new Map<PromptStage, Set<string>>();
+  for (const stage of SYSTEM_STAGES) {
+    userTemplateIdsByStage.set(
+      stage,
+      new Set(templates.filter((t) => t.stage === stage).map((t) => t.id))
+    );
+  }
+
+  const systemKeysByStage = new Map<PromptStage, Set<string>>();
+  for (const stage of SYSTEM_STAGES) {
+    systemKeysByStage.set(
+      stage,
+      new Set(systemTemplates.filter((t) => t.stage === stage).map((t) => t.templateKey))
+    );
+  }
+
+  const activeTemplates = (activeDoc.activeTemplates || {}) as ActivePromptSelections;
+  let returnedActive: ActivePromptSelections = activeTemplates;
+
+  if (source === 'backend') {
+    const sanitizedActive: ActivePromptSelections = { ...activeTemplates };
+    let changed = false;
+
+    for (const stage of SYSTEM_STAGES) {
+      const selected = (sanitizedActive[stage] as string | 'default' | undefined) || 'default';
+      const userIds = userTemplateIdsByStage.get(stage) || new Set<string>();
+      const systemKeys = systemKeysByStage.get(stage) || new Set<string>();
+
+      // Keep valid user templates.
+      if (selected && selected !== 'default' && userIds.has(selected)) {
+        continue;
+      }
+
+      // System selection (or unknown) must be currently selectable; otherwise fall back to newest.
+      if (!systemKeys.has(selected)) {
+        const fallbackKey = pickNewestSystemTemplateKeyForStage(stage, systemTemplates) || 'default';
+        if (fallbackKey !== selected) {
+          sanitizedActive[stage] = fallbackKey;
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      const settingsRef = doc(db, 'users', user.uid, 'promptSettings', 'active');
+      await setDoc(
+        settingsRef,
+        {
+          activeTemplates: sanitizedActive,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    returnedActive = sanitizedActive;
+  }
+
   return {
     templates,
-    active: (active.activeTemplates || {}) as ActivePromptSelections,
-    askOnEachProcess: Boolean(active.askOnEachProcess),
+    active: returnedActive,
+    askOnEachProcess: Boolean(activeDoc.askOnEachProcess),
     systemTemplates,
     systemPermissions,
   };

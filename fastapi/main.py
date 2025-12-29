@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, BackgroundTasks, status, HTTPException, Re
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from utils.config import config
 from middleware.auth import (
     verify_firebase_token,
@@ -191,6 +191,10 @@ async def admin_me(_: str = Depends(verify_admin_user)):
 def _ms_to_iso(ts_ms: int | None) -> str | None:
     if not ts_ms:
         return None
+    try:
+        return datetime.utcfromtimestamp(int(ts_ms) / 1000.0).replace(microsecond=0).isoformat() + "Z"
+    except Exception:
+        return None
 
 
 def _ts_to_iso(value) -> str | None:
@@ -200,14 +204,16 @@ def _ts_to_iso(value) -> str | None:
         if hasattr(value, "to_datetime"):
             value = value.to_datetime()
         if isinstance(value, datetime):
-            return value.replace(microsecond=0).isoformat() + "Z"
+            dt = value
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+            dt = dt.replace(microsecond=0)
+            return dt.isoformat().replace("+00:00", "Z")
     except Exception:
         return None
     return None
-    try:
-        return datetime.utcfromtimestamp(int(ts_ms) / 1000.0).replace(microsecond=0).isoformat() + "Z"
-    except Exception:
-        return None
 
 
 @app.get("/api/admin/users")
