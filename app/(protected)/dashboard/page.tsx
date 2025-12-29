@@ -5,8 +5,9 @@ import { getUserQuellen } from '@/app/actions/quellen';
 import { getUserKapitels } from '@/app/actions/kapitels';
 import { getOrCreateDefaultProject, getProjects } from '@/app/actions/projects';
 import { Dashboard } from '@/app/components/dashboard/Dashboard';
-import { DashboardSkeleton } from '@/app/components/dashboard/DashboardSkeleton';
 import { DashboardAuthWrapper } from './DashboardAuthWrapper';
+import { cookies } from 'next/headers';
+import { getActiveKapitelCookieName } from '@/app/lib/ui/kapitelSelection';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,11 @@ export default async function DashboardPage() {
     getUserKapitels(projekt.id, false, INITIAL_RUN_LIMIT, { user, db }),
   ]);
 
+  const cookieStore = await cookies();
+  const persistedKapitelId = cookieStore.get(getActiveKapitelCookieName(projekt.id))?.value;
+  const initialActiveKapitelId =
+    persistedKapitelId && kapitels.some((k) => k.id === persistedKapitelId) ? persistedKapitelId : undefined;
+
   // Ensure the default project is available even if it was created after fetching the list
   const projekteWithDefault = projekte.some((p) => p.id === projekt.id) ? projekte : [projekt, ...projekte];
 
@@ -48,6 +54,7 @@ export default async function DashboardPage() {
       initialProjekt={projekt}
       initialProjekte={projekteWithDefault}
       initialRuns={[]}
+      initialActiveKapitelId={initialActiveKapitelId}
     />
   );
 }

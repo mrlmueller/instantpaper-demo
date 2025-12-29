@@ -80,6 +80,7 @@ import {
 import Cookies from 'js-cookie';
 import { fetchOpenAIKeyStatus, type OpenAIKeyStatus } from '@/app/lib/api/openaiKeyClient';
 import { getQuellenPanelState, setQuellenPanelState } from '@/app/lib/storage/preferences';
+import { getActiveKapitelCookieName } from '@/app/lib/ui/kapitelSelection';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
 const RUN_HISTORY_LIMIT = 10;
@@ -179,6 +180,7 @@ interface DashboardProps {
   initialProjekt: FirebaseProject;
   initialProjekte: FirebaseProject[];
   initialRuns?: FirebaseKapitelRun[];
+  initialActiveKapitelId?: string;
 }
 
 export function Dashboard({
@@ -187,6 +189,7 @@ export function Dashboard({
   initialProjekt,
   initialProjekte,
   initialRuns = [],
+  initialActiveKapitelId: initialActiveKapitelIdProp,
 }: DashboardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -218,9 +221,14 @@ export function Dashboard({
   );
 
   // UI state
-  const initialActiveKapitelId = kapiteln[0]?.id || '';
+  const initialActiveKapitelId =
+    initialActiveKapitelIdProp && kapiteln.some((k) => k.id === initialActiveKapitelIdProp)
+      ? initialActiveKapitelIdProp
+      : kapiteln[0]?.id || '';
   const [activeKapitelId, setActiveKapitelId] = useState(initialActiveKapitelId);
   const activeKapitel = kapiteln.find((k) => k.id === activeKapitelId);
+
+  const [loadedProjektId, setLoadedProjektId] = useState<string>(initialProjekt.id);
 
   const [fbRuns, setFbRuns] = useState<FirebaseKapitelRun[]>(initialRuns);
   const keepInitialRunsRef = useRef(initialRuns.length > 0);
@@ -395,16 +403,19 @@ export function Dashboard({
       getUserQuellen(projektId),
       getUserKapitels(projektId, false, RUN_HISTORY_LIMIT),
     ]);
+    setLoadedProjektId(projektId);
     setQuellen(fbQuellen.map((q) => transformQuelleToUI(q, projektId)));
     setKapiteln(fbKapitels.map((k) => transformKapitelToUI(k, projektId)));
-    const firstKapitelId = fbKapitels[0]?.id || '';
-    setActiveKapitelId(firstKapitelId);
+    const persistedKapitelId = Cookies.get(getActiveKapitelCookieName(projektId));
+    const nextKapitelId =
+      persistedKapitelId && fbKapitels.some((k) => k.id === persistedKapitelId) ? persistedKapitelId : fbKapitels[0]?.id || '';
+    setActiveKapitelId(nextKapitelId);
     setSelectedRunId(null);
     selectedRunIdRef.current = null;
     setFbRuns([]);
 
-    if (firstKapitelId) {
-      const runs = await getKapitelRuns(firstKapitelId, RUN_HISTORY_LIMIT);
+    if (nextKapitelId) {
+      const runs = await getKapitelRuns(nextKapitelId, RUN_HISTORY_LIMIT);
       setFbRuns(runs);
       keepInitialRunsRef.current = runs.length > 0;
       setIsKapitelLoading(runs.length === 0);
@@ -412,6 +423,20 @@ export function Dashboard({
       setIsKapitelLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const cookieName = getActiveKapitelCookieName(loadedProjektId);
+    if (!activeKapitelId) {
+      Cookies.remove(cookieName);
+      return;
+    }
+
+    Cookies.set(cookieName, activeKapitelId, {
+      expires: 365,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    });
+  }, [loadedProjektId, activeKapitelId]);
 
   const persistKapitelQuellenClient = useCallback(async (kapitelId: string, quelleIds: string[]) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
@@ -931,6 +956,8 @@ export function Dashboard({
         setActiveKapitelId((prev) => {
           if (!ui.length) return '';
           if (prev && ui.some((k) => k.id === prev)) return prev;
+          const persistedKapitelId = Cookies.get(getActiveKapitelCookieName(projekt.id));
+          if (persistedKapitelId && ui.some((k) => k.id === persistedKapitelId)) return persistedKapitelId;
           return ui[0].id;
         });
       },
