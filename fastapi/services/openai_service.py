@@ -94,18 +94,15 @@ class OpenAIService:
         try:
             client = self._get_client(api_key)
 
-            template = user_input or ""
+            template = (user_input or "").replace("{BILDINHALT_ODER_LEER}", "")
             has_quelltext_placeholder = "{QUELLTEXT}" in template
-            has_basic_info_placeholder = "{GRUNDLEGENDE_INFOS_ODER_LEER}" in template
-            has_image_info_placeholder = "{BILDINHALT_ODER_LEER}" in template
+            has_basic_info_placeholder = "{OPTIONAL_GRUNDLEGENDE_INFOS}" in template
 
             if has_basic_info_placeholder:
                 template = template.replace(
-                    "{GRUNDLEGENDE_INFOS_ODER_LEER}",
+                    "{OPTIONAL_GRUNDLEGENDE_INFOS}",
                     (grundlegende_informationen or "").strip(),
                 )
-            if has_image_info_placeholder:
-                template = template.replace("{BILDINHALT_ODER_LEER}", "")
 
             if has_quelltext_placeholder:
                 prompt = template.replace("{QUELLTEXT}", quelle_content)

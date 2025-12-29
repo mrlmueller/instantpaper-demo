@@ -166,7 +166,7 @@ class ShortenService:
 
         try:
             instructions = await prompt_service.get_rendered_instructions(
-                user_id, "summary", {"text": source_text}
+                user_id, "summary", {"KAPITELTEXT": source_text}
             )
             summary_template_id = await firebase_service.get_active_prompt_id(user_id, "summary")
             summary_template_id = (summary_template_id or "").strip() or "default"
@@ -529,14 +529,14 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
             )
 
             payload = {
-                "ueberschrift": ueberschrift,
-                "thema": thema,
-                "KONTEXT_ANDERE_KAPITEL": gliederung,
-                "TEXT_ZUM_KUERZEN": target_text,
+                "KAPITEL_TITEL": ueberschrift,
+                "KAPITEL_BESCHREIBUNG": thema,
+                "GLIEDERUNG_SUMMARY": gliederung,
+                "KAPITELTEXT": target_text,
             }
             rendered = prompt_service.render(template_instructions, payload)
-            uses_inline_inputs = ("{KONTEXT_ANDERE_KAPITEL}" in template_instructions) and (
-                "{TEXT_ZUM_KUERZEN}" in template_instructions
+            uses_inline_inputs = ("{GLIEDERUNG_SUMMARY}" in template_instructions) and (
+                "{KAPITELTEXT}" in template_instructions
             )
 
             prompt_body = rendered
@@ -921,22 +921,17 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
             )
 
             payload = {
-                "aufgabenstellung": aufgabenstellung,
-                "gliederung": gliederung,
-                "kapitel_nummer": str(kapitel_nummer),
-                "target_text": target_text,
                 "AUFGABENSTELLUNG": aufgabenstellung,
                 "GLIEDERUNG_SUMMARY": gliederung,
+                "KAPITELTEXT": target_text,
                 "AKTUELLES_KAPITEL_NUMMER": str(kapitel_nummer),
                 "NAECHSTES_KAPITEL_NUMMER": next_kapitel_nummer,
                 "UEBERNAECHSTES_KAPITEL_NUMMER": uebernaechstes_kapitel_nummer,
-                "KAPITELTEXT": target_text,
             }
 
             rendered = prompt_service.render(template_instructions, payload)
             uses_inline_inputs = (
                 ("{GLIEDERUNG_SUMMARY}" in template_instructions and "{KAPITELTEXT}" in template_instructions)
-                or ("{gliederung}" in template_instructions and "{target_text}" in template_instructions)
             )
 
             prompt_body = rendered

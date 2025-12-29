@@ -30,6 +30,7 @@ from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
 from services.refinement_service import refinement_service
 from services.firebase_service import firebase_service
+from services.prompt_service import prompt_service
 from firebase_admin import auth
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 from pydantic import BaseModel
@@ -391,6 +392,18 @@ def _validate_template_key(key: str) -> str:
     return key_norm
 
 
+def _validate_required_placeholders(stage: str, instructions: str) -> None:
+    required = list(prompt_service.REQUIRED_PLACEHOLDERS.get(stage, []) or [])
+    if not required:
+        return
+    missing = [ph for ph in required if ph not in (instructions or "")]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required placeholders: {', '.join(missing)}",
+        )
+
+
 @app.get("/api/system-prompt-templates")
 async def list_system_prompt_templates(
     stage: str | None = None,
@@ -556,6 +569,8 @@ async def admin_upsert_system_prompt_template(
         raise HTTPException(status_code=400, detail="name is required")
     if not instructions.strip():
         raise HTTPException(status_code=400, detail="instructions is required")
+
+    _validate_required_placeholders(stage_norm, instructions)
 
     try:
         await firebase_service.upsert_system_prompt_template(

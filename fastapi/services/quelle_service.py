@@ -122,9 +122,6 @@ class QuelleService:
             if run and not payload.get("topic") and (run.get("thema") or "").strip():
                 payload["topic"] = (run.get("thema") or "").strip()
 
-            # Optional placeholder support (kept for user templates).
-            payload.setdefault("grundlegende_infos", (grundlegende_informationen or "").strip())
-
             if not (str(payload.get("heading") or "").strip()):
                 raise HTTPException(status_code=400, detail="Run is missing heading/promptPayload.heading.")
             if not (str(payload.get("topic") or "").strip()):
@@ -132,19 +129,14 @@ class QuelleService:
 
             heading = str(payload.get("heading") or "").strip()
             topic = str(payload.get("topic") or "").strip()
-            grund_infos = str(payload.get("grundlegende_infos") or "").strip()
 
             rendered_instructions = await prompt_service.get_rendered_instructions_for_template(
                 user_id=user_id,
                 stage="process_quelle",
                 template_id=prompt_template_id,
                 payload={
-                    "heading": heading,
-                    "topic": topic,
-                    "grundlegende_infos": grund_infos,
                     "KAPITEL_TITEL": heading,
                     "KAPITEL_BESCHREIBUNG": topic,
-                    "ANWEISUNGEN": topic,
                 },
             )
             system_prompt = await prompt_service.get_system_prompt_for_template(
@@ -162,9 +154,15 @@ class QuelleService:
 
             # Step 1.6: Extract image URLs from Quelle (if any)
             quelle_images = None
-            if "images" in quelle_meta and isinstance(quelle_meta["images"], list):
-                quelle_images = [img["url"] for img in quelle_meta["images"] if "url" in img]
-                logger.info(f"Quelle has {len(quelle_images)} image(s)")
+            if isinstance(quelle_meta.get("images"), list):
+                urls = [
+                    str(img.get("url") or "").strip()
+                    for img in quelle_meta["images"]
+                    if isinstance(img, dict) and str(img.get("url") or "").strip()
+                ]
+                if urls:
+                    quelle_images = urls
+                    logger.info(f"Quelle has {len(quelle_images)} image(s)")
 
             # Step 2: Process with OpenAI
             api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
@@ -405,7 +403,9 @@ class QuelleService:
 
             results = await self.firebase.get_run_results(user_id, kapitel_id, run_id)
             combine_instructions = await prompt_service.get_rendered_instructions(
-                user_id, "combine", {"heading": heading, "topic": topic}
+                user_id,
+                "combine",
+                {"KAPITEL_TITEL": heading, "KAPITEL_BESCHREIBUNG": topic},
             )
             combine_template_id = await self.firebase.get_active_prompt_id(user_id, "combine")
             combine_template_id = (combine_template_id or "").strip() or "default"

@@ -62,11 +62,15 @@ const stageOptions: { value: PromptStage; label: string }[] = [
 ];
 
 const stubInstructionsByStage: Record<PromptStage, string> = {
-  process_quelle: "### Aufgabe:\nHeading: {heading}\nThema: {topic}",
-  combine: "### Aufgabe:\nHeading: {heading}\nThema: {topic}",
-  shorten: "### Aufgabe:\nUeberschrift: {ueberschrift}\nThema: {thema}",
-  lesefluss: "### Aufgabe:\nAufgabenstellung: {aufgabenstellung}\nKapitel: {kapitel_nummer}",
-  summary: "### Aufgabe:\nText: {text}",
+  process_quelle:
+    "<Prompt entfernt>",
+  combine:
+    "[AUFGABE]\nTitel: {KAPITEL_TITEL}\nThema: {KAPITEL_BESCHREIBUNG}\n\n[ENTWÜRFE]\n{DRAFTS}",
+  shorten:
+    "<kapitel_titel>\n{KAPITEL_TITEL}\n</kapitel_titel>\n\n<kapitel_beschreibung>\n{KAPITEL_BESCHREIBUNG}\n</kapitel_beschreibung>\n\n<gliederung_und_kapitelzusammenfassungen>\n{GLIEDERUNG_SUMMARY}\n</gliederung_und_kapitelzusammenfassungen>\n\n<kapiteltext>\n{KAPITELTEXT}\n</kapiteltext>",
+  lesefluss:
+    "<aufgabenstellung>\n{AUFGABENSTELLUNG}\n</aufgabenstellung>\n\n<gliederung_und_kapitelzusammenfassungen>\n{GLIEDERUNG_SUMMARY}\n</gliederung_und_kapitelzusammenfassungen>\n\n<kapiteltext_zu_ueberarbeiten>\n{KAPITELTEXT}\n</kapiteltext_zu_ueberarbeiten>",
+  summary: "### Aufgabe:\nText:\n{KAPITELTEXT}",
 };
 
 export function PromptManager() {
