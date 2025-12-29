@@ -229,6 +229,9 @@ export function Dashboard({
   const activeKapitel = kapiteln.find((k) => k.id === activeKapitelId);
 
   const [loadedProjektId, setLoadedProjektId] = useState<string>(initialProjekt.id);
+  const loadedProjektIdRef = useRef<string>(initialProjekt.id);
+  const activeKapitelIdRef = useRef<string>(initialActiveKapitelId);
+  const kapitelnRef = useRef<Kapitel[]>(kapiteln);
 
   const [fbRuns, setFbRuns] = useState<FirebaseKapitelRun[]>(initialRuns);
   const keepInitialRunsRef = useRef(initialRuns.length > 0);
@@ -404,6 +407,7 @@ export function Dashboard({
       getUserKapitels(projektId, false, RUN_HISTORY_LIMIT),
     ]);
     setLoadedProjektId(projektId);
+    loadedProjektIdRef.current = projektId;
     setQuellen(fbQuellen.map((q) => transformQuelleToUI(q, projektId)));
     setKapiteln(fbKapitels.map((k) => transformKapitelToUI(k, projektId)));
     const persistedKapitelId = Cookies.get(getActiveKapitelCookieName(projektId));
@@ -425,18 +429,74 @@ export function Dashboard({
   }, []);
 
   useEffect(() => {
-    const cookieName = getActiveKapitelCookieName(loadedProjektId);
-    if (!activeKapitelId) {
-      Cookies.remove(cookieName);
+    loadedProjektIdRef.current = loadedProjektId;
+  }, [loadedProjektId]);
+
+  useEffect(() => {
+    activeKapitelIdRef.current = activeKapitelId;
+  }, [activeKapitelId]);
+
+  useEffect(() => {
+    kapitelnRef.current = kapiteln;
+  }, [kapiteln]);
+
+  const persistActiveKapitelCookie = useCallback((projektId: string, kapitelId: string | null) => {
+    const cookieName = getActiveKapitelCookieName(projektId);
+    if (!kapitelId) {
+      Cookies.remove(cookieName, { path: '/' });
       return;
     }
 
-    Cookies.set(cookieName, activeKapitelId, {
+    Cookies.set(cookieName, kapitelId, {
       expires: 365,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
+      path: '/',
     });
-  }, [loadedProjektId, activeKapitelId]);
+  }, []);
+
+  const syncActiveKapitelFromCookie = useCallback(() => {
+    const projektId = loadedProjektIdRef.current;
+    const currentActive = activeKapitelIdRef.current;
+    const currentKapiteln = kapitelnRef.current;
+    const persistedKapitelId = Cookies.get(getActiveKapitelCookieName(projektId));
+    if (!persistedKapitelId || persistedKapitelId === currentActive) return;
+    if (!currentKapiteln.some((k) => k.id === persistedKapitelId)) return;
+    setActiveKapitelId(persistedKapitelId);
+  }, []);
+
+  useEffect(() => {
+    // When navigating back/forward, Next can restore a cached dashboard tree (including stale Kapitel state).
+    // Sync to the persisted cookie to keep browser back in sync with the last selection.
+    const onShow = () => syncActiveKapitelFromCookie();
+    const onPop = () => syncActiveKapitelFromCookie();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') syncActiveKapitelFromCookie();
+    };
+
+    syncActiveKapitelFromCookie();
+    window.addEventListener('pageshow', onShow);
+    window.addEventListener('popstate', onPop);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pageshow', onShow);
+      window.removeEventListener('popstate', onPop);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [syncActiveKapitelFromCookie]);
+
+  useEffect(() => {
+    persistActiveKapitelCookie(loadedProjektId, activeKapitelId || null);
+  }, [loadedProjektId, activeKapitelId, persistActiveKapitelCookie]);
+
+  const handleKapitelSelect = useCallback(
+    (kapitelId: string) => {
+      setActiveKapitelId(kapitelId);
+      // Persist immediately so fast navigation away (e.g. Quellen Manager) still keeps the latest selection.
+      persistActiveKapitelCookie(loadedProjektIdRef.current, kapitelId);
+    },
+    [persistActiveKapitelCookie]
+  );
 
   const persistKapitelQuellenClient = useCallback(async (kapitelId: string, quelleIds: string[]) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
@@ -2124,7 +2184,7 @@ export function Dashboard({
         <KapitelNavigator
           kapiteln={kapiteln}
           activeKapitelId={activeKapitelId}
-          onKapitelSelect={setActiveKapitelId}
+          onKapitelSelect={handleKapitelSelect}
           onAddKapitel={handleAddKapitel}
           onDeleteKapitel={(id, name) => setDeleteConfirm({ type: 'kapitel', id, name })}
           onEditKapitel={handleEditKapitel}
