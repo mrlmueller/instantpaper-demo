@@ -33,14 +33,17 @@ export default async function DashboardPage() {
   const cookieStore = await cookies();
 
   const defaultProjekt = await getOrCreateDefaultProject({ user, db });
-  const projekte = await getProjects({ user, db });
+  const projekte = await getProjects({ user, db }, { includeArchived: true });
 
   // Ensure the default project is available even if it was created after fetching the list
   const projekteWithDefault = projekte.some((p) => p.id === defaultProjekt.id) ? projekte : [defaultProjekt, ...projekte];
 
   const persistedProjektId = cookieStore.get(getActiveProjektCookieName())?.value;
+  const activeProjekte = projekteWithDefault.filter((p) => p.archived !== true);
   const selectedProjekt =
-    (persistedProjektId ? projekteWithDefault.find((p) => p.id === persistedProjektId) : undefined) ?? defaultProjekt;
+    (persistedProjektId ? activeProjekte.find((p) => p.id === persistedProjektId) : undefined) ??
+    activeProjekte[0] ??
+    defaultProjekt;
 
   const [quellen, kapitels] = await Promise.all([
     getUserQuellen(selectedProjekt.id, { user, db }),

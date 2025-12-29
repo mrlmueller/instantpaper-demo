@@ -57,7 +57,7 @@ import {
   type KapitelRun as FirebaseKapitelRun,
   type Kapitel as FirebaseKapitel,
 } from '@/app/actions/kapitels';
-import { createProject, deleteProject, type Project as FirebaseProject } from '@/app/actions/projects';
+import { archiveProject, createProject, unarchiveProject, type Project as FirebaseProject } from '@/app/actions/projects';
 
 // Firebase real-time
 import { useAuth } from '@/app/components/providers/AuthProvider';
@@ -203,12 +203,14 @@ export function Dashboard({
     id: initialProjekt.id,
     name: initialProjekt.name,
     createdAt: new Date(initialProjekt.createdAt),
+    archived: Boolean(initialProjekt.archived),
   });
   const [projekte, setProjekte] = useState<Projekt[]>(
     initialProjektList.map((p) => ({
       id: p.id,
       name: p.name,
       createdAt: new Date(p.createdAt),
+      archived: Boolean(p.archived),
     }))
   );
 
@@ -1120,7 +1122,7 @@ export function Dashboard({
           setProjekt(next);
         } else {
           // minimal fallback if not found
-          setProjekt({ id: projektId, name: 'Projekt', createdAt: new Date() });
+          setProjekt({ id: projektId, name: 'Projekt', createdAt: new Date(), archived: false });
         }
       } catch (error: any) {
         console.error('Projekt wechseln fehlgeschlagen:', error);
@@ -1147,6 +1149,7 @@ export function Dashboard({
           id: result.id,
           name,
           createdAt: new Date(),
+          archived: false,
         };
         setProjekte((prev) => [newProjekt, ...prev]);
         // Switch immediately using the newly created project
@@ -1164,29 +1167,53 @@ export function Dashboard({
     [loadProjektData, isCreatingProjekt, persistActiveProjektCookie]
   );
 
-  const handleDeleteProjekt = useCallback(
+  const handleArchiveProjekt = useCallback(
     async (projektId: string) => {
-      if (projekte.length <= 1) {
-        toast.error('Projekt löschen nicht möglich', { description: 'Mindestens ein Projekt muss bestehen.' });
+      if (projektId === 'default') {
+        toast.error('Standardprojekt kann nicht archiviert werden');
+        return;
+      }
+
+      const activeCount = projekte.filter((p) => p.archived !== true).length;
+      if (activeCount <= 1) {
+        toast.error('Projekt archivieren nicht möglich', { description: 'Mindestens ein aktives Projekt muss bestehen.' });
         return;
       }
       try {
-        await deleteProject(projektId);
-        const remaining = projekte.filter((p) => p.id !== projektId);
-        setProjekte(remaining);
-        if (projekt.id === projektId && remaining.length > 0) {
-          persistActiveProjektCookie(remaining[0].id);
-          setProjekt(remaining[0]);
-          await loadProjektData(remaining[0].id);
+        const result = await archiveProject(projektId);
+        if (!result.success) {
+          throw new Error(result.error || 'Projekt konnte nicht archiviert werden.');
         }
-        toast.success('Projekt gelöscht');
+        setProjekte((prev) => prev.map((p) => (p.id === projektId ? { ...p, archived: true } : p)));
+        const remainingActive = projekte.filter((p) => p.id !== projektId && p.archived !== true);
+        if (projekt.id === projektId && remainingActive.length > 0) {
+          persistActiveProjektCookie(remainingActive[0].id);
+          setProjekt(remainingActive[0]);
+          await loadProjektData(remainingActive[0].id);
+        }
+        toast.success('Projekt archiviert');
       } catch (error: any) {
-        console.error('Projekt löschen fehlgeschlagen:', error);
-        toast.error('Projekt konnte nicht gelöscht werden', { description: error.message });
+        console.error('Projekt archivieren fehlgeschlagen:', error);
+        toast.error('Projekt konnte nicht archiviert werden', { description: error.message });
       }
     },
     [loadProjektData, persistActiveProjektCookie, projekt.id, projekte]
   );
+
+  const handleUnarchiveProjekt = useCallback(async (projektId: string) => {
+    try {
+      const result = await unarchiveProject(projektId);
+      if (!result.success) {
+        throw new Error(result.error || 'Projekt konnte nicht wiederhergestellt werden.');
+      }
+
+      setProjekte((prev) => prev.map((p) => (p.id === projektId ? { ...p, archived: false } : p)));
+      toast.success('Projekt wiederhergestellt');
+    } catch (error: any) {
+      console.error('Projekt wiederherstellen fehlgeschlagen:', error);
+      toast.error('Projekt konnte nicht wiederhergestellt werden', { description: error.message });
+    }
+  }, []);
 
   const handleAddQuelle = useCallback(
     async (name: string, text: string, imageFiles: File[] = [], advancedFields?: Record<string, any>): Promise<boolean> => {
@@ -2196,7 +2223,8 @@ export function Dashboard({
           projekte={projekte}
           onSwitchProjekt={handleSwitchProjekt}
           onCreateProjekt={handleCreateProjekt}
-          onDeleteProjekt={(id, name) => setDeleteConfirm({ type: 'projekt', id, name })}
+          onArchiveProjekt={(id, name) => setDeleteConfirm({ type: 'projekt', id, name })}
+          onUnarchiveProjekt={handleUnarchiveProjekt}
           isCreatingProjekt={isCreatingProjekt}
         />
         <KapitelNavigator
@@ -2416,12 +2444,16 @@ export function Dashboard({
         type={deleteConfirm?.type || 'quelle'}
         name={deleteConfirm?.name || ''}
         onConfirm={() => {
-          if (deleteConfirm?.type === 'quelle') {
-            handleDeleteQuelle(deleteConfirm.id);
-          } else if (deleteConfirm?.type === 'kapitel') {
-            handleDeleteKapitel(deleteConfirm.id);
-          } else if (deleteConfirm?.type === 'projekt') {
-            handleDeleteProjekt(deleteConfirm.id);
+          const current = deleteConfirm;
+          setDeleteConfirm(null);
+          if (!current) return;
+
+          if (current.type === 'quelle') {
+            handleDeleteQuelle(current.id);
+          } else if (current.type === 'kapitel') {
+            handleDeleteKapitel(current.id);
+          } else if (current.type === 'projekt') {
+            handleArchiveProjekt(current.id);
           }
         }}
       />

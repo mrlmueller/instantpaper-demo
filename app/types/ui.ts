@@ -5,6 +5,7 @@ export interface Projekt {
   id: string;
   name: string;
   createdAt: Date;
+  archived?: boolean;
 }
 
 export interface Quelle {

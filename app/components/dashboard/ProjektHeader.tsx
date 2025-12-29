@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { ChevronDown, FolderOpen, Plus, LogOut, User, Loader2, BookOpen } from "lucide-react"
+import { ChevronDown, FolderOpen, Plus, LogOut, User, Loader2, BookOpen, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -14,6 +14,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { useAuth } from "@/app/components/providers/AuthProvider"
 import { signOut as signOutUser } from "@/app/lib/firebase/auth"
@@ -24,7 +25,8 @@ interface ProjektHeaderProps {
   projekte: Projekt[]
   onSwitchProjekt: (id: string) => void
   onCreateProjekt: (name: string) => Promise<void>
-  onDeleteProjekt: (id: string, name: string) => void
+  onArchiveProjekt: (id: string, name: string) => void
+  onUnarchiveProjekt: (id: string) => void
   isCreatingProjekt: boolean
 }
 
@@ -33,7 +35,8 @@ export function ProjektHeader({
   projekte,
   onSwitchProjekt,
   onCreateProjekt,
-  onDeleteProjekt,
+  onArchiveProjekt,
+  onUnarchiveProjekt,
   isCreatingProjekt,
 }: ProjektHeaderProps) {
   const { user } = useAuth()
@@ -42,9 +45,21 @@ export function ProjektHeader({
   const [newProjektName, setNewProjektName] = useState("")
   const [localCreateLoading, setLocalCreateLoading] = useState(false)
 
+  const activeProjekte = projekte.filter((p) => p.archived !== true)
+  const archivedProjekte = projekte.filter((p) => p.archived === true)
+
   const userName = user?.displayName || user?.email || "User"
   const handleCreateProjekt = async () => {
     if (!newProjektName.trim() || localCreateLoading || isCreatingProjekt) return
+
+    const normalize = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase()
+    const desired = normalize(newProjektName)
+    const existing = projekte.some((p) => normalize(p.name) === desired)
+    if (existing) {
+      toast.error("Projektname bereits vergeben", { description: "Ein Projekt mit diesem Namen existiert bereits (auch im Archiv)." })
+      return
+    }
+
     setLocalCreateLoading(true)
     setNewProjektDialogOpen(false)
     try {
@@ -182,38 +197,73 @@ export function ProjektHeader({
           <DialogHeader>
             <DialogTitle>Projekt wechseln</DialogTitle>
           </DialogHeader>
-          <div className="py-4 space-y-2">
-            {projekte.map((p) => (
-              <div
-                key={p.id}
-                className={`w-full px-4 py-3 rounded-md border transition-colors ${
-                  p.id === projekt.id ? "bg-primary/10 border-primary/30" : "hover:bg-muted"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <button
-                    className="text-left flex-1"
-                    onClick={() => {
-                      onSwitchProjekt(p.id)
-                      setSwitchDialogOpen(false)
-                    }}
+          <div className="py-4">
+            <Tabs defaultValue="active">
+              <TabsList className="w-full grid grid-cols-2">
+                <TabsTrigger value="active">Aktiv</TabsTrigger>
+                <TabsTrigger value="archived">Archiviert</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="active" className="mt-4 space-y-2">
+                {activeProjekte.map((p) => (
+                  <div
+                    key={p.id}
+                    className={`w-full px-4 py-3 rounded-md border transition-colors ${
+                      p.id === projekt.id ? "bg-primary/10 border-primary/30" : "hover:bg-muted"
+                    }`}
                   >
-                    <div className="font-medium text-sm">{p.name}</div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Erstellt: {p.createdAt.toLocaleDateString("de-DE")}
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        className="text-left flex-1"
+                        onClick={() => {
+                          onSwitchProjekt(p.id)
+                          setSwitchDialogOpen(false)
+                        }}
+                      >
+                        <div className="font-medium text-sm">{p.name}</div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Erstellt: {p.createdAt.toLocaleDateString("de-DE")}
+                        </div>
+                      </button>
+                      {activeProjekte.length > 1 && p.id !== "default" && (
+                        <button
+                          className="text-xs text-muted-foreground underline hover:text-foreground"
+                          onClick={() => {
+                            onArchiveProjekt(p.id, p.name)
+                            setSwitchDialogOpen(false)
+                          }}
+                        >
+                          Archivieren
+                        </button>
+                      )}
                     </div>
-                  </button>
-                  {projekte.length > 1 && (
-                    <button
-                      className="text-xs text-destructive underline"
-                      onClick={() => onDeleteProjekt(p.id, p.name)}
-                    >
-                      Löschen
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+                  </div>
+                ))}
+              </TabsContent>
+
+              <TabsContent value="archived" className="mt-4 space-y-2">
+                {archivedProjekte.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">Keine archivierten Projekte.</div>
+                ) : (
+                  archivedProjekte.map((p) => (
+                    <div key={p.id} className="w-full px-4 py-3 rounded-md border bg-muted/30">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium text-sm truncate">{p.name}</div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Erstellt: {p.createdAt.toLocaleDateString("de-DE")}
+                          </div>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => onUnarchiveProjekt(p.id)}>
+                          <RotateCcw className="h-4 w-4 mr-2" />
+                          Wiederherstellen
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </TabsContent>
+            </Tabs>
           </div>
         </DialogContent>
       </Dialog>
