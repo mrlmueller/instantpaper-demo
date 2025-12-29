@@ -46,6 +46,15 @@ class Config:
     ADMIN_BASIC_USER: str = os.getenv("ADMIN_BASIC_USER", "admin").strip() or "admin"
     ADMIN_BASIC_PASSWORD: str = os.getenv("ADMIN_BASIC_PASSWORD", "").strip()
 
+    # Admin access (UID allowlist)
+    # Comma-separated Firebase Auth UIDs that may access /api/admin/* endpoints.
+    _ADMIN_UIDS_RAW: str = os.getenv("ADMIN_UIDS", "").strip()
+    ADMIN_UIDS: List[str] = [
+        uid.strip()
+        for uid in _ADMIN_UIDS_RAW.split(",")
+        if uid.strip()
+    ]
+
     # Text refinement flow
     TEXT_REFINEMENT_MAX_DEPTH: int = int(os.getenv("TEXT_REFINEMENT_MAX_DEPTH", "4"))
     DUMP_REFINEMENT_PROMPTS: bool = (

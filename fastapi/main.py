@@ -4,7 +4,7 @@ from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 from datetime import datetime
 from utils.config import config
-from middleware.auth import verify_firebase_token
+from middleware.auth import verify_firebase_token, verify_admin_user
 from models.request import (
     ProcessQuelleRequest,
     CombineRunRequest,
@@ -79,6 +79,11 @@ class RevokeSessionRequest(BaseModel):
     sessionCookie: str
 
 
+class AdminApproveUserRequest(BaseModel):
+    email: str
+    approved: bool = True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown"""
@@ -138,6 +143,94 @@ async def health_check():
         "openai": "connected" if config.OPENAI_API_KEY else "not configured",
         "adminApprovalConfigured": bool(config.ADMIN_BASIC_PASSWORD),
     }
+
+
+@app.get("/api/admin/me")
+async def admin_me(_: str = Depends(verify_admin_user)):
+    """Admin-only probe endpoint used by the frontend gate."""
+    return {"status": "ok"}
+
+
+def _ms_to_iso(ts_ms: int | None) -> str | None:
+    if not ts_ms:
+        return None
+    try:
+        return datetime.utcfromtimestamp(int(ts_ms) / 1000.0).replace(microsecond=0).isoformat() + "Z"
+    except Exception:
+        return None
+
+
+@app.get("/api/admin/users")
+async def admin_list_users(
+    approved: bool | None = None,
+    query: str | None = None,
+    page_token: str | None = None,
+    max_results: int = 200,
+    _: str = Depends(verify_admin_user),
+):
+    """
+    List Firebase Auth users (admin-only).
+
+    This powers the admin approval UI: pending users are those with `approved != true`.
+    """
+    try:
+        # Ensure Firebase Admin SDK is initialized.
+        _ = firebase_service.db
+
+        max_results = max(1, min(int(max_results or 200), 1000))
+        q = (query or "").strip().lower()
+
+        page = auth.list_users(page_token=page_token, max_results=max_results)
+        users_out = []
+        for user in page.users:
+            email = (user.email or "").strip()
+            display_name = (user.display_name or "").strip()
+            if q and (q not in email.lower()) and (q not in display_name.lower()):
+                continue
+
+            claims = user.custom_claims or {}
+            is_approved = bool(claims.get("approved") is True)
+            if approved is not None and is_approved != bool(approved):
+                continue
+
+            users_out.append(
+                {
+                    "email": email or None,
+                    "displayName": display_name or None,
+                    "approved": is_approved,
+                    "disabled": bool(user.disabled),
+                    "createdAt": _ms_to_iso(getattr(user.user_metadata, "creation_timestamp", None)),
+                    "lastSignInAt": _ms_to_iso(getattr(user.user_metadata, "last_sign_in_timestamp", None)),
+                }
+            )
+
+        return {"users": users_out, "nextPageToken": page.next_page_token}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to list users.") from None
+
+
+@app.post("/api/admin/users/approve")
+async def admin_approve_user(
+    payload: AdminApproveUserRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Approve/revoke a user by email by setting the Firebase Auth custom claim `approved`."""
+    email = (payload.email or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required.")
+
+    try:
+        result = await firebase_service.set_user_approved_by_email(email=email, approved=bool(payload.approved))
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "approved": result.get("approved"),
+            "note": "User must sign out/in (or refresh token) for the claim to take effect.",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to update user approval.") from None
 
 def _require_admin(credentials: HTTPBasicCredentials = Depends(basic_security)) -> None:
     """
