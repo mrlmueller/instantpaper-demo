@@ -1,5 +1,6 @@
 from services.firebase_service import firebase_service
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -304,6 +305,47 @@ class PromptService:
     def __init__(self):
         pass
 
+    def _is_system_template_usable(self, tpl: dict | None) -> bool:
+        if not tpl:
+            return False
+        if tpl.get("published", True) is not True:
+            return False
+        if tpl.get("archived", False) is True:
+            return False
+        return True
+
+    def _ts_sort_key(self, tpl: dict) -> datetime:
+        ts = tpl.get("updatedAt") or tpl.get("createdAt")
+        try:
+            if hasattr(ts, "to_datetime"):
+                ts = ts.to_datetime()
+        except Exception:
+            ts = None
+        return ts if isinstance(ts, datetime) else datetime.min
+
+    async def _get_newest_system_template_key(self, stage: str) -> str | None:
+        try:
+            templates = await firebase_service.list_system_prompt_templates(stage)
+        except Exception:
+            templates = []
+
+        candidates: list[dict] = []
+        for tpl in templates:
+            if not self._is_system_template_usable(tpl):
+                continue
+            if not (str((tpl.get("templateKey") or "")).strip()):
+                continue
+            if not (str((tpl.get("instructions") or "")).strip()):
+                continue
+            candidates.append(tpl)
+
+        if not candidates:
+            return None
+
+        candidates.sort(key=self._ts_sort_key, reverse=True)
+        key = str((candidates[0].get("templateKey") or "")).strip()
+        return key or None
+
     async def get_instructions_for_template(
         self, user_id: str, stage: str, template_id: str | None
     ) -> str:
@@ -313,15 +355,29 @@ class PromptService:
         Supported template IDs:
         - "default": system default prompt (server-only, stored in Firestore)
         - "default_v2": system v2 prompt (server-only, stored in Firestore)
+        - any other existing system templateKey: server-only, stored in Firestore
         - any other string: user-owned promptTemplates/{templateId}
         """
         tid = (template_id or "").strip() or "default"
 
-        if tid in {"default", "default_v2"}:
-            sys_tpl = await firebase_service.get_system_prompt_template(stage, tid)
-            if sys_tpl and (sys_tpl.get("instructions") or "").strip():
+        sys_tpl = await firebase_service.get_system_prompt_template(stage, tid)
+        if sys_tpl:
+            if self._is_system_template_usable(sys_tpl) and (sys_tpl.get("instructions") or "").strip():
                 return sys_tpl["instructions"]
-            # Fallback to code default if Firestore template is missing.
+
+            # System template exists but is unavailable/empty -> fall back to the newest available system template.
+            fallback_key = await self._get_newest_system_template_key(stage)
+            if fallback_key and fallback_key != tid:
+                fallback_tpl = await firebase_service.get_system_prompt_template(stage, fallback_key)
+                if (
+                    fallback_tpl
+                    and self._is_system_template_usable(fallback_tpl)
+                    and (fallback_tpl.get("instructions") or "").strip()
+                ):
+                    return fallback_tpl["instructions"]
+
+        if tid in {"default", "default_v2"} and not sys_tpl:
+            # Firestore not seeded / missing docs -> fall back to code defaults to keep the app functional.
             if stage == "process_quelle" and tid == "default_v2":
                 return PROCESS_QUELLE_DEFAULT_V2_INSTRUCTIONS
             if stage == "combine" and tid == "default_v2":
@@ -340,13 +396,30 @@ class PromptService:
 
         # Unknown template id → safe fallback.
         sys_tpl = await firebase_service.get_system_prompt_template(stage, "default")
-        if sys_tpl and (sys_tpl.get("instructions") or "").strip():
+        if sys_tpl and self._is_system_template_usable(sys_tpl) and (sys_tpl.get("instructions") or "").strip():
             return sys_tpl["instructions"]
         return DEFAULT_INSTRUCTIONS.get(stage, "")
 
     async def get_instructions(self, user_id: str, stage: str) -> str:
         """Return active instructions for a stage or default."""
-        active_id = await firebase_service.get_active_prompt_id(user_id, stage)
+        active_id = (await firebase_service.get_active_prompt_id(user_id, stage)) or "default"
+        active_id = (active_id or "").strip() or "default"
+
+        # If the user selected an archived/unpublished system template, auto-migrate them to the newest one.
+        sys_tpl = await firebase_service.get_system_prompt_template(stage, active_id)
+        if sys_tpl and (
+            not self._is_system_template_usable(sys_tpl) or not (sys_tpl.get("instructions") or "").strip()
+        ):
+            fallback_key = await self._get_newest_system_template_key(stage)
+            next_id = fallback_key or "default"
+            if next_id and next_id != active_id:
+                try:
+                    await firebase_service.set_active_prompt_id(user_id, stage, next_id)
+                    active_id = next_id
+                except Exception:
+                    # Safe fallback: don't block the request if the migration write fails.
+                    active_id = next_id
+
         return await self.get_instructions_for_template(user_id, stage, active_id)
 
     async def get_system_prompt_for_template(
@@ -362,14 +435,25 @@ class PromptService:
         User templates use the stage's built-in system prompt in code.
         """
         tid = (template_id or "").strip() or "default"
-        if tid not in {"default", "default_v2"}:
-            return None
 
         sys_tpl = await firebase_service.get_system_prompt_template(stage, tid)
-        system_prompt = (sys_tpl or {}).get("systemPrompt") or ""
-        system_prompt = str(system_prompt).strip()
-        if system_prompt:
-            return system_prompt
+        if sys_tpl and not self._is_system_template_usable(sys_tpl):
+            # If the selected system template is unavailable, fall back to the newest available one.
+            fallback_key = await self._get_newest_system_template_key(stage)
+            if fallback_key and fallback_key != tid:
+                tid = fallback_key
+                sys_tpl = await firebase_service.get_system_prompt_template(stage, tid)
+
+        if sys_tpl and self._is_system_template_usable(sys_tpl):
+            system_prompt = str(((sys_tpl or {}).get("systemPrompt") or "")).strip()
+            if system_prompt:
+                return system_prompt
+            # Non-default system templates may omit systemPrompt to fall back to the stage's default system message.
+            if tid not in {"default", "default_v2"}:
+                return None
+
+        if tid not in {"default", "default_v2"}:
+            return None
 
         if stage == "process_quelle":
             if tid == "default_v2":

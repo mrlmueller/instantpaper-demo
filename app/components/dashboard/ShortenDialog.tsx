@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import type { Kapitel } from "@/app/types/ui"
-import type { ActivePromptSelections, PromptStage, PromptTemplate } from "@/app/types/prompts"
+import type { ActivePromptSelections, PromptStage, PromptTemplate, SystemPromptTemplateMeta } from "@/app/types/prompts"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -31,6 +31,7 @@ interface ShortenDialogProps {
   ) => Promise<void>
   askOnEachProcess: boolean
   promptTemplates: PromptTemplate[]
+  systemPromptTemplates: SystemPromptTemplateMeta[]
   promptActive: ActivePromptSelections
   isShortening: boolean
 }
@@ -44,6 +45,7 @@ export function ShortenDialog({
   onShorten,
   askOnEachProcess,
   promptTemplates,
+  systemPromptTemplates,
   promptActive,
   isShortening,
 }: ShortenDialogProps) {
@@ -152,6 +154,16 @@ export function ShortenDialog({
 
   const renderPromptSelect = (stage: PromptStage, label: string) => {
     const options = promptTemplates.filter((p) => p.stage === stage)
+    const systemOptions = systemPromptTemplates
+      .filter((p) => p.stage === stage)
+      .slice()
+      .sort((a, b) => {
+        const rank = (key: string) => (key === "default" ? 0 : key === "default_v2" ? 1 : 2)
+        const ra = rank(a.templateKey)
+        const rb = rank(b.templateKey)
+        if (ra !== rb) return ra - rb
+        return a.name.localeCompare(b.name, "de")
+      })
     return (
       <div className="space-y-2">
         <Label className="text-sm">{label}</Label>
@@ -171,14 +183,11 @@ export function ShortenDialog({
             <SelectValue placeholder="System-Standard" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="default">
-              <span className="text-muted-foreground">System-Standard</span>
-            </SelectItem>
-            {(stage === "summary" || stage === "shorten") && (
-              <SelectItem value="default_v2">
-                <span className="text-muted-foreground">System-Standard (v2)</span>
+            {systemOptions.map((p) => (
+              <SelectItem key={`sys-${p.templateKey}`} value={p.templateKey}>
+                <span className="text-muted-foreground">{p.name}</span>
               </SelectItem>
-            )}
+            ))}
             {options.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.name}

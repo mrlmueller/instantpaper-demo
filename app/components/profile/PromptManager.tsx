@@ -28,9 +28,15 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { STAGE_CONFIG } from "@/app/lib/prompts/promptConfig";
-import type { ActivePromptSelections, PromptStage, PromptTemplate } from "@/app/types/prompts";
+ import type {
+   ActivePromptSelections,
+   PromptStage,
+   PromptTemplate,
+   SystemPromptPermissions,
+   SystemPromptTemplateMeta,
+ } from "@/app/types/prompts";
 import { toast } from "sonner";
-import { Info, Plus, Pencil, Trash2, Star, StarOff, Eye, Check, X } from "lucide-react";
+ import { Check, Copy, Eye, Info, Pencil, Plus, Star, StarOff, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type EditorState = {
@@ -39,7 +45,13 @@ type EditorState = {
   instructions: string;
 };
 
-type TemplatesResponse = { templates: PromptTemplate[]; active: ActivePromptSelections; askOnEachProcess?: boolean };
+ type TemplatesResponse = {
+   templates: PromptTemplate[];
+   active: ActivePromptSelections;
+   askOnEachProcess?: boolean;
+   systemTemplates?: SystemPromptTemplateMeta[];
+   systemPermissions?: SystemPromptPermissions;
+ };
 
 const stageOptions: { value: PromptStage; label: string }[] = [
   { value: "process_quelle", label: STAGE_CONFIG.process_quelle.label },
@@ -60,6 +72,8 @@ const stubInstructionsByStage: Record<PromptStage, string> = {
 export function PromptManager() {
   const [stage, setStage] = useState<PromptStage>("process_quelle");
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
+  const [systemTemplates, setSystemTemplates] = useState<SystemPromptTemplateMeta[]>([]);
+  const [canDuplicateSystemPrompts, setCanDuplicateSystemPrompts] = useState(false);
   const [active, setActive] = useState<ActivePromptSelections>({});
   const [editorOpen, setEditorOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -85,6 +99,8 @@ export function PromptManager() {
       const data: TemplatesResponse = await res.json();
       if (!res.ok) throw new Error((data as any).error || "Konnte Prompts nicht laden.");
       setTemplates(data.templates);
+      setSystemTemplates(Array.isArray(data.systemTemplates) ? data.systemTemplates : []);
+      setCanDuplicateSystemPrompts(Boolean(data.systemPermissions?.canDuplicateSystemPrompts));
       setActive(data.active || {});
       setAskOnEachProcess(Boolean(data.askOnEachProcess));
     } catch (err: any) {
@@ -167,6 +183,49 @@ export function PromptManager() {
     }
   };
 
+  const handleDuplicateUserTemplate = async (tpl: PromptTemplate) => {
+    const suffix = " (Kopie)";
+    const maxLen = 80;
+    let name = `${tpl.name}${suffix}`;
+    if (name.length > maxLen) name = name.slice(0, maxLen).trim();
+
+    try {
+      const res = await fetch("/api/prompt-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage: tpl.stage, name, instructions: tpl.instructions }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Duplizieren fehlgeschlagen.");
+      toast.success("Prompt dupliziert");
+      await loadData();
+    } catch (err: any) {
+      toast.error("Fehler beim Duplizieren", { description: err?.message });
+    }
+  };
+
+  const handleDuplicateSystemTemplate = async (targetStage: PromptStage, templateKey: string, name: string) => {
+    if (!canDuplicateSystemPrompts) return;
+    const suffix = " (Kopie)";
+    const maxLen = 80;
+    let copyName = `${name}${suffix}`;
+    if (copyName.length > maxLen) copyName = copyName.slice(0, maxLen).trim();
+
+    try {
+      const res = await fetch("/api/system-prompt-templates/duplicate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage: targetStage, templateKey, name: copyName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Duplizieren fehlgeschlagen.");
+      toast.success("System-Prompt kopiert");
+      await loadData();
+    } catch (err: any) {
+      toast.error("Fehler beim Kopieren", { description: err?.message });
+    }
+  };
+
   const renderPreview = () => {
     const sample = currentConfig.sampleData;
     const fallbackStub = stubInstructionsByStage[stage];
@@ -244,6 +303,16 @@ export function PromptManager() {
         {stageOptions.map((opt) => {
           const stageConfig = STAGE_CONFIG[opt.value];
           const stageTemplates = templates.filter((t) => t.stage === opt.value);
+          const stageSystemTemplates = systemTemplates
+            .filter((t) => t.stage === opt.value)
+            .slice()
+            .sort((a, b) => {
+              const rank = (key: string) => (key === "default" ? 0 : key === "default_v2" ? 1 : 2);
+              const ra = rank(a.templateKey);
+              const rb = rank(b.templateKey);
+              if (ra !== rb) return ra - rb;
+              return a.name.localeCompare(b.name, "de");
+            });
           const activeId = active[opt.value];
 
           return (
@@ -273,79 +342,57 @@ export function PromptManager() {
               </div>
 
               <div className="space-y-3">
-                <Card
-                  className={cn(
-                    "p-4 transition-colors",
-                    (!activeId || activeId === "default") && "ring-2 ring-primary/50 bg-primary/5"
-                  )}
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-medium text-sm text-foreground">System-Standard</h4>
-                        {(!activeId || activeId === "default") && (
-                          <Badge variant="default" className="h-5 text-[10px]">
-                            Standard
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => handleSetActive("default", opt.value)}
-                        disabled={!activeId || activeId === "default"}
-                        title={!activeId || activeId === "default" ? "Aktiv" : "Als Standard setzen"}
-                      >
-                        {!activeId || activeId === "default" ? (
-                          <Check className="h-4 w-4 text-primary" />
-                        ) : (
-                          <Star className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-
-                {(opt.value === "process_quelle" || opt.value === "combine" || opt.value === "summary" || opt.value === "shorten" || opt.value === "lesefluss") && (
-                  <Card
-                    className={cn(
-                      "p-4 transition-colors",
-                      activeId === "default_v2" && "ring-2 ring-primary/50 bg-primary/5"
-                    )}
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-medium text-sm text-foreground">System-Standard (v2)</h4>
-                          {activeId === "default_v2" && (
-                            <Badge variant="default" className="h-5 text-[10px]">
-                              Standard
+                {stageSystemTemplates.map((sys) => {
+                  const isActive =
+                    sys.templateKey === "default"
+                      ? !activeId || activeId === "default"
+                      : activeId === sys.templateKey;
+                  return (
+                    <Card
+                      key={`${opt.value}:${sys.templateKey}`}
+                      className={cn("p-4 transition-colors", isActive && "ring-2 ring-primary/50 bg-primary/5")}
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium text-sm text-foreground">{sys.name}</h4>
+                            <Badge variant="outline" className="font-mono text-[10px]">
+                              {sys.templateKey}
                             </Badge>
+                            {isActive && (
+                              <Badge variant="default" className="h-5 text-[10px]">
+                                Standard
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {canDuplicateSystemPrompts && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleDuplicateSystemTemplate(opt.value, sys.templateKey, sys.name)}
+                              title="In eigene Prompts kopieren"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
                           )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => handleSetActive(sys.templateKey, opt.value)}
+                            disabled={isActive}
+                            title={isActive ? "Aktiv" : "Als Standard setzen"}
+                          >
+                            {isActive ? <Check className="h-4 w-4 text-primary" /> : <Star className="h-4 w-4" />}
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => handleSetActive("default_v2", opt.value)}
-                          disabled={activeId === "default_v2"}
-                          title={activeId === "default_v2" ? "Aktiv" : "Als Standard setzen"}
-                        >
-                          {activeId === "default_v2" ? (
-                            <Check className="h-4 w-4 text-primary" />
-                          ) : (
-                            <Star className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  </Card>
-                )}
+                    </Card>
+                  );
+                })}
               </div>
 
               {stageTemplates.length === 0 ? (
@@ -412,6 +459,15 @@ export function PromptManager() {
                               title="Bearbeiten"
                             >
                               <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleDuplicateUserTemplate(tpl)}
+                              title="Duplizieren"
+                            >
+                              <Copy className="h-4 w-4" />
                             </Button>
                             <Button
                               variant="ghost"

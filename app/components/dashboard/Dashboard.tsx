@@ -25,7 +25,12 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import type { PromptStage, PromptTemplate, ActivePromptSelections } from '@/app/types/prompts';
+import type {
+  PromptStage,
+  PromptTemplate,
+  ActivePromptSelections,
+  SystemPromptTemplateMeta,
+} from '@/app/types/prompts';
 import { STAGE_CONFIG } from '@/app/lib/prompts/promptConfig';
 
 import type { Quelle, Kapitel, Run, ProcessingSettings, Projekt } from '@/app/types/ui';
@@ -90,12 +95,21 @@ type PromptChoiceDialogProps = {
   open: boolean;
   stages: PromptStage[];
   templates: PromptTemplate[];
+  systemTemplates: SystemPromptTemplateMeta[];
   active: ActivePromptSelections;
   onConfirm: (choices: Record<PromptStage, string | 'default'>) => void;
   onCancel: () => void;
 };
 
-function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCancel }: PromptChoiceDialogProps) {
+function PromptSelectDialog({
+  open,
+  stages,
+  templates,
+  systemTemplates,
+  active,
+  onConfirm,
+  onCancel,
+}: PromptChoiceDialogProps) {
   const [choices, setChoices] = useState<Record<PromptStage, string | 'default'>>(() => {
     const initial = {} as Record<PromptStage, string | 'default'>;
     stages.forEach((s) => {
@@ -121,6 +135,16 @@ function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCanc
         <div className="space-y-4">
           {stages.map((stage) => {
             const stageTemplates = templates.filter((t) => t.stage === stage);
+            const stageSystemTemplates = systemTemplates
+              .filter((t) => t.stage === stage)
+              .slice()
+              .sort((a, b) => {
+                const rank = (key: string) => (key === 'default' ? 0 : key === 'default_v2' ? 1 : 2);
+                const ra = rank(a.templateKey);
+                const rb = rank(b.templateKey);
+                if (ra !== rb) return ra - rb;
+                return a.name.localeCompare(b.name, 'de');
+              });
             const config = STAGE_CONFIG[stage];
             return (
               <Card key={stage} className="p-3">
@@ -135,29 +159,32 @@ function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCanc
                     value={choices[stage] || 'default'}
                     onValueChange={(val) => setChoices((prev) => ({ ...prev, [stage]: val as string | 'default' }))}
                   >
-                    <SelectTrigger className="w-64">
-                      <SelectValue />
-                    </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="default">System-Standard</SelectItem>
-                        {(stage === 'process_quelle' || stage === 'combine' || stage === 'summary' || stage === 'shorten' || stage === 'lesefluss') && (
-                          <SelectItem value="default_v2">System-Standard (v2)</SelectItem>
-                        )}
-                        {stageTemplates.map((tpl) => (
-                          <SelectItem key={tpl.id} value={tpl.id}>
-                            {tpl.name}
+                     <SelectTrigger className="w-64">
+                       <SelectValue />
+                     </SelectTrigger>
+                    <SelectContent>
+                      {stageSystemTemplates.map((tpl) => (
+                        <SelectItem key={`sys-${tpl.templateKey}`} value={tpl.templateKey}>
+                          <span className="text-muted-foreground">{tpl.name}</span>
+                        </SelectItem>
+                      ))}
+                      {stageTemplates.map((tpl) => (
+                        <SelectItem key={tpl.id} value={tpl.id}>
+                          {tpl.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2 font-mono">
-                  {choices[stage] === 'default'
-                    ? 'System-Standard'
-                    : choices[stage] === 'default_v2'
-                      ? 'System-Standard (v2)'
-                      : stageTemplates.find((t) => t.id === choices[stage])?.instructions?.slice(0, 160) ||
-                        'System-Standard'}
+                  {(() => {
+                    const choice = choices[stage];
+                    const sys = stageSystemTemplates.find((t) => t.templateKey === choice);
+                    if (sys) return sys.name;
+                    if (choice === 'default') return 'System-Standard';
+                    if (choice === 'default_v2') return 'System-Standard (v2)';
+                    return stageTemplates.find((t) => t.id === choice)?.instructions?.slice(0, 160) || 'System-Standard';
+                  })()}
                 </p>
               </Card>
             );
@@ -250,6 +277,7 @@ export function Dashboard({
   const [keyStatusLoading, setKeyStatusLoading] = useState(false);
   const keyNoticeShownRef = useRef(false);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
+  const [systemPromptTemplates, setSystemPromptTemplates] = useState<SystemPromptTemplateMeta[]>([]);
   const [promptActive, setPromptActive] = useState<ActivePromptSelections>({});
   const [askOnEachProcess, setAskOnEachProcess] = useState(false);
   const [promptChooser, setPromptChooser] = useState<{
@@ -1543,6 +1571,7 @@ export function Dashboard({
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Prompts konnten nicht geladen werden.');
         setPromptTemplates(data.templates || []);
+        setSystemPromptTemplates(Array.isArray(data.systemTemplates) ? data.systemTemplates : []);
         setPromptActive(data.active || {});
         setAskOnEachProcess(Boolean(data.askOnEachProcess));
       } catch (err: any) {
@@ -1639,6 +1668,7 @@ export function Dashboard({
           const data = await res.json();
           if (res.ok) {
             if (Array.isArray(data.templates)) setPromptTemplates(data.templates);
+            if (Array.isArray(data.systemTemplates)) setSystemPromptTemplates(data.systemTemplates);
             if (data.active) {
               setPromptActive(data.active);
               activeSnapshot = data.active;
@@ -2323,6 +2353,7 @@ export function Dashboard({
           quellenCount={assignedQuellen.length}
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
+          systemPromptTemplates={systemPromptTemplates}
           promptActive={promptActive}
           onProcess={handleProcess}
           isProcessing={isProcessingRun}
@@ -2339,6 +2370,7 @@ export function Dashboard({
           onShorten={handleShorten}
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
+          systemPromptTemplates={systemPromptTemplates}
           promptActive={promptActive}
           isShortening={isShortening}
         />
@@ -2354,6 +2386,7 @@ export function Dashboard({
           onLesefluss={handleLesefluss}
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
+          systemPromptTemplates={systemPromptTemplates}
           promptActive={promptActive}
           isLeseflussLoading={isImprovingLesefluss}
         />
@@ -2426,6 +2459,7 @@ export function Dashboard({
           open={!!promptChooser}
           stages={promptChooser.stages}
           templates={promptTemplates}
+          systemTemplates={systemPromptTemplates}
           active={promptActive}
           onConfirm={(choices) => {
             promptChooser.resolve(choices);

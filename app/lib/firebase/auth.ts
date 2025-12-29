@@ -86,9 +86,15 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
 
     return onIdTokenChanged(auth, async (user) => {
       if (user) {
-        // Force-refresh token so custom claims (approved) are present.
-        const idTokenResult = await user.getIdTokenResult(true);
-        const approved = Boolean((idTokenResult.claims as any)?.approved === true);
+        let idTokenResult = await user.getIdTokenResult();
+        let approved = Boolean((idTokenResult.claims as any)?.approved === true);
+
+        // If the user was just approved, the current token can still be stale.
+        // Only force-refresh when needed to avoid an infinite refresh loop.
+        if (!approved) {
+          idTokenResult = await user.getIdTokenResult(true);
+          approved = Boolean((idTokenResult.claims as any)?.approved === true);
+        }
 
         // Not approved -> immediately sign out and clear cookie.
         if (!approved) {

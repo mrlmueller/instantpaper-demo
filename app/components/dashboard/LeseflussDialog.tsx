@@ -17,7 +17,7 @@ import { Sparkles, AlertCircle, MessageSquareText, ChevronRight, Loader2 } from 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import type { Kapitel } from "@/app/types/ui"
-import type { ActivePromptSelections, PromptStage, PromptTemplate } from "@/app/types/prompts"
+import type { ActivePromptSelections, PromptStage, PromptTemplate, SystemPromptTemplateMeta } from "@/app/types/prompts"
 import { getKapitelsWithShortenedText } from "@/app/actions/kapitels"
 
 interface LeseflussDialogProps {
@@ -33,6 +33,7 @@ interface LeseflussDialogProps {
   ) => Promise<void>
   askOnEachProcess: boolean
   promptTemplates: PromptTemplate[]
+  systemPromptTemplates: SystemPromptTemplateMeta[]
   promptActive: ActivePromptSelections
   isLeseflussLoading: boolean
 }
@@ -46,6 +47,7 @@ export function LeseflussDialog({
   onLesefluss,
   askOnEachProcess,
   promptTemplates,
+  systemPromptTemplates,
   promptActive,
   isLeseflussLoading,
 }: LeseflussDialogProps) {
@@ -159,13 +161,35 @@ export function LeseflussDialog({
   const getIndentLevel = (nummer: string) => nummer.split(".").length - 1
   const showPromptSelectors = askOnEachProcess
 
+  const templatesByStage = useMemo(() => {
+    return (stage: PromptStage) => promptTemplates.filter((tpl) => tpl.stage === stage)
+  }, [promptTemplates])
+
+  const systemTemplatesByStage = useMemo(() => {
+    return (stage: PromptStage) =>
+      systemPromptTemplates
+        .filter((tpl) => tpl.stage === stage)
+        .slice()
+        .sort((a, b) => {
+          const rank = (key: string) => (key === "default" ? 0 : key === "default_v2" ? 1 : 2)
+          const ra = rank(a.templateKey)
+          const rb = rank(b.templateKey)
+          if (ra !== rb) return ra - rb
+          return a.name.localeCompare(b.name, "de")
+        })
+  }, [systemPromptTemplates])
+
   const renderPromptSelect = (stage: PromptStage, label: string) => {
-    const options = promptTemplates.filter((p) => p.stage === stage)
+    const stageTemplates = templatesByStage(stage)
+    const stageSystemTemplates = systemTemplatesByStage(stage)
+    const hasSystemOptions = stageSystemTemplates.length > 0
+    if (!hasSystemOptions && stageTemplates.length === 0) return null
+    const value = promptChoice[stage] || "default"
     return (
       <div className="space-y-2">
         <Label className="text-sm">Prompt für {label}</Label>
         <Select
-          value={promptChoice[stage] || "default"}
+          value={value}
           onValueChange={(val) =>
             setPromptChoice((prev) => {
               setHasTouchedPromptChoice(true)
@@ -180,17 +204,14 @@ export function LeseflussDialog({
             <SelectValue placeholder="System-Standard" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="default">
-              <span className="text-muted-foreground">System-Standard</span>
-            </SelectItem>
-            {(stage === "summary" || stage === "lesefluss") && (
-              <SelectItem value="default_v2">
-                <span className="text-muted-foreground">System-Standard (v2)</span>
+            {stageSystemTemplates.map((tpl) => (
+              <SelectItem key={`sys-${tpl.templateKey}`} value={tpl.templateKey}>
+                <span className="text-muted-foreground">{tpl.name}</span>
               </SelectItem>
-            )}
-            {options.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.name}
+            ))}
+            {stageTemplates.map((tpl) => (
+              <SelectItem key={tpl.id} value={tpl.id}>
+                {tpl.name}
               </SelectItem>
             ))}
           </SelectContent>

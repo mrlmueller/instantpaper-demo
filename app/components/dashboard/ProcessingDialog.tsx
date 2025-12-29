@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { ProcessingSettings } from "@/app/types/ui"
-import type { ActivePromptSelections, PromptStage, PromptTemplate } from "@/app/types/prompts"
+  import type { ActivePromptSelections, PromptStage, PromptTemplate, SystemPromptTemplateMeta } from "@/app/types/prompts"
 import { STAGE_CONFIG } from "@/app/lib/prompts/promptConfig"
 
 interface ProcessingDialogProps {
@@ -28,6 +28,7 @@ interface ProcessingDialogProps {
   onProcess: (settings: ProcessingSettings) => Promise<void>
   askOnEachProcess: boolean
   promptTemplates: PromptTemplate[]
+  systemPromptTemplates: SystemPromptTemplateMeta[]
   promptActive: ActivePromptSelections
   isProcessing: boolean
 }
@@ -40,6 +41,7 @@ export function ProcessingDialog({
   onProcess,
   askOnEachProcess,
   promptTemplates,
+  systemPromptTemplates,
   promptActive,
   isProcessing,
 }: ProcessingDialogProps) {
@@ -60,6 +62,20 @@ export function ProcessingDialog({
   const templatesByStage = useMemo(() => {
     return (stage: PromptStage) => promptTemplates.filter((tpl) => tpl.stage === stage)
   }, [promptTemplates])
+
+  const systemTemplatesByStage = useMemo(() => {
+    return (stage: PromptStage) =>
+      systemPromptTemplates
+        .filter((tpl) => tpl.stage === stage)
+        .slice()
+        .sort((a, b) => {
+          const rank = (key: string) => (key === "default" ? 0 : key === "default_v2" ? 1 : 2)
+          const ra = rank(a.templateKey)
+          const rb = rank(b.templateKey)
+          if (ra !== rb) return ra - rb
+          return a.name.localeCompare(b.name, "de")
+        })
+  }, [systemPromptTemplates])
 
   useEffect(() => {
     if (!open) {
@@ -110,7 +126,8 @@ export function ProcessingDialog({
 
   const renderPromptSelect = (stage: PromptStage, label: string) => {
     const stageTemplates = templatesByStage(stage)
-    const hasSystemOptions = stage === "process_quelle" || stage === "combine"
+    const stageSystemTemplates = systemTemplatesByStage(stage)
+    const hasSystemOptions = stageSystemTemplates.length > 0
     if (!hasSystemOptions && stageTemplates.length === 0) return null
     const value = promptChoice[stage] || "default"
     return (
@@ -132,14 +149,11 @@ export function ProcessingDialog({
             <SelectValue placeholder="System-Standard" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="default">
-              <span className="text-muted-foreground">System-Standard</span>
-            </SelectItem>
-            {(stage === "process_quelle" || stage === "combine") && (
-              <SelectItem value="default_v2">
-                <span className="text-muted-foreground">System-Standard (v2)</span>
+            {stageSystemTemplates.map((tpl) => (
+              <SelectItem key={`sys-${tpl.templateKey}`} value={tpl.templateKey}>
+                <span className="text-muted-foreground">{tpl.name}</span>
               </SelectItem>
-            )}
+            ))}
             {stageTemplates.map((tpl) => (
               <SelectItem key={tpl.id} value={tpl.id}>
                 {tpl.name}

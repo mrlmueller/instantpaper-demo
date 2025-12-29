@@ -34,6 +34,8 @@ export type AdminUserRow = {
   displayName: string | null;
   approved: boolean;
   disabled: boolean;
+  allowPlatformKey: boolean;
+  canDuplicateSystemPrompts: boolean;
   createdAt: string | null;
   lastSignInAt: string | null;
 };
@@ -66,7 +68,18 @@ export async function listAdminUsers(params?: {
   }
 
   const data = (await res.json()) as { users?: unknown; nextPageToken?: unknown };
-  const users = Array.isArray(data.users) ? (data.users as AdminUserRow[]) : [];
+  const users = Array.isArray(data.users)
+      ? (data.users as Array<Record<string, unknown>>).map((u) => ({
+          email: typeof u.email === 'string' ? u.email : null,
+          displayName: typeof u.displayName === 'string' ? u.displayName : null,
+          approved: u.approved === true,
+          disabled: u.disabled === true,
+          allowPlatformKey: u.allowPlatformKey === true,
+          canDuplicateSystemPrompts: u.canDuplicateSystemPrompts === true,
+          createdAt: typeof u.createdAt === 'string' ? u.createdAt : null,
+          lastSignInAt: typeof u.lastSignInAt === 'string' ? u.lastSignInAt : null,
+        }))
+      : [];
   const nextPageToken = typeof data.nextPageToken === 'string' ? data.nextPageToken : null;
   return { users, nextPageToken };
 }
@@ -88,6 +101,52 @@ export async function setUserApprovedByEmail(email: string, approved: boolean): 
   if (!res.ok) {
     const detail = await readErrorDetail(res);
     throw new Error(detail || 'Failed to update user approval.');
+  }
+}
+
+export async function setUserAllowPlatformKeyByEmail(
+  email: string,
+  allowPlatformKey: boolean
+): Promise<void> {
+  const token = await getAuthTokenOrNullAsync();
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${API_BASE_URL}/api/admin/users/platform-key`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, allowPlatformKey }),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const detail = await readErrorDetail(res);
+    throw new Error(detail || 'Failed to update platform-key permission.');
+  }
+}
+
+export async function setUserCanDuplicateSystemPromptsByEmail(
+  email: string,
+  canDuplicateSystemPrompts: boolean
+): Promise<void> {
+  const token = await getAuthTokenOrNullAsync();
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${API_BASE_URL}/api/admin/users/system-prompt-copy`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, canDuplicateSystemPrompts }),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const detail = await readErrorDetail(res);
+    throw new Error(detail || 'Failed to update system prompt copy permission.');
   }
 }
 
