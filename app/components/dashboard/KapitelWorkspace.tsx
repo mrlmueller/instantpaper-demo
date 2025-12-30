@@ -2,6 +2,7 @@
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -68,6 +69,7 @@ import { ProcessingStepper } from "./ProcessingStepper";
 import { toast } from "sonner";
 
 interface KapitelWorkspaceProps {
+  loading: boolean;
   kapitel: Kapitel;
   assignedQuellen: Quelle[];
   runs: Run[];
@@ -90,6 +92,7 @@ interface KapitelWorkspaceProps {
 }
 
 export function KapitelWorkspace({
+  loading,
   kapitel,
   assignedQuellen,
   runs,
@@ -110,6 +113,9 @@ export function KapitelWorkspace({
   onOpenShortenedRefinement,
   onOpenResultRefinement,
 }: KapitelWorkspaceProps) {
+  const ENTER_ANIM = "motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200 motion-safe:ease-out";
+  const ENTER_UP_ANIM = `${ENTER_ANIM} motion-safe:slide-in-from-bottom-1`;
+
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showFullAnweisung, setShowFullAnweisung] = useState(false);
   const [costPopoverOpen, setCostPopoverOpen] = useState(false);
@@ -472,13 +478,13 @@ export function KapitelWorkspace({
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-4xl mx-auto py-12 px-8">
-        {/* Kapitel Header with Quellen Tags */}
-        <div className="mb-6">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">
-                <span className="text-muted-foreground mr-2">{kapitel.nummer}</span>
+        <div className="max-w-4xl mx-auto py-12 px-8">
+          {/* Kapitel Header with Quellen Tags */}
+          <div key={kapitel.id} className={cn("mb-6", ENTER_ANIM)}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight">
+                  <span className="text-muted-foreground mr-2">{kapitel.nummer}</span>
                 {kapitel.title}
               </h1>
               {assignedQuellen.length > 0 && (
@@ -525,8 +531,21 @@ export function KapitelWorkspace({
         </div>
 
         {/* Run Selector & Cost Display */}
+        {loading && !selectedRun && (
+          <div className={cn("flex items-center justify-between mb-4 gap-4", ENTER_ANIM)}>
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-10 w-[200px] rounded-md" />
+              <Skeleton className="h-9 w-9 rounded-md" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-7 w-28 rounded-md" />
+            </div>
+          </div>
+        )}
+
         {selectedRun && (
-          <div className="flex items-center justify-between mb-4 gap-4">
+          <div className={cn("flex items-center justify-between mb-4 gap-4", ENTER_ANIM)}>
             <div className="flex items-center gap-2">
               <Select
                 value={selectedRun.id}
@@ -702,8 +721,60 @@ export function KapitelWorkspace({
           </DialogContent>
         </Dialog>
 
-        {runs.length > 0 && !selectedRun && (
-          <Card className="mb-6 bg-card border-border shadow-sm">
+        {loading && !selectedRun && (
+          <>
+            <Card className={cn("p-4 mb-6 bg-muted/20", ENTER_ANIM)}>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-start gap-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-56" />
+                </div>
+                <div className="flex items-start gap-2">
+                  <Skeleton className="h-4 w-24" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-5/6" />
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <Card className={cn("mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20", ENTER_UP_ANIM)}>
+              <div className="p-8">
+                <Skeleton className="h-6 w-48 mb-6" />
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-5/6" />
+                  <Skeleton className="h-4 w-2/3" />
+                </div>
+              </div>
+            </Card>
+
+            <div className={cn("mt-8", ENTER_UP_ANIM)}>
+              <div className="flex items-center justify-between mb-4">
+                <Skeleton className="h-4 w-64" />
+                <Skeleton className="h-8 w-36 rounded-md" />
+              </div>
+              <div className="space-y-3">
+                {Array.from({
+                  length: Math.min(4, Math.max(assignedQuellen.length, 1)),
+                }).map((_, i) => (
+                  <Card key={`quelle-skeleton-initial-${i}`} className="p-4 bg-muted/10">
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-56" />
+                      <Skeleton className="h-3 w-full" />
+                      <Skeleton className="h-3 w-5/6" />
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {!loading && runs.length > 0 && !selectedRun && (
+          <Card className={cn("mb-6 bg-card border-border shadow-sm", ENTER_ANIM)}>
             <div className="p-6 flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span className="text-sm">Run wird geladen...</span>
@@ -713,17 +784,19 @@ export function KapitelWorkspace({
 
         {/* Processing Stepper */}
         {selectedRun && (
-          <ProcessingStepper
-            hasQuellen={!!hasQuellenErgebnisse}
-            hasCombined={!!hasContent}
-            hasGekuerzt={!!hasGekuerzt}
-            hasVerbessert={!!hasVerbessert}
-          />
+          <div className={ENTER_ANIM}>
+            <ProcessingStepper
+              hasQuellen={!!hasQuellenErgebnisse}
+              hasCombined={!!hasContent}
+              hasGekuerzt={!!hasGekuerzt}
+              hasVerbessert={!!hasVerbessert}
+            />
+          </div>
         )}
 
         {/* Run Info Card */}
         {selectedRun && (
-          <Card className="p-4 mb-6 bg-muted/20">
+          <Card className={cn("p-4 mb-6 bg-muted/20", ENTER_ANIM)}>
             <div className="space-y-2 text-sm">
               <div className="flex items-start gap-2">
                 <span className="text-muted-foreground shrink-0 w-24">Überschrift:</span>
@@ -760,7 +833,7 @@ export function KapitelWorkspace({
 
         {/* 1. Verbesserter Text (Lesefluss) - PRIMARY STYLING */}
         {selectedRun && leseflussStatus === "running" && (
-          <Card className="mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20">
+          <Card className={cn("mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20", ENTER_UP_ANIM)}>
             <div className="p-8">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-medium text-foreground">Verbesserter Text</h2>
@@ -774,7 +847,7 @@ export function KapitelWorkspace({
         )}
 
         {selectedRun && leseflussStatus === "error" && (
-          <Card className="mb-8 bg-card border-destructive/30 shadow-sm">
+          <Card className={cn("mb-8 bg-card border-destructive/30 shadow-sm", ENTER_UP_ANIM)}>
             <div className="p-8">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-medium text-foreground">Verbesserter Text</h2>
@@ -787,10 +860,26 @@ export function KapitelWorkspace({
           </Card>
         )}
 
+        {selectedRun && leseflussStatus === "success" && !hasVerbessert && (
+          <Card className={cn("mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Verbesserter Text</h2>
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-11/12" />
+                <Skeleton className="h-4 w-4/5" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            </div>
+          </Card>
+        )}
+
         {hasVerbessert && leseflussStatus === "success" && (
           <>
             {/* Verbesserter Text Card */}
-            <Card className="mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20">
+            <Card className={cn("mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20", ENTER_UP_ANIM)}>
               <div className="p-8">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-3">
@@ -906,7 +995,7 @@ export function KapitelWorkspace({
 
         {/* 2. Gekürzter Text (Shortened) */}
         {selectedRun && shortenedStatus === "running" && (
-          <Card className="mb-8 bg-card border-border shadow-sm">
+          <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
             <div className="p-8">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-medium text-foreground">Gekürzter Text</h2>
@@ -920,7 +1009,7 @@ export function KapitelWorkspace({
         )}
 
         {selectedRun && shortenedStatus === "error" && (
-          <Card className="mb-8 bg-card border-destructive/30 shadow-sm">
+          <Card className={cn("mb-8 bg-card border-destructive/30 shadow-sm", ENTER_UP_ANIM)}>
             <div className="p-8">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-medium text-foreground">Gekürzter Text</h2>
@@ -933,9 +1022,25 @@ export function KapitelWorkspace({
           </Card>
         )}
 
+        {selectedRun && shortenedStatus === "success" && !hasGekuerzt && (
+          <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Gekürzter Text</h2>
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-11/12" />
+                <Skeleton className="h-4 w-4/5" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            </div>
+          </Card>
+        )}
+
         {hasGekuerzt && shortenedStatus === "success" && (
           <>
-            <Card className="mb-8 bg-card border-border shadow-sm">
+            <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
               <div className="p-8">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-3">
@@ -1176,7 +1281,7 @@ export function KapitelWorkspace({
 
         {/* 4. Kombinierter Text (Combined) */}
         {selectedRun && combinedStatus === "running" && (
-          <Card className="mb-8 bg-card border-border shadow-sm">
+          <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
             <div className="p-8">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-medium text-foreground">Kombinierter Text</h2>
@@ -1190,7 +1295,7 @@ export function KapitelWorkspace({
         )}
 
         {selectedRun && combinedStatus === "error" && (
-          <Card className="mb-8 bg-card border-destructive/30 shadow-sm">
+          <Card className={cn("mb-8 bg-card border-destructive/30 shadow-sm", ENTER_UP_ANIM)}>
             <div className="p-8">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-medium text-foreground">Kombinierter Text</h2>
@@ -1203,8 +1308,24 @@ export function KapitelWorkspace({
           </Card>
         )}
 
+        {selectedRun && combinedStatus === "success" && !hasContent && (
+          <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Kombinierter Text</h2>
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            </div>
+          </Card>
+        )}
+
         {hasContent && combinedStatus === "success" && (
-          <Card className="mb-8 bg-card border-border shadow-sm">
+          <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
             <div className="p-8">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-medium text-foreground">
@@ -1281,7 +1402,7 @@ export function KapitelWorkspace({
 
         {/* Zwischengruppen (only show when there is actually data) */}
         {hasContent && hasIntermediateGroups === true && !hasIntermediateGroupsLoading && (
-          <Card className="mb-8 bg-card border-border shadow-sm">
+          <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
             <Collapsible open={intermediateGroupsExpanded} onOpenChange={setIntermediateGroupsExpanded}>
               <div className="p-6 pb-4">
                 <CollapsibleTrigger asChild>
@@ -1366,8 +1487,8 @@ export function KapitelWorkspace({
         )}
 
         {/* Combine Button (if only quellen exist) */}
-        {hasQuellenErgebnisse && !hasContent && combinedStatus !== "running" && canCombineFromResults && (
-          <Card className="mb-8 bg-accent/30 border-border border-dashed">
+        {!loading && hasQuellenErgebnisse && !hasContent && combinedStatus !== "running" && canCombineFromResults && (
+          <Card className={cn("mb-8 bg-accent/30 border-border border-dashed", ENTER_UP_ANIM)}>
             <div className="p-8 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
                 <Layers className="h-6 w-6 text-primary" />
@@ -1392,8 +1513,8 @@ export function KapitelWorkspace({
         )}
 
         {/* No Run Yet */}
-        {runs.length === 0 && (
-          <Card className="mb-8 bg-accent/30 border-border border-dashed">
+        {!loading && runs.length === 0 && (
+          <Card className={cn("mb-8 bg-accent/30 border-border border-dashed", ENTER_UP_ANIM)}>
             <div className="p-12 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
                 <Play className="h-6 w-6 text-primary" />
@@ -1420,15 +1541,13 @@ export function KapitelWorkspace({
 
         {/* 5. Ergebnisse pro Quelle */}
         {hasQuellenErgebnisse && (
-          <div className="mt-8">
+          <div className={cn("mt-8", ENTER_UP_ANIM)}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <BookOpen className="h-4 w-4" />
                 Ergebnisse pro Quelle ({selectedRun!.quellenErgebnisse.length})
               </h3>
-              {!hasContent &&
-                combinedStatus !== "running" &&
-                canCombineFromResults && (
+              {!loading && !hasContent && combinedStatus !== "running" && canCombineFromResults && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -1446,76 +1565,102 @@ export function KapitelWorkspace({
             </div>
 
             <div className="space-y-3">
-              {selectedRun!.quellenErgebnisse.map((ergebnis) => (
-                <Card key={ergebnis.id} className="p-4 bg-muted/10">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-semibold text-foreground mb-1">
-                        {ergebnis.quelleName}
-                      </h4>
-                      {ergebnis.status === "waiting" && (
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span className="text-sm">Text wird generiert...</span>
-                        </div>
-                      )}
-                      {ergebnis.status === "no-content" && (
-                        <div className="flex items-center gap-2 text-amber-600">
-                          <AlertCircle className="h-4 w-4" />
-                          <span className="text-sm">Kein verwertbarer Inhalt</span>
-                        </div>
-                      )}
-                      {ergebnis.status === "error" && (
-                        <div className="flex items-center gap-2 text-destructive">
-                          <AlertCircle className="h-4 w-4" />
-                          <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
-                        </div>
-                      )}
-                    {ergebnis.status === "success" && ergebnis.text && (
-                      <p className="text-sm text-foreground/80 line-clamp-3">
-                        {ergebnis.text}
-                      </p>
-                    )}
-                  </div>
-                    {ergebnis.status === "success" && ergebnis.text && (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onOpenResultRefinement(ergebnis.quelleId, ergebnis.quelleName)}
-                          title="Text verfeinern"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleCopy(ergebnis.text, ergebnis.id)}>
-                          {copiedId === ergebnis.id ? (
-                            <Check className="h-4 w-4 text-primary" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            onOpenTextViewer({
-                              title: ergebnis.quelleName,
-                              text: ergebnis.text,
-                            })
-                          }
-                        >
-                          <Maximize2 className="h-4 w-4" />
-                        </Button>
+              {loading ? (
+                <>
+                  {Array.from({
+                    length: Math.min(4, Math.max(assignedQuellen.length, 1)),
+                  }).map((_, i) => (
+                    <Card key={`quelle-skeleton-${i}`} className="p-4 bg-muted/10">
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-56" />
+                        <Skeleton className="h-3 w-full" />
+                        <Skeleton className="h-3 w-5/6" />
                       </div>
-                    )}
-                  </div>
-                </Card>
-              ))}
+                    </Card>
+                  ))}
+                </>
+              ) : (
+                selectedRun!.quellenErgebnisse.map((ergebnis) => (
+                  <Card key={ergebnis.id} className={cn("p-4 bg-muted/10", ENTER_ANIM)}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold text-foreground mb-1">{ergebnis.quelleName}</h4>
+
+                        {ergebnis.status === "pending" && (
+                          <div className={cn("mt-2 space-y-2", ENTER_ANIM)}>
+                            <Skeleton className="h-3 w-full" />
+                            <Skeleton className="h-3 w-5/6" />
+                            <Skeleton className="h-3 w-2/3" />
+                          </div>
+                        )}
+
+                        {ergebnis.status === "not-in-run" && (
+                          <div className={cn("text-sm text-muted-foreground", ENTER_ANIM)}>Nicht im Run enthalten</div>
+                        )}
+
+                        {ergebnis.status === "waiting" && (
+                          <div className={cn("flex items-center gap-2 text-muted-foreground", ENTER_ANIM)}>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span className="text-sm">Text wird generiert...</span>
+                          </div>
+                        )}
+                        {ergebnis.status === "no-content" && (
+                          <div className={cn("flex items-center gap-2 text-amber-600", ENTER_ANIM)}>
+                            <AlertCircle className="h-4 w-4" />
+                            <span className="text-sm">Kein verwertbarer Inhalt</span>
+                          </div>
+                        )}
+                        {ergebnis.status === "error" && (
+                          <div className={cn("flex items-center gap-2 text-destructive", ENTER_ANIM)}>
+                            <AlertCircle className="h-4 w-4" />
+                            <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
+                          </div>
+                        )}
+                        {ergebnis.status === "success" && ergebnis.text && (
+                          <p className={cn("text-sm text-foreground/80 line-clamp-3", ENTER_ANIM)}>{ergebnis.text}</p>
+                        )}
+                      </div>
+
+                      {ergebnis.status === "success" && ergebnis.text && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onOpenResultRefinement(ergebnis.quelleId, ergebnis.quelleName)}
+                            title="Text verfeinern"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleCopy(ergebnis.text, ergebnis.id)}>
+                            {copiedId === ergebnis.id ? (
+                              <Check className="h-4 w-4 text-primary" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              onOpenTextViewer({
+                                title: ergebnis.quelleName,
+                                text: ergebnis.text,
+                              })
+                            }
+                          >
+                            <Maximize2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ))
+              )}
             </div>
           </div>
         )}
 
-        {runs.length === 0 && assignedQuellen.length === 0 && (
+        {!loading && runs.length === 0 && assignedQuellen.length === 0 && (
           <div className="mt-8 p-8 rounded-lg bg-muted/30 text-center">
             <p className="text-sm text-muted-foreground">
               Füge Quellen zu diesem Kapitel hinzu, um mit der Verarbeitung zu

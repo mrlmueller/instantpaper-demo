@@ -9,6 +9,7 @@ import { DashboardAuthWrapper } from './DashboardAuthWrapper';
 import { cookies } from 'next/headers';
 import { getActiveKapitelCookieName } from '@/app/lib/ui/kapitelSelection';
 import { getActiveProjektCookieName } from '@/app/lib/ui/projektSelection';
+import { STORAGE_KEYS } from '@/app/lib/storage/preferences';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,11 +17,13 @@ const INITIAL_RUN_LIMIT = 10;
 
 export default async function DashboardPage() {
   const user = await requireAuth();
+  const cookieStore = await cookies();
+  const initialShowQuellenPanel = cookieStore.get(STORAGE_KEYS.QUELLEN_PANEL_OPEN)?.value === 'true';
 
   // If user is null, cookie exists but token is expired
   // Show loading skeleton while client-side refreshes token
   if (!user) {
-    return <DashboardAuthWrapper />;
+    return <DashboardAuthWrapper initialShowQuellenPanel={initialShowQuellenPanel} />;
   }
 
   const db = await getFirestoreForUser();
@@ -29,8 +32,6 @@ export default async function DashboardPage() {
   createOrUpdateUser({ user, db }).catch((error) => {
     console.error('Background user sync failed:', error);
   });
-
-  const cookieStore = await cookies();
 
   const defaultProjekt = await getOrCreateDefaultProject({ user, db });
   const projekte = await getProjects({ user, db }, { includeArchived: true });
@@ -64,6 +65,7 @@ export default async function DashboardPage() {
       initialProjekte={projekteWithDefault}
       initialRuns={[]}
       initialActiveKapitelId={initialActiveKapitelId}
+      initialShowQuellenPanel={initialShowQuellenPanel}
     />
   );
 }

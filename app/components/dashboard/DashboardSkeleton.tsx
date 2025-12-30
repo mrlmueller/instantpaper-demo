@@ -1,7 +1,12 @@
 import { Skeleton } from "@/components/ui/skeleton"
 import { Card } from "@/components/ui/card"
+import { QuellenPanelSkeleton } from "./QuellenPanelSkeleton"
 
-export function DashboardSkeleton() {
+type DashboardSkeletonProps = {
+  showQuellenPanel?: boolean
+}
+
+export function DashboardSkeleton({ showQuellenPanel = false }: DashboardSkeletonProps) {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Left Navigator Skeleton */}
@@ -120,6 +125,9 @@ export function DashboardSkeleton() {
           </div>
         </div>
       </div>
+
+      {/* Right Quellen Panel Skeleton */}
+      {showQuellenPanel && <QuellenPanelSkeleton />}
     </div>
   )
 }

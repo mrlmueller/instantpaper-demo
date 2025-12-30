@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { ChevronDown, FolderOpen, Plus, LogOut, User, Loader2, BookOpen, RotateCcw, FileDown, Bell } from "lucide-react"
+import { ChevronDown, FolderOpen, Plus, LogOut, User, Loader2, BookOpen, RotateCcw, FileDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -109,16 +109,6 @@ export function ProjektHeader({
               className="h-8 w-8"
             >
               {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-            </Button>
-
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title="Benachrichtigungen"
-              className="h-8 w-8"
-            >
-              <Bell className="h-4 w-4" />
             </Button>
 
             {/* User avatar with dropdown */}

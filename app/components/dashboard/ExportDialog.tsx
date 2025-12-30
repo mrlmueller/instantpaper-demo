@@ -180,7 +180,8 @@ export function ExportDialog({
             Nur Kapitel mit vorhandenem „Verbesserten Text“ können exportiert werden.
           </p>
 
-          <div className="border rounded-lg max-h-[320px] overflow-y-auto">
+          {selection === "selected" && (
+            <div className="border rounded-lg max-h-[320px] overflow-y-auto">
             <TooltipProvider>
               {sortedKapiteln.map((kapitel) => {
                 const hasText = hasLeseflussText(kapitel.id)
@@ -237,7 +238,8 @@ export function ExportDialog({
                 )
               })}
             </TooltipProvider>
-          </div>
+            </div>
+          )}
 
           <div className="text-xs text-muted-foreground">
             Hinweis: Der Export bleibt ca. 7 Tage verfügbar. Bitte lade die Datei zeitnah herunter.
@@ -261,4 +263,3 @@ export function ExportDialog({
     </Dialog>
   )
 }
-

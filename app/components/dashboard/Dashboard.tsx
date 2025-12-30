@@ -19,7 +19,6 @@ import { ResultRefinementDialog } from './ResultRefinementDialog';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DashboardSkeleton } from './DashboardSkeleton';
 import { QuellenPanelSkeleton } from './QuellenPanelSkeleton';
-import { KapitelWorkspaceSkeleton } from './KapitelWorkspaceSkeleton';
 import { ViewportWarning } from '@/app/components/viewport-warning';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -86,7 +85,7 @@ import {
 } from 'firebase/firestore';
 import Cookies from 'js-cookie';
 import { fetchOpenAIKeyStatus, type OpenAIKeyStatus } from '@/app/lib/api/openaiKeyClient';
-import { getQuellenPanelState, setQuellenPanelState } from '@/app/lib/storage/preferences';
+import { getQuellenPanelState, setQuellenPanelState, STORAGE_KEYS } from '@/app/lib/storage/preferences';
 import { getActiveKapitelCookieName } from '@/app/lib/ui/kapitelSelection';
 import { getActiveProjektCookieName } from '@/app/lib/ui/projektSelection';
 import { getDownloadUrlFromStorage } from '@/app/lib/firebase/storage';
@@ -212,6 +211,7 @@ interface DashboardProps {
   initialProjekte: FirebaseProject[];
   initialRuns?: FirebaseKapitelRun[];
   initialActiveKapitelId?: string;
+  initialShowQuellenPanel?: boolean;
 }
 
 export function Dashboard({
@@ -221,6 +221,7 @@ export function Dashboard({
   initialProjekte,
   initialRuns = [],
   initialActiveKapitelId: initialActiveKapitelIdProp,
+  initialShowQuellenPanel: initialShowQuellenPanelProp,
 }: DashboardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -395,7 +396,7 @@ export function Dashboard({
     selectedRunIdRef.current = selectedRunId;
   }, [selectedRunId]);
 
-  const [showQuellenPanel, setShowQuellenPanel] = useState(() => getQuellenPanelState());
+  const [showQuellenPanel, setShowQuellenPanel] = useState(() => initialShowQuellenPanelProp ?? getQuellenPanelState());
   const [textViewerContent, setTextViewerContent] = useState<{
     title: string;
     text: string;
@@ -409,10 +410,34 @@ export function Dashboard({
   const exportUnsubRef = useRef<null | (() => void)>(null);
   const exportIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Persist Quellen panel state to localStorage
+  // Persist Quellen panel state (for SSR skeleton + client preference)
   useEffect(() => {
     setQuellenPanelState(showQuellenPanel);
+
+    const cookieName = STORAGE_KEYS.QUELLEN_PANEL_OPEN;
+    if (showQuellenPanel) {
+      Cookies.set(cookieName, 'true', {
+        expires: 365,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/',
+      });
+    } else {
+      Cookies.remove(cookieName, { path: '/' });
+    }
   }, [showQuellenPanel]);
+
+  // One-time migration: if older sessions only persisted to localStorage, upgrade to cookie-backed state.
+  useEffect(() => {
+    const cookieValue = Cookies.get(STORAGE_KEYS.QUELLEN_PANEL_OPEN);
+    if (cookieValue != null) return;
+
+    const stored = getQuellenPanelState();
+    if (stored !== showQuellenPanel) {
+      setShowQuellenPanel(stored);
+    }
+  }, [showQuellenPanel]);
+
   const [shortenDialogOpen, setShortenDialogOpen] = useState(false);
   const [leseflussDialogOpen, setLeseflussDialogOpen] = useState(false);
   const [combinedRefinementDialogOpen, setCombinedRefinementDialogOpen] = useState(false);
@@ -1128,20 +1153,47 @@ export function Dashboard({
     const uiRuns = uniqueFbRuns.map((fbRun) => {
       const uiRun = transformRunToUI(fbRun, activeKapitelId, quellenMap);
       const existingIds = new Set(uiRun.quellenErgebnisse.map((r) => r.quelleId));
-      const waitingResults = assignedQuelleIds
+
+      const resultsExpectedCount =
+        typeof fbRun.resultsExpectedCount === 'number' ? fbRun.resultsExpectedCount : undefined;
+      const resultsCompletedCount =
+        typeof fbRun.resultsCompletedCount === 'number' ? fbRun.resultsCompletedCount : undefined;
+      const hasRunningArtifacts = Boolean(
+        fbRun.artifactsStatus && Object.values(fbRun.artifactsStatus).includes('running')
+      );
+      const hasRunningResult = fbRun.results.some((r) => r.status === 'running');
+      const isProcessing =
+        hasRunningArtifacts ||
+        hasRunningResult ||
+        (resultsExpectedCount != null &&
+          resultsCompletedCount != null &&
+          resultsCompletedCount < resultsExpectedCount);
+
+      const expectedReached =
+        resultsExpectedCount != null &&
+        (resultsCompletedCount != null
+          ? resultsCompletedCount >= resultsExpectedCount
+          : fbRun.results.length >= resultsExpectedCount);
+
+      const placeholderStatus =
+        expectedReached || (!isProcessing && resultsExpectedCount == null)
+          ? ('not-in-run' as const)
+          : ('pending' as const);
+
+      const placeholderResults = assignedQuelleIds
         .filter((id) => !existingIds.has(id))
         .map((id) => ({
           id,
           quelleId: id,
           quelleName: quellenMap.get(id) || '',
           text: '',
-          status: 'waiting' as const,
+          status: placeholderStatus,
           cost: 0,
         }));
 
       return {
         ...uiRun,
-        quellenErgebnisse: [...uiRun.quellenErgebnisse, ...waitingResults],
+        quellenErgebnisse: [...uiRun.quellenErgebnisse, ...placeholderResults],
       };
     });
 
@@ -1917,8 +1969,7 @@ export function Dashboard({
 
     if (!(await ensureOpenAIAccess())) return;
 
-    const readyResults =
-      selectedRun.quellenErgebnisse?.filter((r) => r.status !== 'waiting' && r.text?.trim()) || [];
+    const readyResults = selectedRun.quellenErgebnisse?.filter((r) => r.status === 'success' && r.text?.trim()) || [];
     if (readyResults.length < 2) {
       toast.error('Zu wenige Texte zum Kombinieren', {
         description: 'Mindestens zwei Quellen müssen ein Ergebnis haben.',
@@ -2428,10 +2479,14 @@ export function Dashboard({
   }, [showQuellenPanel]);
 
   if (isLoading || !projekt) {
-    return <DashboardSkeleton />;
+    return <DashboardSkeleton showQuellenPanel={showQuellenPanel} />;
   }
 
   const assignedQuellen = quellen.filter((q) => activeKapitel?.assignedQuellenIds.includes(q.id));
+  // Keep the workspace skeleton visible until we have a selected run *and* the UI-transformed run list is ready.
+  // This avoids a brief blank state between "runs snapshot arrived" and "runs + selection resolved".
+  const kapitelWorkspaceLoading =
+    isKapitelLoading || (fbRuns.length > 0 && runs.length === 0) || (runs.length > 0 && !selectedRun);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -2464,37 +2519,34 @@ export function Dashboard({
       <div className="flex-1 overflow-hidden flex">
         <div className="flex-1 overflow-hidden">
           {activeKapitel ? (
-            isKapitelLoading ? (
-              <KapitelWorkspaceSkeleton />
-            ) : (
-              <KapitelWorkspace
-                kapitel={activeKapitel}
-                assignedQuellen={assignedQuellen}
-                runs={runs}
-                selectedRun={selectedRun}
-                allKapitels={kapiteln}
-                onLoadAllRuns={() => {
-                  setRunListLimit(MAX_RUN_HISTORY_LIMIT);
-                  setAllRunsLoaded(true);
-                }}
-                allRunsLoaded={allRunsLoaded}
-                onSelectRun={handleUserSelectRun}
-                onOpenTextViewer={setTextViewerContent}
-                onOpenProcessing={() => setProcessingDialogOpen(true)}
-                onCombineTexts={handleCombineTexts}
-                isCombining={isCombining}
-                onToggleQuellenPanel={handleToggleQuellenPanel}
-                onOpenShorten={() => setShortenDialogOpen(true)}
-                onOpenLesefluss={() => setLeseflussDialogOpen(true)}
-                onOpenLeseflussRefinement={() => setLeseflussRefinementDialogOpen(true)}
-                onOpenCombinedRefinement={() => setCombinedRefinementDialogOpen(true)}
-                onOpenShortenedRefinement={() => setShortenedRefinementDialogOpen(true)}
-                onOpenResultRefinement={(quelleId, quelleName) => {
-                  setResultRefinementTarget({ quelleId, quelleName });
-                  setResultRefinementDialogOpen(true);
-                }}
-              />
-            )
+            <KapitelWorkspace
+              loading={kapitelWorkspaceLoading}
+              kapitel={activeKapitel}
+              assignedQuellen={assignedQuellen}
+              runs={runs}
+              selectedRun={selectedRun}
+              allKapitels={kapiteln}
+              onLoadAllRuns={() => {
+                setRunListLimit(MAX_RUN_HISTORY_LIMIT);
+                setAllRunsLoaded(true);
+              }}
+              allRunsLoaded={allRunsLoaded}
+              onSelectRun={handleUserSelectRun}
+              onOpenTextViewer={setTextViewerContent}
+              onOpenProcessing={() => setProcessingDialogOpen(true)}
+              onCombineTexts={handleCombineTexts}
+              isCombining={isCombining}
+              onToggleQuellenPanel={handleToggleQuellenPanel}
+              onOpenShorten={() => setShortenDialogOpen(true)}
+              onOpenLesefluss={() => setLeseflussDialogOpen(true)}
+              onOpenLeseflussRefinement={() => setLeseflussRefinementDialogOpen(true)}
+              onOpenCombinedRefinement={() => setCombinedRefinementDialogOpen(true)}
+              onOpenShortenedRefinement={() => setShortenedRefinementDialogOpen(true)}
+              onOpenResultRefinement={(quelleId, quelleName) => {
+                setResultRefinementTarget({ quelleId, quelleName });
+                setResultRefinementDialogOpen(true);
+              }}
+            />
           ) : (
             <div className="h-full flex items-center justify-center">
               <div className="text-center">

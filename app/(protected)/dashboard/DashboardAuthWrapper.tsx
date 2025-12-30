@@ -5,7 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/components/providers/AuthProvider';
 import { DashboardSkeleton } from '@/app/components/dashboard/DashboardSkeleton';
 
-export function DashboardAuthWrapper() {
+type DashboardAuthWrapperProps = {
+  initialShowQuellenPanel?: boolean;
+};
+
+export function DashboardAuthWrapper({ initialShowQuellenPanel = false }: DashboardAuthWrapperProps) {
   const { user, loading } = useAuth();
   const router = useRouter();
 
@@ -22,5 +26,5 @@ export function DashboardAuthWrapper() {
   }, [user, loading, router]);
 
   // Show loading skeleton while waiting for auth to complete
-  return <DashboardSkeleton />;
+  return <DashboardSkeleton showQuellenPanel={initialShowQuellenPanel} />;
 }
