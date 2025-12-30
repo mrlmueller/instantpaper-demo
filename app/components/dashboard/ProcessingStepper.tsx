@@ -58,7 +58,7 @@ export function ProcessingStepper({
         );
       })}
       {isFullyComplete && (
-        <div className="ml-2 px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-500 text-xs font-medium flex items-center gap-1.5">
+        <div className="ml-2 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs font-medium flex items-center gap-1.5">
           <Trophy className="h-3 w-3" />
           Fertig!
         </div>
