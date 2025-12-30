@@ -27,7 +27,7 @@ export type LiveUserStats = {
   totalQuellen: number;
   totalWords: number; // estimated from output tokens
   runsByMonth: { month: string; runs: number; cost: number }[];
-  costByProjekt: { projektName: string; cost: number }[];
+  costByProjekt: { projektId: string; projektName: string; cost: number }[];
   modelUsage: { model: string; count: number }[];
   memberSince: string; // ISO
 };
@@ -243,12 +243,13 @@ export async function getLiveUserStats(): Promise<LiveUserStats> {
   }
 
   const costByProjekt = Array.from(projectNameById.entries()).map(([id, name]) => ({
+    projektId: id,
     projektName: name,
     cost: costByProjectId.get(id) ?? 0,
   }));
   costByProjekt.sort((a, b) => b.cost - a.cost);
   if (costByProjekt.length === 0) {
-    costByProjekt.push({ projektName: 'Standard', cost: 0 });
+    costByProjekt.push({ projektId: '__standard__', projektName: 'Standard', cost: 0 });
   }
 
   // Model usage from aggregates (fallback to empty)

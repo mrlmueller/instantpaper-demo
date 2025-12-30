@@ -28,6 +28,7 @@ export function ConfirmSubmitDialog({
   triggerLabel,
   triggerVariant = 'default',
   triggerSize = 'sm',
+  triggerClassName,
   title,
   description,
   confirmLabel,
@@ -47,6 +48,7 @@ export function ConfirmSubmitDialog({
   confirmSize?: ButtonSize;
   formId?: string;
   confirmClassName?: string;
+  triggerClassName?: string;
   disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
@@ -56,7 +58,7 @@ export function ConfirmSubmitDialog({
       <AlertDialogTrigger asChild>
         <button
           type="button"
-          className={cn(buttonVariants({ variant: triggerVariant, size: triggerSize }))}
+          className={cn(buttonVariants({ variant: triggerVariant, size: triggerSize }), triggerClassName)}
           disabled={disabled || pending}
         >
           {triggerLabel}

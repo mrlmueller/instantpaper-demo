@@ -49,19 +49,21 @@ function stableRowKey(u: AdminUserRow): string {
 function PlatformKeyCell({ user, formId }: { user: AdminUserRow; formId: string }) {
   const label = user.allowPlatformKey ? 'allowed' : 'blocked';
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {user.allowPlatformKey ? (
         <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">{label}</Badge>
       ) : (
         <Badge variant="outline">{label}</Badge>
       )}
       {user.email ? (
-        <form id={formId} action={adminSetAllowPlatformKey} className="inline">
+        <form id={formId} action={adminSetAllowPlatformKey} className="w-full md:w-auto">
           <input type="hidden" name="email" value={user.email} />
           <input type="hidden" name="allowPlatformKey" value={user.allowPlatformKey ? 'false' : 'true'} />
           <ConfirmSubmitDialog
             triggerLabel={user.allowPlatformKey ? 'Sperren' : 'Erlauben'}
             triggerVariant="outline"
+            triggerSize="default"
+            triggerClassName="w-full md:w-auto"
             title={user.allowPlatformKey ? 'Plattform-Key sperren?' : 'Plattform-Key erlauben?'}
             description={
               user.allowPlatformKey
@@ -81,14 +83,14 @@ function PlatformKeyCell({ user, formId }: { user: AdminUserRow; formId: string 
 function SystemPromptCopyCell({ user, formId }: { user: AdminUserRow; formId: string }) {
   const label = user.canDuplicateSystemPrompts ? 'allowed' : 'blocked';
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {user.canDuplicateSystemPrompts ? (
         <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">{label}</Badge>
       ) : (
         <Badge variant="outline">{label}</Badge>
       )}
       {user.email ? (
-        <form id={formId} action={adminSetCanDuplicateSystemPrompts} className="inline">
+        <form id={formId} action={adminSetCanDuplicateSystemPrompts} className="w-full md:w-auto">
           <input type="hidden" name="email" value={user.email} />
           <input
             type="hidden"
@@ -98,6 +100,8 @@ function SystemPromptCopyCell({ user, formId }: { user: AdminUserRow; formId: st
           <ConfirmSubmitDialog
             triggerLabel={user.canDuplicateSystemPrompts ? 'Sperren' : 'Erlauben'}
             triggerVariant="outline"
+            triggerSize="default"
+            triggerClassName="w-full md:w-auto"
             title={user.canDuplicateSystemPrompts ? 'System-Prompt Kopie sperren?' : 'System-Prompt Kopie erlauben?'}
             description={
               user.canDuplicateSystemPrompts
@@ -134,8 +138,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="flex h-screen">
-        <div className="w-72 border-r bg-muted/10 flex flex-col shrink-0">
+      <div className="flex min-h-screen flex-col md:h-screen md:flex-row">
+        <div className="hidden w-72 border-r bg-muted/10 md:flex md:flex-col shrink-0">
           <div className="p-6 border-b">
             <div className="flex items-center gap-3">
               <Button variant="ghost" size="icon" className="h-9 w-9" asChild>
@@ -189,9 +193,39 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 md:overflow-y-auto">
+          <div className="md:hidden sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <div className="px-4 py-3 flex items-center justify-between gap-3">
+              <Button variant="ghost" size="icon" className="h-9 w-9" asChild>
+                <Link href="/dashboard" aria-label="Back to dashboard">
+                  <ArrowLeft className="h-5 w-5" />
+                </Link>
+              </Button>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground truncate">Admin</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {section === 'users' ? 'User Management' : 'Default Prompts'}
+                </p>
+              </div>
+            </div>
+            <div className="px-4 pb-3">
+              <div className="grid grid-cols-2 gap-2">
+                <Button asChild variant={section === 'users' ? 'default' : 'outline'} size="sm" className="justify-center">
+                  <Link href="/admin?section=users">Users</Link>
+                </Button>
+                <Button
+                  asChild
+                  variant={section === 'prompts' ? 'default' : 'outline'}
+                  size="sm"
+                  className="justify-center"
+                >
+                  <Link href="/admin?section=prompts">Prompts</Link>
+                </Button>
+              </div>
+            </div>
+          </div>
           {section === 'prompts' ? (
-            <div className="max-w-5xl mx-auto py-8 px-8 space-y-8">
+            <div className="max-w-5xl mx-auto py-6 px-4 sm:px-6 md:px-8 space-y-8">
               <div className="space-y-1">
                 <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
                   <MessageSquareText className="h-5 w-5 text-muted-foreground" />
@@ -204,19 +238,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               <SystemPromptManager />
             </div>
           ) : (
-            <div className="max-w-5xl mx-auto py-8 px-8 space-y-8">
+            <div className="max-w-5xl mx-auto py-6 px-4 sm:px-6 md:px-8 space-y-8">
               <div className="space-y-1">
                 <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
                   <Users className="h-5 w-5 text-muted-foreground" />
                   User Management
                 </h2>
-              <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                 Pending Users sind noch nicht freigeschaltet. Approved Users können die App verwenden.
-              </p>
-            </div>
+                </p>
+              </div>
 
-            <Card className="p-6 border-l-4 border-amber-400">
-              <div className="flex items-start justify-between gap-4 mb-6">
+            <Card className="p-4 sm:p-6 border-l-4 border-amber-400">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4 mb-6">
                 <div className="min-w-0">
                   <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
                     <Badge variant="secondary">pending</Badge>
@@ -232,7 +266,43 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               {pending.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Keine offenen Accounts gefunden.</p>
               ) : (
-                <Table>
+                <>
+                  <div className="space-y-3 md:hidden">
+                    {pending.map((u, idx) => (
+                      <div key={stableRowKey(u)} className="rounded-lg border bg-background/60 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">{u.email || '-'}</p>
+                            <p className="text-xs text-muted-foreground truncate">{u.displayName || '-'}</p>
+                          </div>
+                          <span className="text-xs text-muted-foreground shrink-0">{formatIso(u.lastSignInAt)}</span>
+                        </div>
+                        <div className="mt-3">
+                          {u.email ? (
+                            <form id={`pending-approve-mobile-${idx}`} action={adminSetUserApproval} className="w-full">
+                              <input type="hidden" name="email" value={u.email} />
+                              <input type="hidden" name="approved" value="true" />
+                              <ConfirmSubmitDialog
+                                triggerLabel="Approve"
+                                triggerVariant="default"
+                                triggerSize="default"
+                                triggerClassName="w-full"
+                                title="User freischalten?"
+                                description={`M”chtest du ${u.email} freischalten?`}
+                                confirmLabel="Approve"
+                                confirmVariant="default"
+                                formId={`pending-approve-mobile-${idx}`}
+                              />
+                            </form>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden md:block overflow-x-auto">
+                    <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>E-Mail</TableHead>
@@ -249,7 +319,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         <TableCell>{formatIso(u.lastSignInAt)}</TableCell>
                         <TableCell className="text-right">
                           {u.email ? (
-                            <form id={`pending-approve-${idx}`} action={adminSetUserApproval} className="inline">
+                            <form
+                              id={`pending-approve-desktop-${idx}`}
+                              action={adminSetUserApproval}
+                              className="inline"
+                            >
                               <input type="hidden" name="email" value={u.email} />
                               <input type="hidden" name="approved" value="true" />
                               <ConfirmSubmitDialog
@@ -259,7 +333,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                                 description={`Möchtest du ${u.email} freischalten?`}
                                 confirmLabel="Approve"
                                 confirmVariant="default"
-                                formId={`pending-approve-${idx}`}
+                                formId={`pending-approve-desktop-${idx}`}
                               />
                             </form>
                           ) : (
@@ -269,12 +343,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       </TableRow>
                     ))}
                   </TableBody>
-                </Table>
+                    </Table>
+                  </div>
+                </>
               )}
             </Card>
 
-            <Card className="p-6 border-l-4 border-emerald-500">
-              <div className="flex items-start justify-between gap-4 mb-6">
+            <Card className="p-4 sm:p-6 border-l-4 border-emerald-500">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4 mb-6">
                 <div className="min-w-0">
                   <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
                     <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">approved</Badge>
@@ -288,7 +364,55 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               {approved.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Noch keine freigeschalteten Accounts.</p>
               ) : (
-                <Table>
+                <>
+                  <div className="space-y-3 md:hidden">
+                    {approved.map((u, idx) => (
+                      <div key={stableRowKey(u)} className="rounded-lg border bg-background/60 p-4 space-y-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">{u.email || '-'}</p>
+                            <p className="text-xs text-muted-foreground truncate">{u.displayName || '-'}</p>
+                          </div>
+                          <span className="text-xs text-muted-foreground shrink-0">{formatIso(u.lastSignInAt)}</span>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">Plattform-Key</p>
+                            <PlatformKeyCell user={u} formId={`approved-platform-mobile-${idx}`} />
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">System-Prompt Copy</p>
+                            <SystemPromptCopyCell user={u} formId={`approved-syscopy-mobile-${idx}`} />
+                          </div>
+                        </div>
+
+                        <div>
+                          {u.email ? (
+                            <form id={`approved-revoke-mobile-${idx}`} action={adminSetUserApproval} className="w-full">
+                              <input type="hidden" name="email" value={u.email} />
+                              <input type="hidden" name="approved" value="false" />
+                              <ConfirmSubmitDialog
+                                triggerLabel="Revoke"
+                                triggerVariant="outline"
+                                triggerSize="default"
+                                triggerClassName="w-full"
+                                title="User sperren?"
+                                description={`M”chtest du ${u.email} sperren?`}
+                                confirmLabel="Revoke"
+                                confirmVariant="destructive"
+                                formId={`approved-revoke-mobile-${idx}`}
+                              />
+                            </form>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden md:block overflow-x-auto">
+                    <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>E-Mail</TableHead>
@@ -305,15 +429,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         <TableCell className="font-medium">{u.email || '-'}</TableCell>
                         <TableCell>{u.displayName || '-'}</TableCell>
                         <TableCell>
-                          <PlatformKeyCell user={u} formId={`approved-platform-${idx}`} />
+                          <PlatformKeyCell user={u} formId={`approved-platform-desktop-${idx}`} />
                         </TableCell>
                         <TableCell>
-                          <SystemPromptCopyCell user={u} formId={`approved-syscopy-${idx}`} />
+                          <SystemPromptCopyCell user={u} formId={`approved-syscopy-desktop-${idx}`} />
                         </TableCell>
                         <TableCell>{formatIso(u.lastSignInAt)}</TableCell>
                         <TableCell className="text-right">
                           {u.email ? (
-                            <form id={`approved-revoke-${idx}`} action={adminSetUserApproval} className="inline">
+                            <form id={`approved-revoke-desktop-${idx}`} action={adminSetUserApproval} className="inline">
                               <input type="hidden" name="email" value={u.email} />
                               <input type="hidden" name="approved" value="false" />
                               <ConfirmSubmitDialog
@@ -323,7 +447,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                                 description={`Möchtest du ${u.email} sperren?`}
                                 confirmLabel="Revoke"
                                 confirmVariant="destructive"
-                                formId={`approved-revoke-${idx}`}
+                                formId={`approved-revoke-desktop-${idx}`}
                               />
                             </form>
                           ) : (
@@ -333,7 +457,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       </TableRow>
                     ))}
                   </TableBody>
-                </Table>
+                    </Table>
+                  </div>
+                </>
               )}
             </Card>
           </div>
