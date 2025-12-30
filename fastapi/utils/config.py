@@ -12,6 +12,17 @@ load_dotenv(dotenv_path=_dotenv_path, override=True)
 logger = logging.getLogger(__name__)
 
 
+def _read_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(f"Invalid int for env {name}: {raw!r} (using default {default})")
+        return default
+
+
 class Config:
     """Application configuration loaded from environment variables"""
 
@@ -19,6 +30,12 @@ class Config:
     FIREBASE_PROJECT_ID: str = os.getenv("FIREBASE_PROJECT_ID", "").strip()
     FIREBASE_PRIVATE_KEY: str = os.getenv("FIREBASE_PRIVATE_KEY", "").strip()
     FIREBASE_CLIENT_EMAIL: str = os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()
+
+    # Token verification can fail if the server clock is slightly behind (1-2s). Allow small skew.
+    # Firebase Admin supports 0-60 seconds. Keep this small for security.
+    FIREBASE_CLOCK_SKEW_SECONDS: int = max(
+        0, min(60, _read_int_env("FIREBASE_CLOCK_SKEW_SECONDS", 5))
+    )
 
     # OpenAI
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
@@ -45,6 +62,15 @@ class Config:
     # Used to set Firebase Auth custom claims (e.g. {"approved": true}) for allowlisting users.
     ADMIN_BASIC_USER: str = os.getenv("ADMIN_BASIC_USER", "admin").strip() or "admin"
     ADMIN_BASIC_PASSWORD: str = os.getenv("ADMIN_BASIC_PASSWORD", "").strip()
+
+    # Admin access (UID allowlist)
+    # Comma-separated Firebase Auth UIDs that may access /api/admin/* endpoints.
+    _ADMIN_UIDS_RAW: str = os.getenv("ADMIN_UIDS", "").strip()
+    ADMIN_UIDS: List[str] = [
+        uid.strip()
+        for uid in _ADMIN_UIDS_RAW.split(",")
+        if uid.strip()
+    ]
 
     # Text refinement flow
     TEXT_REFINEMENT_MAX_DEPTH: int = int(os.getenv("TEXT_REFINEMENT_MAX_DEPTH", "4"))

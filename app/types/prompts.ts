@@ -22,3 +22,15 @@ export type PromptTemplatePayload = {
   name: string;
   instructions: string;
 };
+
+export type SystemPromptTemplateMeta = {
+  stage: PromptStage;
+  templateKey: string;
+  name: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type SystemPromptPermissions = {
+  canDuplicateSystemPrompts: boolean;
+};

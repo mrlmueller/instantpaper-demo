@@ -2,9 +2,14 @@ from fastapi import FastAPI, Depends, BackgroundTasks, status, HTTPException, Re
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from utils.config import config
-from middleware.auth import verify_firebase_token
+from middleware.auth import (
+    verify_firebase_token,
+    verify_admin_user,
+    verify_firebase_token_decoded,
+    verify_system_prompt_export_user,
+)
 from models.request import (
     ProcessQuelleRequest,
     CombineRunRequest,
@@ -25,13 +30,16 @@ from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
 from services.refinement_service import refinement_service
 from services.firebase_service import firebase_service
+from services.prompt_service import prompt_service
 from firebase_admin import auth
+from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 from pydantic import BaseModel
 import logging
 import base64
 import json
 import secrets
 import os
+import re
 from pathlib import Path
 import html as html_lib
 from urllib.parse import parse_qs
@@ -45,6 +53,9 @@ configure_logging()
 logger = logging.getLogger(__name__)
 basic_security = HTTPBasic()
 
+ALLOWED_PROMPT_STAGES = {"process_quelle", "combine", "summary", "shorten", "lesefluss"}
+SYSTEM_TEMPLATE_KEYS_ALWAYS_AVAILABLE = {"default", "default_v2"}
+TEMPLATE_KEY_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 
 def _safe_env_diagnostics() -> dict:
     """
@@ -77,6 +88,37 @@ class CreateSessionRequest(BaseModel):
 
 class RevokeSessionRequest(BaseModel):
     sessionCookie: str
+
+
+class AdminApproveUserRequest(BaseModel):
+    email: str
+    approved: bool = True
+
+
+class AdminSetPlatformKeyRequest(BaseModel):
+    email: str
+    allowPlatformKey: bool
+
+
+class AdminSetSystemPromptExportRequest(BaseModel):
+    email: str
+    canDuplicateSystemPrompts: bool
+
+
+class AdminUpsertSystemPromptTemplateRequest(BaseModel):
+    stage: str
+    templateKey: str
+    name: str
+    instructions: str
+    systemPrompt: str | None = None
+    published: bool = True
+    archived: bool = False
+
+
+class DuplicateSystemPromptTemplateRequest(BaseModel):
+    stage: str
+    templateKey: str
+    name: str | None = None
 
 
 @asynccontextmanager
@@ -137,7 +179,412 @@ async def health_check():
         "firebase": "connected" if config.FIREBASE_PROJECT_ID else "not configured",
         "openai": "connected" if config.OPENAI_API_KEY else "not configured",
         "adminApprovalConfigured": bool(config.ADMIN_BASIC_PASSWORD),
+        "firebaseClockSkewSeconds": config.FIREBASE_CLOCK_SKEW_SECONDS,
     }
+
+
+@app.get("/api/admin/me")
+async def admin_me(_: str = Depends(verify_admin_user)):
+    """Admin-only probe endpoint used by the frontend gate."""
+    return {"status": "ok"}
+
+
+def _ms_to_iso(ts_ms: int | None) -> str | None:
+    if not ts_ms:
+        return None
+    try:
+        return datetime.utcfromtimestamp(int(ts_ms) / 1000.0).replace(microsecond=0).isoformat() + "Z"
+    except Exception:
+        return None
+
+
+def _ts_to_iso(value) -> str | None:
+    if not value:
+        return None
+    try:
+        if hasattr(value, "to_datetime"):
+            value = value.to_datetime()
+        if isinstance(value, datetime):
+            dt = value
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+            dt = dt.replace(microsecond=0)
+            return dt.isoformat().replace("+00:00", "Z")
+    except Exception:
+        return None
+    return None
+
+
+@app.get("/api/admin/users")
+async def admin_list_users(
+    approved: bool | None = None,
+    query: str | None = None,
+    page_token: str | None = None,
+    max_results: int = 200,
+    _: str = Depends(verify_admin_user),
+):
+    """
+    List Firebase Auth users (admin-only).
+
+    This powers the admin approval UI: pending users are those with `approved != true`.
+    """
+    try:
+        # Ensure Firebase Admin SDK is initialized.
+        _ = firebase_service.db
+
+        max_results = max(1, min(int(max_results or 200), 1000))
+        q = (query or "").strip().lower()
+
+        page = auth.list_users(page_token=page_token, max_results=max_results)
+        users_out = []
+        for user in page.users:
+            email = (user.email or "").strip()
+            display_name = (user.display_name or "").strip()
+            if q and (q not in email.lower()) and (q not in display_name.lower()):
+                continue
+
+            claims = user.custom_claims or {}
+            is_approved = bool(claims.get("approved") is True)
+            if approved is not None and is_approved != bool(approved):
+                continue
+
+            allow_platform_key = False
+            can_duplicate_system_prompts = False
+            try:
+                user_doc = await firebase_service.get_user_doc(user.uid)
+                allow_platform_key = bool((user_doc or {}).get("allowPlatformKey") is True)
+                can_duplicate_system_prompts = bool((user_doc or {}).get("canDuplicateSystemPrompts") is True)
+            except Exception:
+                allow_platform_key = False
+                can_duplicate_system_prompts = False
+
+            users_out.append(
+                {
+                    "email": email or None,
+                    "displayName": display_name or None,
+                    "approved": is_approved,
+                    "canDuplicateSystemPrompts": can_duplicate_system_prompts,
+                    "disabled": bool(user.disabled),
+                    "allowPlatformKey": allow_platform_key,
+                    "createdAt": _ms_to_iso(getattr(user.user_metadata, "creation_timestamp", None)),
+                    "lastSignInAt": _ms_to_iso(getattr(user.user_metadata, "last_sign_in_timestamp", None)),
+                }
+            )
+
+        return {"users": users_out, "nextPageToken": page.next_page_token}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to list users.") from None
+
+
+@app.post("/api/admin/users/approve")
+async def admin_approve_user(
+    payload: AdminApproveUserRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Approve/revoke a user by email by setting the Firebase Auth custom claim `approved`."""
+    email = (payload.email or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required.")
+
+    try:
+        result = await firebase_service.set_user_approved_by_email(email=email, approved=bool(payload.approved))
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "approved": result.get("approved"),
+            "note": "User must sign out/in (or refresh token) for the claim to take effect.",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to update user approval.") from None
+
+
+@app.post("/api/admin/users/platform-key")
+async def admin_set_platform_key(
+    payload: AdminSetPlatformKeyRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Allow or block a user from using the platform OpenAI key (Firestore: users/{uid}.allowPlatformKey)."""
+    email = (payload.email or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required.")
+
+    allow_platform = bool(payload.allowPlatformKey)
+
+    try:
+        # Ensure Firebase Admin SDK is initialized.
+        _ = firebase_service.db
+
+        user = auth.get_user_by_email(email)
+
+        user_ref = firebase_service.db.collection("users").document(user.uid)
+        existing = user_ref.get()
+
+        write_payload = {
+            "uid": user.uid,
+            "email": (user.email or "").strip() or email,
+            "allowPlatformKey": allow_platform,
+            "updatedAt": SERVER_TIMESTAMP,
+        }
+        if not existing.exists:
+            write_payload["createdAt"] = SERVER_TIMESTAMP
+
+        user_ref.set(write_payload, merge=True)
+
+        return {
+            "status": "ok",
+            "email": (user.email or "").strip() or email,
+            "allowPlatformKey": allow_platform,
+        }
+    except auth.UserNotFoundError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="User not found. Ask the user to sign in once, then try again.",
+        ) from exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to update platform-key permission.") from None
+
+
+@app.post("/api/admin/users/system-prompt-copy")
+async def admin_set_system_prompt_export(
+    payload: AdminSetSystemPromptExportRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Allow or block a user from duplicating server-only system prompts into their own prompt library."""
+    email = (payload.email or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required.")
+
+    try:
+        result = await firebase_service.set_user_can_duplicate_system_prompts_by_email(
+            email=email,
+            allowed=bool(payload.canDuplicateSystemPrompts),
+        )
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "canDuplicateSystemPrompts": result.get("canDuplicateSystemPrompts"),
+            "note": "Takes effect immediately for system prompt duplication (user may need to refresh the page).",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to update system prompt copy permission.") from None
+
+
+def _validate_prompt_stage(stage: str) -> str:
+    stage_norm = (stage or "").strip()
+    if stage_norm not in ALLOWED_PROMPT_STAGES:
+        raise HTTPException(status_code=400, detail=f"Invalid stage: {stage_norm}")
+    return stage_norm
+
+
+def _validate_template_key(key: str) -> str:
+    key_norm = (key or "").strip()
+    if not key_norm or not TEMPLATE_KEY_RE.match(key_norm):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid templateKey. Use letters/numbers plus '-'/'_' (max 64 chars).",
+        )
+    return key_norm
+
+
+def _validate_required_placeholders(stage: str, instructions: str) -> None:
+    required = list(prompt_service.REQUIRED_PLACEHOLDERS.get(stage, []) or [])
+    if not required:
+        return
+    missing = [ph for ph in required if ph not in (instructions or "")]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required placeholders: {', '.join(missing)}",
+        )
+
+
+@app.get("/api/system-prompt-templates")
+async def list_system_prompt_templates(
+    stage: str | None = None,
+    decoded_token: dict = Depends(verify_firebase_token_decoded),
+):
+    """List published, non-archived system prompt templates (metadata only)."""
+    stage_norm = _validate_prompt_stage(stage) if stage else None
+
+    try:
+        uid = str(decoded_token.get("uid") or "").strip()
+        can_duplicate = False
+        if uid:
+            try:
+                user_doc = await firebase_service.get_user_doc(uid)
+                can_duplicate = bool((user_doc or {}).get("canDuplicateSystemPrompts") is True)
+            except Exception:
+                can_duplicate = False
+
+        templates_raw = await firebase_service.list_system_prompt_templates(stage_norm)
+        existing_keys = set()
+        for tpl in templates_raw:
+            tpl_stage = (tpl.get("stage") or "").strip()
+            tpl_key = (tpl.get("templateKey") or "").strip()
+            if tpl_stage and tpl_key:
+                existing_keys.add((tpl_stage, tpl_key))
+        templates_out = []
+
+        for tpl in templates_raw:
+            tpl_stage = (tpl.get("stage") or "").strip()
+            tpl_key = (tpl.get("templateKey") or "").strip()
+            if not tpl_stage or not tpl_key:
+                continue
+            if stage_norm and tpl_stage != stage_norm:
+                continue
+
+            published = bool(tpl.get("published", True) is True)
+            archived = bool(tpl.get("archived", False) is True)
+            if not published or archived:
+                continue
+
+            templates_out.append(
+                {
+                    "stage": tpl_stage,
+                    "templateKey": tpl_key,
+                    "name": str((tpl.get("name") or "")).strip() or tpl_key,
+                    "createdAt": _ts_to_iso(tpl.get("createdAt")),
+                    "updatedAt": _ts_to_iso(tpl.get("updatedAt")),
+                }
+            )
+
+        # Ensure defaults exist in the list even if Firestore has not been seeded yet.
+        stages_to_ensure = [stage_norm] if stage_norm else sorted(ALLOWED_PROMPT_STAGES)
+        by_stage_key = {(t["stage"], t["templateKey"]) for t in templates_out}
+        for st in stages_to_ensure:
+            for key in sorted(SYSTEM_TEMPLATE_KEYS_ALWAYS_AVAILABLE):
+                if (st, key) in by_stage_key:
+                    continue
+                if (st, key) in existing_keys:
+                    # Template exists in Firestore but is not selectable (e.g. archived/unpublished); do not synthesize.
+                    continue
+                templates_out.append(
+                    {
+                        "stage": st,
+                        "templateKey": key,
+                        "name": "System-Standard" if key == "default" else "System-Standard (v2)",
+                        "createdAt": None,
+                        "updatedAt": None,
+                    }
+                )
+
+        return {
+            "templates": templates_out,
+            "permissions": {
+                "canDuplicateSystemPrompts": can_duplicate,
+            },
+        }
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to list system prompt templates.") from None
+
+
+@app.post("/api/system-prompt-templates/duplicate")
+async def duplicate_system_prompt_template(
+    payload: DuplicateSystemPromptTemplateRequest,
+    user_id: str = Depends(verify_system_prompt_export_user),
+):
+    """Duplicate a published system prompt template into the caller's user-owned prompt library."""
+    stage_norm = _validate_prompt_stage(payload.stage)
+    key_norm = _validate_template_key(payload.templateKey)
+
+    try:
+        sys_tpl = await firebase_service.get_system_prompt_template(stage_norm, key_norm)
+        if not sys_tpl:
+            raise HTTPException(status_code=404, detail="System prompt template not found.")
+        if bool(sys_tpl.get("published", True) is not True) or bool(sys_tpl.get("archived", False) is True):
+            raise HTTPException(status_code=404, detail="System prompt template not available.")
+
+        name_override = (payload.name or "").strip() or None
+        result = await firebase_service.duplicate_system_prompt_template_to_user(
+            user_id=user_id,
+            stage=stage_norm,
+            template_key=key_norm,
+            name=name_override,
+        )
+        return {"status": "ok", "id": result.get("id")}
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to duplicate system prompt template.") from None
+
+
+@app.get("/api/admin/system-prompt-templates")
+async def admin_list_system_prompt_templates(
+    stage: str | None = None,
+    _: str = Depends(verify_admin_user),
+):
+    """List system prompt templates (admin-only, includes full prompt text)."""
+    stage_norm = _validate_prompt_stage(stage) if stage else None
+    try:
+        templates_raw = await firebase_service.list_system_prompt_templates(stage_norm)
+        templates_out = []
+        for tpl in templates_raw:
+            tpl_stage = (tpl.get("stage") or "").strip()
+            tpl_key = (tpl.get("templateKey") or "").strip()
+            if not tpl_stage or not tpl_key:
+                continue
+            if stage_norm and tpl_stage != stage_norm:
+                continue
+
+            templates_out.append(
+                {
+                    "stage": tpl_stage,
+                    "templateKey": tpl_key,
+                    "name": str((tpl.get("name") or "")).strip() or tpl_key,
+                    "instructions": str((tpl.get("instructions") or "")).rstrip(),
+                    "systemPrompt": (str(tpl.get("systemPrompt")).rstrip() if tpl.get("systemPrompt") is not None else None),
+                    "published": bool(tpl.get("published", True) is True),
+                    "archived": bool(tpl.get("archived", False) is True),
+                    "createdAt": _ts_to_iso(tpl.get("createdAt")),
+                    "updatedAt": _ts_to_iso(tpl.get("updatedAt")),
+                }
+            )
+
+        return {"templates": templates_out}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to list system prompt templates.") from None
+
+
+@app.post("/api/admin/system-prompt-templates")
+async def admin_upsert_system_prompt_template(
+    payload: AdminUpsertSystemPromptTemplateRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Create or update a system prompt template (admin-only)."""
+    stage_norm = _validate_prompt_stage(payload.stage)
+    key_norm = _validate_template_key(payload.templateKey)
+    name = (payload.name or "").strip()
+    instructions = (payload.instructions or "").rstrip()
+    system_prompt = payload.systemPrompt.rstrip() if isinstance(payload.systemPrompt, str) else None
+
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not instructions.strip():
+        raise HTTPException(status_code=400, detail="instructions is required")
+
+    _validate_required_placeholders(stage_norm, instructions)
+
+    try:
+        await firebase_service.upsert_system_prompt_template(
+            stage=stage_norm,
+            template_key=key_norm,
+            name=name,
+            instructions=instructions,
+            system_prompt=system_prompt,
+            published=bool(payload.published),
+            archived=bool(payload.archived),
+        )
+        return {"status": "ok"}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to upsert system prompt template.") from None
 
 def _require_admin(credentials: HTTPBasicCredentials = Depends(basic_security)) -> None:
     """

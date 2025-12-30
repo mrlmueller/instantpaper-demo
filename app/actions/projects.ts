@@ -4,6 +4,7 @@ import { getFirestoreForUser } from '@/app/lib/firebase/serverApp';
 import { requireAuth, type AuthUser } from '@/app/lib/auth/server-auth';
 import {
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -32,6 +33,10 @@ type ActionContext = {
   user?: AuthUser;
   db?: Firestore;
 };
+
+function normalizeProjectName(name: string): string {
+  return name.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+}
 
 async function getContext(ctx?: ActionContext) {
   const user = ctx?.user ?? (await requireAuth());
@@ -75,14 +80,20 @@ export async function getOrCreateDefaultProject(ctx?: ActionContext): Promise<Pr
   };
 }
 
-export async function getProjects(ctx?: ActionContext): Promise<Project[]> {
+export async function getProjects(ctx?: ActionContext, options?: { includeArchived?: boolean }): Promise<Project[]> {
   const { user, db } = await getContext(ctx);
   if (!user) {
     throw new Error('Not authenticated');
   }
 
   const projectsRef = projectsCol(db, user.uid);
-  const snapshot = await getDocs(query(projectsRef, where('archived', '==', false), orderBy('createdAt', 'desc')));
+  const includeArchived = Boolean(options?.includeArchived);
+
+  const snapshot = await getDocs(
+    includeArchived
+      ? query(projectsRef, orderBy('createdAt', 'desc'))
+      : query(projectsRef, where('archived', '==', false), orderBy('createdAt', 'desc'))
+  );
 
   return snapshot.docs.map((docSnap) => {
     const data = docSnap.data();
@@ -104,10 +115,28 @@ export async function createProject(name: string): Promise<{ success: boolean; i
     }
     const db = await getFirestoreForUser();
 
+    const desiredName = name.trim();
+    if (!desiredName) {
+      return { success: false, error: 'Projektname darf nicht leer sein' };
+    }
+
     const projectsRef = projectsCol(db, user.uid);
+
+    // Disallow duplicate names (case/whitespace-insensitive), including archived projects
+    const existingSnap = await getDocs(projectsRef);
+    const desiredNormalized = normalizeProjectName(desiredName);
+    const alreadyExists = existingSnap.docs.some((docSnap) => {
+      const data = docSnap.data() as any;
+      const existingName = typeof data.name === 'string' ? data.name : '';
+      return normalizeProjectName(existingName) === desiredNormalized;
+    });
+    if (alreadyExists) {
+      return { success: false, error: 'Ein Projekt mit diesem Namen existiert bereits' };
+    }
+
     const newRef = doc(projectsRef); // random id
     await setDoc(newRef, {
-      name,
+      name: desiredName,
       ownerId: user.uid,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -129,16 +158,38 @@ export async function renameProject(projectId: string, name: string) {
     }
     const db = await getFirestoreForUser();
 
+    const desiredName = name.trim();
+    if (!desiredName) {
+      return { success: false, error: 'Projektname darf nicht leer sein' };
+    }
+
     const projectRef = projectDoc(db, user.uid, projectId);
     const snap = await getDoc(projectRef);
     if (!snap.exists()) {
       return { success: false, error: 'Projekt nicht gefunden' };
     }
 
+    const currentName = typeof (snap.data() as any).name === 'string' ? (snap.data() as any).name : '';
+    if (normalizeProjectName(currentName) !== normalizeProjectName(desiredName)) {
+      // Disallow duplicates (including archived projects), excluding the current project.
+      const projectsRef = projectsCol(db, user.uid);
+      const existingSnap = await getDocs(projectsRef);
+      const desiredNormalized = normalizeProjectName(desiredName);
+      const alreadyExists = existingSnap.docs.some((docSnap) => {
+        if (docSnap.id === projectId) return false;
+        const data = docSnap.data() as any;
+        const existingName = typeof data.name === 'string' ? data.name : '';
+        return normalizeProjectName(existingName) === desiredNormalized;
+      });
+      if (alreadyExists) {
+        return { success: false, error: 'Ein Projekt mit diesem Namen existiert bereits' };
+      }
+    }
+
     await setDoc(
       projectRef,
       {
-        name,
+        name: desiredName,
         updatedAt: serverTimestamp(),
       },
       { merge: true }
@@ -152,10 +203,18 @@ export async function renameProject(projectId: string, name: string) {
 }
 
 export async function deleteProject(projectId: string) {
+  return archiveProject(projectId);
+}
+
+export async function archiveProject(projectId: string) {
   try {
     const user = await requireAuth();
     if (!user) {
       return { success: false, error: 'Not authenticated' };
+    }
+
+    if (projectId === DEFAULT_PROJECT_ID) {
+      return { success: false, error: 'Standardprojekt kann nicht archiviert werden' };
     }
     const db = await getFirestoreForUser();
 
@@ -173,7 +232,35 @@ export async function deleteProject(projectId: string) {
 
     return { success: true };
   } catch (error: unknown) {
-    console.error('Error deleting project:', error);
+    console.error('Error archiving project:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function unarchiveProject(projectId: string) {
+  try {
+    const user = await requireAuth();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    const db = await getFirestoreForUser();
+
+    const projectRef = projectDoc(db, user.uid, projectId);
+    const snap = await getDoc(projectRef);
+    if (!snap.exists()) {
+      return { success: false, error: 'Projekt nicht gefunden' };
+    }
+
+    await updateDoc(projectRef, {
+      archived: false,
+      archivedAt: deleteField(),
+      updatedAt: serverTimestamp(),
+    });
+
+    return { success: true };
+  } catch (error: unknown) {
+    console.error('Error unarchiving project:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }

@@ -5,6 +5,7 @@ export interface Projekt {
   id: string;
   name: string;
   createdAt: Date;
+  archived?: boolean;
 }
 
 export interface Quelle {
@@ -118,7 +119,7 @@ export interface UserStats {
   totalQuellen: number;
   totalWords: number;
   runsByMonth: { month: string; runs: number; cost: number }[];
-  costByProjekt: { projektName: string; cost: number }[];
+  costByProjekt: { projektId: string; projektName: string; cost: number }[];
   modelUsage: { model: string; count: number }[];
   memberSince: Date;
 }

@@ -27,12 +27,15 @@ export function DeleteConfirmDialog({
   onConfirm,
 }: DeleteConfirmDialogProps) {
   const typeLabel = type === "quelle" ? "Quelle" : type === "kapitel" ? "Kapitel" : "Projekt";
+  const isArchive = type === "projekt";
+  const actionLabel = isArchive ? "archivieren" : "löschen";
+  const confirmLabel = isArchive ? "Archivieren" : "Löschen";
   const warning =
     type === "quelle"
       ? "Diese Quelle wird aus allen Kapiteln entfernt, in denen sie zugewiesen ist."
       : type === "kapitel"
         ? "Alle Runs und generierten Texte für dieses Kapitel werden ebenfalls gelöscht."
-        : "Alle Kapiteln, Quellen und Runs in diesem Projekt werden ebenfalls gelöscht.";
+        : "Das Projekt wird ausgeblendet und kann später im Tab \"Archiviert\" wiederhergestellt werden.";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -42,10 +45,10 @@ export function DeleteConfirmDialog({
             <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center">
               <AlertTriangle className="h-4 w-4 text-destructive" />
             </div>
-            {typeLabel} löschen?
+            {typeLabel} {actionLabel}?
           </DialogTitle>
           <DialogDescription className="pt-1">
-            Bist du sicher, dass du <strong>&quot;{name}&quot;</strong> löschen möchtest? {warning}
+            Bist du sicher, dass du <strong>&quot;{name}&quot;</strong> {actionLabel} möchtest? {warning}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="pt-4 border-t gap-2">
@@ -53,7 +56,7 @@ export function DeleteConfirmDialog({
             Abbrechen
           </Button>
           <Button variant="destructive" onClick={onConfirm}>
-            Löschen
+            {confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

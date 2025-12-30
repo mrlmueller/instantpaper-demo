@@ -110,16 +110,20 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId);
 
-      // Users may create their profile doc, but cannot grant themselves platform access.
+      // Users may create their profile doc, but cannot grant themselves platform access or system prompt copy access.
       allow create: if isOwner(userId)
         && (
           !request.resource.data.keys().hasAny(['allowPlatformKey'])
           || request.resource.data.allowPlatformKey == false
+        )
+        && (
+          !request.resource.data.keys().hasAny(['canDuplicateSystemPrompts'])
+          || request.resource.data.canDuplicateSystemPrompts == false
         );
 
-      // Users may update their profile, but not change allowPlatformKey.
+      // Users may update their profile, but not change server-controlled flags.
       allow update: if isOwner(userId)
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['allowPlatformKey']);
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['allowPlatformKey', 'canDuplicateSystemPrompts']);
 
       allow delete: if isOwner(userId);
 

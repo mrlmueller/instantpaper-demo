@@ -5,8 +5,10 @@ import { getUserQuellen } from '@/app/actions/quellen';
 import { getUserKapitels } from '@/app/actions/kapitels';
 import { getOrCreateDefaultProject, getProjects } from '@/app/actions/projects';
 import { Dashboard } from '@/app/components/dashboard/Dashboard';
-import { DashboardSkeleton } from '@/app/components/dashboard/DashboardSkeleton';
 import { DashboardAuthWrapper } from './DashboardAuthWrapper';
+import { cookies } from 'next/headers';
+import { getActiveKapitelCookieName } from '@/app/lib/ui/kapitelSelection';
+import { getActiveProjektCookieName } from '@/app/lib/ui/projektSelection';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,26 +30,40 @@ export default async function DashboardPage() {
     console.error('Background user sync failed:', error);
   });
 
-  const projekt = await getOrCreateDefaultProject({ user, db });
+  const cookieStore = await cookies();
 
-  const [projekte, quellen, kapitels] = await Promise.all([
-    getProjects({ user, db }),
-    getUserQuellen(projekt.id, { user, db }),
-    // Only fetch Kapitel metadata; runs are fetched lazily per Kapitel
-    getUserKapitels(projekt.id, false, INITIAL_RUN_LIMIT, { user, db }),
-  ]);
+  const defaultProjekt = await getOrCreateDefaultProject({ user, db });
+  const projekte = await getProjects({ user, db }, { includeArchived: true });
 
   // Ensure the default project is available even if it was created after fetching the list
-  const projekteWithDefault = projekte.some((p) => p.id === projekt.id) ? projekte : [projekt, ...projekte];
+  const projekteWithDefault = projekte.some((p) => p.id === defaultProjekt.id) ? projekte : [defaultProjekt, ...projekte];
+
+  const persistedProjektId = cookieStore.get(getActiveProjektCookieName())?.value;
+  const activeProjekte = projekteWithDefault.filter((p) => p.archived !== true);
+  const selectedProjekt =
+    (persistedProjektId ? activeProjekte.find((p) => p.id === persistedProjektId) : undefined) ??
+    activeProjekte[0] ??
+    defaultProjekt;
+
+  const [quellen, kapitels] = await Promise.all([
+    getUserQuellen(selectedProjekt.id, { user, db }),
+    // Only fetch Kapitel metadata; runs are fetched lazily per Kapitel
+    getUserKapitels(selectedProjekt.id, false, INITIAL_RUN_LIMIT, { user, db }),
+  ]);
+
+  const persistedKapitelId = cookieStore.get(getActiveKapitelCookieName(selectedProjekt.id))?.value;
+  const initialActiveKapitelId =
+    persistedKapitelId && kapitels.some((k) => k.id === persistedKapitelId) ? persistedKapitelId : undefined;
 
   // Runs are loaded lazily via client-side listeners for faster initial paint
   return (
     <Dashboard
       initialKapitels={kapitels}
       initialQuellen={quellen}
-      initialProjekt={projekt}
+      initialProjekt={selectedProjekt}
       initialProjekte={projekteWithDefault}
       initialRuns={[]}
+      initialActiveKapitelId={initialActiveKapitelId}
     />
   );
 }

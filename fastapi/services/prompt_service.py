@@ -1,5 +1,6 @@
 from services.firebase_service import firebase_service
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -33,20 +34,17 @@ PROCESS_QUELLE_DEFAULT_V2_INSTRUCTIONS = """<Prompt entfernt>";" verwenden. Ausn
 
 [STILLE PRÜFUNG VOR AUSGABE]
 Prüfe intern, ohne es zu schreiben:
-1) Der Absatz behandelt wirklich nur {ANWEISUNGEN} (Randinfos sind ok, solange thematisch anschlussfähig).
+1) Der Absatz behandelt wirklich nur {KAPITEL_BESCHREIBUNG} (Randinfos sind ok, solange thematisch anschlussfähig).
 2) Keine erfundenen Fakten.
 3) Jede fachliche Behauptung aus dem Quelltext hat eine passende APA-Zitation.
 4) Keine internen Abschnitts-/Kapitelverweise übernommen.
 5) Text ist eindeutig neu formuliert und einzigartig.
 
 [GRUNDLEGENDE INFORMATIONEN – OPTIONAL]
-{GRUNDLEGENDE_INFOS_ODER_LEER}
+{OPTIONAL_GRUNDLEGENDE_INFOS}
 
 Quelltext:
 {QUELLTEXT}
-
-Bildinhalte (falls vorhanden):
-{BILDINHALT_ODER_LEER}
 """
 
 
@@ -58,8 +56,8 @@ COMBINE_DEFAULT_V2_INSTRUCTIONS = """[AUFGABE]
 Füge die folgenden Entwürfe zu einem kohärenten wissenschaftlichen Fließtext zusammen. Der Fließtext ist Teil einer großeren Arbeit. Das Kapitel das du schreiben sollst, 
 hat den titel den du unten siehst und behandelt das Thema das du ebenfalls unten siehst. Thema ist einfach nur ein kleiner Text der beschreibt um was es in dem Kapitel genau gehen soll.
 
-Titel (nur Kontext, NICHT ausgeben): {heading}
-Thema: {topic}
+Titel (nur Kontext, NICHT ausgeben): {KAPITEL_TITEL}
+Thema: {KAPITEL_BESCHREIBUNG}
 
 Anforderungen:
 - Integriere alle relevanten Informationen aus den Entwürfen. Entferne Dopplungen konsequent.
@@ -105,7 +103,7 @@ Wichtig: Lieber etwas länger als dass zentrale Informationen fehlen.
 Gib ausschließlich den komprimierten Text aus.
 
 ### Text
-{text}
+{KAPITELTEXT}
 """
 
 SHORTEN_DEFAULT_V2_SYSTEM_PROMPT = """<Prompt entfernt>"""
@@ -146,21 +144,21 @@ Lieber etwas weniger kürzen als Informationsverlust.
 # INPUTS
 Der Text an dem du arbeiten sollst ist ein Kapitel einer längeren Wissenschaftlichen Arbeit. Das Kapitel hat die Überschrift die du unten siehst und das topic ist ein kleiner Text zu dem Kapitel der beschreibt um was es in dem Kapitel gehen soll:
 <heading>
-{ueberschrift}
+{KAPITEL_TITEL}
 </heading>
 
 <topic>
-{thema}
+{KAPITEL_BESCHREIBUNG}
 </topic>
 
 Das folgende ist Quasi die Gliederung der gesamten arbeit und zu manchen Kapitel gebe ich dir eine gekürzte Version des Textes damit du verstehst wie sich der Text an dem wir arbeiten in den Rest der gesamten Arbeit einordnet und du verstehen kannst was schon bahndelt wurde oder was noch behandelt wird.
 <context_other_chapters>
-{KONTEXT_ANDERE_KAPITEL}
+{GLIEDERUNG_SUMMARY}
 </context_other_chapters>
 
 Das ist der Text an dem wir Arbeiten:
 <text_to_shorten>
-{TEXT_ZUM_KUERZEN}
+{KAPITELTEXT}
 </text_to_shorten>
 
 # LETZTE PRÜFUNG (intern, nicht ausgeben)
@@ -241,68 +239,121 @@ Gib ausschließlich den final überarbeiteten Kapiteltext aus.
 """
 
 DEFAULT_INSTRUCTIONS = {
-    "process_quelle": (
-        "### Aufgabe:\n"
-        "Schreibe einen Absatz in einer wissenschaftlichen Arbeit. Da es nur ein Absatz ist, schreibe keine Einleitung oder Schlussfolgerung/Zusammenfassung. "
-        'Der Absatz hat die Überschrift "{heading}" und soll genauer das Thema "{topic}" behandeln. Beziehe dich beim Schreiben des Absatzes nur auf die oben gegebenen Informationen '
-        "und nutze nichts aus deinem eigenen Wissen. Fokussiere dich außerdem genau auf das Thema, das ich vorgegeben habe, da andere Informationen hierzu bereits behandelt worden sind "
-        "oder noch behandelt werden; kurzum, schreibe wirklich nur über das vorgegebene Thema. Wichtig ist, dass Informationen, die aus dem obigen Text übernommen werden, so umgeschrieben "
-        "werden sollen, dass der obige Text nicht mehr zu erkennen ist - das Ergebnis also einzigartig ist. Der Text soll so lang sein, wie er sein muss, um alle relevanten Informationen "
-        "zu integrieren; ziehe ihn nicht unnötig in die Länge, aber lasse auch nichts Relevantes weg. Sollte der Text keine sinnvollen Informationen zu dem gegebenen Thema enthalten, kannst "
-        "du mir das sagen und den Text dann nicht schreiben; gib mir dann eine kurze Erklärung, warum der Text nicht zum Thema gepasst hat. Integriere außerdem die Quellen (mit Seitenzahlen, "
-        "wenn diese gegeben wurden) aus dem oberen Text an den richtigen Stellen. Der gegebene Text hat sicherlich mehr Informationen zu manchen Themen und weniger zu anderen. Fokussiere dich "
-        "auf die Themen, zu denen du wirklich konkrete und tiefe Einblicke geben kannst. Dieser Text ist nur einer von 10, die ich zu diesem Thema habe. Das bedeutet, wenn du eine Dimension "
-        "nur wenig oder gar nicht behandelst, habe ich dennoch viele Informationen zu dieser in einem anderen Text. Genauer ausgedrückt, schreibst du gerade einen von 10 Texten, die später das "
-        "Kapitel ergeben werden. Das bedeutet auch, dass du dich wirklich auf das Wichtigste beschränken kannst und nicht unnötiges schreiben musst. Schreibe keine Zusammenfassung oder "
-        "Schlussfolgerung am Ende. Nur reine Informationen. Formuliere den Text ohne dass du ; verwendest, außer zwischen zwei Quellen."
-    ),
-    "combine": (
-        "### Aufgabe:\n"
-        "<Prompt entfernt>"
-        "enthalten sind. Identifiziere Informationen, die doppelt behandelt werden, und stelle sicher, dass diese Informationen nur noch einmal in deinem Text behandelt werden. Der Text, den du "
-        'schreiben sollst, hat den Titel "{heading}" und hat das Thema "{topic}". Wenn du den Text neu schreibst aufgrund der gegebenen Texte, gehe sicher, dass du nicht einfach nur die Themen '
-        "aneinander hängst, sondern dass du einerseits die gesamte Struktur so veränderst, dass dein Text Sinn ergibt; du kannst auch die Informationen nutzen, um neue Schlüsse zu ziehen im Sinne "
-        "des gegebenen Themas. Du kannst alles machen, das Ziel ist nur, das bestmögliche Endergebnis zu erstellen. Aber du sollst nur die gegebenen Informationen nutzen und keine Informationen aus "
-        "deinem eigenen Wissen mit einbeziehen! Schreibe keine Zusammenfassung am Ende, da dies nur ein Teil eines längeren Textes ist. Habe Spaß mit der Findung deines Textes, untersuche "
-        "verschiedene Aspekte deiner Argumente und gib somit eine Antwort mit sehr viel Nuance. Schreibe einen zusammenhängenden Text ohne Zwischenüberschriften. Du musst dich bei deinem Text nicht "
-        "kurz fassen, schreibe deinen Text so lange, wie er sein muss, bis du alle Informationen integriert und alle Argumente ausreichend beschrieben hast, ich begrüße es sogar, wenn du einen "
-        'längeren Text schreibst; wichtig ist aber auch, dass du deinen Text nicht künstlich in die Länge ziehst. Schreibe ohne "Wir/Ich haben herausgefunden". Integriere auch hier die Quellen '
-        "mit Seitenzahlen. Nutze nur die Informationen, die in den Texten gegeben sind, ergänze nichts dazu, das nicht in den Texten steht. Wenn du Argumente beschreibst, gehe sicher, immer eine "
-        "Quelle zu integrieren. Formuliere den Text ohne dass du ; verwendest, außer zwischen zwei Quellen."
-    ),
-    "shorten": (
-        "### Aufgabe:\n"
-        'Ich schreibe gerade eine Wissenschaftliche Arbeit. Der folgende Text ist bereits gut, so wie er ist, allerding ist er noch zu lang. Aber damit du optimal den Text kürzen kannst, also dass du den Fokus auf die richtigen Fakten und Themen legen kannst, werde ich dir die Überschrift "{ueberschrift}" und auch das Thema des Textes geben "{thema}". Zusätzlich werde ich dir folgend einen Teil meiner Gliederung geben zusammen mit einer zusammengefassten Version der Texte von den anderen Kapitel und Unterpunkten der Kapitel. All dies gebe ich dir, damit du perfekt entscheiden kannst, auf was der Fokus gelegt werden sollte in der Arbeit. Konkret ist deine Aufgabe, den Text auf die Hälfte oder noch etwas weniger zu kürzen, aber dabei alle wichtigen Informationen beizubehalten. Behalte auch sämtliche Quellen an den richtigen Stellen bei außer, wenn du eine Information zu einer Quelle komplett eliminierst. Du sollst nur die gegebenen Informationen nutzen und keine Informationen aus deinem eigenen Wissen einbeziehen! Schreibe keine Zusammenfassung am Ende, da dies nur ein Teil eines längeren Textes ist. Habe Spaß mit der Findung deines Textes. Schreibe ohne "Wir/Ich haben herausgefunden". Schreibe aber dennoch so, dass es Spaß macht, den Text zu lesen, also dass es kein zu trockener Text wird, aber behalte dennoch die Wissenschaftliche Schreibweise bei. Wenn du Argumente beschreibst, gehe sicher, immer eine Quelle zu integrieren. Formuliere den Text ohne dass du ; verwendest, außer zwischen zwei Quellen.\n\nWICHTIG: Antworte mit einem JSON-Objekt wie im System-Prompt beschrieben. Gebe eine kurze Erklärung deiner Entscheidungen im explanation-Feld und den gekürzten Text im shortened_text-Feld.'
-    ),
-    "lesefluss": (
-        "### Aufgabe\n"
-        "Ich schreibe gerade meine Wissenschaftlichen Arbeit.\n"
-        'Momentan sind die Texte aus den verschiedenen Unterkapiteln noch sehr "alleinstehend" was ich meine ist das in den einzelnen Unterkapitel nicht auf die Folgenden oder kommenden Kapitel eingegangen wird und der Text somit noch sehr gestückelt und keine Gesamtheit ist. Auch kommen Informationen doppelt vor oder das Thema wird unterschiedlich behandelt in verschiedenen Unterkapiteln.\n'
-        "Für einen besseren Kontext für dich ist hier die Aufgabenstellung für die gesamte Arbeit:\n\n"
-        "AUFGABENSTELLUNG:\n{aufgabenstellung}\nAUFGABENSTELLUNG ENDE\n\n"
-        "Ich werde dir außerdem eine zusammengefasste Version der ganzen Arbeit geben. Zu jedem Unterkapitel gibt es einen am Anfang kleinen Text der beschreibt was in diesem Unterkapitel für Informationen behandelt werden. Allerdings sind die Texte zusammengefasst, da die ganze Arbeit zu lang wäre. Berücksichtige diese Information wenn die auf ein Kapitel verweist. Dies ist damit du einen besseren Kontext für die ganze Arbeit hast. Du kannst auch auf Informationen die hier bearbeitet wurden verweisen.\n"
-        'Ich will von dir das du einen fließenden Text aus dem ganzen machst, dass in dem Text an dem du gerade Arbeitest auf bereits behandelte Informationen verwiesen werden kann, wenn das Sinn macht, oder das darauf verwiesen wird, das etwas noch tiefer bearbeitet werden wird in einem kommenden Kapitel. Wenn du auf ein anderes Kapitel verweist, dann schreibe nicht "wie in 2.2 beschrieben." sondern "wie in Kapitel 2.2 beschrieben." also schreibe dazu das du auf das Kapitel xy verweist.\n'
-        'Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das nächste Kapitel einzuweben. Schreibe nicht einfach am ende einen kurzen Absatz in dem du überleitest. Der Lesefluss soll nicht unterbrochen werden. Schreibe auch nicht "dies leitet über". Gebe dir Mühe bei der Überleitung da dies den Text Charakter verleiht. Habe Spaß mit der Findung. Nutze nur die Informationen die in den Texten gegeben sind, ergänze nichts dazu, das nicht in den Texten steht.. Übernehme außerdem die angegebenen Quellen (mit Seitenzahlen, wenn Seitenzahlen in der Quelle vorhanden sind) in deinen Text. Gehe sicher, dass keine Informationen weggelassen werden. Erfinde aber auch keine zusätzlichen Kapitel oder Informationen hinzu. Was du aber machen kannst ist zusätzliche Informationen so zu nutzen das neue Schlüsse gezogen werden, gehe aber sicher diese dann immer so zu formulieren das klar wird das es sich hier um dein Gedankengut und nicht um Wissenschaftlich bewiesenes geht. Formuliere den Text ohne das du ; verwendest, außer zwischen zwei Quellen.\n'
-        ""
-    ),
-    "summary": (
-        "### Aufgabe:\n"
-        "Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original Text kommt. Ziel dieser Zusammenfassung ist es, die Rhetorik und nebensächliche Informationen wegzulassen, aber die grundlegenden Informationen beizubehalten. "
-        "Schreibe lieber Sätze, die sich nicht flüssig lesen lassen, also ohne viele Stoppwörter sind und integriere dafür aber mehr Information. Das Ziel ist einen Text, der so kurz wie möglich, aber auch so viele Informationen wie möglich hat. Quellen können weggelassen werden.\n\n"
-        "### Text:\n{text}"
-    ),
+    "process_quelle": """<Prompt entfernt>""",
+    "combine": """[AUFGABE]
+Füge die folgenden Entwürfe zu einem kohärenten wissenschaftlichen Fließtext zusammen.
+
+Titel (nur Kontext, NICHT ausgeben): {KAPITEL_TITEL}
+Thema: {KAPITEL_BESCHREIBUNG}
+
+[ENTWÜRFE]
+{DRAFTS}
+""",
+    "shorten": """# ZIEL
+Kürze den Kapiteltext, ohne Informationsverlust, und entferne Redundanzen.
+
+<kapitel_titel>
+{KAPITEL_TITEL}
+</kapitel_titel>
+
+<kapitel_beschreibung>
+{KAPITEL_BESCHREIBUNG}
+</kapitel_beschreibung>
+
+<gliederung_und_kapitelzusammenfassungen>
+{GLIEDERUNG_SUMMARY}
+</gliederung_und_kapitelzusammenfassungen>
+
+<kapiteltext>
+{KAPITELTEXT}
+</kapiteltext>
+""",
+    "lesefluss": """# ZIEL
+Überarbeite den Kapiteltext so, dass er sich nahtlos in die Gesamtarbeit einfügt (Lesefluss, Querverweise, weniger Redundanz).
+
+<aufgabenstellung>
+{AUFGABENSTELLUNG}
+</aufgabenstellung>
+
+<gliederung_und_kapitelzusammenfassungen>
+{GLIEDERUNG_SUMMARY}
+</gliederung_und_kapitelzusammenfassungen>
+
+<kapiteltext_zu_ueberarbeiten>
+{KAPITELTEXT}
+</kapiteltext_zu_ueberarbeiten>
+""",
+    "summary": """### Aufgabe
+Komprimiere den folgenden Text zu einer deutlich kürzeren Fassung, ohne neue Inhalte hinzuzufügen.
+
+### Text
+{KAPITELTEXT}
+""",
 }
 
 
 class PromptService:
     REQUIRED_PLACEHOLDERS = {
-        "process_quelle": ["{heading}", "{topic}"],
-        "combine": ["{heading}", "{topic}"],
-        "summary": ["{text}"],
+        "process_quelle": [
+            "{KAPITEL_TITEL}",
+            "{KAPITEL_BESCHREIBUNG}",
+            "{OPTIONAL_GRUNDLEGENDE_INFOS}",
+            "{QUELLTEXT}",
+        ],
+        "combine": ["{KAPITEL_TITEL}", "{KAPITEL_BESCHREIBUNG}", "{DRAFTS}"],
+        "summary": ["{KAPITELTEXT}"],
+        "shorten": [
+            "{KAPITEL_TITEL}",
+            "{KAPITEL_BESCHREIBUNG}",
+            "{GLIEDERUNG_SUMMARY}",
+            "{KAPITELTEXT}",
+        ],
+        "lesefluss": ["{AUFGABENSTELLUNG}", "{GLIEDERUNG_SUMMARY}", "{KAPITELTEXT}"],
     }
 
     def __init__(self):
         pass
+
+    def _is_system_template_usable(self, tpl: dict | None) -> bool:
+        if not tpl:
+            return False
+        if tpl.get("published", True) is not True:
+            return False
+        if tpl.get("archived", False) is True:
+            return False
+        return True
+
+    def _ts_sort_key(self, tpl: dict) -> datetime:
+        ts = tpl.get("updatedAt") or tpl.get("createdAt")
+        try:
+            if hasattr(ts, "to_datetime"):
+                ts = ts.to_datetime()
+        except Exception:
+            ts = None
+        return ts if isinstance(ts, datetime) else datetime.min
+
+    async def _get_newest_system_template_key(self, stage: str) -> str | None:
+        try:
+            templates = await firebase_service.list_system_prompt_templates(stage)
+        except Exception:
+            templates = []
+
+        candidates: list[dict] = []
+        for tpl in templates:
+            if not self._is_system_template_usable(tpl):
+                continue
+            if not (str((tpl.get("templateKey") or "")).strip()):
+                continue
+            if not (str((tpl.get("instructions") or "")).strip()):
+                continue
+            candidates.append(tpl)
+
+        if not candidates:
+            return None
+
+        candidates.sort(key=self._ts_sort_key, reverse=True)
+        key = str((candidates[0].get("templateKey") or "")).strip()
+        return key or None
 
     async def get_instructions_for_template(
         self, user_id: str, stage: str, template_id: str | None
@@ -313,15 +364,29 @@ class PromptService:
         Supported template IDs:
         - "default": system default prompt (server-only, stored in Firestore)
         - "default_v2": system v2 prompt (server-only, stored in Firestore)
+        - any other existing system templateKey: server-only, stored in Firestore
         - any other string: user-owned promptTemplates/{templateId}
         """
         tid = (template_id or "").strip() or "default"
 
-        if tid in {"default", "default_v2"}:
-            sys_tpl = await firebase_service.get_system_prompt_template(stage, tid)
-            if sys_tpl and (sys_tpl.get("instructions") or "").strip():
+        sys_tpl = await firebase_service.get_system_prompt_template(stage, tid)
+        if sys_tpl:
+            if self._is_system_template_usable(sys_tpl) and (sys_tpl.get("instructions") or "").strip():
                 return sys_tpl["instructions"]
-            # Fallback to code default if Firestore template is missing.
+
+            # System template exists but is unavailable/empty -> fall back to the newest available system template.
+            fallback_key = await self._get_newest_system_template_key(stage)
+            if fallback_key and fallback_key != tid:
+                fallback_tpl = await firebase_service.get_system_prompt_template(stage, fallback_key)
+                if (
+                    fallback_tpl
+                    and self._is_system_template_usable(fallback_tpl)
+                    and (fallback_tpl.get("instructions") or "").strip()
+                ):
+                    return fallback_tpl["instructions"]
+
+        if tid in {"default", "default_v2"} and not sys_tpl:
+            # Firestore not seeded / missing docs -> fall back to code defaults to keep the app functional.
             if stage == "process_quelle" and tid == "default_v2":
                 return PROCESS_QUELLE_DEFAULT_V2_INSTRUCTIONS
             if stage == "combine" and tid == "default_v2":
@@ -340,13 +405,30 @@ class PromptService:
 
         # Unknown template id → safe fallback.
         sys_tpl = await firebase_service.get_system_prompt_template(stage, "default")
-        if sys_tpl and (sys_tpl.get("instructions") or "").strip():
+        if sys_tpl and self._is_system_template_usable(sys_tpl) and (sys_tpl.get("instructions") or "").strip():
             return sys_tpl["instructions"]
         return DEFAULT_INSTRUCTIONS.get(stage, "")
 
     async def get_instructions(self, user_id: str, stage: str) -> str:
         """Return active instructions for a stage or default."""
-        active_id = await firebase_service.get_active_prompt_id(user_id, stage)
+        active_id = (await firebase_service.get_active_prompt_id(user_id, stage)) or "default"
+        active_id = (active_id or "").strip() or "default"
+
+        # If the user selected an archived/unpublished system template, auto-migrate them to the newest one.
+        sys_tpl = await firebase_service.get_system_prompt_template(stage, active_id)
+        if sys_tpl and (
+            not self._is_system_template_usable(sys_tpl) or not (sys_tpl.get("instructions") or "").strip()
+        ):
+            fallback_key = await self._get_newest_system_template_key(stage)
+            next_id = fallback_key or "default"
+            if next_id and next_id != active_id:
+                try:
+                    await firebase_service.set_active_prompt_id(user_id, stage, next_id)
+                    active_id = next_id
+                except Exception:
+                    # Safe fallback: don't block the request if the migration write fails.
+                    active_id = next_id
+
         return await self.get_instructions_for_template(user_id, stage, active_id)
 
     async def get_system_prompt_for_template(
@@ -362,14 +444,25 @@ class PromptService:
         User templates use the stage's built-in system prompt in code.
         """
         tid = (template_id or "").strip() or "default"
-        if tid not in {"default", "default_v2"}:
-            return None
 
         sys_tpl = await firebase_service.get_system_prompt_template(stage, tid)
-        system_prompt = (sys_tpl or {}).get("systemPrompt") or ""
-        system_prompt = str(system_prompt).strip()
-        if system_prompt:
-            return system_prompt
+        if sys_tpl and not self._is_system_template_usable(sys_tpl):
+            # If the selected system template is unavailable, fall back to the newest available one.
+            fallback_key = await self._get_newest_system_template_key(stage)
+            if fallback_key and fallback_key != tid:
+                tid = fallback_key
+                sys_tpl = await firebase_service.get_system_prompt_template(stage, tid)
+
+        if sys_tpl and self._is_system_template_usable(sys_tpl):
+            system_prompt = str(((sys_tpl or {}).get("systemPrompt") or "")).strip()
+            if system_prompt:
+                return system_prompt
+            # Non-default system templates may omit systemPrompt to fall back to the stage's default system message.
+            if tid not in {"default", "default_v2"}:
+                return None
+
+        if tid not in {"default", "default_v2"}:
+            return None
 
         if stage == "process_quelle":
             if tid == "default_v2":

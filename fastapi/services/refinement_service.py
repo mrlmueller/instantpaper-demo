@@ -473,7 +473,9 @@ class RefinementService:
             )
 
             combine_instructions = await prompt_service.get_rendered_instructions(
-                user_id, "combine", {"heading": heading, "topic": topic}
+                user_id,
+                "combine",
+                {"KAPITEL_TITEL": heading, "KAPITEL_BESCHREIBUNG": topic},
             )
             source_texts = [e["content"] for e in eligible]
 
@@ -811,15 +813,15 @@ class RefinementService:
             rendered = prompt_service.render(
                 template_instructions,
                 {
-                    "ueberschrift": ueberschrift,
-                    "thema": thema,
-                    "KONTEXT_ANDERE_KAPITEL": gliederung,
-                    "TEXT_ZUM_KUERZEN": base_target_text,
+                    "KAPITEL_TITEL": ueberschrift,
+                    "KAPITEL_BESCHREIBUNG": thema,
+                    "GLIEDERUNG_SUMMARY": gliederung,
+                    "KAPITELTEXT": base_target_text,
                 },
             )
             uses_inline_inputs = (
-                "{KONTEXT_ANDERE_KAPITEL}" in template_instructions
-            ) and ("{TEXT_ZUM_KUERZEN}" in template_instructions)
+                "{GLIEDERUNG_SUMMARY}" in template_instructions
+            ) and ("{KAPITELTEXT}" in template_instructions)
 
             base_user_message = rendered
             if not uses_inline_inputs:
@@ -1188,25 +1190,18 @@ class RefinementService:
             )
 
             base_payload = {
-                "aufgabenstellung": aufgabenstellung,
-                "gliederung": gliederung,
-                "kapitel_nummer": str(kapitel_nummer),
-                "target_text": base_target_text,
                 "AUFGABENSTELLUNG": aufgabenstellung,
                 "GLIEDERUNG_SUMMARY": gliederung,
+                "KAPITELTEXT": base_target_text,
                 "AKTUELLES_KAPITEL_NUMMER": str(kapitel_nummer),
                 "NAECHSTES_KAPITEL_NUMMER": next_kapitel_nummer,
                 "UEBERNAECHSTES_KAPITEL_NUMMER": uebernaechstes_kapitel_nummer,
-                "KAPITELTEXT": base_target_text,
             }
 
             rendered_base = prompt_service.render(template_instructions, base_payload)
             uses_inline_inputs = (
                 "{GLIEDERUNG_SUMMARY}" in template_instructions
                 and "{KAPITELTEXT}" in template_instructions
-            ) or (
-                "{gliederung}" in template_instructions
-                and "{target_text}" in template_instructions
             )
 
             base_user_message = rendered_base
@@ -1503,13 +1498,8 @@ class RefinementService:
                 ):
                     payload["topic"] = (run.get("thema") or "").strip()
 
-                payload.setdefault(
-                    "grundlegende_infos", (grundlegende_informationen or "").strip()
-                )
-
                 heading = str(payload.get("heading") or "").strip()
                 topic = str(payload.get("topic") or "").strip()
-                grund_infos = str(payload.get("grundlegende_infos") or "").strip()
                 if not heading or not topic:
                     raise ValueError("Run promptPayload is missing heading/topic.")
 
@@ -1519,12 +1509,8 @@ class RefinementService:
                         stage="process_quelle",
                         template_id=prompt_template_id,
                         payload={
-                            "heading": heading,
-                            "topic": topic,
-                            "grundlegende_infos": grund_infos,
                             "KAPITEL_TITEL": heading,
                             "KAPITEL_BESCHREIBUNG": topic,
-                            "ANWEISUNGEN": topic,
                         },
                     )
                 )
@@ -1558,8 +1544,14 @@ class RefinementService:
                 raise ValueError("Quelle content is empty.")
 
             quelle_images = None
-            if "images" in quelle and isinstance(quelle["images"], list):
-                quelle_images = [img["url"] for img in quelle["images"] if "url" in img]
+            if isinstance(quelle.get("images"), list):
+                urls = [
+                    str(img.get("url") or "").strip()
+                    for img in quelle["images"]
+                    if isinstance(img, dict) and str(img.get("url") or "").strip()
+                ]
+                if urls:
+                    quelle_images = urls
 
             debug_dump_path = self._get_prompt_dump_path("refine_result", version_id)
 

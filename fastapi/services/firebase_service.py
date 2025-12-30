@@ -85,8 +85,28 @@ class FirebaseService:
         try:
             # Ensure Firebase is initialized before verifying token
             self._ensure_initialized()
-            decoded_token = auth.verify_id_token(token)
-            return decoded_token
+            try:
+                return auth.verify_id_token(
+                    token, clock_skew_seconds=config.FIREBASE_CLOCK_SKEW_SECONDS
+                )
+            except Exception as e:
+                # Some environments can have slight clock skew. If verification fails because the token
+                # is "used too early", retry with a slightly larger skew to avoid intermittent 401s.
+                msg = str(e)
+                if (
+                    "Token used too early" in msg
+                    and config.FIREBASE_CLOCK_SKEW_SECONDS < 30
+                ):
+                    retry_skew = 30
+                    logger.warning(
+                        "Token used too early; retrying verification with clock_skew_seconds=%s (was %s)",
+                        retry_skew,
+                        config.FIREBASE_CLOCK_SKEW_SECONDS,
+                    )
+                    return auth.verify_id_token(
+                        token, clock_skew_seconds=retry_skew
+                    )
+                raise
         except Exception as e:
             logger.error(f"Token verification failed: {str(e)}")
             raise
@@ -133,11 +153,47 @@ class FirebaseService:
         """
         try:
             self._ensure_initialized()
-            decoded_token = auth.verify_session_cookie(session_cookie, check_revoked=check_revoked)
-            return decoded_token
+            try:
+                return auth.verify_session_cookie(
+                    session_cookie,
+                    check_revoked=check_revoked,
+                    clock_skew_seconds=config.FIREBASE_CLOCK_SKEW_SECONDS,
+                )
+            except Exception as e:
+                msg = str(e)
+                if (
+                    "Token used too early" in msg
+                    and config.FIREBASE_CLOCK_SKEW_SECONDS < 30
+                ):
+                    retry_skew = 30
+                    logger.warning(
+                        "Session cookie used too early; retrying verification with clock_skew_seconds=%s (was %s)",
+                        retry_skew,
+                        config.FIREBASE_CLOCK_SKEW_SECONDS,
+                    )
+                    return auth.verify_session_cookie(
+                        session_cookie,
+                        check_revoked=check_revoked,
+                        clock_skew_seconds=retry_skew,
+                    )
+                raise
         except Exception as e:
             logger.error(f"Session cookie verification failed: {str(e)}")
             raise
+
+    async def get_user_custom_claims(self, uid: str) -> dict:
+        """
+        Fetch the current custom claims for a user from Firebase Auth.
+
+        This is stronger than relying on decoded token claims, which can be stale until the user refreshes their token.
+        """
+        self._ensure_initialized()
+        uid_norm = (uid or "").strip()
+        if not uid_norm:
+            raise ValueError("uid is required")
+
+        user = auth.get_user(uid_norm)
+        return user.custom_claims or {}
 
     async def set_user_approved_by_email(self, email: str, approved: bool) -> dict:
         """
@@ -163,6 +219,43 @@ class FirebaseService:
             "email": user.email,
             "approved": bool(approved),
             "customClaims": next_claims,
+        }
+
+    async def set_user_can_duplicate_system_prompts_by_email(self, email: str, allowed: bool) -> dict:
+        """
+        Allow or block a user from duplicating server-only system prompts.
+
+        Stored in Firestore under `users/{uid}.canDuplicateSystemPrompts` so changes take effect immediately
+        without relying on token refresh/custom-claim propagation.
+        """
+        self._ensure_initialized()
+        email_norm = (email or "").strip()
+        if not email_norm:
+            raise ValueError("email is required")
+
+        try:
+            user = auth.get_user_by_email(email_norm)
+        except auth.UserNotFoundError as exc:
+            raise ValueError("User not found. Ask the user to sign in once, then try again.") from exc
+
+        user_ref = self.db.collection("users").document(user.uid)
+        existing = user_ref.get()
+
+        payload = {
+            "uid": user.uid,
+            "email": (user.email or "").strip() or email_norm,
+            "canDuplicateSystemPrompts": bool(allowed),
+            "updatedAt": SERVER_TIMESTAMP,
+        }
+        if not existing.exists:
+            payload["createdAt"] = SERVER_TIMESTAMP
+
+        user_ref.set(payload, merge=True)
+
+        return {
+            "uid": user.uid,
+            "email": (user.email or "").strip() or email_norm,
+            "canDuplicateSystemPrompts": bool(allowed),
         }
 
     async def get_quelle_meta(self, user_id: str, quelle_id: str) -> Optional[dict]:
@@ -2317,6 +2410,33 @@ class FirebaseService:
             logger.error(f"Error fetching system prompt template {stage}/{template_key}: {e}")
             return None
 
+    async def list_system_prompt_templates(self, stage: Optional[str] = None) -> list[dict]:
+        """
+        List server-only system prompt templates.
+
+        Stored at: systemPromptTemplates/{stage}__{template_key}
+        """
+        try:
+            ref = self.db.collection("systemPromptTemplates")
+            query = ref
+            if (stage or "").strip():
+                query = query.where("stage", "==", str(stage).strip())
+
+            docs = query.stream()
+            out: list[dict] = []
+            for doc in docs:
+                data = doc.to_dict() or {}
+                data.setdefault("stage", stage)
+                data.setdefault("templateKey", data.get("templateKey") or None)
+                data.setdefault("name", data.get("name") or None)
+                data.setdefault("published", bool(data.get("published", True)))
+                data.setdefault("archived", bool(data.get("archived", False)))
+                out.append(data)
+            return out
+        except Exception as e:
+            logger.error(f"Error listing system prompt templates: {e}")
+            return []
+
     async def upsert_system_prompt_template(
         self,
         *,
@@ -2325,6 +2445,8 @@ class FirebaseService:
         name: str,
         instructions: str,
         system_prompt: Optional[str] = None,
+        published: bool = True,
+        archived: bool = False,
     ) -> None:
         """
         Create or update a server-only system prompt template.
@@ -2337,6 +2459,8 @@ class FirebaseService:
                 "templateKey": template_key,
                 "name": name,
                 "instructions": instructions,
+                "published": bool(published),
+                "archived": bool(archived),
                 "updatedAt": SERVER_TIMESTAMP,
             }
             if system_prompt is not None:
@@ -2346,6 +2470,56 @@ class FirebaseService:
             ref.set(payload, merge=True)
         except Exception as e:
             logger.error(f"Error upserting system prompt template {stage}/{template_key}: {e}")
+
+    async def duplicate_system_prompt_template_to_user(
+        self,
+        *,
+        user_id: str,
+        stage: str,
+        template_key: str,
+        name: Optional[str] = None,
+    ) -> dict:
+        """
+        Copy a server-only system prompt template into a user's promptTemplates collection.
+        """
+        stage_norm = (stage or "").strip()
+        key_norm = (template_key or "").strip()
+        if not stage_norm or not key_norm:
+            raise ValueError("stage and template_key are required")
+
+        sys_tpl = await self.get_system_prompt_template(stage_norm, key_norm)
+        if not sys_tpl:
+            raise ValueError("System prompt template not found.")
+
+        instructions = str((sys_tpl.get("instructions") or "")).strip()
+        if not instructions:
+            raise ValueError("System prompt template has no instructions.")
+
+        tpl_name = str((name or "").strip()) or str((sys_tpl.get("name") or "")).strip() or f"{key_norm}"
+        tpl_name = tpl_name.strip()
+        if len(tpl_name) > 80:
+            tpl_name = tpl_name[:80].rstrip()
+
+        try:
+            templates_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("promptTemplates")
+            )
+            doc_ref = templates_ref.document()
+            doc_ref.set(
+                {
+                    "stage": stage_norm,
+                    "name": tpl_name,
+                    "instructions": instructions,
+                    "createdAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                }
+            )
+            return {"id": doc_ref.id}
+        except Exception as e:
+            logger.error(f"Error duplicating system prompt template to user {user_id}: {e}")
+            raise
 
     async def get_prompt_template(self, user_id: str, template_id: str) -> Optional[dict]:
         """Fetch a prompt template by id."""
@@ -2380,6 +2554,28 @@ class FirebaseService:
         except Exception as e:
             logger.error(f"Error fetching active prompt for stage {stage}: {e}")
             return None
+
+    async def set_active_prompt_id(self, user_id: str, stage: str, template_id: str) -> None:
+        """Set active prompt id for a stage (server-side override)."""
+        try:
+            ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("promptSettings")
+                .document("active")
+            )
+            existing = ref.get()
+            active_templates = {}
+            if existing.exists:
+                active_templates = (existing.to_dict() or {}).get("activeTemplates", {}) or {}
+            active_templates = {**active_templates, str(stage): str(template_id)}
+            payload: dict = {"activeTemplates": active_templates, "updatedAt": SERVER_TIMESTAMP}
+            if not existing.exists:
+                payload["createdAt"] = SERVER_TIMESTAMP
+            ref.set(payload, merge=True)
+        except Exception as e:
+            logger.error(f"Error setting active prompt for stage {stage}: {e}")
+            raise
 
 
 # Create singleton instance

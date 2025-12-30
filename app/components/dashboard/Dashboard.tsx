@@ -25,7 +25,12 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import type { PromptStage, PromptTemplate, ActivePromptSelections } from '@/app/types/prompts';
+import type {
+  PromptStage,
+  PromptTemplate,
+  ActivePromptSelections,
+  SystemPromptTemplateMeta,
+} from '@/app/types/prompts';
 import { STAGE_CONFIG } from '@/app/lib/prompts/promptConfig';
 
 import type { Quelle, Kapitel, Run, ProcessingSettings, Projekt } from '@/app/types/ui';
@@ -53,12 +58,11 @@ import {
   createKapitelRun,
   createShortenRun,
   createLeseflussRun,
-  getKapitelRuns,
   getUserKapitels,
   type KapitelRun as FirebaseKapitelRun,
   type Kapitel as FirebaseKapitel,
 } from '@/app/actions/kapitels';
-import { createProject, deleteProject, type Project as FirebaseProject } from '@/app/actions/projects';
+import { archiveProject, createProject, unarchiveProject, type Project as FirebaseProject } from '@/app/actions/projects';
 
 // Firebase real-time
 import { useAuth } from '@/app/components/providers/AuthProvider';
@@ -80,6 +84,8 @@ import {
 import Cookies from 'js-cookie';
 import { fetchOpenAIKeyStatus, type OpenAIKeyStatus } from '@/app/lib/api/openaiKeyClient';
 import { getQuellenPanelState, setQuellenPanelState } from '@/app/lib/storage/preferences';
+import { getActiveKapitelCookieName } from '@/app/lib/ui/kapitelSelection';
+import { getActiveProjektCookieName } from '@/app/lib/ui/projektSelection';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
 const RUN_HISTORY_LIMIT = 10;
@@ -89,12 +95,21 @@ type PromptChoiceDialogProps = {
   open: boolean;
   stages: PromptStage[];
   templates: PromptTemplate[];
+  systemTemplates: SystemPromptTemplateMeta[];
   active: ActivePromptSelections;
   onConfirm: (choices: Record<PromptStage, string | 'default'>) => void;
   onCancel: () => void;
 };
 
-function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCancel }: PromptChoiceDialogProps) {
+function PromptSelectDialog({
+  open,
+  stages,
+  templates,
+  systemTemplates,
+  active,
+  onConfirm,
+  onCancel,
+}: PromptChoiceDialogProps) {
   const [choices, setChoices] = useState<Record<PromptStage, string | 'default'>>(() => {
     const initial = {} as Record<PromptStage, string | 'default'>;
     stages.forEach((s) => {
@@ -120,6 +135,16 @@ function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCanc
         <div className="space-y-4">
           {stages.map((stage) => {
             const stageTemplates = templates.filter((t) => t.stage === stage);
+            const stageSystemTemplates = systemTemplates
+              .filter((t) => t.stage === stage)
+              .slice()
+              .sort((a, b) => {
+                const rank = (key: string) => (key === 'default' ? 0 : key === 'default_v2' ? 1 : 2);
+                const ra = rank(a.templateKey);
+                const rb = rank(b.templateKey);
+                if (ra !== rb) return ra - rb;
+                return a.name.localeCompare(b.name, 'de');
+              });
             const config = STAGE_CONFIG[stage];
             return (
               <Card key={stage} className="p-3">
@@ -134,29 +159,32 @@ function PromptSelectDialog({ open, stages, templates, active, onConfirm, onCanc
                     value={choices[stage] || 'default'}
                     onValueChange={(val) => setChoices((prev) => ({ ...prev, [stage]: val as string | 'default' }))}
                   >
-                    <SelectTrigger className="w-64">
-                      <SelectValue />
-                    </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="default">System-Standard</SelectItem>
-                        {(stage === 'process_quelle' || stage === 'combine' || stage === 'summary' || stage === 'shorten' || stage === 'lesefluss') && (
-                          <SelectItem value="default_v2">System-Standard (v2)</SelectItem>
-                        )}
-                        {stageTemplates.map((tpl) => (
-                          <SelectItem key={tpl.id} value={tpl.id}>
-                            {tpl.name}
+                     <SelectTrigger className="w-64">
+                       <SelectValue />
+                     </SelectTrigger>
+                    <SelectContent>
+                      {stageSystemTemplates.map((tpl) => (
+                        <SelectItem key={`sys-${tpl.templateKey}`} value={tpl.templateKey}>
+                          <span className="text-muted-foreground">{tpl.name}</span>
+                        </SelectItem>
+                      ))}
+                      {stageTemplates.map((tpl) => (
+                        <SelectItem key={tpl.id} value={tpl.id}>
+                          {tpl.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2 font-mono">
-                  {choices[stage] === 'default'
-                    ? 'System-Standard'
-                    : choices[stage] === 'default_v2'
-                      ? 'System-Standard (v2)'
-                      : stageTemplates.find((t) => t.id === choices[stage])?.instructions?.slice(0, 160) ||
-                        'System-Standard'}
+                  {(() => {
+                    const choice = choices[stage];
+                    const sys = stageSystemTemplates.find((t) => t.templateKey === choice);
+                    if (sys) return sys.name;
+                    if (choice === 'default') return 'System-Standard';
+                    if (choice === 'default_v2') return 'System-Standard (v2)';
+                    return stageTemplates.find((t) => t.id === choice)?.instructions?.slice(0, 160) || 'System-Standard';
+                  })()}
                 </p>
               </Card>
             );
@@ -179,6 +207,7 @@ interface DashboardProps {
   initialProjekt: FirebaseProject;
   initialProjekte: FirebaseProject[];
   initialRuns?: FirebaseKapitelRun[];
+  initialActiveKapitelId?: string;
 }
 
 export function Dashboard({
@@ -187,6 +216,7 @@ export function Dashboard({
   initialProjekt,
   initialProjekte,
   initialRuns = [],
+  initialActiveKapitelId: initialActiveKapitelIdProp,
 }: DashboardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -200,12 +230,14 @@ export function Dashboard({
     id: initialProjekt.id,
     name: initialProjekt.name,
     createdAt: new Date(initialProjekt.createdAt),
+    archived: Boolean(initialProjekt.archived),
   });
   const [projekte, setProjekte] = useState<Projekt[]>(
     initialProjektList.map((p) => ({
       id: p.id,
       name: p.name,
       createdAt: new Date(p.createdAt),
+      archived: Boolean(p.archived),
     }))
   );
 
@@ -218,9 +250,17 @@ export function Dashboard({
   );
 
   // UI state
-  const initialActiveKapitelId = kapiteln[0]?.id || '';
+  const initialActiveKapitelId =
+    initialActiveKapitelIdProp && kapiteln.some((k) => k.id === initialActiveKapitelIdProp)
+      ? initialActiveKapitelIdProp
+      : kapiteln[0]?.id || '';
   const [activeKapitelId, setActiveKapitelId] = useState(initialActiveKapitelId);
   const activeKapitel = kapiteln.find((k) => k.id === activeKapitelId);
+
+  const [loadedProjektId, setLoadedProjektId] = useState<string>(initialProjekt.id);
+  const loadedProjektIdRef = useRef<string>(initialProjekt.id);
+  const activeKapitelIdRef = useRef<string>(initialActiveKapitelId);
+  const kapitelnRef = useRef<Kapitel[]>(kapiteln);
 
   const [fbRuns, setFbRuns] = useState<FirebaseKapitelRun[]>(initialRuns);
   const keepInitialRunsRef = useRef(initialRuns.length > 0);
@@ -237,6 +277,7 @@ export function Dashboard({
   const [keyStatusLoading, setKeyStatusLoading] = useState(false);
   const keyNoticeShownRef = useRef(false);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
+  const [systemPromptTemplates, setSystemPromptTemplates] = useState<SystemPromptTemplateMeta[]>([]);
   const [promptActive, setPromptActive] = useState<ActivePromptSelections>({});
   const [askOnEachProcess, setAskOnEachProcess] = useState(false);
   const [promptChooser, setPromptChooser] = useState<{
@@ -395,23 +436,112 @@ export function Dashboard({
       getUserQuellen(projektId),
       getUserKapitels(projektId, false, RUN_HISTORY_LIMIT),
     ]);
+    setLoadedProjektId(projektId);
+    loadedProjektIdRef.current = projektId;
     setQuellen(fbQuellen.map((q) => transformQuelleToUI(q, projektId)));
     setKapiteln(fbKapitels.map((k) => transformKapitelToUI(k, projektId)));
-    const firstKapitelId = fbKapitels[0]?.id || '';
-    setActiveKapitelId(firstKapitelId);
+    const persistedKapitelId = Cookies.get(getActiveKapitelCookieName(projektId));
+    const nextKapitelId =
+      persistedKapitelId && fbKapitels.some((k) => k.id === persistedKapitelId) ? persistedKapitelId : fbKapitels[0]?.id || '';
+    setActiveKapitelId(nextKapitelId);
     setSelectedRunId(null);
     selectedRunIdRef.current = null;
     setFbRuns([]);
+    keepInitialRunsRef.current = false;
 
-    if (firstKapitelId) {
-      const runs = await getKapitelRuns(firstKapitelId, RUN_HISTORY_LIMIT);
-      setFbRuns(runs);
-      keepInitialRunsRef.current = runs.length > 0;
-      setIsKapitelLoading(runs.length === 0);
-    } else {
+    if (!nextKapitelId) {
       setIsKapitelLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    loadedProjektIdRef.current = loadedProjektId;
+  }, [loadedProjektId]);
+
+  useEffect(() => {
+    activeKapitelIdRef.current = activeKapitelId;
+  }, [activeKapitelId]);
+
+  useEffect(() => {
+    kapitelnRef.current = kapiteln;
+  }, [kapiteln]);
+
+  const persistActiveKapitelCookie = useCallback((projektId: string, kapitelId: string | null) => {
+    const cookieName = getActiveKapitelCookieName(projektId);
+    if (!kapitelId) {
+      Cookies.remove(cookieName, { path: '/' });
+      return;
+    }
+
+    Cookies.set(cookieName, kapitelId, {
+      expires: 365,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+    });
+  }, []);
+
+  const persistActiveProjektCookie = useCallback((projektId: string | null) => {
+    const cookieName = getActiveProjektCookieName();
+    if (!projektId) {
+      Cookies.remove(cookieName, { path: '/' });
+      return;
+    }
+
+    Cookies.set(cookieName, projektId, {
+      expires: 365,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+    });
+  }, []);
+
+  const syncActiveKapitelFromCookie = useCallback(() => {
+    const projektId = loadedProjektIdRef.current;
+    const currentActive = activeKapitelIdRef.current;
+    const currentKapiteln = kapitelnRef.current;
+    const persistedKapitelId = Cookies.get(getActiveKapitelCookieName(projektId));
+    if (!persistedKapitelId || persistedKapitelId === currentActive) return;
+    if (!currentKapiteln.some((k) => k.id === persistedKapitelId)) return;
+    setActiveKapitelId(persistedKapitelId);
+  }, []);
+
+  useEffect(() => {
+    // When navigating back/forward, Next can restore a cached dashboard tree (including stale Kapitel state).
+    // Sync to the persisted cookie to keep browser back in sync with the last selection.
+    const onShow = () => syncActiveKapitelFromCookie();
+    const onPop = () => syncActiveKapitelFromCookie();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') syncActiveKapitelFromCookie();
+    };
+
+    syncActiveKapitelFromCookie();
+    window.addEventListener('pageshow', onShow);
+    window.addEventListener('popstate', onPop);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pageshow', onShow);
+      window.removeEventListener('popstate', onPop);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [syncActiveKapitelFromCookie]);
+
+  useEffect(() => {
+    persistActiveKapitelCookie(loadedProjektId, activeKapitelId || null);
+  }, [loadedProjektId, activeKapitelId, persistActiveKapitelCookie]);
+
+  useEffect(() => {
+    persistActiveProjektCookie(projekt.id);
+  }, [projekt.id, persistActiveProjektCookie]);
+
+  const handleKapitelSelect = useCallback(
+    (kapitelId: string) => {
+      setActiveKapitelId(kapitelId);
+      // Persist immediately so fast navigation away (e.g. Quellen Manager) still keeps the latest selection.
+      persistActiveKapitelCookie(loadedProjektIdRef.current, kapitelId);
+    },
+    [persistActiveKapitelCookie]
+  );
 
   const persistKapitelQuellenClient = useCallback(async (kapitelId: string, quelleIds: string[]) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
@@ -931,6 +1061,8 @@ export function Dashboard({
         setActiveKapitelId((prev) => {
           if (!ui.length) return '';
           if (prev && ui.some((k) => k.id === prev)) return prev;
+          const persistedKapitelId = Cookies.get(getActiveKapitelCookieName(projekt.id));
+          if (persistedKapitelId && ui.some((k) => k.id === persistedKapitelId)) return persistedKapitelId;
           return ui[0].id;
         });
       },
@@ -1010,6 +1142,7 @@ export function Dashboard({
     async (projektId: string, fallbackProjekt?: Projekt) => {
       if (projektId === projekt.id) return;
       try {
+        persistActiveProjektCookie(projektId);
         setIsLoading(true);
         await loadProjektData(projektId);
         const next = projekte.find((p) => p.id === projektId) || fallbackProjekt;
@@ -1017,7 +1150,7 @@ export function Dashboard({
           setProjekt(next);
         } else {
           // minimal fallback if not found
-          setProjekt({ id: projektId, name: 'Projekt', createdAt: new Date() });
+          setProjekt({ id: projektId, name: 'Projekt', createdAt: new Date(), archived: false });
         }
       } catch (error: any) {
         console.error('Projekt wechseln fehlgeschlagen:', error);
@@ -1026,7 +1159,7 @@ export function Dashboard({
         setIsLoading(false);
       }
     },
-    [loadProjektData, projekt.id, projekte]
+    [loadProjektData, persistActiveProjektCookie, projekt.id, projekte]
   );
 
   const handleCreateProjekt = useCallback(
@@ -1044,9 +1177,11 @@ export function Dashboard({
           id: result.id,
           name,
           createdAt: new Date(),
+          archived: false,
         };
         setProjekte((prev) => [newProjekt, ...prev]);
         // Switch immediately using the newly created project
+        persistActiveProjektCookie(result.id);
         setProjekt(newProjekt);
         await loadProjektData(result.id);
         toast.success('Projekt erstellt', { description: `"${name}" wurde erstellt.`, id: toastId });
@@ -1057,31 +1192,56 @@ export function Dashboard({
         setIsCreatingProjekt(false);
       }
     },
-    [loadProjektData, isCreatingProjekt]
+    [loadProjektData, isCreatingProjekt, persistActiveProjektCookie]
   );
 
-  const handleDeleteProjekt = useCallback(
+  const handleArchiveProjekt = useCallback(
     async (projektId: string) => {
-      if (projekte.length <= 1) {
-        toast.error('Projekt löschen nicht möglich', { description: 'Mindestens ein Projekt muss bestehen.' });
+      if (projektId === 'default') {
+        toast.error('Standardprojekt kann nicht archiviert werden');
+        return;
+      }
+
+      const activeCount = projekte.filter((p) => p.archived !== true).length;
+      if (activeCount <= 1) {
+        toast.error('Projekt archivieren nicht möglich', { description: 'Mindestens ein aktives Projekt muss bestehen.' });
         return;
       }
       try {
-        await deleteProject(projektId);
-        const remaining = projekte.filter((p) => p.id !== projektId);
-        setProjekte(remaining);
-        if (projekt.id === projektId && remaining.length > 0) {
-          setProjekt(remaining[0]);
-          await loadProjektData(remaining[0].id);
+        const result = await archiveProject(projektId);
+        if (!result.success) {
+          throw new Error(result.error || 'Projekt konnte nicht archiviert werden.');
         }
-        toast.success('Projekt gelöscht');
+        setProjekte((prev) => prev.map((p) => (p.id === projektId ? { ...p, archived: true } : p)));
+        const remainingActive = projekte.filter((p) => p.id !== projektId && p.archived !== true);
+        if (projekt.id === projektId && remainingActive.length > 0) {
+          persistActiveProjektCookie(remainingActive[0].id);
+          setProjekt(remainingActive[0]);
+          await loadProjektData(remainingActive[0].id);
+        }
+        toast.success('Projekt archiviert');
       } catch (error: any) {
-        console.error('Projekt löschen fehlgeschlagen:', error);
-        toast.error('Projekt konnte nicht gelöscht werden', { description: error.message });
+        console.error('Projekt archivieren fehlgeschlagen:', error);
+        toast.error('Projekt konnte nicht archiviert werden', { description: error.message });
       }
     },
-    [loadProjektData, projekt.id, projekte]
+    [loadProjektData, persistActiveProjektCookie, projekt.id, projekte]
   );
+
+  const handleUnarchiveProjekt = useCallback(async (projektId: string) => {
+    try {
+      const result = await unarchiveProject(projektId);
+      if (!result.success) {
+        throw new Error(result.error || 'Projekt konnte nicht wiederhergestellt werden.');
+      }
+
+      setProjekte((prev) => prev.map((p) => (p.id === projektId ? { ...p, archived: false } : p)));
+      toast.success('Projekt wiederhergestellt');
+    } catch (error: any) {
+      console.error('Projekt wiederherstellen fehlgeschlagen:', error);
+      toast.error('Projekt konnte nicht wiederhergestellt werden', { description: error.message });
+    }
+  }, []);
 
   const handleAddQuelle = useCallback(
     async (name: string, text: string, imageFiles: File[] = [], advancedFields?: Record<string, any>): Promise<boolean> => {
@@ -1407,10 +1567,11 @@ export function Dashboard({
   useEffect(() => {
     const loadPrompts = async () => {
       try {
-        const res = await fetch('/api/prompt-templates');
+        const res = await fetch('/api/prompt-templates', { cache: 'no-store' });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Prompts konnten nicht geladen werden.');
         setPromptTemplates(data.templates || []);
+        setSystemPromptTemplates(Array.isArray(data.systemTemplates) ? data.systemTemplates : []);
         setPromptActive(data.active || {});
         setAskOnEachProcess(Boolean(data.askOnEachProcess));
       } catch (err: any) {
@@ -1507,6 +1668,7 @@ export function Dashboard({
           const data = await res.json();
           if (res.ok) {
             if (Array.isArray(data.templates)) setPromptTemplates(data.templates);
+            if (Array.isArray(data.systemTemplates)) setSystemPromptTemplates(data.systemTemplates);
             if (data.active) {
               setPromptActive(data.active);
               activeSnapshot = data.active;
@@ -2091,13 +2253,14 @@ export function Dashboard({
           projekte={projekte}
           onSwitchProjekt={handleSwitchProjekt}
           onCreateProjekt={handleCreateProjekt}
-          onDeleteProjekt={(id, name) => setDeleteConfirm({ type: 'projekt', id, name })}
+          onArchiveProjekt={(id, name) => setDeleteConfirm({ type: 'projekt', id, name })}
+          onUnarchiveProjekt={handleUnarchiveProjekt}
           isCreatingProjekt={isCreatingProjekt}
         />
         <KapitelNavigator
           kapiteln={kapiteln}
           activeKapitelId={activeKapitelId}
-          onKapitelSelect={setActiveKapitelId}
+          onKapitelSelect={handleKapitelSelect}
           onAddKapitel={handleAddKapitel}
           onDeleteKapitel={(id, name) => setDeleteConfirm({ type: 'kapitel', id, name })}
           onEditKapitel={handleEditKapitel}
@@ -2190,6 +2353,7 @@ export function Dashboard({
           quellenCount={assignedQuellen.length}
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
+          systemPromptTemplates={systemPromptTemplates}
           promptActive={promptActive}
           onProcess={handleProcess}
           isProcessing={isProcessingRun}
@@ -2206,6 +2370,7 @@ export function Dashboard({
           onShorten={handleShorten}
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
+          systemPromptTemplates={systemPromptTemplates}
           promptActive={promptActive}
           isShortening={isShortening}
         />
@@ -2221,6 +2386,7 @@ export function Dashboard({
           onLesefluss={handleLesefluss}
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
+          systemPromptTemplates={systemPromptTemplates}
           promptActive={promptActive}
           isLeseflussLoading={isImprovingLesefluss}
         />
@@ -2293,6 +2459,7 @@ export function Dashboard({
           open={!!promptChooser}
           stages={promptChooser.stages}
           templates={promptTemplates}
+          systemTemplates={systemPromptTemplates}
           active={promptActive}
           onConfirm={(choices) => {
             promptChooser.resolve(choices);
@@ -2311,12 +2478,16 @@ export function Dashboard({
         type={deleteConfirm?.type || 'quelle'}
         name={deleteConfirm?.name || ''}
         onConfirm={() => {
-          if (deleteConfirm?.type === 'quelle') {
-            handleDeleteQuelle(deleteConfirm.id);
-          } else if (deleteConfirm?.type === 'kapitel') {
-            handleDeleteKapitel(deleteConfirm.id);
-          } else if (deleteConfirm?.type === 'projekt') {
-            handleDeleteProjekt(deleteConfirm.id);
+          const current = deleteConfirm;
+          setDeleteConfirm(null);
+          if (!current) return;
+
+          if (current.type === 'quelle') {
+            handleDeleteQuelle(current.id);
+          } else if (current.type === 'kapitel') {
+            handleDeleteKapitel(current.id);
+          } else if (current.type === 'projekt') {
+            handleArchiveProjekt(current.id);
           }
         }}
       />

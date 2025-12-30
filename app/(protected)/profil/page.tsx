@@ -547,7 +547,7 @@ export default function ProfilPage() {
                         </h3>
                         <div className="space-y-4">
                           {stats.costByProjekt.map((projekt) => (
-                            <div key={projekt.projektName}>
+                            <div key={projekt.projektId}>
                               <div className="flex items-center justify-between mb-1.5">
                                 <span className="text-sm text-foreground truncate max-w-[200px]">{projekt.projektName}</span>
                                 <span className="text-sm font-medium text-foreground">{formatCost(projekt.cost)}</span>
