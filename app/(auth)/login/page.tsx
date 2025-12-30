@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { FileText } from 'lucide-react';
-import { signInWithGoogle, signOut } from '@/app/lib/firebase/auth';
+import { signInWithGoogle, signOut, setSessionCookie } from '@/app/lib/firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -32,6 +33,7 @@ function GoogleIcon({ className }: { className?: string }) {
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -53,7 +55,9 @@ export default function LoginPage() {
         return;
       }
 
-      window.location.href = '/dashboard';
+      // Ensure the server can immediately authenticate Server Components/Actions on the next navigation.
+      setSessionCookie(tokenResult.token);
+      router.replace('/dashboard');
     } catch (err: any) {
       console.error('Login failed:', err);
       setError(err.message || 'Login fehlgeschlagen. Bitte erneut versuchen.');

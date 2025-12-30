@@ -12,6 +12,25 @@ import { firebaseApp } from "./config";
 
 let authInstance: Auth | null = null;
 
+export const SESSION_COOKIE_NAME = "__session";
+
+function isProduction() {
+  return process.env.NODE_ENV === "production";
+}
+
+export function setSessionCookie(token: string) {
+  Cookies.set(SESSION_COOKIE_NAME, token, {
+    expires: 14,
+    sameSite: "lax",
+    secure: isProduction(),
+    path: "/",
+  });
+}
+
+export function clearSessionCookie() {
+  Cookies.remove(SESSION_COOKIE_NAME, { path: "/" });
+}
+
 function getFirebaseAuth(): Auth {
   if (authInstance) return authInstance;
 
@@ -98,7 +117,7 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
 
         // Not approved -> immediately sign out and clear cookie.
         if (!approved) {
-          Cookies.remove("__session");
+          clearSessionCookie();
           try {
             await firebaseSignOut(auth);
           } catch (err) {
@@ -109,20 +128,16 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
         }
 
         // Approved user: store fresh ID token for server components (cookie is read by Next.js server).
-        Cookies.set("__session", idTokenResult.token, {
-          expires: 14, // Cookie lasts 14 days, but token auto-refreshes
-          sameSite: "lax",
-          secure: process.env.NODE_ENV === "production",
-        });
+        setSessionCookie(idTokenResult.token);
       } else {
         // User signed out - clean up cookie
-        Cookies.remove("__session");
+        clearSessionCookie();
       }
       callback(user);
     });
   } catch (error) {
     console.error("Firebase auth init failed:", error);
-    Cookies.remove("__session");
+    clearSessionCookie();
     callback(null);
     return () => {};
   }
