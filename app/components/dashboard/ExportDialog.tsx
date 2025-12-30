@@ -182,62 +182,59 @@ export function ExportDialog({
 
           {selection === "selected" && (
             <div className="border rounded-lg max-h-[320px] overflow-y-auto">
-            <TooltipProvider>
-              {sortedKapiteln.map((kapitel) => {
-                const hasText = hasLeseflussText(kapitel.id)
-                const isSelected = selectedIds.includes(kapitel.id)
-                const indentLevel = getIndentLevel(kapitel.nummer)
+              <TooltipProvider>
+                {sortedKapiteln.map((kapitel) => {
+                  const hasText = hasLeseflussText(kapitel.id)
+                  const isSelected = selectedIds.includes(kapitel.id)
+                  const indentLevel = getIndentLevel(kapitel.nummer)
 
-                return (
-                  <Tooltip key={kapitel.id}>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className={cn(
-                          "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors border-b last:border-b-0",
-                          hasText && selection === "selected" && "hover:bg-muted/50 cursor-pointer",
-                          selection === "all" && "cursor-default",
-                          !hasText && "opacity-50 cursor-not-allowed",
-                          isSelected && selection === "selected" && "bg-primary/10",
-                        )}
-                        onClick={() => selection === "selected" && toggleKapitel(kapitel.id)}
-                        disabled={!hasText || selection === "all"}
-                        style={{ paddingLeft: `${16 + indentLevel * 20}px` }}
-                      >
-                        <div
+                  return (
+                    <Tooltip key={kapitel.id}>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
                           className={cn(
-                            "w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
-                            selection === "all"
-                              ? "border-muted-foreground/20 bg-muted/20"
-                              : isSelected
+                            "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors border-b last:border-b-0",
+                            hasText && "hover:bg-muted/50 cursor-pointer",
+                            !hasText && "opacity-50 cursor-not-allowed",
+                            isSelected && "bg-primary/10",
+                          )}
+                          onClick={() => toggleKapitel(kapitel.id)}
+                          disabled={!hasText}
+                          style={{ paddingLeft: `${16 + indentLevel * 20}px` }}
+                        >
+                          <div
+                            className={cn(
+                              "w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
+                              isSelected
                                 ? "bg-primary border-primary"
                                 : hasText
                                   ? "border-muted-foreground/30"
                                   : "border-muted-foreground/20 bg-muted/30",
-                          )}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm">
-                            <span className="text-muted-foreground mr-1.5">{kapitel.nummer}</span>
-                            <span className={cn(!hasText && "text-muted-foreground")}>{kapitel.title}</span>
-                          </span>
-                        </div>
-                        {!hasText && <AlertCircle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
-                      </button>
-                    </TooltipTrigger>
-                    {!hasText && (
-                      <TooltipContent side="left">
-                        <p>
-                          {!availabilityKnown
-                            ? "Prüfe Text..."
-                            : "Dieses Kapitel hat noch keinen verbesserten Text"}
-                        </p>
-                      </TooltipContent>
-                    )}
-                  </Tooltip>
-                )
-              })}
-            </TooltipProvider>
+                            )}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm">
+                              <span className="text-muted-foreground mr-1.5">{kapitel.nummer}</span>
+                              <span className={cn(!hasText && "text-muted-foreground")}>{kapitel.title}</span>
+                            </span>
+                          </div>
+                          {!hasText && <AlertCircle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
+                        </button>
+                      </TooltipTrigger>
+                      {!hasText && (
+                        <TooltipContent side="left">
+                          <p>
+                            {!availabilityKnown
+                              ? "Prüfe Text..."
+                              : "Dieses Kapitel hat noch keinen verbesserten Text"}
+                          </p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  )
+                })}
+              </TooltipProvider>
             </div>
           )}
 

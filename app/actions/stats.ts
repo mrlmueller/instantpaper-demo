@@ -22,6 +22,8 @@ import {
 export type LiveUserStats = {
   totalCost: number; // cents
   totalRuns: number; // OpenAI operations
+  exportCost: number; // cents (export_docx)
+  exportCount: number; // export_docx operations
   totalProjekte: number;
   totalKapitel: number;
   totalQuellen: number;
@@ -203,6 +205,12 @@ export async function getLiveUserStats(): Promise<LiveUserStats> {
   const totalCost = centsFromUsd(agg.totalCostUsd);
   const totalRuns = Number(agg.operationCount || 0);
 
+  const byOp = asRecord(agg.byOperationType);
+  const exportAgg = asRecord(byOp.export_docx);
+  const exportCost = centsFromUsd(exportAgg.totalCostUsd);
+  const exportCountRaw = Number(exportAgg.count || 0);
+  const exportCount = Number.isFinite(exportCountRaw) ? exportCountRaw : 0;
+
   // Runs by month: show last 6 months (including current)
   const byTime = asRecord(agg.byTimePeriod);
   const now = new Date();
@@ -288,6 +296,8 @@ export async function getLiveUserStats(): Promise<LiveUserStats> {
   return {
     totalCost,
     totalRuns,
+    exportCost,
+    exportCount,
     totalProjekte,
     totalKapitel,
     totalQuellen,

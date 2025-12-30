@@ -743,9 +743,155 @@ def _candidate_bucket_names(project_id: str, configured: str) -> List[str]:
     return out
 
 
+MAX_EXPORTS_PER_PROJECT = 3
+
+
+def _coerce_timestamp(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    return None
+
+
+def _best_export_datetime(doc: Dict[str, Any], snap: Any) -> datetime:
+    for key in ("createdAt", "startedAt", "finishedAt", "updatedAt"):
+        dt = _coerce_timestamp(doc.get(key))
+        if dt is not None:
+            return dt
+
+    for attr in ("create_time", "update_time", "read_time"):
+        dt = _coerce_timestamp(getattr(snap, attr, None))
+        if dt is not None:
+            return dt
+
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
 class ExportService:
     def __init__(self):
         self.firebase = firebase_service
+
+    def _delete_export_storage_prefix(self, *, user_id: str, export_id: str) -> None:
+        prefix = f"users/{user_id}/exports/{export_id}/"
+        deleted_any = False
+        last_exc: Exception | None = None
+
+        for bucket_name in _candidate_bucket_names(
+            config.FIREBASE_PROJECT_ID, config.FIREBASE_STORAGE_BUCKET
+        ):
+            try:
+                bucket = storage.bucket(bucket_name)
+                blobs = list(bucket.list_blobs(prefix=prefix))
+                if not blobs:
+                    continue
+                for blob in blobs:
+                    try:
+                        blob.delete()
+                        deleted_any = True
+                    except NotFound:
+                        continue
+                    except Exception as exc:
+                        last_exc = exc
+                        continue
+            except NotFound as exc:
+                last_exc = exc
+                continue
+            except Exception as exc:
+                last_exc = exc
+                continue
+
+        if last_exc is not None and not deleted_any:
+            logger.warning(
+                "Non-critical: failed to delete export files (export_id=%s): %s",
+                export_id,
+                last_exc,
+            )
+
+    def _enforce_project_export_limit(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        current_export_id: str,
+        keep: int = MAX_EXPORTS_PER_PROJECT,
+    ) -> None:
+        projekt_id = str(projekt_id or "").strip()
+        if not projekt_id or keep <= 0:
+            return
+
+        exports_col = (
+            self.firebase.db.collection("users")
+            .document(user_id)
+            .collection("exports")
+        )
+
+        snaps = exports_col.where("projektId", "==", projekt_id).get()
+        if len(snaps) <= keep:
+            return
+
+        now = datetime.now(timezone.utc)
+        finished: List[Tuple[datetime, str, Dict[str, Any]]] = []
+        expired: List[Tuple[datetime, str, Dict[str, Any]]] = []
+        running: List[Tuple[datetime, str, Dict[str, Any]]] = []
+
+        for snap in snaps:
+            doc_id = str(getattr(snap, "id", "") or "").strip()
+            data = snap.to_dict() or {}
+            status = str(data.get("status") or "").strip()
+            sort_dt = _best_export_datetime(data, snap)
+
+            if status == "running":
+                running.append((sort_dt, doc_id, data))
+                continue
+
+            expires_dt = _coerce_timestamp(data.get("expiresAt"))
+            if expires_dt is not None and expires_dt <= now:
+                expired.append((sort_dt, doc_id, data))
+            else:
+                finished.append((sort_dt, doc_id, data))
+
+        if not finished and not expired:
+            return
+
+        finished.sort(key=lambda x: x[0], reverse=True)
+        keep_ids = [doc_id for _dt, doc_id, _data in finished[:keep]]
+
+        if current_export_id and current_export_id not in keep_ids:
+            if current_export_id in [doc_id for _dt, doc_id, _data in finished]:
+                if keep_ids:
+                    keep_ids.pop()
+                keep_ids.append(current_export_id)
+
+        keep_set = set(keep_ids)
+
+        to_delete: List[str] = []
+        to_delete.extend([doc_id for _dt, doc_id, _data in expired])
+        to_delete.extend([doc_id for _dt, doc_id, _data in finished if doc_id not in keep_set])
+
+        if not to_delete:
+            return
+
+        for export_id in to_delete:
+            export_id = str(export_id or "").strip()
+            if not export_id:
+                continue
+            try:
+                self._delete_export_storage_prefix(user_id=user_id, export_id=export_id)
+            except Exception as exc:
+                logger.warning(
+                    "Non-critical: failed to delete export storage (export_id=%s): %s",
+                    export_id,
+                    exc,
+                )
+            try:
+                exports_col.document(export_id).delete()
+            except Exception as exc:
+                logger.warning(
+                    "Non-critical: failed to delete export doc (export_id=%s): %s",
+                    export_id,
+                    exc,
+                )
 
     async def create_export_job(
         self,
@@ -1064,6 +1210,20 @@ class ExportService:
                 },
                 merge=True,
             )
+
+            try:
+                self._enforce_project_export_limit(
+                    user_id=user_id,
+                    projekt_id=projekt_id,
+                    current_export_id=export_id,
+                    keep=MAX_EXPORTS_PER_PROJECT,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Non-critical: failed to enforce export retention (export_id=%s): %s",
+                    export_id,
+                    exc,
+                )
         except Exception as exc:
             logger.error(
                 "Export job failed (export_id=%s): %s", export_id, exc, exc_info=True

@@ -111,7 +111,6 @@ export function ExportsTab({ userId }: { userId: string }) {
   useEffect(() => {
     if (!userId) return;
 
-    setLoading(true);
     const q = query(
       collection(firestoreClient, "users", userId, "exports"),
       orderBy("createdAt", "desc"),

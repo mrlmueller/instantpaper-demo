@@ -516,7 +516,11 @@ export default function ProfilPage() {
                         icon={Coins}
                         label="Gesamtkosten"
                         value={formatCost(stats.totalCost)}
-                        subtext={`${stats.totalRuns} Verarbeitungen`}
+                        subtext={`${stats.totalRuns} Verarbeitungen${
+                          stats.exportCount > 0 || stats.exportCost > 0
+                            ? ` • Exporte: ${stats.exportCount} (${formatCost(stats.exportCost)})`
+                            : ""
+                        }`}
                       />
                       <StatCard
                         icon={FileText}
