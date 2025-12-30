@@ -2483,6 +2483,10 @@ export function Dashboard({
   }
 
   const assignedQuellen = quellen.filter((q) => activeKapitel?.assignedQuellenIds.includes(q.id));
+  // Keep the workspace skeleton visible until we have a selected run *and* the UI-transformed run list is ready.
+  // This avoids a brief blank state between "runs snapshot arrived" and "runs + selection resolved".
+  const kapitelWorkspaceLoading =
+    isKapitelLoading || (fbRuns.length > 0 && runs.length === 0) || (runs.length > 0 && !selectedRun);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -2516,7 +2520,7 @@ export function Dashboard({
         <div className="flex-1 overflow-hidden">
           {activeKapitel ? (
             <KapitelWorkspace
-              loading={isKapitelLoading}
+              loading={kapitelWorkspaceLoading}
               kapitel={activeKapitel}
               assignedQuellen={assignedQuellen}
               runs={runs}
