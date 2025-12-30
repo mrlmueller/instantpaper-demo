@@ -30,8 +30,24 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 
 YEAR_RE = re.compile(r"\b(18|19|20)\d{2}[a-z]?\b")  # 2014 / 2014a
+
+NAME_TOKEN = r"(?:[A-ZÄÖÜ][A-Za-zÄÖÜäöüß’'\-]{1,}|[A-ZÄÖÜ]{2,})"
+PARTICLE = r"(?:van|von|de|del|der|den|da|di)"
+NAME = rf"(?:{PARTICLE}\s+)?{NAME_TOKEN}"
+
+# Supports:
+# - "Cepeda und Martin"
+# - "Schmidt & Keller"
+# - "Hopf, Schmidt, Echterhoff"
+# - "Homburg et al."
+# - "OECD"
+AUTHORS_PATTERN = rf"{NAME}(?:\s*,\s*{NAME})*(?:\s*(?:und|&)\s*{NAME})*(?:\s+et al\.)?"
+
+# Matches BOTH:
+# - "Kuckartz, 2014"
+# - "Kuckartz 2014"
 AUTHOR_YEAR_RE = re.compile(
-    r"(?P<authors>[^;()]{1,200}?)\s*,\s*(?P<year>(18|19|20)\d{2}[a-z]?)"
+    rf"(?P<authors>{AUTHORS_PATTERN})\s*,?\s*(?P<year>(18|19|20)\d{{2}}[a-z]?)"
 )
 PAREN_RE = re.compile(r"\(([^()]*)\)")
 
@@ -122,14 +138,31 @@ class ParsedCitation:
 
 
 def find_citation_groups(text: str) -> List[Dict[str, Any]]:
+    """
+    Returns parenthesis spans that look like citations, e.g.
+      (Kuckartz, 2014; Berelson, 1952; Früh, 2011, S. 42)
+      (Cepeda und Martin 2005; Homburg et al. 2017)   <- NEW supported
+    """
     groups: List[Dict[str, Any]] = []
-    for m in PAREN_RE.finditer(text or ""):
+    for m in PAREN_RE.finditer(text):
         inner = m.group(1).strip()
+
+        # must contain a year-like token
         if not YEAR_RE.search(inner):
             continue
+
+        # must contain at least one likely author-year pattern (comma optional)
         if not AUTHOR_YEAR_RE.search(inner):
             continue
-        groups.append({"start": m.start(), "end": m.end(), "raw": m.group(0), "inner": inner})
+
+        groups.append(
+            {
+                "start": m.start(),
+                "end": m.end(),
+                "raw": m.group(0),
+                "inner": inner,
+            }
+        )
     return groups
 
 
@@ -159,7 +192,7 @@ def locator_looks_valid(locator: str) -> bool:
 
 
 def parse_citation_item(item: str) -> ParsedCitation:
-    raw = (item or "").strip()
+    raw = item.strip()
     core, pref = strip_prefix(raw)
 
     issues: List[str] = []
@@ -248,7 +281,9 @@ def resolve_group_shorthand(parsed: List[ParsedCitation]) -> List[ParsedCitation
                 c2.year = last_full.year
                 c2.locator = loc
                 c2.issues = [
-                    iss for iss in c2.issues if iss not in ("no_year_found", "missing_authors")
+                    iss
+                    for iss in c2.issues
+                    if iss not in ("no_year_found", "missing_authors")
                 ]
                 c2.issues.append("resolved_from_previous_in_group")
                 c2.confidence = max(c2.confidence, 0.90)
@@ -261,7 +296,9 @@ def resolve_group_shorthand(parsed: List[ParsedCitation]) -> List[ParsedCitation
             and last_full is not None
         ):
             c2.authors = last_full.authors
-            c2.issues = [iss for iss in c2.issues if iss != "shorthand_reference_needs_context"]
+            c2.issues = [
+                iss for iss in c2.issues if iss != "shorthand_reference_needs_context"
+            ]
             c2.issues.append("resolved_author_from_previous_in_group")
             c2.confidence = max(c2.confidence, 0.90)
 
@@ -304,9 +341,17 @@ def needs_llm_fallback(c: ParsedCitation) -> Tuple[bool, List[str]]:
     if c.confidence < 0.85:
         reasons.append("low_confidence")
 
-    if c.authors and c.authors.strip() in SUSPICIOUS_LOCATION_AUTHORS and c.locator is None:
+    if (
+        c.authors
+        and c.authors.strip() in SUSPICIOUS_LOCATION_AUTHORS
+        and c.locator is None
+    ):
         reasons.append("suspicious_location_author")
-    if c.authors and c.authors.strip() in SUSPICIOUS_NONAUTHOR_TOKENS and c.locator is None:
+    if (
+        c.authors
+        and c.authors.strip() in SUSPICIOUS_NONAUTHOR_TOKENS
+        and c.locator is None
+    ):
         reasons.append("suspicious_nonauthor_token")
 
     return (len(reasons) > 0), reasons
@@ -318,7 +363,9 @@ def build_llm_jobs(text: str, extracted: List[Dict[str, Any]]) -> List[Dict[str,
     for grp in extracted:
         g_start, g_end = grp["group_span"]
         ctx_left = (text or "")[max(0, g_start - 60) : g_start].replace("\n", " ")
-        ctx_right = (text or "")[g_end : min(len(text or ""), g_end + 60)].replace("\n", " ")
+        ctx_right = (text or "")[g_end : min(len(text or ""), g_end + 60)].replace(
+            "\n", " "
+        )
 
         last_full: Optional[ParsedCitation] = None
         for item_idx, cdict in enumerate(grp["citations"], 1):
@@ -331,15 +378,21 @@ def build_llm_jobs(text: str, extracted: List[Dict[str, Any]]) -> List[Dict[str,
                         "job_id": f"g{grp['group_index']}_i{item_idx}",
                         "group_raw": grp["group_raw"],
                         "raw_item": c.raw_item,
-                        "parsed_guess": {"authors": c.authors, "year": c.year, "locator": c.locator},
-                        "fallback_reasons": reasons,
-                        "previous_in_group": None
-                        if last_full is None
-                        else {
-                            "authors": last_full.authors,
-                            "year": last_full.year,
-                            "locator": last_full.locator,
+                        "parsed_guess": {
+                            "authors": c.authors,
+                            "year": c.year,
+                            "locator": c.locator,
                         },
+                        "fallback_reasons": reasons,
+                        "previous_in_group": (
+                            None
+                            if last_full is None
+                            else {
+                                "authors": last_full.authors,
+                                "year": last_full.year,
+                                "locator": last_full.locator,
+                            }
+                        ),
                         "context_left": ctx_left[-60:],
                         "context_right": ctx_right[:60],
                     }
@@ -363,10 +416,10 @@ def extract_text_from_response(resp) -> str:
         return t
 
     chunks: List[str] = []
-    for item in (_get(resp, "output", []) or []):
+    for item in _get(resp, "output", []) or []:
         if _get(item, "type") != "message":
             continue
-        for part in (_get(item, "content", []) or []):
+        for part in _get(item, "content", []) or []:
             part_type = _get(part, "type")
             if part_type in ("output_text", "text"):
                 txt = _get(part, "text", "")
@@ -394,7 +447,9 @@ async def call_llm_fixups(
     resp = await client.responses.create(
         model=model,
         instructions=instructions,
-        input=[{"role": "user", "content": json.dumps({"jobs": jobs}, ensure_ascii=False)}],
+        input=[
+            {"role": "user", "content": json.dumps({"jobs": jobs}, ensure_ascii=False)}
+        ],
         text={
             "format": {
                 "type": "json_schema",
@@ -451,7 +506,9 @@ def apply_fixups_to_extracted(
 
             f = fixup_map[job_id]
             if not f.get("is_citation"):
-                cdict["issues"] = list(set((cdict.get("issues") or []) + ["llm_not_a_citation"]))
+                cdict["issues"] = list(
+                    set((cdict.get("issues") or []) + ["llm_not_a_citation"])
+                )
                 cdict["confidence"] = min(
                     float(cdict.get("confidence") or 1.0),
                     float(f.get("confidence") or 0.5),
@@ -474,7 +531,9 @@ def apply_fixups_to_extracted(
             cdict["authors"] = f.get("authors")
             cdict["year"] = f.get("year")
             cdict["locator"] = f.get("locator")
-            cdict["confidence"] = float(f.get("confidence") or float(cdict.get("confidence") or 0.0))
+            cdict["confidence"] = float(
+                f.get("confidence") or float(cdict.get("confidence") or 0.0)
+            )
             cdict["issues"] = list(set((cdict.get("issues") or []) + ["llm_fixed"]))
             if f.get("note"):
                 cdict["issues"].append(f"llm_note:{f['note']}")
@@ -578,9 +637,13 @@ async def paragraph_to_docx_with_footnotes(
     if use_llm and openai_client is not None:
         jobs = build_llm_jobs(para_text, extracted)
         if jobs:
-            fixups, usage = await call_llm_fixups(client=openai_client, jobs=jobs, model=model)
+            fixups, usage = await call_llm_fixups(
+                client=openai_client, jobs=jobs, model=model
+            )
             usage_acc["input_tokens"] += int(usage.get("input_tokens") or 0)
-            usage_acc["cached_input_tokens"] += int(usage.get("cached_input_tokens") or 0)
+            usage_acc["cached_input_tokens"] += int(
+                usage.get("cached_input_tokens") or 0
+            )
             usage_acc["output_tokens"] += int(usage.get("output_tokens") or 0)
             extracted, _dropped = apply_fixups_to_extracted(extracted, fixups)
 
@@ -598,7 +661,9 @@ async def paragraph_to_docx_with_footnotes(
             doc_paragraph.add_run(normalize_docx_text(before))
 
         items = grp["citations"]
-        all_items_are_citations = all((c.get("authors") and c.get("year")) for c in items)
+        all_items_are_citations = all(
+            (c.get("authors") and c.get("year")) for c in items
+        )
 
         if not all_items_are_citations:
             if before and not before.endswith((" ", "\n")):
@@ -691,7 +756,9 @@ class ExportService:
         kapitel_ids: List[str],
     ) -> str:
         export_id = str(uuid.uuid4())
-        unique_ids = [k for k in dict.fromkeys([x for x in kapitel_ids if (x or "").strip()])]
+        unique_ids = [
+            k for k in dict.fromkeys([x for x in kapitel_ids if (x or "").strip()])
+        ]
         expires_at = datetime.now(timezone.utc) + timedelta(days=7)
 
         project = await self.firebase.get_project(user_id, projekt_id)
@@ -757,11 +824,21 @@ class ExportService:
                 raise RuntimeError("Export job not found.")
             export_doc = snap.to_dict() or {}
 
-            selection = export_doc.get("selection") if isinstance(export_doc.get("selection"), dict) else {}
-            kapitel_ids = selection.get("kapitelIds") if isinstance(selection.get("kapitelIds"), list) else []
+            selection = (
+                export_doc.get("selection")
+                if isinstance(export_doc.get("selection"), dict)
+                else {}
+            )
+            kapitel_ids = (
+                selection.get("kapitelIds")
+                if isinstance(selection.get("kapitelIds"), list)
+                else []
+            )
             projekt_id = str(export_doc.get("projektId") or "").strip()
 
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+            api_key, key_source = await user_key_service.resolve_api_key_for_user(
+                user_id
+            )
             openai_client = AsyncOpenAI(api_key=api_key)
 
             chapters: List[Dict[str, Any]] = []
@@ -779,7 +856,11 @@ class ExportService:
                 depth = max(1, min(3, nummer.count(".") + 1))
 
                 run_id = str(kapitel.get("activeRunId") or "").strip()
-                latest = kapitel.get("latestRun") if isinstance(kapitel.get("latestRun"), dict) else {}
+                latest = (
+                    kapitel.get("latestRun")
+                    if isinstance(kapitel.get("latestRun"), dict)
+                    else {}
+                )
                 if not run_id:
                     run_id = str(latest.get("runId") or "").strip()
 
@@ -802,9 +883,19 @@ class ExportService:
                 if not run_id:
                     continue
 
-                lesefluss = await self.firebase.get_lesefluss_result(user_id, kapitel_id, run_id)
-                content = (lesefluss or {}).get("content") if isinstance(lesefluss, dict) else None
-                status = str((lesefluss or {}).get("status") or "").strip() if isinstance(lesefluss, dict) else ""
+                lesefluss = await self.firebase.get_lesefluss_result(
+                    user_id, kapitel_id, run_id
+                )
+                content = (
+                    (lesefluss or {}).get("content")
+                    if isinstance(lesefluss, dict)
+                    else None
+                )
+                status = (
+                    str((lesefluss or {}).get("status") or "").strip()
+                    if isinstance(lesefluss, dict)
+                    else ""
+                )
 
                 if not isinstance(content, str) or not content.strip():
                     continue
@@ -846,7 +937,11 @@ class ExportService:
             style.font.name = "Calibri"
             style.font.size = Pt(11)
 
-            usage_acc = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0}
+            usage_acc = {
+                "input_tokens": 0,
+                "cached_input_tokens": 0,
+                "output_tokens": 0,
+            }
             wrote_any = False
 
             for ch in chapters:
@@ -884,7 +979,9 @@ class ExportService:
             upload_exc: Exception | None = None
             download_token = str(uuid.uuid4())
             content_disposition = f'attachment; filename="{filename}"'
-            for bucket_name in _candidate_bucket_names(config.FIREBASE_PROJECT_ID, config.FIREBASE_STORAGE_BUCKET):
+            for bucket_name in _candidate_bucket_names(
+                config.FIREBASE_PROJECT_ID, config.FIREBASE_STORAGE_BUCKET
+            ):
                 try:
                     bucket = storage.bucket(bucket_name)
                     blob = bucket.blob(storage_path)
@@ -906,14 +1003,18 @@ class ExportService:
             input_tokens = int(usage_acc["input_tokens"])
             cached_input_tokens = int(usage_acc["cached_input_tokens"])
             output_tokens = int(usage_acc["output_tokens"])
-            usage_obj = TokenUsage.from_any(input_tokens, cached_input_tokens, output_tokens)
+            usage_obj = TokenUsage.from_any(
+                input_tokens, cached_input_tokens, output_tokens
+            )
 
             cost_usd = 0.0
             if usage_obj.total_tokens > 0:
                 cost_service = get_cost_service(firebase_service)
-                cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
-                    model=CITATION_FIXUP_MODEL,
-                    usage=usage_obj,
+                cost_breakdown, matched_model, pricing, _match_type = (
+                    await cost_service.calculate_cost(
+                        model=CITATION_FIXUP_MODEL,
+                        usage=usage_obj,
+                    )
                 )
 
                 await cost_service.log_operation(
@@ -932,7 +1033,9 @@ class ExportService:
                     pricing=pricing,
                     key_source=key_source,
                     projekt_id=projekt_id or None,
-                    projekt_snapshot=projekt_snapshot if isinstance(projekt_snapshot, dict) else None,
+                    projekt_snapshot=(
+                        projekt_snapshot if isinstance(projekt_snapshot, dict) else None
+                    ),
                     status="success",
                 )
                 cost_usd = float(cost_breakdown.total_cost_usd)
@@ -962,7 +1065,9 @@ class ExportService:
                 merge=True,
             )
         except Exception as exc:
-            logger.error("Export job failed (export_id=%s): %s", export_id, exc, exc_info=True)
+            logger.error(
+                "Export job failed (export_id=%s): %s", export_id, exc, exc_info=True
+            )
             export_ref.set(
                 {
                     "status": "error",
