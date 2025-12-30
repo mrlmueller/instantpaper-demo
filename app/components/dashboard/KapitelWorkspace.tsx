@@ -2,6 +2,7 @@
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -68,6 +69,7 @@ import { ProcessingStepper } from "./ProcessingStepper";
 import { toast } from "sonner";
 
 interface KapitelWorkspaceProps {
+  loading: boolean;
   kapitel: Kapitel;
   assignedQuellen: Quelle[];
   runs: Run[];
@@ -90,6 +92,7 @@ interface KapitelWorkspaceProps {
 }
 
 export function KapitelWorkspace({
+  loading,
   kapitel,
   assignedQuellen,
   runs,
@@ -787,6 +790,22 @@ export function KapitelWorkspace({
           </Card>
         )}
 
+        {selectedRun && loading && leseflussStatus === "success" && !hasVerbessert && (
+          <Card className="mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Verbesserter Text</h2>
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-11/12" />
+                <Skeleton className="h-4 w-4/5" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            </div>
+          </Card>
+        )}
+
         {hasVerbessert && leseflussStatus === "success" && (
           <>
             {/* Verbesserter Text Card */}
@@ -928,6 +947,22 @@ export function KapitelWorkspace({
               <div className="flex items-center gap-2 text-destructive">
                 <AlertCircle className="h-4 w-4" />
                 <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {selectedRun && loading && shortenedStatus === "success" && !hasGekuerzt && (
+          <Card className="mb-8 bg-card border-border shadow-sm">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Gek〉zter Text</h2>
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-11/12" />
+                <Skeleton className="h-4 w-4/5" />
+                <Skeleton className="h-4 w-2/3" />
               </div>
             </div>
           </Card>
@@ -1203,6 +1238,22 @@ export function KapitelWorkspace({
           </Card>
         )}
 
+        {selectedRun && loading && combinedStatus === "success" && !hasContent && (
+          <Card className="mb-8 bg-card border-border shadow-sm">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Kombinierter Text</h2>
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            </div>
+          </Card>
+        )}
+
         {hasContent && combinedStatus === "success" && (
           <Card className="mb-8 bg-card border-border shadow-sm">
             <div className="p-8">
@@ -1366,7 +1417,7 @@ export function KapitelWorkspace({
         )}
 
         {/* Combine Button (if only quellen exist) */}
-        {hasQuellenErgebnisse && !hasContent && combinedStatus !== "running" && canCombineFromResults && (
+        {!loading && hasQuellenErgebnisse && !hasContent && combinedStatus !== "running" && canCombineFromResults && (
           <Card className="mb-8 bg-accent/30 border-border border-dashed">
             <div className="p-8 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
@@ -1392,7 +1443,7 @@ export function KapitelWorkspace({
         )}
 
         {/* No Run Yet */}
-        {runs.length === 0 && (
+        {!loading && runs.length === 0 && (
           <Card className="mb-8 bg-accent/30 border-border border-dashed">
             <div className="p-12 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
@@ -1426,9 +1477,7 @@ export function KapitelWorkspace({
                 <BookOpen className="h-4 w-4" />
                 Ergebnisse pro Quelle ({selectedRun!.quellenErgebnisse.length})
               </h3>
-              {!hasContent &&
-                combinedStatus !== "running" &&
-                canCombineFromResults && (
+              {!loading && !hasContent && combinedStatus !== "running" && canCombineFromResults && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -1446,76 +1495,102 @@ export function KapitelWorkspace({
             </div>
 
             <div className="space-y-3">
-              {selectedRun!.quellenErgebnisse.map((ergebnis) => (
-                <Card key={ergebnis.id} className="p-4 bg-muted/10">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-semibold text-foreground mb-1">
-                        {ergebnis.quelleName}
-                      </h4>
-                      {ergebnis.status === "waiting" && (
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span className="text-sm">Text wird generiert...</span>
-                        </div>
-                      )}
-                      {ergebnis.status === "no-content" && (
-                        <div className="flex items-center gap-2 text-amber-600">
-                          <AlertCircle className="h-4 w-4" />
-                          <span className="text-sm">Kein verwertbarer Inhalt</span>
-                        </div>
-                      )}
-                      {ergebnis.status === "error" && (
-                        <div className="flex items-center gap-2 text-destructive">
-                          <AlertCircle className="h-4 w-4" />
-                          <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
-                        </div>
-                      )}
-                    {ergebnis.status === "success" && ergebnis.text && (
-                      <p className="text-sm text-foreground/80 line-clamp-3">
-                        {ergebnis.text}
-                      </p>
-                    )}
-                  </div>
-                    {ergebnis.status === "success" && ergebnis.text && (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onOpenResultRefinement(ergebnis.quelleId, ergebnis.quelleName)}
-                          title="Text verfeinern"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleCopy(ergebnis.text, ergebnis.id)}>
-                          {copiedId === ergebnis.id ? (
-                            <Check className="h-4 w-4 text-primary" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            onOpenTextViewer({
-                              title: ergebnis.quelleName,
-                              text: ergebnis.text,
-                            })
-                          }
-                        >
-                          <Maximize2 className="h-4 w-4" />
-                        </Button>
+              {loading ? (
+                <>
+                  {Array.from({
+                    length: Math.min(4, Math.max(assignedQuellen.length, 1)),
+                  }).map((_, i) => (
+                    <Card key={`quelle-skeleton-${i}`} className="p-4 bg-muted/10">
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-56" />
+                        <Skeleton className="h-3 w-full" />
+                        <Skeleton className="h-3 w-5/6" />
                       </div>
-                    )}
-                  </div>
-                </Card>
-              ))}
+                    </Card>
+                  ))}
+                </>
+              ) : (
+                selectedRun!.quellenErgebnisse.map((ergebnis) => (
+                  <Card key={ergebnis.id} className="p-4 bg-muted/10">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold text-foreground mb-1">{ergebnis.quelleName}</h4>
+
+                        {ergebnis.status === "pending" && (
+                          <div className="mt-2 space-y-2">
+                            <Skeleton className="h-3 w-full" />
+                            <Skeleton className="h-3 w-5/6" />
+                            <Skeleton className="h-3 w-2/3" />
+                          </div>
+                        )}
+
+                        {ergebnis.status === "not-in-run" && (
+                          <div className="text-sm text-muted-foreground">Nicht im Run enthalten</div>
+                        )}
+
+                        {ergebnis.status === "waiting" && (
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span className="text-sm">Text wird generiert...</span>
+                          </div>
+                        )}
+                        {ergebnis.status === "no-content" && (
+                          <div className="flex items-center gap-2 text-amber-600">
+                            <AlertCircle className="h-4 w-4" />
+                            <span className="text-sm">Kein verwertbarer Inhalt</span>
+                          </div>
+                        )}
+                        {ergebnis.status === "error" && (
+                          <div className="flex items-center gap-2 text-destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
+                          </div>
+                        )}
+                        {ergebnis.status === "success" && ergebnis.text && (
+                          <p className="text-sm text-foreground/80 line-clamp-3">{ergebnis.text}</p>
+                        )}
+                      </div>
+
+                      {ergebnis.status === "success" && ergebnis.text && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onOpenResultRefinement(ergebnis.quelleId, ergebnis.quelleName)}
+                            title="Text verfeinern"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleCopy(ergebnis.text, ergebnis.id)}>
+                            {copiedId === ergebnis.id ? (
+                              <Check className="h-4 w-4 text-primary" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              onOpenTextViewer({
+                                title: ergebnis.quelleName,
+                                text: ergebnis.text,
+                              })
+                            }
+                          >
+                            <Maximize2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ))
+              )}
             </div>
           </div>
         )}
 
-        {runs.length === 0 && assignedQuellen.length === 0 && (
+        {!loading && runs.length === 0 && assignedQuellen.length === 0 && (
           <div className="mt-8 p-8 rounded-lg bg-muted/30 text-center">
             <p className="text-sm text-muted-foreground">
               Füge Quellen zu diesem Kapitel hinzu, um mit der Verarbeitung zu

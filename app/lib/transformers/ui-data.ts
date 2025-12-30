@@ -80,7 +80,7 @@ export function transformResultToUI(
   quelleName: string = ""
 ): UIQuellenErgebnis {
   // Determine status
-  let status: "waiting" | "success" | "no-content" | "error" = "success";
+  let status: UIQuellenErgebnis["status"] = "success";
   if (fbResult.status === "running") status = "waiting";
   else if (fbResult.status === "error") status = "error";
   else if (fbResult.status === "no-content") status = "no-content";

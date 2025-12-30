@@ -42,7 +42,7 @@ export interface QuellenErgebnis {
   quelleId: string;
   quelleName: string;
   text: string;
-  status: "waiting" | "success" | "no-content" | "error";
+  status: "pending" | "waiting" | "success" | "no-content" | "error" | "not-in-run";
   cost: number; // Cost in cents (USD)
   costUsd?: number; // Cost in USD (high precision, for display/aggregation)
 }
