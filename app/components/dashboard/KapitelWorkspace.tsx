@@ -528,6 +528,19 @@ export function KapitelWorkspace({
         </div>
 
         {/* Run Selector & Cost Display */}
+        {loading && !selectedRun && (
+          <div className="flex items-center justify-between mb-4 gap-4">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-10 w-[200px] rounded-md" />
+              <Skeleton className="h-9 w-9 rounded-md" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-7 w-28 rounded-md" />
+            </div>
+          </div>
+        )}
+
         {selectedRun && (
           <div className="flex items-center justify-between mb-4 gap-4">
             <div className="flex items-center gap-2">
@@ -705,7 +718,59 @@ export function KapitelWorkspace({
           </DialogContent>
         </Dialog>
 
-        {runs.length > 0 && !selectedRun && (
+        {loading && !selectedRun && (
+          <>
+            <Card className="p-4 mb-6 bg-muted/20">
+              <div className="space-y-2 text-sm">
+                <div className="flex items-start gap-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-56" />
+                </div>
+                <div className="flex items-start gap-2">
+                  <Skeleton className="h-4 w-24" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-5/6" />
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20">
+              <div className="p-8">
+                <Skeleton className="h-6 w-48 mb-6" />
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-5/6" />
+                  <Skeleton className="h-4 w-2/3" />
+                </div>
+              </div>
+            </Card>
+
+            <div className="mt-8">
+              <div className="flex items-center justify-between mb-4">
+                <Skeleton className="h-4 w-64" />
+                <Skeleton className="h-8 w-36 rounded-md" />
+              </div>
+              <div className="space-y-3">
+                {Array.from({
+                  length: Math.min(4, Math.max(assignedQuellen.length, 1)),
+                }).map((_, i) => (
+                  <Card key={`quelle-skeleton-initial-${i}`} className="p-4 bg-muted/10">
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-56" />
+                      <Skeleton className="h-3 w-full" />
+                      <Skeleton className="h-3 w-5/6" />
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {!loading && runs.length > 0 && !selectedRun && (
           <Card className="mb-6 bg-card border-border shadow-sm">
             <div className="p-6 flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
