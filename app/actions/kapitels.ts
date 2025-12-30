@@ -933,6 +933,14 @@ export async function createLeseflussRun(
   });
 }
 
+export async function createDocxExport(projektId: string, selection: 'all' | 'selected', kapitelIds: string[]) {
+  return fetchFastApi('/api/export-docx', {
+    projekt_id: projektId,
+    selection,
+    kapitel_ids: kapitelIds,
+  });
+}
+
 export async function initCombinedRefinement(kapitelId: string, runId: string) {
   return fetchFastApi('/api/refine/combined/init', { kapitel_id: kapitelId, run_id: runId });
 }
@@ -1185,6 +1193,75 @@ export async function getKapitelsWithShortenedText(
     return Object.fromEntries(entries);
   } catch (error) {
     console.error('Error checking shortened text availability:', error);
+    return Object.fromEntries(uniqueIds.map((id) => [id, false] as const));
+  }
+}
+
+export async function getKapitelsWithLeseflussText(
+  kapitelIds: string[],
+  _runScanLimit = 20
+): Promise<Record<string, boolean>> {
+  const user = await requireAuth();
+  if (!user) return {};
+
+  const uniqueIds = Array.from(new Set(kapitelIds.filter(Boolean)));
+  if (uniqueIds.length === 0) return {};
+
+  try {
+    const db = await getFirestoreForUser();
+
+    const entries = await Promise.all(
+      uniqueIds.map(async (kapitelId) => {
+        try {
+          const kapitelSnap = await getDoc(kapitelDoc(db, user.uid, kapitelId));
+          const kapitelData = kapitelSnap.exists() ? (kapitelSnap.data() as DocumentData) : {};
+          const activeRunId = typeof kapitelData.activeRunId === 'string' ? kapitelData.activeRunId : undefined;
+          const latestRunId =
+            kapitelData.latestRun && typeof kapitelData.latestRun.runId === 'string'
+              ? String(kapitelData.latestRun.runId)
+              : undefined;
+
+          let runId = (activeRunId || latestRunId || '').trim();
+          if (!runId) {
+            const runsSnapshot = await getDocs(
+              query(
+                runsCol(db, user.uid, kapitelId),
+                where('archived', '==', false),
+                orderBy('index', 'desc'),
+                limit(1)
+              )
+            );
+            runId = runsSnapshot.empty ? '' : runsSnapshot.docs[0].id;
+          }
+
+          if (!runId) return [kapitelId, false] as const;
+
+          const runSnap = await getDoc(doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId));
+          if (runSnap.exists()) {
+            const runData = runSnap.data() as DocumentData;
+            const status = (runData.artifactsStatus as { lesefluss?: unknown } | undefined)?.lesefluss;
+            if (status === 'success') {
+              return [kapitelId, true] as const;
+            }
+          }
+
+          const leseflussSnap = await getDoc(artifactDoc(db, user.uid, kapitelId, runId, 'lesefluss'));
+          if (leseflussSnap.exists()) {
+            const lesefluss = leseflussSnap.data() as DocumentData;
+            const content = typeof lesefluss.content === 'string' ? lesefluss.content : String(lesefluss.content ?? '');
+            if (content.trim().length > 0) return [kapitelId, true] as const;
+          }
+        } catch (e) {
+          console.error(`Error checking lesefluss text for kapitel ${kapitelId}:`, e);
+        }
+
+        return [kapitelId, false] as const;
+      })
+    );
+
+    return Object.fromEntries(entries);
+  } catch (error) {
+    console.error('Error checking lesefluss text availability:', error);
     return Object.fromEntries(uniqueIds.map((id) => [id, false] as const));
   }
 }

@@ -7,6 +7,7 @@ import {
   Mail,
   Calendar,
   FileText,
+  Download,
   BookOpen,
   Coins,
   BarChart3,
@@ -38,9 +39,10 @@ import {
   type OpenAIKeyStatus,
 } from "@/app/lib/api/openaiKeyClient";
 import { PromptManager } from "@/app/components/profile/PromptManager";
+import { ExportsTab } from "@/app/components/profile/ExportsTab";
 import { getLiveUserStats, type LiveUserStats } from "@/app/actions/stats";
 
-type ProfileTab = "einstellungen" | "statistiken";
+type ProfileTab = "einstellungen" | "statistiken" | "exporte";
 
 function StatCard({
   icon: Icon,
@@ -105,6 +107,7 @@ function ProfilePageSkeleton() {
           </div>
           <div className="p-4 flex-1">
             <div className="space-y-1">
+              <Skeleton className="h-10 w-full rounded-lg" />
               <Skeleton className="h-10 w-full rounded-lg" />
               <Skeleton className="h-10 w-full rounded-lg" />
             </div>
@@ -382,6 +385,18 @@ export default function ProfilPage() {
                 <TrendingUp className="h-4 w-4" />
                 Statistiken
               </button>
+              <button
+                onClick={() => setActiveTab("exporte")}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  activeTab === "exporte"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <Download className="h-4 w-4" />
+                Meine Exporte
+              </button>
             </nav>
           </div>
         </div>
@@ -583,6 +598,10 @@ export default function ProfilPage() {
                     </Card>
                   </>
                 )}
+              </TabsContent>
+
+              <TabsContent value="exporte">
+                <ExportsTab userId={authUser.uid} />
               </TabsContent>
             </Tabs>
           </div>

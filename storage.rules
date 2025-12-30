@@ -16,5 +16,11 @@ service firebase.storage {
       // Allow deletion by owner
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
+
+    // User-scoped DOCX exports
+    match /users/{userId}/exports/{exportId}/{fileName} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }

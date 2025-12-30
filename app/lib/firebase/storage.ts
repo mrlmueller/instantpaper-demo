@@ -1,4 +1,4 @@
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, getBlob } from 'firebase/storage';
 import { firebaseApp } from './config';
 import type { ImageMetadata } from '@/app/actions/quellen';
 
@@ -53,4 +53,31 @@ export async function deleteImagesFromStorage(imagePaths: string[]): Promise<voi
   });
 
   await Promise.all(deletePromises);
+}
+
+export async function getDownloadUrlFromStorage(path: string): Promise<string> {
+  const storage = getStorage(firebaseApp);
+  const storageRef = ref(storage, path);
+  return getDownloadURL(storageRef);
+}
+
+export async function downloadFileFromStorage(path: string, filename: string): Promise<void> {
+  const storage = getStorage(firebaseApp);
+  const storageRef = ref(storage, path);
+
+  // Prefer authenticated blob downloads to avoid opening a new tab and to respect Storage rules.
+  const blob = await getBlob(storageRef);
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'download';
+    a.rel = 'noreferrer';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
 }

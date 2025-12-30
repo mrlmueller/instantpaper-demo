@@ -15,6 +15,7 @@ from models.request import (
     CombineRunRequest,
     ShortenKapitelRequest,
     LeseflussKapitelRequest,
+    ExportDocxRequest,
     RefineCombinedInitRequest,
     RefineCombinedRequest,
     RefineShortenedInitRequest,
@@ -31,6 +32,7 @@ from services.user_key_service import user_key_service
 from services.refinement_service import refinement_service
 from services.firebase_service import firebase_service
 from services.prompt_service import prompt_service
+from services.export_service import export_service
 from firebase_admin import auth
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 from pydantic import BaseModel
@@ -1195,6 +1197,40 @@ async def improve_lesefluss(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to queue lesefluss request: {str(e)}",
         )
+
+
+@app.post("/api/export-docx", status_code=status.HTTP_202_ACCEPTED)
+async def export_docx(
+    request: ExportDocxRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Export improved Kapitel texts (lesefluss) to a single DOCX and store it in Firebase Storage.
+
+    Queues a background task and returns immediately. The UI should read export status from
+    Firestore (`users/{uid}/exports/{exportId}`).
+    """
+    # Validate that an API key is available (user key or platform key). The export may need LLM fixups.
+    await user_key_service.resolve_api_key_for_user(user_id)
+
+    export_id = await export_service.create_export_job(
+        user_id=user_id,
+        projekt_id=request.projekt_id,
+        selection=request.selection,
+        kapitel_ids=request.kapitel_ids,
+    )
+
+    async def _run_export() -> None:
+        await export_service.process_export_job(user_id=user_id, export_id=export_id)
+
+    background_tasks.add_task(_run_export)
+
+    return {
+        "status": "queued",
+        "export_id": export_id,
+        "queued_at": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 @app.post("/api/refine/combined/init")

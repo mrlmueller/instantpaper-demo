@@ -51,7 +51,7 @@ class FirebaseService:
                 }
 
                 cred = credentials.Certificate(cred_dict)
-                firebase_admin.initialize_app(cred)
+                firebase_admin.initialize_app(cred, {"storageBucket": config.FIREBASE_STORAGE_BUCKET})
 
                 # Initialize Firestore client
                 self._db = firestore.client()

@@ -161,3 +161,18 @@ class RefineResultRequest(BaseModel):
     quelle_id: str = Field(..., description="Quelle ID / result document ID to refine")
     parent_version_id: str = Field(..., description="Version ID to refine from")
     user_message: str = Field(..., description="User instruction for refinement", min_length=1)
+
+
+class ExportDocxRequest(BaseModel):
+    """Request model for exporting improved Kapitel texts (lesefluss) to a DOCX."""
+
+    projekt_id: str = Field(..., description="Project ID this export belongs to")
+    selection: Literal["all", "selected"] = Field(
+        default="all",
+        description="Whether the export includes all available Kapitels or a selected subset",
+    )
+    kapitel_ids: List[str] = Field(
+        ...,
+        description="Kapitel IDs to include (only Kapitels with lesefluss text should be provided)",
+        min_length=1,
+    )

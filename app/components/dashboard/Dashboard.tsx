@@ -11,6 +11,7 @@ import { QuelleViewerModal } from './QuelleViewerModal';
 import { ProcessingDialog } from './ProcessingDialog';
 import { ShortenDialog } from './ShortenDialog';
 import { LeseflussDialog } from './LeseflussDialog';
+import { ExportDialog } from './ExportDialog';
 import { CombinedRefinementDialog } from './CombinedRefinementDialog';
 import { ShortenedRefinementDialog } from './ShortenedRefinementDialog';
 import { LeseflussRefinementDialog } from './LeseflussRefinementDialog';
@@ -25,6 +26,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import type {
   PromptStage,
   PromptTemplate,
@@ -58,6 +60,7 @@ import {
   createKapitelRun,
   createShortenRun,
   createLeseflussRun,
+  createDocxExport,
   getUserKapitels,
   type KapitelRun as FirebaseKapitelRun,
   type Kapitel as FirebaseKapitel,
@@ -86,6 +89,7 @@ import { fetchOpenAIKeyStatus, type OpenAIKeyStatus } from '@/app/lib/api/openai
 import { getQuellenPanelState, setQuellenPanelState } from '@/app/lib/storage/preferences';
 import { getActiveKapitelCookieName } from '@/app/lib/ui/kapitelSelection';
 import { getActiveProjektCookieName } from '@/app/lib/ui/projektSelection';
+import { getDownloadUrlFromStorage } from '@/app/lib/firebase/storage';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
 const RUN_HISTORY_LIMIT = 10;
@@ -399,6 +403,11 @@ export function Dashboard({
   const [quelleViewer, setQuelleViewer] = useState<Quelle | null>(null);
   const [quelleViewerLoading, setQuelleViewerLoading] = useState(false);
   const [processingDialogOpen, setProcessingDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+
+  const exportToastIdRef = useRef<string | number | null>(null);
+  const exportUnsubRef = useRef<null | (() => void)>(null);
+  const exportIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Persist Quellen panel state to localStorage
   useEffect(() => {
@@ -424,9 +433,28 @@ export function Dashboard({
   const [isCombining, setIsCombining] = useState(false);
   const [isShortening, setIsShortening] = useState(false);
   const [isImprovingLesefluss, setIsImprovingLesefluss] = useState(false);
+  const [isExportingDocx, setIsExportingDocx] = useState(false);
   const [isCreatingKapitel, setIsCreatingKapitel] = useState(false);
   const [isEditingKapitel, setIsEditingKapitel] = useState(false);
   const [isCreatingProjekt, setIsCreatingProjekt] = useState(false);
+
+  const cleanupExportWatcher = useCallback(() => {
+    if (exportIntervalRef.current) {
+      clearInterval(exportIntervalRef.current);
+      exportIntervalRef.current = null;
+    }
+    if (exportUnsubRef.current) {
+      exportUnsubRef.current();
+      exportUnsubRef.current = null;
+    }
+    exportToastIdRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      cleanupExportWatcher();
+    };
+  }, [cleanupExportWatcher]);
 
   const loadProjektData = useCallback(async (projektId: string) => {
     setIsKapitelLoading(true);
@@ -2226,6 +2254,167 @@ export function Dashboard({
     ]
   );
 
+  const handleExportDocx = useCallback(
+    async (selection: 'all' | 'selected', kapitelIds: string[]) => {
+      if (!projekt?.id) return;
+      if (!user?.uid) return;
+
+      if (!(await ensureOpenAIAccess())) return;
+      if (isExportingDocx) return;
+
+      if (kapitelIds.length === 0) {
+        toast.error('Keine Kapitel ausgewählt', {
+          description: 'Wähle mindestens ein Kapitel für den Export aus.',
+        });
+        return;
+      }
+
+      cleanupExportWatcher();
+      setIsExportingDocx(true);
+
+      let progress = 8;
+      const renderProgress = () => (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground">
+            Du kannst die Seite schließen. Den Download findest du später unter Profil → Meine Exporte.
+          </div>
+          <Progress value={progress} />
+        </div>
+      );
+
+      const exportToastId = toast.loading('Export wird erstellt', {
+        description: renderProgress(),
+      });
+      exportToastIdRef.current = exportToastId;
+
+      try {
+        const result = await createDocxExport(projekt.id, selection, kapitelIds);
+
+        if (!result?.success) {
+          const message = result?.error || 'Export konnte nicht gestartet werden.';
+          const lower = message.toLowerCase();
+
+          if (lower.includes('sitzung')) {
+            toast.error('Export abgebrochen', { description: message, id: exportToastId });
+            handleAuthFailure();
+            setIsExportingDocx(false);
+            return;
+          }
+
+          if (lower.includes('fastapi-server')) {
+            notifyServerDown(exportToastId);
+            setIsExportingDocx(false);
+            return;
+          }
+
+          toast.error('Export fehlgeschlagen', { description: message, id: exportToastId });
+          setIsExportingDocx(false);
+          return;
+        }
+
+        const exportId = (result.data as any)?.export_id as string | undefined;
+        if (!exportId) {
+          toast.error('Export fehlgeschlagen', { description: 'Export-ID fehlt.', id: exportToastId });
+          setIsExportingDocx(false);
+          return;
+        }
+
+        exportIntervalRef.current = setInterval(() => {
+          progress = Math.min(90, progress + Math.max(1, Math.round(Math.random() * 6)));
+          toast.loading('Export wird erstellt', { id: exportToastId, description: renderProgress() });
+        }, 650);
+
+        const exportDocRef = doc(firestoreClient, 'users', user.uid, 'exports', exportId);
+        exportUnsubRef.current = onSnapshot(
+          exportDocRef,
+          (snap) => {
+            if (!snap.exists()) return;
+            const data = snap.data() as any;
+            const status = String(data.status || '');
+
+            if (status === 'running') return;
+
+            cleanupExportWatcher();
+
+            if (status === 'success') {
+              progress = 100;
+              const file = data.file || {};
+              const storagePath = String(file.storagePath || '');
+              const fileName = String(file.fileName || 'export.docx');
+
+              toast.success('Export fertig', {
+                id: exportToastId,
+                description: (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs text-muted-foreground">Download wird vorbereitet...</span>
+                    <Button size="sm" variant="outline" disabled>
+                      Download
+                    </Button>
+                  </div>
+                ),
+              });
+
+              void (async () => {
+                try {
+                  if (!storagePath) throw new Error('Kein Dateipfad gefunden.');
+                  const downloadUrl = await getDownloadUrlFromStorage(storagePath);
+                  toast.success('Export fertig', {
+                    id: exportToastId,
+                    description: (
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs text-muted-foreground">Download bereit.</span>
+                        <Button asChild size="sm">
+                          <a href={downloadUrl} rel="noreferrer" download={fileName}>
+                            Download
+                          </a>
+                        </Button>
+                      </div>
+                    ),
+                  });
+                } catch (err: unknown) {
+                  const message = err instanceof Error ? err.message : 'Unbekannter Fehler';
+                  toast.error('Download fehlgeschlagen', {
+                    description: message,
+                  });
+                }
+              })();
+            } else {
+              toast.error('Export fehlgeschlagen', {
+                id: exportToastId,
+                description: 'Bitte versuche es später erneut.',
+              });
+            }
+
+            setIsExportingDocx(false);
+          },
+          (err) => {
+            console.error('Export listen failed:', err);
+            cleanupExportWatcher();
+            toast.error('Export fehlgeschlagen', { id: exportToastId });
+            setIsExportingDocx(false);
+          }
+        );
+      } catch (err: any) {
+        console.error('Export error:', err);
+        cleanupExportWatcher();
+        toast.error('Export fehlgeschlagen', {
+          id: exportToastId,
+          description: err?.message || 'Unbekannter Fehler',
+        });
+        setIsExportingDocx(false);
+      }
+    },
+    [
+      cleanupExportWatcher,
+      ensureOpenAIAccess,
+      handleAuthFailure,
+      isExportingDocx,
+      notifyServerDown,
+      projekt?.id,
+      user?.uid,
+    ]
+  );
+
   const handleToggleQuellenPanel = useCallback(() => {
     if (!showQuellenPanel) {
       setIsQuellenLoading(true);
@@ -2256,6 +2445,8 @@ export function Dashboard({
           onArchiveProjekt={(id, name) => setDeleteConfirm({ type: 'projekt', id, name })}
           onUnarchiveProjekt={handleUnarchiveProjekt}
           isCreatingProjekt={isCreatingProjekt}
+          onOpenExport={() => setExportDialogOpen(true)}
+          isExporting={isExportingDocx}
         />
         <KapitelNavigator
           kapiteln={kapiteln}
@@ -2343,6 +2534,15 @@ export function Dashboard({
         onOpenChange={(open) => {
           if (!open) setQuelleViewer(null);
         }}
+      />
+
+      <ExportDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+        allKapitels={kapiteln}
+        projektId={projekt.id}
+        onExport={handleExportDocx}
+        isExporting={isExportingDocx}
       />
 
       {activeKapitel && (

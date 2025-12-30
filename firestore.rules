@@ -141,6 +141,12 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Exports are server-written. Clients may read their own exports only.
+      match /exports/{exportId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
       // -------------------------------------------------------------------
       // Prompt templates (per-user)
       // -------------------------------------------------------------------

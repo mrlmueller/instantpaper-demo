@@ -30,6 +30,10 @@ class Config:
     FIREBASE_PROJECT_ID: str = os.getenv("FIREBASE_PROJECT_ID", "").strip()
     FIREBASE_PRIVATE_KEY: str = os.getenv("FIREBASE_PRIVATE_KEY", "").strip()
     FIREBASE_CLIENT_EMAIL: str = os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()
+    FIREBASE_STORAGE_BUCKET: str = os.getenv(
+        "FIREBASE_STORAGE_BUCKET",
+        f"{os.getenv('FIREBASE_PROJECT_ID', '').strip()}.firebasestorage.app",
+    ).strip()
 
     # Token verification can fail if the server clock is slightly behind (1-2s). Allow small skew.
     # Firebase Admin supports 0-60 seconds. Keep this small for security.

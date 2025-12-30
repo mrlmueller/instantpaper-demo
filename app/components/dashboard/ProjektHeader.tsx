@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { ChevronDown, FolderOpen, Plus, LogOut, User, Loader2, BookOpen, RotateCcw } from "lucide-react"
+import { ChevronDown, FolderOpen, Plus, LogOut, User, Loader2, BookOpen, RotateCcw, FileDown, Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -28,6 +28,8 @@ interface ProjektHeaderProps {
   onArchiveProjekt: (id: string, name: string) => void
   onUnarchiveProjekt: (id: string) => void
   isCreatingProjekt: boolean
+  onOpenExport: () => void
+  isExporting: boolean
 }
 
 export function ProjektHeader({
@@ -38,6 +40,8 @@ export function ProjektHeader({
   onArchiveProjekt,
   onUnarchiveProjekt,
   isCreatingProjekt,
+  onOpenExport,
+  isExporting,
 }: ProjektHeaderProps) {
   const { user } = useAuth()
   const [newProjektDialogOpen, setNewProjektDialogOpen] = useState(false)
@@ -94,35 +98,59 @@ export function ProjektHeader({
         <div className="flex items-center justify-between mb-4">
           <span className="text-base font-semibold tracking-tight text-sidebar-foreground">InstantPaper</span>
 
-          {/* User avatar with dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground hover:bg-muted/80 transition-colors">
-                {initials}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <div className="px-2 py-1.5 text-sm font-medium">{userName}</div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/profil" className="flex items-center cursor-pointer">
-                  <User className="mr-2 h-4 w-4" />
-                  Profil
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/quellen-manager" className="flex items-center cursor-pointer">
-                  <BookOpen className="mr-2 h-4 w-4" />
-                  Quellen-Manager
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
-                <LogOut className="mr-2 h-4 w-4" />
-                Abmelden
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onOpenExport}
+              disabled={isExporting}
+              title="Export (DOCX)"
+              className="h-8 w-8"
+            >
+              {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              title="Benachrichtigungen"
+              className="h-8 w-8"
+            >
+              <Bell className="h-4 w-4" />
+            </Button>
+
+            {/* User avatar with dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground hover:bg-muted/80 transition-colors">
+                  {initials}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <div className="px-2 py-1.5 text-sm font-medium">{userName}</div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/profil" className="flex items-center cursor-pointer">
+                    <User className="mr-2 h-4 w-4" />
+                    Profil
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/quellen-manager" className="flex items-center cursor-pointer">
+                    <BookOpen className="mr-2 h-4 w-4" />
+                    Quellen-Manager
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Abmelden
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         {/* Project selector */}
