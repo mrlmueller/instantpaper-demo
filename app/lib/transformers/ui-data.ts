@@ -64,6 +64,7 @@ export function transformKapitelToUI(
     title: fbKapitel.title,
     nummer: fbKapitel.nummer || "1",
     status,
+    latestRunId: fbKapitel.latestRun?.runId,
     order: fbKapitel.order ?? 0,
     projektId,
     assignedQuellenIds: fbKapitel.quelleIds || [],

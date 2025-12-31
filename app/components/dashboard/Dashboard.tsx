@@ -253,6 +253,15 @@ export function Dashboard({
   const [kapiteln, setKapiteln] = useState<Kapitel[]>(
     initialKapitels.map((k) => transformKapitelToUI(k, projekt.id))
   );
+  const [kapitelIndicatorById, setKapitelIndicatorById] = useState<
+    Record<string, { stage: 0 | 1 | 2 | 3 | 4; isProcessing: boolean }>
+  >({});
+  const kapitelIndicatorUnsubsRef = useRef<Map<string, { runId: string; unsubscribe: () => void }>>(new Map());
+  const [kapitelArtifactStageById, setKapitelArtifactStageById] = useState<Record<string, 0 | 1 | 2 | 3 | 4>>({});
+  const kapitelArtifactUnsubsRef = useRef<Map<string, { runId: string; unsubscribe: () => void }>>(new Map());
+  const [kapitelOverallStageById, setKapitelOverallStageById] = useState<Record<string, 0 | 1 | 2 | 3 | 4>>({});
+  const kapitelOverallStageInFlightRef = useRef<Set<string>>(new Set());
+  const kapitelOverallStageComputedRef = useRef<Set<string>>(new Set());
 
   // UI state
   const initialActiveKapitelId =
@@ -289,6 +298,40 @@ export function Dashboard({
     stages: PromptStage[];
     resolve: (choices: Record<PromptStage, string | 'default'> | null) => void;
   } | null>(null);
+
+  const computeKapitelIndicatorFromRunDoc = useCallback((runData: any) => {
+    const artifactsStatus = (runData?.artifactsStatus ?? {}) as Record<string, unknown>;
+    const combinedStatus = typeof artifactsStatus.combined === 'string' ? artifactsStatus.combined : 'empty';
+    const shortenedStatus = typeof artifactsStatus.shortened === 'string' ? artifactsStatus.shortened : 'empty';
+    const leseflussStatus = typeof artifactsStatus.lesefluss === 'string' ? artifactsStatus.lesefluss : 'empty';
+
+    const resultsExpected = Number(runData?.resultsExpectedCount ?? 0);
+    const resultsCompleted = Number(runData?.resultsCompletedCount ?? 0);
+    const resultsWithContent = Number(runData?.resultsWithContentCount ?? 0);
+    const hasAnySourceResult =
+      resultsCompleted > 0 ||
+      resultsWithContent > 0 ||
+      (resultsExpected > 0 && resultsCompleted >= resultsExpected);
+
+    const resultsRunningCount = Math.max(0, Number(runData?.resultsRunningCount ?? 0));
+    const summariesRunningCount = Math.max(0, Number(runData?.summariesRunningCount ?? 0));
+    const artifactsRunningCount = Math.max(0, Number(runData?.artifactsRunningCount ?? 0));
+    const refinementRunningCount = Math.max(0, Number(runData?.refinementRunningCount ?? 0));
+
+    const isProcessing =
+      resultsRunningCount > 0 ||
+      summariesRunningCount > 0 ||
+      artifactsRunningCount > 0 ||
+      refinementRunningCount > 0;
+
+    let stage: 0 | 1 | 2 | 3 | 4 = 0;
+    if (leseflussStatus === 'success') stage = 4;
+    else if (shortenedStatus === 'success') stage = 3;
+    else if (combinedStatus === 'success') stage = 2;
+    else if (hasAnySourceResult) stage = 1;
+
+    return { stage, isProcessing };
+  }, []);
 
   const handleAuthFailure = useCallback(() => {
     toast.error('Sitzung erforderlich', {
@@ -1126,6 +1169,273 @@ export function Dashboard({
 
     return () => unsub();
   }, [user?.uid, projekt.id]);
+
+  useEffect(() => {
+    return () => {
+      for (const entry of kapitelIndicatorUnsubsRef.current.values()) {
+        entry.unsubscribe();
+      }
+      kapitelIndicatorUnsubsRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      for (const entry of kapitelArtifactUnsubsRef.current.values()) {
+        entry.unsubscribe();
+      }
+      kapitelArtifactUnsubsRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      for (const entry of kapitelIndicatorUnsubsRef.current.values()) {
+        entry.unsubscribe();
+      }
+      kapitelIndicatorUnsubsRef.current.clear();
+      setKapitelIndicatorById({});
+      return;
+    }
+
+    const db = firestoreClient;
+    const desiredByKapitel = new Map<string, string>();
+    for (const kapitel of kapiteln) {
+      const runId = (kapitel.activeRunId || kapitel.latestRunId || '').trim();
+      if (runId) desiredByKapitel.set(kapitel.id, runId);
+    }
+
+    for (const [kapitelId, entry] of kapitelIndicatorUnsubsRef.current.entries()) {
+      const desiredRunId = desiredByKapitel.get(kapitelId);
+      if (!desiredRunId || desiredRunId !== entry.runId) {
+        entry.unsubscribe();
+        kapitelIndicatorUnsubsRef.current.delete(kapitelId);
+        setKapitelIndicatorById((prev) => {
+          if (!prev[kapitelId]) return prev;
+          const next = { ...prev };
+          delete next[kapitelId];
+          return next;
+        });
+      }
+    }
+
+    for (const [kapitelId, runId] of desiredByKapitel.entries()) {
+      if (kapitelIndicatorUnsubsRef.current.has(kapitelId)) continue;
+
+      const runRef = doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId);
+      const unsubscribe = onSnapshot(
+        runRef,
+        (snap) => {
+          if (!snap.exists()) {
+            setKapitelIndicatorById((prev) => ({ ...prev, [kapitelId]: { stage: 0, isProcessing: false } }));
+            return;
+          }
+          const indicator = computeKapitelIndicatorFromRunDoc(snap.data());
+          setKapitelIndicatorById((prev) => ({ ...prev, [kapitelId]: indicator }));
+        },
+        (err) => {
+          console.error('Error listening to run indicator:', err);
+          setKapitelIndicatorById((prev) => ({ ...prev, [kapitelId]: { stage: 0, isProcessing: false } }));
+        }
+      );
+
+      kapitelIndicatorUnsubsRef.current.set(kapitelId, { runId, unsubscribe });
+    }
+  }, [user?.uid, kapiteln, computeKapitelIndicatorFromRunDoc]);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      for (const entry of kapitelArtifactUnsubsRef.current.values()) {
+        entry.unsubscribe();
+      }
+      kapitelArtifactUnsubsRef.current.clear();
+      setKapitelArtifactStageById({});
+      return;
+    }
+
+    const db = firestoreClient;
+
+    const desiredByKapitel = new Map<string, string>();
+    for (const kapitel of kapiteln) {
+      const runId = (kapitel.activeRunId || kapitel.latestRunId || '').trim();
+      if (runId) desiredByKapitel.set(kapitel.id, runId);
+    }
+
+    for (const [kapitelId, entry] of kapitelArtifactUnsubsRef.current.entries()) {
+      const desiredRunId = desiredByKapitel.get(kapitelId);
+      if (!desiredRunId || desiredRunId !== entry.runId) {
+        entry.unsubscribe();
+        kapitelArtifactUnsubsRef.current.delete(kapitelId);
+        setKapitelArtifactStageById((prev) => {
+          if (!prev[kapitelId]) return prev;
+          const next = { ...prev };
+          delete next[kapitelId];
+          return next;
+        });
+      }
+    }
+
+    const isArtifactSuccess = (data: any) => {
+      const status = typeof data?.status === 'string' ? data.status : '';
+      const content = typeof data?.content === 'string' ? data.content : '';
+      return status === 'success' || content.trim().length > 0;
+    };
+
+    for (const [kapitelId, runId] of desiredByKapitel.entries()) {
+      if (kapitelArtifactUnsubsRef.current.has(kapitelId)) continue;
+
+      let combinedOk = false;
+      let shortenedOk = false;
+      let leseflussOk = false;
+
+      const recompute = () => {
+        const stage: 0 | 1 | 2 | 3 | 4 = leseflussOk ? 4 : shortenedOk ? 3 : combinedOk ? 2 : 0;
+        setKapitelArtifactStageById((prev) => ({ ...prev, [kapitelId]: stage }));
+      };
+
+      const onError = (err: unknown) => {
+        console.error('Error listening to artifact indicator:', kapitelId, runId, err);
+        setKapitelArtifactStageById((prev) => ({ ...prev, [kapitelId]: 0 }));
+      };
+
+      const combinedRef = doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId, 'artifacts', 'combined');
+      const shortenedRef = doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId, 'artifacts', 'shortened');
+      const leseflussRef = doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId, 'artifacts', 'lesefluss');
+
+      const unsubCombined = onSnapshot(
+        combinedRef,
+        (snap) => {
+          combinedOk = snap.exists() && isArtifactSuccess(snap.data());
+          recompute();
+        },
+        onError
+      );
+      const unsubShortened = onSnapshot(
+        shortenedRef,
+        (snap) => {
+          shortenedOk = snap.exists() && isArtifactSuccess(snap.data());
+          recompute();
+        },
+        onError
+      );
+      const unsubLesefluss = onSnapshot(
+        leseflussRef,
+        (snap) => {
+          leseflussOk = snap.exists() && isArtifactSuccess(snap.data());
+          recompute();
+        },
+        onError
+      );
+
+      const unsubscribe = () => {
+        unsubCombined();
+        unsubShortened();
+        unsubLesefluss();
+      };
+
+      kapitelArtifactUnsubsRef.current.set(kapitelId, { runId, unsubscribe });
+    }
+  }, [user?.uid, kapiteln]);
+
+  // Compute "overall" stage across ALL runs of a Kapitel (slow path for legacy data where artifactsStatus is missing).
+  // This makes the left-panel indicator match what you see in the Kapitel workspace, even if the best text lives in an older run.
+  useEffect(() => {
+    if (!user?.uid) {
+      kapitelOverallStageInFlightRef.current.clear();
+      kapitelOverallStageComputedRef.current.clear();
+      setKapitelOverallStageById({});
+      return;
+    }
+
+    const db = firestoreClient;
+    let cancelled = false;
+
+    const isArtifactSuccess = (data: any) => {
+      const status = typeof data?.status === 'string' ? data.status : '';
+      const content = typeof data?.content === 'string' ? data.content : '';
+      return status === 'success' || content.trim().length > 0;
+    };
+
+    const computeOverallStageForKapitel = async (kapitelId: string) => {
+      try {
+        const runsRef = collection(db, 'users', user.uid, 'kapitels', kapitelId, 'runs');
+        const runsSnap = await getDocs(
+          query(runsRef, where('archived', '==', false), orderBy('index', 'desc'), limit(MAX_RUN_HISTORY_LIMIT))
+        );
+
+        const runs = runsSnap.docs.map((d) => ({ id: d.id, data: d.data() as any }));
+
+        const hasStatus = (artifactId: 'combined' | 'shortened' | 'lesefluss') =>
+          runs.some((r) => (r.data?.artifactsStatus ?? {})[artifactId] === 'success');
+
+        if (hasStatus('lesefluss')) return 4 as const;
+        if (hasStatus('shortened')) return 3 as const;
+        if (hasStatus('combined')) return 2 as const;
+
+        const runIds = runs.map((r) => r.id);
+
+        for (const runId of runIds) {
+          const snap = await getDoc(
+            doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId, 'artifacts', 'lesefluss')
+          );
+          if (snap.exists() && isArtifactSuccess(snap.data())) return 4 as const;
+        }
+
+        for (const runId of runIds) {
+          const snap = await getDoc(
+            doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId, 'artifacts', 'shortened')
+          );
+          if (snap.exists() && isArtifactSuccess(snap.data())) return 3 as const;
+        }
+
+        for (const runId of runIds) {
+          const snap = await getDoc(
+            doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId, 'artifacts', 'combined')
+          );
+          if (snap.exists() && isArtifactSuccess(snap.data())) return 2 as const;
+        }
+
+        return 0 as const;
+      } catch (err) {
+        console.error('Failed to compute overall Kapitel stage:', kapitelId, err);
+        return 0 as const;
+      }
+    };
+
+    const kapitelIds = kapiteln.map((k) => k.id).filter((id) => !kapitelOverallStageComputedRef.current.has(id));
+    if (!kapitelIds.length) return;
+
+    let cursor = 0;
+    const concurrency = 4;
+
+    const worker = async () => {
+      while (true) {
+        const kapitelId = kapitelIds[cursor++];
+        if (!kapitelId) return;
+
+        if (kapitelOverallStageInFlightRef.current.has(kapitelId)) continue;
+        kapitelOverallStageInFlightRef.current.add(kapitelId);
+
+        const stage = await computeOverallStageForKapitel(kapitelId);
+
+        kapitelOverallStageInFlightRef.current.delete(kapitelId);
+        kapitelOverallStageComputedRef.current.add(kapitelId);
+
+        if (!cancelled) {
+          setKapitelOverallStageById((prev) => ({
+            ...prev,
+            [kapitelId]: Math.max(prev[kapitelId] ?? 0, stage) as 0 | 1 | 2 | 3 | 4,
+          }));
+        }
+      }
+    };
+
+    Promise.all(Array.from({ length: concurrency }, worker));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, kapiteln]);
 
   // hide initial skeleton once first client render completes
   useEffect(() => {
@@ -2488,6 +2798,19 @@ export function Dashboard({
   const kapitelWorkspaceLoading =
     isKapitelLoading || (fbRuns.length > 0 && runs.length === 0) || (runs.length > 0 && !selectedRun);
 
+  const kapitelNavigatorIndicators = kapiteln.reduce<Record<string, { stage: 0 | 1 | 2 | 3 | 4; isProcessing: boolean }>>(
+    (acc, kapitel) => {
+      const base = kapitelIndicatorById[kapitel.id];
+      const artifactStage = kapitelArtifactStageById[kapitel.id] ?? 0;
+      const overallStage = kapitelOverallStageById[kapitel.id] ?? 0;
+      const stage = (Math.max(base?.stage ?? 0, artifactStage, overallStage) as 0 | 1 | 2 | 3 | 4);
+      const isProcessing = base?.isProcessing ?? false;
+      acc[kapitel.id] = { stage, isProcessing };
+      return acc;
+    },
+    {}
+  );
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Left Navigator */}
@@ -2505,6 +2828,7 @@ export function Dashboard({
         />
         <KapitelNavigator
           kapiteln={kapiteln}
+          kapitelIndicators={kapitelNavigatorIndicators}
           activeKapitelId={activeKapitelId}
           onKapitelSelect={handleKapitelSelect}
           onAddKapitel={handleAddKapitel}

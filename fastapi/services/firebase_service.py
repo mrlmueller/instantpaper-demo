@@ -429,6 +429,8 @@ class FirebaseService:
                 "updatedAt": SERVER_TIMESTAMP,
             }
             prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
+            if prev_status == "running":
+                run_update["resultsRunningCount"] = Increment(-1)
             should_count_completion = is_new or prev_status == "running"
             if should_count_completion:
                 run_update["resultsCompletedCount"] = Increment(1)
@@ -533,11 +535,11 @@ class FirebaseService:
                 .collection("runs")
                 .document(run_id)
             )
-            batch.set(
-                run_ref,
-                {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP},
-                merge=True,
-            )
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
+            run_update: dict = {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP}
+            if prev_status != "running":
+                run_update["resultsRunningCount"] = Increment(1)
+            batch.set(run_ref, run_update, merge=True)
             batch.commit()
         except Exception as e:
             logger.error(f"Error marking result running: {e}")
@@ -593,6 +595,8 @@ class FirebaseService:
                 .document(run_id)
             )
             run_update: dict = {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP}
+            if prev_status == "running":
+                run_update["resultsRunningCount"] = Increment(-1)
             if should_count_completion:
                 run_update["resultsCompletedCount"] = Increment(1)
             batch.set(run_ref, run_update, merge=True)
@@ -808,6 +812,34 @@ class FirebaseService:
         except Exception as e:
             logger.error(f"Error setting run artifact status ({artifact_id}={status}): {e}")
 
+    async def increment_run_refinement_running_count(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        delta: int,
+    ) -> None:
+        """Increment runs/{runId}.refinementRunningCount (used to show refinement activity)."""
+        try:
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(kapitel_id)
+                .collection("runs")
+                .document(run_id)
+            )
+            run_ref.set(
+                {
+                    "refinementRunningCount": Increment(int(delta)),
+                    "lastActivityAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+        except Exception as e:
+            logger.error(f"Error incrementing refinementRunningCount (delta={delta}): {e}")
+
     async def mark_artifact_running(
         self,
         user_id: str,
@@ -924,13 +956,17 @@ class FirebaseService:
                 .collection("runs")
                 .document(run_id)
             )
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
+            run_update: dict = {
+                f"artifactsStatus.{artifact_id}": "running",
+                "lastActivityAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            }
+            if prev_status != "running":
+                run_update["artifactsRunningCount"] = Increment(1)
             batch.set(
                 run_ref,
-                {
-                    f"artifactsStatus.{artifact_id}": "running",
-                    "lastActivityAt": SERVER_TIMESTAMP,
-                    "updatedAt": SERVER_TIMESTAMP,
-                },
+                run_update,
                 merge=True,
             )
             batch.commit()
@@ -968,6 +1004,7 @@ class FirebaseService:
                 if existing.exists and existing_data.get("startedAt") is not None
                 else SERVER_TIMESTAMP
             )
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
 
             update = {
                 "artifactId": artifact_id,
@@ -992,13 +1029,16 @@ class FirebaseService:
                 .collection("runs")
                 .document(run_id)
             )
+            run_update: dict = {
+                f"artifactsStatus.{artifact_id}": "error",
+                "lastActivityAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            }
+            if prev_status == "running":
+                run_update["artifactsRunningCount"] = Increment(-1)
             batch.set(
                 run_ref,
-                {
-                    f"artifactsStatus.{artifact_id}": "error",
-                    "lastActivityAt": SERVER_TIMESTAMP,
-                    "updatedAt": SERVER_TIMESTAMP,
-                },
+                run_update,
                 merge=True,
             )
             batch.commit()
@@ -1465,13 +1505,17 @@ class FirebaseService:
                 .collection("runs")
                 .document(run_id)
             )
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
+            run_update: dict = {
+                "artifactsStatus.combined": "success",
+                "lastActivityAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            }
+            if prev_status == "running":
+                run_update["artifactsRunningCount"] = Increment(-1)
             batch.set(
                 run_ref,
-                {
-                    "artifactsStatus.combined": "success",
-                    "lastActivityAt": SERVER_TIMESTAMP,
-                    "updatedAt": SERVER_TIMESTAMP,
-                },
+                run_update,
                 merge=True,
             )
 
@@ -1830,13 +1874,17 @@ class FirebaseService:
                 .collection("runs")
                 .document(run_id)
             )
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
+            run_update: dict = {
+                "artifactsStatus.shortened": "success",
+                "lastActivityAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            }
+            if prev_status == "running":
+                run_update["artifactsRunningCount"] = Increment(-1)
             batch.set(
                 run_ref,
-                {
-                    "artifactsStatus.shortened": "success",
-                    "lastActivityAt": SERVER_TIMESTAMP,
-                    "updatedAt": SERVER_TIMESTAMP,
-                },
+                run_update,
                 merge=True,
             )
             batch.commit()
@@ -1956,13 +2004,17 @@ class FirebaseService:
                 .collection("runs")
                 .document(run_id)
             )
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
+            run_update: dict = {
+                "artifactsStatus.lesefluss": "success",
+                "lastActivityAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            }
+            if prev_status == "running":
+                run_update["artifactsRunningCount"] = Increment(-1)
             batch.set(
                 run_ref,
-                {
-                    "artifactsStatus.lesefluss": "success",
-                    "lastActivityAt": SERVER_TIMESTAMP,
-                    "updatedAt": SERVER_TIMESTAMP,
-                },
+                run_update,
                 merge=True,
             )
             batch.commit()
@@ -2031,16 +2083,6 @@ class FirebaseService:
             started_at_value = (
                 existing_data.get("startedAt")
                 if existing.exists and existing_data.get("startedAt") is not None
-                else created_at_value
-            )
-            started_at_value = (
-                existing_data.get("startedAt")
-                if existing.exists and existing_data.get("startedAt") is not None
-                else created_at_value
-            )
-            started_at_value = (
-                existing_data.get("startedAt")
-                if existing.exists and existing_data.get("startedAt") is not None
                 else SERVER_TIMESTAMP
             )
 
@@ -2081,11 +2123,11 @@ class FirebaseService:
                 .collection("runs")
                 .document(target_run_id)
             )
-            batch.set(
-                run_ref,
-                {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP},
-                merge=True,
-            )
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
+            run_update: dict = {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP}
+            if prev_status != "running":
+                run_update["summariesRunningCount"] = Increment(1)
+            batch.set(run_ref, run_update, merge=True)
             batch.commit()
         except Exception as e:
             logger.error(f"Error marking summary running ({source_kapitel_id}): {e}")
@@ -2120,6 +2162,7 @@ class FirebaseService:
                 if existing.exists and existing_data.get("startedAt") is not None
                 else SERVER_TIMESTAMP
             )
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
 
             update = {
                 "status": "error",
@@ -2131,7 +2174,24 @@ class FirebaseService:
                 "updatedAt": SERVER_TIMESTAMP,
                 "finishedAt": SERVER_TIMESTAMP,
             }
-            summary_ref.set(update, merge=True)
+
+            batch = self.db.batch()
+            batch.set(summary_ref, update, merge=True)
+
+            run_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("kapitels")
+                .document(target_kapitel_id)
+                .collection("runs")
+                .document(target_run_id)
+            )
+            run_update: dict = {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP}
+            if prev_status == "running":
+                run_update["summariesRunningCount"] = Increment(-1)
+            batch.set(run_ref, run_update, merge=True)
+
+            batch.commit()
         except Exception as e:
             logger.error(f"Error marking summary error ({source_kapitel_id}): {e}")
 
@@ -2166,6 +2226,7 @@ class FirebaseService:
                 if existing.exists and existing_data.get("startedAt") is not None
                 else created_at_value
             )
+            prev_status = existing_data.get("status") if isinstance(existing_data, dict) else None
 
             usage = summary_data.get("usage") if isinstance(summary_data.get("usage"), dict) else {}
             input_tokens = int(usage.get("inputTokens", 0))
@@ -2211,11 +2272,10 @@ class FirebaseService:
                 .collection("runs")
                 .document(target_run_id)
             )
-            batch.set(
-                run_ref,
-                {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP},
-                merge=True,
-            )
+            run_update: dict = {"lastActivityAt": SERVER_TIMESTAMP, "updatedAt": SERVER_TIMESTAMP}
+            if prev_status == "running":
+                run_update["summariesRunningCount"] = Increment(-1)
+            batch.set(run_ref, run_update, merge=True)
             batch.commit()
             logger.info(
                 f"Saved summary for source Kapitel {source_kapitel_id} "

@@ -30,6 +30,7 @@ export interface Kapitel {
   title: string;
   nummer: string; // e.g., "1", "1.1", "1.1.1" - hierarchical chapter number
   status: "nicht-verarbeitet" | "in-bearbeitung" | "fertig";
+  latestRunId?: string;
   order: number;
   projektId: string;
   assignedQuellenIds: string[]; // Maps to Firebase 'quelleIds'

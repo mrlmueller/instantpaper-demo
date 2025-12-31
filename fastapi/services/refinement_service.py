@@ -420,6 +420,12 @@ class RefinementService:
         await firebase_service.save_combined_refinement_version(
             user_id, kapitel_id, run_id, version_id, pending
         )
+        await firebase_service.increment_run_refinement_running_count(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            delta=1,
+        )
 
         return {
             "status": "queued",
@@ -629,6 +635,16 @@ class RefinementService:
                 )
             except Exception:
                 pass
+        finally:
+            try:
+                await firebase_service.increment_run_refinement_running_count(
+                    user_id=user_id,
+                    kapitel_id=kapitel_id,
+                    run_id=run_id,
+                    delta=-1,
+                )
+            except Exception:
+                pass
 
     async def queue_shortened_refinement(
         self,
@@ -690,6 +706,12 @@ class RefinementService:
         }
         await firebase_service.save_shortened_refinement_version(
             user_id, kapitel_id, run_id, version_id, pending
+        )
+        await firebase_service.increment_run_refinement_running_count(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            delta=1,
         )
 
         return {
@@ -970,6 +992,16 @@ class RefinementService:
                 )
             except Exception:
                 pass
+        finally:
+            try:
+                await firebase_service.increment_run_refinement_running_count(
+                    user_id=user_id,
+                    kapitel_id=kapitel_id,
+                    run_id=run_id,
+                    delta=-1,
+                )
+            except Exception:
+                pass
 
     async def queue_lesefluss_refinement(
         self,
@@ -1031,6 +1063,12 @@ class RefinementService:
         }
         await firebase_service.save_lesefluss_refinement_version(
             user_id, kapitel_id, run_id, version_id, pending
+        )
+        await firebase_service.increment_run_refinement_running_count(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            delta=1,
         )
 
         return {
@@ -1351,6 +1389,16 @@ class RefinementService:
                 )
             except Exception:
                 pass
+        finally:
+            try:
+                await firebase_service.increment_run_refinement_running_count(
+                    user_id=user_id,
+                    kapitel_id=kapitel_id,
+                    run_id=run_id,
+                    delta=-1,
+                )
+            except Exception:
+                pass
 
     async def queue_result_refinement(
         self,
@@ -1414,6 +1462,12 @@ class RefinementService:
         }
         await firebase_service.save_result_refinement_version(
             user_id, kapitel_id, run_id, quelle_id, version_id, pending
+        )
+        await firebase_service.increment_run_refinement_running_count(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            delta=1,
         )
 
         return {
@@ -1684,6 +1738,16 @@ class RefinementService:
                         "errorMessage": AI_GENERIC_ERROR_MESSAGE,
                         "updatedAt": SERVER_TIMESTAMP,
                     },
+                )
+            except Exception:
+                pass
+        finally:
+            try:
+                await firebase_service.increment_run_refinement_running_count(
+                    user_id=user_id,
+                    kapitel_id=kapitel_id,
+                    run_id=run_id,
+                    delta=-1,
                 )
             except Exception:
                 pass

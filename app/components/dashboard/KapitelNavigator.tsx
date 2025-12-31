@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { Circle, CheckCircle2, Clock, Plus, Trash2, MoreVertical, Pencil, Loader2 } from "lucide-react"
+import { Plus, Trash2, MoreVertical, Pencil, Loader2, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -10,8 +10,16 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { Kapitel } from "@/app/types/ui"
 
+type KapitelStage = 0 | 1 | 2 | 3 | 4
+
+type KapitelIndicator = {
+  stage: KapitelStage
+  isProcessing: boolean
+}
+
 interface KapitelNavigatorProps {
   kapiteln: Kapitel[]
+  kapitelIndicators: Record<string, KapitelIndicator>
   activeKapitelId: string
   onKapitelSelect: (id: string) => void
   onAddKapitel: (title: string, nummer: string) => Promise<void>
@@ -21,22 +29,52 @@ interface KapitelNavigatorProps {
   editKapitelLoading: boolean
 }
 
-const statusConfig = {
-  "nicht-verarbeitet": {
-    icon: Circle,
-    color: "text-muted-foreground/40",
-    label: "Noch nicht verarbeitet",
-  },
-  "in-bearbeitung": {
-    icon: Clock,
-    color: "text-amber-500",
-    label: "In Bearbeitung",
-  },
-  fertig: {
-    icon: CheckCircle2,
-    color: "text-primary",
-    label: "Fertig",
-  },
+function KapitelStageIndicator({ stage, isProcessing }: KapitelIndicator) {
+  if (isProcessing) {
+    return <Loader2 className="h-4 w-4 mt-0.5 shrink-0 animate-spin text-orange-500" />
+  }
+
+  const progress = stage / 4
+  const radius = 6
+  const circumference = 2 * Math.PI * radius
+  const dashOffset = circumference * (1 - progress)
+
+  const label =
+    stage === 4 ? "Verbessert" : stage === 3 ? "Gekürzt" : stage === 2 ? "Kombiniert" : stage === 1 ? "Quellen" : "Noch nicht verarbeitet"
+
+  return (
+    <div className="relative h-4 w-4 mt-0.5 shrink-0" aria-label={label}>
+      <svg width="16" height="16" viewBox="0 0 16 16" className="h-4 w-4">
+        <title>{label}</title>
+        <circle
+          cx="8"
+          cy="8"
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          className="text-muted-foreground/30"
+        />
+        <circle
+          cx="8"
+          cy="8"
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+          transform="rotate(-90 8 8)"
+          className={cn(stage > 0 ? "text-primary" : "text-transparent")}
+        />
+      </svg>
+
+      {stage === 4 && (
+        <Check className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 text-primary" />
+      )}
+    </div>
+  )
 }
 
 function getIndentLevel(nummer: string): number {
@@ -63,6 +101,7 @@ function sortByNummer(a: Kapitel, b: Kapitel): number {
 
 export function KapitelNavigator({
   kapiteln,
+  kapitelIndicators,
   activeKapitelId,
   onKapitelSelect,
   onAddKapitel,
@@ -137,9 +176,8 @@ export function KapitelNavigator({
         <div className="space-y-0.5">
           {sortedKapiteln.map((kapitel) => {
             const isActive = kapitel.id === activeKapitelId
-            const StatusIcon = statusConfig[kapitel.status].icon
-            const statusColor = statusConfig[kapitel.status].color
             const indentLevel = getIndentLevel(kapitel.nummer)
+            const indicator = kapitelIndicators[kapitel.id] ?? { stage: 0, isProcessing: false }
 
             return (
               <div
@@ -160,7 +198,7 @@ export function KapitelNavigator({
                   )}
                 >
                   <div className="flex items-start gap-2">
-                    <StatusIcon className={cn("h-4 w-4 mt-0.5 shrink-0", statusColor)} />
+                    <KapitelStageIndicator stage={indicator.stage} isProcessing={indicator.isProcessing} />
                     <div className="flex-1 min-w-0">
                       <div
                         className={cn(
