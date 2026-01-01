@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Play, Sparkles, Settings2, FileText, Wand2, MessageSquareText, Loader2 } from "lucide-react"
+import { ChevronDown, FileText, Loader2, Play, Settings2, Wand2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -11,14 +11,15 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { ProcessingSettings } from "@/app/types/ui"
-  import type { ActivePromptSelections, PromptStage, PromptTemplate, SystemPromptTemplateMeta } from "@/app/types/prompts"
-import { STAGE_CONFIG } from "@/app/lib/prompts/promptConfig"
+import type { ActivePromptSelections, PromptStage, PromptTemplate, SystemPromptTemplateMeta } from "@/app/types/prompts"
+import { cn } from "@/lib/utils"
 
 interface ProcessingDialogProps {
   open: boolean
@@ -52,8 +53,9 @@ export function ProcessingDialog({
     ueberschrift: kapitelTitle,
     thema: kapitelThema || "",
     grundlegendeInfos: "",
-    directCombine: true,
+    directCombine: false,
   })
+  const [additionalOptionsOpen, setAdditionalOptionsOpen] = useState(false)
   const prevOpenRef = useRef(open)
   const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
     process_quelle: (promptActive?.process_quelle as string | "default") || "default",
@@ -107,8 +109,9 @@ export function ProcessingDialog({
       ueberschrift: kapitelTitle,
       thema: kapitelThema || "",
       grundlegendeInfos: "",
-      directCombine: true,
+      directCombine: false,
     })
+    setAdditionalOptionsOpen(false)
   }, [open, kapitelTitle, kapitelThema])
 
   const handleProcess = async () => {
@@ -128,6 +131,16 @@ export function ProcessingDialog({
 
   const showPromptSelectors = askOnEachProcess
 
+  const modelOptions: Array<{
+    value: ProcessingSettings["model"]
+    label: string
+    description: string
+  }> = [
+    { value: "gpt-5-nano", label: "GPT-5 nano", description: "Schnell" },
+    { value: "gpt-5-mini", label: "GPT-5 mini", description: "Ausgewogen" },
+    { value: "gpt-5.2", label: "GPT-5.2", description: "Beste Qualität" },
+  ]
+
   const renderPromptSelect = (stage: PromptStage, label: string) => {
     const stageTemplates = templatesByStage(stage)
     const stageSystemTemplates = systemTemplatesByStage(stage)
@@ -136,7 +149,7 @@ export function ProcessingDialog({
     const value = promptChoice[stage] || "default"
     return (
       <div className="space-y-2">
-        <Label className="text-sm">Prompt für {label}</Label>
+        <Label className="text-sm font-medium">{label}</Label>
         <Select
           value={value}
           onValueChange={(val) =>
@@ -149,7 +162,7 @@ export function ProcessingDialog({
             })
           }
         >
-          <SelectTrigger className="mt-1.5">
+          <SelectTrigger className="mt-2">
             <SelectValue placeholder="System-Standard" />
           </SelectTrigger>
           <SelectContent>
@@ -165,63 +178,43 @@ export function ProcessingDialog({
             ))}
           </SelectContent>
         </Select>
-        {STAGE_CONFIG[stage]?.tooltip && (
-          <p className="text-xs text-muted-foreground">{STAGE_CONFIG[stage].tooltip}</p>
-        )}
       </div>
     )
   }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-xl [&>button]:hidden">
-        <DialogHeader className="pb-4 border-b">
-          <DialogTitle className="flex items-center gap-2 text-lg">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Sparkles className="h-4 w-4 text-primary" />
-            </div>
-            Kapitel verarbeiten
-          </DialogTitle>
+      <DialogContent className="sm:max-w-[560px] p-0 gap-0 max-h-[80vh] overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b text-left">
+          <DialogTitle>Kapitel verarbeiten</DialogTitle>
           <DialogDescription className="pt-1">{quellenCount} Quellen zugewiesen</DialogDescription>
         </DialogHeader>
 
-        <div className="py-5 space-y-6 max-h-[60vh] overflow-y-auto">
-          {showPromptSelectors && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                <MessageSquareText className="h-4 w-4" />
-                Prompts
-              </div>
-              <div className="grid gap-4 pl-6">
-                {renderPromptSelect("process_quelle", STAGE_CONFIG.process_quelle.label)}
-                {settings.directCombine && renderPromptSelect("combine", STAGE_CONFIG.combine.label)}
-              </div>
-            </div>
-          )}
-
+        <div className="px-6 py-5 space-y-6 max-h-[60vh] overflow-y-auto">
           {/* Section 1: Kapitel Info */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <FileText className="h-4 w-4" />
-              Kapitelinformationen
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <span>Kapitelinformationen</span>
+              <span className="text-destructive" aria-hidden="true">*</span>
             </div>
 
             <div className="grid gap-4 pl-6">
               <div>
-                <Label htmlFor="ueberschrift" className="text-sm">
-                  Ueberschrift
+                <Label htmlFor="ueberschrift" className="text-sm font-medium">
+                  Überschrift
                 </Label>
                 <Input
                   id="ueberschrift"
                   value={settings.ueberschrift}
                   onChange={(e) => setSettings({ ...settings, ueberschrift: e.target.value })}
                   placeholder="z.B. Einleitung"
-                  className="mt-1.5"
+                  className="mt-2"
                 />
               </div>
 
               <div>
-                <Label htmlFor="thema" className="text-sm">
+                <Label htmlFor="thema" className="text-sm font-medium">
                   Thema & Anweisungen
                 </Label>
                 <Textarea
@@ -229,76 +222,70 @@ export function ProcessingDialog({
                   value={settings.thema}
                   onChange={(e) => setSettings({ ...settings, thema: e.target.value })}
                   placeholder="Beschreibe, worum es in diesem Kapitel gehen soll und gib spezifische Anweisungen..."
-                  className="mt-1.5 min-h-[80px] resize-none"
+                  className="mt-2 min-h-[110px] resize-none"
                 />
               </div>
 
-              <div>
-                <Label htmlFor="grundlegende-infos" className="text-sm">
-                  Grundlegende Informationen
-                  <span className="text-muted-foreground font-normal ml-1">(optional)</span>
-                </Label>
-                <Textarea
-                  id="grundlegende-infos"
-                  value={settings.grundlegendeInfos}
-                  onChange={(e) => setSettings({ ...settings, grundlegendeInfos: e.target.value })}
-                  placeholder="Hintergrundinformationen, Kontext oder zusaetzliche Details, die bei der Verarbeitung beruecksichtigt werden sollen..."
-                  className="mt-1.5 min-h-[70px] resize-none"
-                />
-              </div>
             </div>
           </div>
 
+          <div className="border-t" />
+
           {/* Section 2: Processing Settings */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Settings2 className="h-4 w-4" />
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Settings2 className="h-4 w-4 text-muted-foreground" />
               Verarbeitungseinstellungen
             </div>
 
             <div className="grid gap-4 pl-6">
               <div>
-                <Label htmlFor="model" className="text-sm">
-                  KI-Modell
-                </Label>
-                <Select
-                  value={settings.model}
-                  onValueChange={(value) => setSettings({ ...settings, model: value as ProcessingSettings["model"] })}
-                >
-                  <SelectTrigger className="mt-1.5">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="gpt-5-nano">
-                      <div className="flex items-center justify-between w-full gap-4">
-                        <span>GPT-5 nano</span>
-                        <span className="text-xs text-muted-foreground">Empfohlen</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="gpt-5-mini">
-                      <div className="flex items-center justify-between w-full gap-4">
-                        <span>GPT-5 mini</span>
-                        <span className="text-xs text-muted-foreground">Beste Qualitaet</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="gpt-5.2">
-                      <div className="flex items-center justify-between w-full gap-4">
-                        <span>GPT-5.2</span>
-                        <span className="text-xs text-muted-foreground">Beste Qualitaet</span>
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label className="text-sm font-medium">KI-Modell</Label>
+                <div role="radiogroup" aria-label="KI-Modell" className="mt-2 grid grid-cols-3 gap-3">
+                  {modelOptions.map((opt) => {
+                    const selected = settings.model === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => setSettings({ ...settings, model: opt.value })}
+                        className={cn(
+                          "rounded-lg border px-3 py-2.5 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30",
+                          selected ? "border-primary bg-primary/5" : "border-border bg-background hover:bg-muted/40"
+                        )}
+                      >
+                        <div className="text-sm font-medium leading-tight">{opt.label}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{opt.description}</div>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
 
-              <div className="flex items-center justify-between py-3 px-4 bg-muted/40 rounded-lg">
+              <div className="flex items-center justify-between py-3 px-4 border bg-muted/20 rounded-lg">
                 <div className="flex items-center gap-3">
                   <Wand2 className="h-4 w-4 text-muted-foreground" />
                   <div>
-                    <Label htmlFor="direct-combine" className="text-sm font-medium cursor-pointer">
-                      Direkt kombinieren
-                    </Label>
-                    <p className="text-xs text-muted-foreground mt-0.5">Erstellt sofort einen zusammenhaengenden Text</p>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="direct-combine" className="text-sm font-medium cursor-pointer">
+                        Direkt kombinieren
+                      </Label>
+                      <span
+                        className={cn(
+                          "text-xs font-medium px-2 py-0.5 rounded-md border",
+                          settings.directCombine
+                            ? "border-border bg-muted/40 text-muted-foreground"
+                            : "border-border bg-background text-muted-foreground"
+                        )}
+                      >
+                        {settings.directCombine ? "Aktiviert" : "Deaktiviert"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Erstellt sofort einen zusammenhaengenden Text
+                    </p>
                   </div>
                 </div>
                 <Switch
@@ -307,19 +294,73 @@ export function ProcessingDialog({
                   onCheckedChange={(checked) => setSettings({ ...settings, directCombine: checked })}
                 />
               </div>
+
+              <Collapsible open={additionalOptionsOpen} onOpenChange={setAdditionalOptionsOpen}>
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between py-2 px-4 rounded-lg hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-muted-foreground">Zusätzliche Optionen</span>
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-md border text-muted-foreground bg-background">
+                        Optional
+                      </span>
+                    </div>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 text-muted-foreground transition-transform",
+                        additionalOptionsOpen && "rotate-180"
+                      )}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pt-3">
+                  <div className="grid gap-4">
+                    <div>
+                      <Label htmlFor="grundlegende-infos" className="text-sm font-medium">
+                        Grundlegende Informationen
+                        <span className="text-muted-foreground font-normal ml-1">(optional)</span>
+                      </Label>
+                      <Textarea
+                        id="grundlegende-infos"
+                        value={settings.grundlegendeInfos}
+                        onChange={(e) => setSettings({ ...settings, grundlegendeInfos: e.target.value })}
+                        placeholder="Hintergrundinformationen, Kontext oder zusaetzliche Details, die bei der Verarbeitung beruecksichtigt werden sollen..."
+                        className="mt-2 min-h-[90px] resize-none"
+                      />
+                    </div>
+
+                    {showPromptSelectors && (
+                      <div className="pt-4">
+                        <div className="text-sm font-semibold">Custom Prompts</div>
+                        <div className="mt-3 grid gap-4">
+                          {renderPromptSelect("process_quelle", "Prompt für Quelle schreiben")}
+                          {settings.directCombine && renderPromptSelect("combine", "Prompt für Kombinieren")}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
             </div>
           </div>
         </div>
 
-        <DialogFooter className="pt-4 border-t gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="px-6 py-4 border-t gap-2 sm:justify-between">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Abbrechen
           </Button>
           <Button
             onClick={handleProcess}
             disabled={
-              quellenCount === 0 || !settings.ueberschrift.trim() || localProcessing || isProcessing
+              quellenCount === 0 ||
+              !settings.ueberschrift.trim() ||
+              !settings.thema.trim() ||
+              localProcessing ||
+              isProcessing
             }
+            className="min-w-[210px]"
           >
             {localProcessing || isProcessing ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
