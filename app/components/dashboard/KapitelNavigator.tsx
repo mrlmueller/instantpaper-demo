@@ -34,13 +34,25 @@ function KapitelStageIndicator({ stage, isProcessing }: KapitelIndicator) {
     return <Loader2 className="h-4 w-4 mt-0.5 shrink-0 animate-spin text-orange-500" />
   }
 
+  if (stage === 4) {
+    return (
+      <div
+        className="mt-0.5 shrink-0 h-4 w-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center"
+        aria-label="Verbessert"
+        title="Verbessert"
+      >
+        <Check className="h-3 w-3" />
+      </div>
+    )
+  }
+
   const progress = stage / 4
   const radius = 6
   const circumference = 2 * Math.PI * radius
   const dashOffset = circumference * (1 - progress)
 
   const label =
-    stage === 4 ? "Verbessert" : stage === 3 ? "Gekürzt" : stage === 2 ? "Kombiniert" : stage === 1 ? "Quellen" : "Noch nicht verarbeitet"
+    stage === 3 ? "Gekürzt" : stage === 2 ? "Kombiniert" : stage === 1 ? "Quellen" : "Noch nicht verarbeitet"
 
   return (
     <div className="relative h-4 w-4 mt-0.5 shrink-0" aria-label={label}>
@@ -69,10 +81,6 @@ function KapitelStageIndicator({ stage, isProcessing }: KapitelIndicator) {
           className={cn(stage > 0 ? "text-primary" : "text-transparent")}
         />
       </svg>
-
-      {stage === 4 && (
-        <Check className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 text-primary" />
-      )}
     </div>
   )
 }
