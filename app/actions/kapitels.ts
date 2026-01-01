@@ -172,6 +172,7 @@ export type KapitelRun = {
 export type Kapitel = {
   id: string;
   title: string;
+  thema?: string | null;
   projektId: string;
   nummer: string;
   createdAt: string;
@@ -360,7 +361,14 @@ async function archiveKapitelInternal(
   });
 }
 
-export async function createKapitel(title: string, quelleIds: string[], parentId: string | null, nummer: string, projektId: string) {
+export async function createKapitel(
+  title: string,
+  quelleIds: string[],
+  parentId: string | null,
+  nummer: string,
+  projektId: string,
+  thema?: string
+) {
   try {
     const user = await requireAuth();
     if (!user) return { success: false, error: 'Not authenticated' };
@@ -377,6 +385,7 @@ export async function createKapitel(title: string, quelleIds: string[], parentId
       projektId,
       title,
       nummer: nummer || '1',
+      thema: thema?.trim() || null,
       parentId: parentId ?? null,
       order: Date.now(),
       quelleIds,
@@ -441,7 +450,7 @@ export async function updateKapitelParent(kapitelId: string, newParentId: string
   }
 }
 
-export async function updateKapitelTitle(kapitelId: string, title: string, nummer: string) {
+export async function updateKapitelTitle(kapitelId: string, title: string, nummer: string, thema?: string) {
   try {
     const user = await requireAuth();
     if (!user) return { success: false, error: 'Not authenticated' };
@@ -449,11 +458,15 @@ export async function updateKapitelTitle(kapitelId: string, title: string, numme
     const ref = kapitelDoc(db, user.uid, kapitelId);
     const snap = await getDoc(ref);
     if (!snap.exists()) throw new Error('Kapitel not found');
-    await updateDoc(ref as unknown as DocumentReference<DocumentData>, {
+    const patch: Record<string, unknown> = {
       title,
       nummer,
       updatedAt: serverTimestamp(),
-    });
+    };
+    if (thema !== undefined) {
+      patch.thema = thema.trim() || null;
+    }
+    await updateDoc(ref as unknown as DocumentReference<DocumentData>, patch);
     revalidatePath('/dashboard');
     return { success: true };
   } catch (error: unknown) {
@@ -701,6 +714,7 @@ export async function getUserKapitels(
       const kapitel: Kapitel = {
         id: docSnap.id,
         title: String(data.title ?? ''),
+        thema: typeof data.thema === 'string' ? data.thema : null,
         projektId: String(data.projektId ?? 'default'),
         nummer: String(data.nummer ?? '1'),
         createdAt: toIso(data.createdAt),

@@ -28,6 +28,7 @@ export interface Quelle {
 export interface Kapitel {
   id: string;
   title: string;
+  thema?: string;
   nummer: string; // e.g., "1", "1.1", "1.1.1" - hierarchical chapter number
   status: "nicht-verarbeitet" | "in-bearbeitung" | "fertig";
   latestRunId?: string;

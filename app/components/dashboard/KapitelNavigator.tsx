@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import type { Kapitel } from "@/app/types/ui"
 
 type KapitelStage = 0 | 1 | 2 | 3 | 4
@@ -22,9 +23,9 @@ interface KapitelNavigatorProps {
   kapitelIndicators: Record<string, KapitelIndicator>
   activeKapitelId: string
   onKapitelSelect: (id: string) => void
-  onAddKapitel: (title: string, nummer: string) => Promise<void>
+  onAddKapitel: (title: string, nummer: string, thema: string) => Promise<void>
   onDeleteKapitel: (id: string, name: string) => void
-  onEditKapitel: (id: string, title: string, nummer: string) => Promise<void>
+  onEditKapitel: (id: string, title: string, nummer: string, thema: string) => Promise<void>
   addKapitelLoading: boolean
   editKapitelLoading: boolean
 }
@@ -123,6 +124,7 @@ export function KapitelNavigator({
   const [editingKapitel, setEditingKapitel] = useState<Kapitel | null>(null)
   const [newKapitelTitle, setNewKapitelTitle] = useState("")
   const [newKapitelNummer, setNewKapitelNummer] = useState("")
+  const [newKapitelThema, setNewKapitelThema] = useState("")
   const [nummerError, setNummerError] = useState("")
   const [localAddLoading, setLocalAddLoading] = useState(false)
   const [localEditLoading, setLocalEditLoading] = useState(false)
@@ -140,9 +142,10 @@ export function KapitelNavigator({
     setLocalAddLoading(true)
     setAddDialogOpen(false)
     try {
-      await onAddKapitel(newKapitelTitle.trim(), newKapitelNummer.trim())
+      await onAddKapitel(newKapitelTitle.trim(), newKapitelNummer.trim(), newKapitelThema.trim())
       setNewKapitelTitle("")
       setNewKapitelNummer("")
+      setNewKapitelThema("")
       setNummerError("")
     } finally {
       setLocalAddLoading(false)
@@ -160,10 +163,11 @@ export function KapitelNavigator({
     setLocalEditLoading(true)
     setEditDialogOpen(false)
     try {
-      await onEditKapitel(editingKapitel.id, newKapitelTitle.trim(), newKapitelNummer.trim())
+      await onEditKapitel(editingKapitel.id, newKapitelTitle.trim(), newKapitelNummer.trim(), newKapitelThema.trim())
       setEditingKapitel(null)
       setNewKapitelTitle("")
       setNewKapitelNummer("")
+      setNewKapitelThema("")
       setNummerError("")
     } finally {
       setLocalEditLoading(false)
@@ -174,6 +178,7 @@ export function KapitelNavigator({
     setEditingKapitel(kapitel)
     setNewKapitelTitle(kapitel.title)
     setNewKapitelNummer(kapitel.nummer)
+    setNewKapitelThema(kapitel.thema || "")
     setNummerError("")
     setEditDialogOpen(true)
   }
@@ -272,6 +277,7 @@ export function KapitelNavigator({
             setNummerError("")
             setNewKapitelTitle("")
             setNewKapitelNummer("")
+            setNewKapitelThema("")
           }
         }}
       >
@@ -310,6 +316,18 @@ export function KapitelNavigator({
                 onKeyDown={(e) => e.key === "Enter" && handleAddKapitel()}
               />
             </div>
+            <div>
+              <Label htmlFor="kapitel-thema" className="text-sm text-muted-foreground">
+                Thema & Anweisungen (Standard)
+              </Label>
+              <Textarea
+                id="kapitel-thema"
+                value={newKapitelThema}
+                onChange={(e) => setNewKapitelThema(e.target.value)}
+                placeholder="Beschreibe, worum es in diesem Kapitel gehen soll und gib spezifische Anweisungen..."
+                className="mt-2 min-h-[90px] resize-none"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
@@ -343,6 +361,7 @@ export function KapitelNavigator({
             setEditingKapitel(null)
             setNewKapitelTitle("")
             setNewKapitelNummer("")
+            setNewKapitelThema("")
           }
         }}
       >
@@ -379,6 +398,18 @@ export function KapitelNavigator({
                 placeholder="z.B. Theoretischer Rahmen"
                 className="mt-2"
                 onKeyDown={(e) => e.key === "Enter" && handleEditKapitel()}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-kapitel-thema" className="text-sm text-muted-foreground">
+                Thema & Anweisungen (Standard)
+              </Label>
+              <Textarea
+                id="edit-kapitel-thema"
+                value={newKapitelThema}
+                onChange={(e) => setNewKapitelThema(e.target.value)}
+                placeholder="Beschreibe, worum es in diesem Kapitel gehen soll und gib spezifische Anweisungen..."
+                className="mt-2 min-h-[90px] resize-none"
               />
             </div>
           </div>

@@ -290,11 +290,12 @@ service cloud.firestore {
             'projektId', 'title', 'nummer', 'parentId', 'order', 'quelleIds', 'createdAt', 'updatedAt', 'archived'
           ])
           && request.resource.data.keys().hasOnly([
-            'projektId', 'title', 'nummer', 'parentId', 'order', 'quelleIds',
+            'projektId', 'title', 'thema', 'nummer', 'parentId', 'order', 'quelleIds',
             'createdAt', 'updatedAt', 'archived', 'archivedAt', 'latestRun', 'activeRunId'
           ])
           && projectExists(userId, request.resource.data.projektId)
           && isNonEmptyString(request.resource.data.title, 500)
+          && (!request.resource.data.keys().hasAny(['thema']) || request.resource.data.thema == null || isString(request.resource.data.thema, 50000))
           && isString(request.resource.data.nummer, 50)
           && (request.resource.data.parentId == null || kapitelExists(userId, request.resource.data.parentId))
           && request.resource.data.order is int
@@ -311,11 +312,12 @@ service cloud.firestore {
             'projektId', 'title', 'nummer', 'parentId', 'order', 'quelleIds', 'createdAt', 'updatedAt', 'archived'
           ])
           && request.resource.data.keys().hasOnly([
-            'projektId', 'title', 'nummer', 'parentId', 'order', 'quelleIds',
+            'projektId', 'title', 'thema', 'nummer', 'parentId', 'order', 'quelleIds',
             'createdAt', 'updatedAt', 'archived', 'archivedAt', 'latestRun', 'activeRunId'
           ])
           && projectExists(userId, request.resource.data.projektId)
           && isNonEmptyString(request.resource.data.title, 500)
+          && (!request.resource.data.keys().hasAny(['thema']) || request.resource.data.thema == null || isString(request.resource.data.thema, 50000))
           && isString(request.resource.data.nummer, 50)
           && (request.resource.data.parentId == null || kapitelExists(userId, request.resource.data.parentId))
           && request.resource.data.order is int

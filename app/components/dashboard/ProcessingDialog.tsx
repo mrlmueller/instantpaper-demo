@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Play, Sparkles, Settings2, FileText, Wand2, MessageSquareText, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -24,6 +24,7 @@ interface ProcessingDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   kapitelTitle: string
+  kapitelThema?: string
   quellenCount: number
   onProcess: (settings: ProcessingSettings) => Promise<void>
   askOnEachProcess: boolean
@@ -37,6 +38,7 @@ export function ProcessingDialog({
   open,
   onOpenChange,
   kapitelTitle,
+  kapitelThema,
   quellenCount,
   onProcess,
   askOnEachProcess,
@@ -48,10 +50,11 @@ export function ProcessingDialog({
   const [settings, setSettings] = useState<ProcessingSettings>({
     model: "gpt-5-mini",
     ueberschrift: kapitelTitle,
-    thema: "",
+    thema: kapitelThema || "",
     grundlegendeInfos: "",
     directCombine: true,
   })
+  const prevOpenRef = useRef(open)
   const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
     process_quelle: (promptActive?.process_quelle as string | "default") || "default",
     combine: (promptActive?.combine as string | "default") || "default",
@@ -94,6 +97,20 @@ export function ProcessingDialog({
     hasTouchedPromptChoice,
   ])
 
+  useEffect(() => {
+    const wasOpen = prevOpenRef.current
+    prevOpenRef.current = open
+    if (!open || wasOpen) return
+
+    setSettings({
+      model: "gpt-5-mini",
+      ueberschrift: kapitelTitle,
+      thema: kapitelThema || "",
+      grundlegendeInfos: "",
+      directCombine: true,
+    })
+  }, [open, kapitelTitle, kapitelThema])
+
   const handleProcess = async () => {
     if (localProcessing || isProcessing) return
     setLocalProcessing(true)
@@ -106,19 +123,6 @@ export function ProcessingDialog({
   }
 
   const handleOpenChange = (open: boolean) => {
-    if (open) {
-      setSettings({
-        model: "gpt-5-mini",
-        ueberschrift: kapitelTitle,
-        thema: "",
-        grundlegendeInfos: "",
-        directCombine: true,
-      })
-      setPromptChoice({
-        process_quelle: (promptActive?.process_quelle as string | "default") || "default",
-        combine: (promptActive?.combine as string | "default") || "default",
-      })
-    }
     onOpenChange(open)
   }
 

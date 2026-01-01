@@ -649,7 +649,8 @@ export function Dashboard({
     });
   }, [user?.uid]);
 
-  const createKapitelClient = useCallback(async (title: string, nummer: string, parentId: string | null = null) => {
+  const createKapitelClient = useCallback(
+    async (title: string, nummer: string, parentId: string | null = null, thema?: string) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
     const db = firestoreClient;
     const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
@@ -657,6 +658,7 @@ export function Dashboard({
       title,
       projektId: projekt.id,
       nummer,
+      thema: thema?.trim() || null,
       quelleIds: [],
       parentId,
       order: Date.now(),
@@ -665,17 +667,23 @@ export function Dashboard({
       archived: false,
     });
     return docRef.id;
-  }, [user?.uid, projekt.id]);
+    },
+    [user?.uid, projekt.id]
+  );
 
-  const updateKapitelTitleClient = useCallback(async (kapitelId: string, title: string, nummer: string) => {
+  const updateKapitelTitleClient = useCallback(async (kapitelId: string, title: string, nummer: string, thema?: string) => {
     if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
     const db = firestoreClient;
     const kapitelRef = doc(db, 'users', user.uid, 'kapitels', kapitelId);
-    await updateDoc(kapitelRef, {
+    const patch: Record<string, unknown> = {
       title,
       nummer,
       updatedAt: serverTimestamp(),
-    });
+    };
+    if (thema !== undefined) {
+      patch.thema = thema.trim() || null;
+    }
+    await updateDoc(kapitelRef, patch);
   }, [user?.uid]);
 
   const deleteKapitelClient = useCallback(
@@ -1130,6 +1138,7 @@ export function Dashboard({
           return {
             id: d.id,
             title: data.title || '',
+            thema: typeof data.thema === 'string' ? data.thema : null,
             projektId: data.projektId || projekt.id,
             nummer: data.nummer || '1',
             createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
@@ -1843,7 +1852,7 @@ export function Dashboard({
     [activeKapitelId, kapiteln, persistKapitelQuellenClient, quellen, unassigningQuelleIds, assigningQuelleIds]
   );
 
-  const handleAddKapitel = useCallback(async (title: string, nummer: string) => {
+  const handleAddKapitel = useCallback(async (title: string, nummer: string, thema: string) => {
     if (isCreatingKapitel) return;
     setIsCreatingKapitel(true);
     const toastId = toast.loading('Kapitel wird erstellt...');
@@ -1852,6 +1861,7 @@ export function Dashboard({
     const newKapitel: Kapitel = {
       id: tempId,
       title,
+      thema,
       nummer,
       status: 'nicht-verarbeitet',
       order: Date.now(),
@@ -1864,7 +1874,7 @@ export function Dashboard({
     setActiveKapitelId(tempId);
 
     try {
-      const newId = await createKapitelClient(title, nummer, null);
+      const newId = await createKapitelClient(title, nummer, null, thema);
       setKapiteln((prev) =>
         prev.map((k) => (k.id === tempId ? { ...k, id: newId } : k))
       );
@@ -1875,7 +1885,7 @@ export function Dashboard({
       });
     } catch (clientErr) {
       // Fallback to server action
-      const result = await createKapitel(title, [], null, nummer, projekt.id);
+      const result = await createKapitel(title, [], null, nummer, projekt.id, thema);
       if (result.success && result.id) {
         setKapiteln((prev) =>
           prev.map((k) => (k.id === tempId ? { ...k, id: result.id! } : k))
@@ -1924,22 +1934,22 @@ export function Dashboard({
     [activeKapitelId, kapiteln, deleteKapitelClient]
   );
 
-  const handleEditKapitel = useCallback(async (id: string, title: string, nummer: string) => {
+  const handleEditKapitel = useCallback(async (id: string, title: string, nummer: string, thema: string) => {
     if (isEditingKapitel) return;
     setIsEditingKapitel(true);
     const toastId = toast.loading('Kapitel wird aktualisiert...');
 
     const prevKapiteln = kapiteln;
-    setKapiteln((prev) => prev.map((k) => (k.id === id ? { ...k, title, nummer } : k)));
+    setKapiteln((prev) => prev.map((k) => (k.id === id ? { ...k, title, nummer, thema } : k)));
 
     try {
-      await updateKapitelTitleClient(id, title, nummer);
+      await updateKapitelTitleClient(id, title, nummer, thema);
       toast.success('Kapitel aktualisiert', {
         description: `"${nummer} ${title}" wurde gespeichert.`,
         id: toastId,
       });
     } catch (clientErr) {
-      const result = await updateKapitelTitle(id, title, nummer);
+      const result = await updateKapitelTitle(id, title, nummer, thema);
       if (!result.success) {
         setKapiteln(prevKapiteln);
         toast.error('Fehler', { description: result.error || (clientErr as Error).message, id: toastId });
@@ -2926,6 +2936,7 @@ export function Dashboard({
           open={processingDialogOpen}
           onOpenChange={setProcessingDialogOpen}
           kapitelTitle={activeKapitel.title}
+          kapitelThema={activeKapitel.thema || ''}
           quellenCount={assignedQuellen.length}
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}

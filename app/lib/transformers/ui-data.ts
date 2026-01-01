@@ -62,6 +62,7 @@ export function transformKapitelToUI(
   return {
     id: fbKapitel.id,
     title: fbKapitel.title,
+    thema: fbKapitel.thema || "",
     nummer: fbKapitel.nummer || "1",
     status,
     latestRunId: fbKapitel.latestRun?.runId,
