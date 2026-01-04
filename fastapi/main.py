@@ -13,6 +13,7 @@ from middleware.auth import (
 from models.request import (
     ProcessQuelleRequest,
     CombineRunRequest,
+    AdoptCombinedRequest,
     ShortenKapitelRequest,
     LeseflussKapitelRequest,
     ExportDocxRequest,
@@ -1051,6 +1052,28 @@ async def combine_run(
         "run_id": request.run_id,
         "queued_at": datetime.utcnow().isoformat() + "Z",
     }
+
+
+@app.post("/api/adopt-combined", status_code=status.HTTP_200_OK)
+async def adopt_combined(
+    request: AdoptCombinedRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Adopt a single Quelle result as the combined text for a run (no LLM call).
+
+    Requires Authorization header with Firebase ID token.
+    """
+    logger.info(
+        f"Adopting combined text for user {user_id} "
+        f"(Kapitel {request.kapitel_id}, run {request.run_id}, quelle {request.quelle_id})"
+    )
+    return await quelle_service.adopt_single_result_as_combined(
+        user_id=user_id,
+        kapitel_id=request.kapitel_id,
+        run_id=request.run_id,
+        quelle_id=request.quelle_id,
+    )
 
 
 @app.post("/api/shorten", status_code=status.HTTP_202_ACCEPTED)

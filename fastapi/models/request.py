@@ -39,6 +39,14 @@ class CombineRunRequest(BaseModel):
         }
 
 
+class AdoptCombinedRequest(BaseModel):
+    """Request model for adopting a single Quelle result as the combined text (no LLM call)."""
+
+    kapitel_id: str = Field(..., description="Kapitel ID for the run")
+    run_id: str = Field(..., description="Run ID to adopt the combined text for")
+    quelle_id: str = Field(..., description="Quelle ID / result document ID to adopt")
+
+
 class ShortenKapitelRequest(BaseModel):
     """Request model for shortening and deduplicating a Kapitel text"""
 

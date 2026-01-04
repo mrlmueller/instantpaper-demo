@@ -81,6 +81,7 @@ interface KapitelWorkspaceProps {
   onOpenTextViewer: (content: { title: string; text: string }) => void;
   onOpenProcessing: () => void;
   onCombineTexts: () => void;
+  onAdoptSingleTextAsCombined: (quelleId: string) => void;
   isCombining: boolean;
   onToggleQuellenPanel: () => void;
   onOpenShorten: () => void;
@@ -104,6 +105,7 @@ export function KapitelWorkspace({
   onOpenTextViewer,
   onOpenProcessing,
   onCombineTexts,
+  onAdoptSingleTextAsCombined,
   isCombining,
   onToggleQuellenPanel,
   onOpenShorten,
@@ -140,6 +142,8 @@ export function KapitelWorkspace({
   const [renameValue, setRenameValue] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
   const [activeRunSavingId, setActiveRunSavingId] = useState<string | null>(null);
+  const [adoptCombinedDialogOpen, setAdoptCombinedDialogOpen] = useState(false);
+  const [adoptQuelleId, setAdoptQuelleId] = useState("");
 
   const hasContent =
     selectedRun?.combinedText && selectedRun.combinedText.length > 0;
@@ -154,10 +158,12 @@ export function KapitelWorkspace({
   const shortenedStatus = selectedRun?.shortenedStatus ?? (hasGekuerzt ? "success" : "empty");
   const leseflussStatus = selectedRun?.leseflussStatus ?? (hasVerbessert ? "success" : "empty");
   const canShowIntermediateGroups = Boolean(selectedRun?.combinedText && selectedRun.combinedText.length > 0);
-  const combineEligibleCount = (selectedRun?.quellenErgebnisse || []).filter(
+  const combineEligibleResults = (selectedRun?.quellenErgebnisse || []).filter(
     (qe) => qe.status === "success" && Boolean(qe.text && qe.text.trim().length > 0)
-  ).length;
+  );
+  const combineEligibleCount = combineEligibleResults.length;
   const canCombineFromResults = combineEligibleCount >= 2;
+  const canAdoptSingleFromResults = combineEligibleCount === 1;
 
   const effectiveActiveRunId =
     activeRunSavingId ?? kapitel.activeRunId ?? runs[0]?.id;
@@ -240,10 +246,43 @@ export function KapitelWorkspace({
     renameTrimmed.length > 30
       ? "Name ist zu lang (max. 30 Zeichen)."
       : renameReservedRunName
-        ? "Bitte keinen Namen im Format „Run 12“ verwenden. Lass den Namen leer, um die Standardanzeige zu nutzen."
+        ? 'Bitte keinen Namen im Format "Run 12" verwenden. Lass den Namen leer, um die Standardanzeige zu nutzen.'
       : renameDuplicateLabel
         ? "Dieser Run-Name ist bereits vergeben."
         : "";
+
+  const adoptSelectedResult = (selectedRun?.quellenErgebnisse || []).find((r) => r.quelleId === adoptQuelleId);
+  const adoptSelectedPreview = (adoptSelectedResult?.text || "").trim();
+  const adoptSelectedEligible = Boolean(adoptSelectedResult?.status === "success" && adoptSelectedPreview);
+
+  const handleOpenAdoptCombined = () => {
+    if (!selectedRun || !canAdoptSingleFromResults) return;
+
+    const onlyEligible = combineEligibleResults[0];
+    const defaultQuelleId = (onlyEligible?.quelleId || "").trim();
+    if (!defaultQuelleId) {
+      toast.error("Uebernehmen nicht moeglich", {
+        description: "Es wurde kein verwertbarer Quellentext gefunden.",
+      });
+      return;
+    }
+
+    const hasMultipleQuellen = (selectedRun.quellenErgebnisse?.length ?? 0) > 1;
+    if (hasMultipleQuellen) {
+      setAdoptQuelleId(defaultQuelleId);
+      setAdoptCombinedDialogOpen(true);
+      return;
+    }
+
+    onAdoptSingleTextAsCombined(defaultQuelleId);
+  };
+
+  const handleConfirmAdoptCombined = () => {
+    const id = adoptQuelleId.trim();
+    if (!id) return;
+    setAdoptCombinedDialogOpen(false);
+    onAdoptSingleTextAsCombined(id);
+  };
 
   // Reset intermediate groups when selected run changes
   useEffect(() => {
@@ -253,6 +292,8 @@ export function KapitelWorkspace({
     setIntermediateGroupsExpanded(false);
     setIntermediateGroupsLoading(false);
     setIntermediateGroups(null);
+    setAdoptCombinedDialogOpen(false);
+    setAdoptQuelleId("");
   }, [selectedRun?.id]);
 
   // Only show Zwischengruppen when there are actually group docs.
@@ -716,6 +757,58 @@ export function KapitelWorkspace({
               <Button onClick={handleRenameSave} disabled={renameSaving || Boolean(renameValidationError)}>
                 {renameSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                 Speichern
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={adoptCombinedDialogOpen} onOpenChange={setAdoptCombinedDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Einzeltext als kombinierten Text uebernehmen</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Quelle</Label>
+                <Select value={adoptQuelleId} onValueChange={setAdoptQuelleId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Quelle auswaehlen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(selectedRun?.quellenErgebnisse || []).map((r) => {
+                      const eligible = Boolean(r.status === "success" && r.text && r.text.trim().length > 0);
+                      return (
+                        <SelectItem key={r.quelleId} value={r.quelleId} disabled={!eligible}>
+                          {r.quelleName || r.quelleId}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Nur Quellen mit verwertbarem Text sind auswaehlbar.
+                </p>
+              </div>
+
+              {adoptSelectedPreview && (
+                <div className="rounded-md border p-3 text-sm text-foreground/80 whitespace-pre-wrap max-h-44 overflow-auto">
+                  {adoptSelectedPreview}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setAdoptCombinedDialogOpen(false)}
+                disabled={isCombining}
+              >
+                Abbrechen
+              </Button>
+              <Button onClick={handleConfirmAdoptCombined} disabled={isCombining || !adoptSelectedEligible}>
+                {isCombining ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Uebernehmen
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1487,26 +1580,41 @@ export function KapitelWorkspace({
         )}
 
         {/* Combine Button (if only quellen exist) */}
-        {!loading && hasQuellenErgebnisse && !hasContent && combinedStatus !== "running" && canCombineFromResults && (
+        {!loading &&
+          hasQuellenErgebnisse &&
+          !hasContent &&
+          combinedStatus !== "running" &&
+          (canCombineFromResults || canAdoptSingleFromResults) && (
           <Card className={cn("mb-8 bg-accent/30 border-border border-dashed", ENTER_UP_ANIM)}>
             <div className="p-8 text-center">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
-                <Layers className="h-6 w-6 text-primary" />
+                {canCombineFromResults ? (
+                  <Layers className="h-6 w-6 text-primary" />
+                ) : (
+                  <FileText className="h-6 w-6 text-primary" />
+                )}
               </div>
               <h3 className="text-base font-medium text-foreground mb-2">
-                Einzeltexte bereit zum Kombinieren
+                {canCombineFromResults ? "Einzeltexte bereit zum Kombinieren" : "Einzeltext bereit zum Uebernehmen"}
               </h3>
               <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
-                Die Einzeltexte wurden generiert. Klicke auf den Button, um sie
-                zu einem zusammenhängenden Kapiteltext zu kombinieren.
+                {canCombineFromResults
+                  ? "Die Einzeltexte wurden generiert. Klicke auf den Button, um sie zu einem zusammenhaengenden Kapiteltext zu kombinieren."
+                  : "Es gibt genau einen verwertbaren Quellentext. Du kannst ihn ohne weitere Verarbeitung als kombinierten Text uebernehmen."}
               </p>
-              <Button onClick={onCombineTexts} disabled={isCombining}>
+              <Button onClick={canCombineFromResults ? onCombineTexts : handleOpenAdoptCombined} disabled={isCombining}>
                 {isCombining ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
-                  <Layers className="h-4 w-4 mr-2" />
+                  <>
+                    {canCombineFromResults ? (
+                      <Layers className="h-4 w-4 mr-2" />
+                    ) : (
+                      <FileText className="h-4 w-4 mr-2" />
+                    )}
+                  </>
                 )}
-                Texte kombinieren
+                {canCombineFromResults ? "Texte kombinieren" : "Als kombinierten Text uebernehmen"}
               </Button>
             </div>
           </Card>
@@ -1547,19 +1655,28 @@ export function KapitelWorkspace({
                 <BookOpen className="h-4 w-4" />
                 Ergebnisse pro Quelle ({selectedRun!.quellenErgebnisse.length})
               </h3>
-              {!loading && !hasContent && combinedStatus !== "running" && canCombineFromResults && (
+              {!loading &&
+                !hasContent &&
+                combinedStatus !== "running" &&
+                (canCombineFromResults || canAdoptSingleFromResults) && (
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={onCombineTexts}
+                  onClick={canCombineFromResults ? onCombineTexts : handleOpenAdoptCombined}
                   disabled={isCombining}
                 >
                   {isCombining ? (
                     <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                   ) : (
-                    <Layers className="h-4 w-4 mr-1" />
+                    <>
+                      {canCombineFromResults ? (
+                        <Layers className="h-4 w-4 mr-1" />
+                      ) : (
+                        <FileText className="h-4 w-4 mr-1" />
+                      )}
+                    </>
                   )}
-                  Texte kombinieren
+                  {canCombineFromResults ? "Texte kombinieren" : "Uebernehmen"}
                 </Button>
               )}
             </div>
