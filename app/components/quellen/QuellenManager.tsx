@@ -1043,7 +1043,7 @@ export function QuellenManager({
           <DialogHeader>
             <DialogTitle>Zu Kapiteln zuweisen</DialogTitle>
           </DialogHeader>
-          <div className="py-4 flex-1 min-h-0 overflow-hidden">
+          <div className="py-4 flex flex-col flex-1 min-h-0 overflow-hidden">
             <p className="text-sm text-muted-foreground mb-4">
               {(assigningQuelleId ? 1 : selectedIds.size)} Quelle(n) zu folgenden
               Kapiteln zuweisen:
