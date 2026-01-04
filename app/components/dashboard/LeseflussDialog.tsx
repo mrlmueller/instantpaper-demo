@@ -19,10 +19,12 @@ import { cn } from "@/lib/utils"
 import type { Kapitel } from "@/app/types/ui"
 import type { ActivePromptSelections, PromptStage, PromptTemplate, SystemPromptTemplateMeta } from "@/app/types/prompts"
 import { getKapitelsWithShortenedText } from "@/app/actions/kapitels"
+import { getLeseflussAufgabenstellung, setLeseflussAufgabenstellung } from "@/app/lib/storage/preferences"
 
 interface LeseflussDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  projektId: string
   allKapitels: Kapitel[]
   currentKapitelId: string
   runModel: string
@@ -41,6 +43,7 @@ interface LeseflussDialogProps {
 export function LeseflussDialog({
   open,
   onOpenChange,
+  projektId,
   allKapitels,
   currentKapitelId,
   runModel,
@@ -61,6 +64,13 @@ export function LeseflussDialog({
   })
   const [hasTouchedPromptChoice, setHasTouchedPromptChoice] = useState(false)
   const [localLeseflussLoading, setLocalLeseflussLoading] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    const persisted = getLeseflussAufgabenstellung(projektId).trim()
+    if (!persisted) return
+    setAufgabenstellung((prev) => (prev.trim().length > 0 ? prev : persisted))
+  }, [open, projektId])
 
   const sortedKapiteln = useMemo(() => {
     const list = allKapitels.filter((k) => k.id !== currentKapitelId)
@@ -150,9 +160,11 @@ export function LeseflussDialog({
     setLocalLeseflussLoading(true)
     onOpenChange(false)
     try {
-      await onLesefluss(selectedIds, aufgabenstellung.trim(), promptChoice)
+      const trimmedAufgabenstellung = aufgabenstellung.trim()
+      setLeseflussAufgabenstellung(projektId, trimmedAufgabenstellung)
+      await onLesefluss(selectedIds, trimmedAufgabenstellung, promptChoice)
       setSelectedIds([])
-      setAufgabenstellung("")
+      setAufgabenstellung(trimmedAufgabenstellung)
     } finally {
       setLocalLeseflussLoading(false)
     }

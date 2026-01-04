@@ -37,6 +37,8 @@ export function transformQuelleToUI(
     typ: fbQuelle.typ,
     url: fbQuelle.url,
     zugriffAm: fbQuelle.zugriffAm,
+    zitat: fbQuelle.zitat,
+    zitatModus: fbQuelle.zitatModus,
     color: fbQuelle.color,
   };
 }

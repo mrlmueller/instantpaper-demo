@@ -4,6 +4,7 @@ from services.openai_service import openai_service
 from services.cost_service import get_cost_service, TokenUsage
 from services.user_key_service import user_key_service
 from services.prompt_service import prompt_service
+from utils.quellen_zitat import resolve_quelle_zitat_value
 import logging
 import asyncio
 from typing import Optional, List
@@ -130,6 +131,8 @@ class QuelleService:
             heading = str(payload.get("heading") or "").strip()
             topic = str(payload.get("topic") or "").strip()
 
+            quelle_zitat_value = resolve_quelle_zitat_value(quelle_meta)
+
             rendered_instructions = await prompt_service.get_rendered_instructions_for_template(
                 user_id=user_id,
                 stage="process_quelle",
@@ -137,6 +140,7 @@ class QuelleService:
                 payload={
                     "KAPITEL_TITEL": heading,
                     "KAPITEL_BESCHREIBUNG": topic,
+                    "QUELLE_ZITAT": quelle_zitat_value,
                 },
             )
             system_prompt = await prompt_service.get_system_prompt_for_template(
@@ -334,6 +338,41 @@ class QuelleService:
                 return
 
             if content_count < 2:
+                if content_count == 1:
+                    logger.info(
+                        f"Auto-combine passthrough for run {run_id}: exactly 1 text with content. "
+                        "Adopting it as combined text..."
+                    )
+                    try:
+                        await self.adopt_single_result_as_combined(
+                            user_id=user_id,
+                            kapitel_id=kapitel_id,
+                            run_id=run_id,
+                            quelle_id=None,
+                        )
+                    except HTTPException as exc:
+                        # If we can't adopt (e.g. eligibility mismatch), reset status so the UI does not spin forever.
+                        logger.warning(
+                            f"Auto-adopt failed for run {run_id} (HTTP {exc.status_code}): {exc.detail}"
+                        )
+                        await self.firebase.set_run_artifact_status(
+                            user_id=user_id,
+                            kapitel_id=kapitel_id,
+                            run_id=run_id,
+                            artifact_id="combined",
+                            status="empty",
+                        )
+                    except Exception as exc:
+                        logger.error(f"Auto-adopt failed for run {run_id}: {exc}", exc_info=True)
+                        await self.firebase.mark_artifact_error(
+                            user_id=user_id,
+                            kapitel_id=kapitel_id,
+                            run_id=run_id,
+                            artifact_id="combined",
+                            key_source=None,
+                        )
+                    return
+
                 logger.info(
                     f"Auto-combine skipped for run {run_id}: only {content_count} text(s) with content "
                     "(need at least 2)"
@@ -365,7 +404,118 @@ class QuelleService:
 
         except Exception as e:
             # Log the error but don't fail the Quelle processing
-            logger.error(f"Error in auto-combine check for run {run_id}: {str(e)}")
+                logger.error(f"Error in auto-combine check for run {run_id}: {str(e)}")
+
+    async def adopt_single_result_as_combined(
+        self,
+        *,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        quelle_id: Optional[str] = None,
+    ) -> dict:
+        """
+        Adopt a single eligible Quelle result as the combined text (no LLM call).
+
+        Eligibility matches the UI/combiner expectations:
+        - status is not running/error/no-content (missing status counts as success)
+        - hasContent is true (or missing)
+        - content is non-empty
+
+        By default (quelle_id=None), the only eligible result will be adopted.
+        """
+        run = await self.firebase.get_run(user_id, kapitel_id, run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        existing_combined = await self.firebase.get_combined_result(user_id, kapitel_id, run_id)
+        if existing_combined:
+            existing_status = (existing_combined.get("status") or "").strip()
+            existing_content = (existing_combined.get("content") or "").strip()
+            if existing_status == "running":
+                raise HTTPException(status_code=400, detail="Kombination läuft bereits.")
+            if existing_content and (existing_status == "success" or not existing_status):
+                raise HTTPException(status_code=400, detail="Kombinierter Text existiert bereits für diesen Run.")
+
+        prompt_payload = run.get("promptPayload") or run.get("prompt_payload") or {}
+        heading = (
+            (prompt_payload.get("heading") or "").strip()
+            or (run.get("ueberschrift") or "").strip()
+            or "Zusammenfassung"
+        )
+        topic = (
+            (prompt_payload.get("topic") or "").strip()
+            or (run.get("thema") or "").strip()
+            or "Thema"
+        )
+        run_model = (run.get("model") or "").strip() or "gpt-5.2"
+
+        results = await self.firebase.get_run_results(user_id, kapitel_id, run_id)
+        eligible = []
+        for res in results:
+            status_value = (res.get("status") or "").strip()
+            if status_value in {"running", "error", "no-content"}:
+                continue
+            if not bool(res.get("hasContent", True)):
+                continue
+            content = (res.get("content") or "")
+            if content and content.strip():
+                eligible.append(
+                    {
+                        "id": res.get("id"),
+                        "content": content,
+                        "model": (res.get("model") or "").strip(),
+                    }
+                )
+
+        if len(eligible) != 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Not exactly one eligible text to adopt (need exactly 1 with content).",
+            )
+
+        selected_id = (quelle_id or "").strip() or str(eligible[0]["id"])
+        if selected_id != str(eligible[0]["id"]):
+            raise HTTPException(
+                status_code=400,
+                detail="Selected Quelle is not the only eligible text for this run.",
+            )
+
+        source_quelle_ids = [selected_id]
+        model_used = eligible[0].get("model") or run_model
+
+        combined_id = await self.firebase.save_combined_result(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            combined_content=str(eligible[0]["content"]),
+            source_quelle_ids=source_quelle_ids,
+            heading=heading,
+            topic=topic,
+            model_used=model_used,
+            tokens_used=0,
+            input_tokens=0,
+            cached_input_tokens=0,
+            output_tokens=0,
+            reasoning_tokens=0,
+            cost=0.0,
+            key_source=None,
+        )
+
+        return {
+            "combined_id": combined_id,
+            "content": str(eligible[0]["content"]),
+            "model": model_used,
+            "tokens": 0,
+            "input_tokens": 0,
+            "cached_input_tokens": 0,
+            "output_tokens": 0,
+            "reasoning_tokens": 0,
+            "cost": 0.0,
+            "source_quelle_ids": source_quelle_ids,
+            "heading": heading,
+            "topic": topic,
+        }
 
     async def combine_run_results(
         self,

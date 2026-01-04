@@ -40,8 +40,10 @@ Prüfe intern, ohne es zu schreiben:
 4) Keine internen Abschnitts-/Kapitelverweise übernommen.
 5) Text ist eindeutig neu formuliert und einzigartig.
 
-[GRUNDLEGENDE INFORMATIONEN – OPTIONAL]
+[GRUNDLEGENDE INFORMATIONEN - OPTIONAL]
 {OPTIONAL_GRUNDLEGENDE_INFOS}
+
+{QUELLE_ZITAT}
 
 Quelltext:
 {QUELLTEXT}
@@ -298,6 +300,7 @@ class PromptService:
             "{KAPITEL_TITEL}",
             "{KAPITEL_BESCHREIBUNG}",
             "{OPTIONAL_GRUNDLEGENDE_INFOS}",
+            "{QUELLE_ZITAT}",
             "{QUELLTEXT}",
         ],
         "combine": ["{KAPITEL_TITEL}", "{KAPITEL_BESCHREIBUNG}", "{DRAFTS}"],
@@ -500,10 +503,24 @@ class PromptService:
             rendered = rendered.replace(f"{{{key}}}", str(value or ""))
         return rendered
 
+    def _ensure_process_quelle_quelle_zitat_placeholder(self, instructions: str) -> str:
+        """
+        Backward-compatible injection: ensure {QUELLE_ZITAT} exists in process_quelle templates,
+        even if older stored templates don't include it yet.
+        """
+        text = instructions or ""
+        if "{QUELLE_ZITAT}" in text:
+            return text
+
+        # Append as a safe fallback (lets authors decide placement in their templates).
+        return text.rstrip() + "\n\n{QUELLE_ZITAT}\n"
+
     async def get_rendered_instructions(
         self, user_id: str, stage: str, payload: dict
     ) -> str:
         base = await self.get_instructions(user_id, stage)
+        if stage == "process_quelle":
+            base = self._ensure_process_quelle_quelle_zitat_placeholder(base)
         return self.render(base, payload)
 
     async def get_rendered_instructions_for_template(
@@ -514,6 +531,8 @@ class PromptService:
         payload: dict,
     ) -> str:
         base = await self.get_instructions_for_template(user_id, stage, template_id)
+        if stage == "process_quelle":
+            base = self._ensure_process_quelle_quelle_zitat_placeholder(base)
         return self.render(base, payload)
 
 

@@ -10,6 +10,7 @@ import {
   ArrowUpDown,
   FolderPlus,
   Eye,
+  Pencil,
   ArrowLeft,
   Check,
   Loader2,
@@ -52,6 +53,7 @@ import { useAuth } from "@/app/components/providers/AuthProvider";
 import {
   createQuelle,
   updateQuelleColor,
+  updateQuelleFull,
   bulkAssignQuellen,
   deleteQuelle,
   getQuelleContent,
@@ -65,6 +67,7 @@ import {
 } from "@/app/lib/quellen/fieldConfig";
 import { QuelleViewerModal } from "@/app/components/dashboard/QuelleViewerModal";
 import { AddQuelleDialog } from "@/app/components/quellen/AddQuelleDialog";
+import { EditQuelleDialog } from "@/app/components/quellen/EditQuelleDialog";
 
 interface QuellenManagerProps {
   initialQuellen: any[];
@@ -127,6 +130,9 @@ export function QuellenManager({
   const [viewingQuelle, setViewingQuelle] = useState<Quelle | null>(null);
   const [viewingQuelleLoading, setViewingQuelleLoading] = useState(false);
   const [backLoading, setBackLoading] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingQuelleId, setEditingQuelleId] = useState<string | null>(null);
+  const [isUpdatingQuelle, setIsUpdatingQuelle] = useState(false);
 
   const handleViewQuelle = async (quelle: Quelle) => {
     setViewingQuelleLoading(true);
@@ -456,6 +462,129 @@ export function QuellenManager({
     }
 
     return success;
+  };
+
+  const openEditDialogForQuelle = (quelleId: string) => {
+    setEditingQuelleId(quelleId);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleSaveEditedQuelle = async (payload: {
+    quelleId: string;
+    name: string;
+    text: string;
+    keptImages: ImageMetadata[];
+    newImageFiles: File[];
+    removedImagePaths: string[];
+    advancedFields: {
+      autor?: string | null;
+      jahr?: number | null;
+      typ?: Quelle["typ"] | null;
+      url?: string | null;
+      zugriffAm?: string | null;
+      zitat?: string | null;
+      zitatModus?: Quelle["zitatModus"] | null;
+      color?: QuelleColor | null;
+    };
+  }): Promise<boolean> => {
+    if (isUpdatingQuelle) return false;
+    if (!user) {
+      toast.error("Nicht eingeloggt");
+      return false;
+    }
+
+    setIsUpdatingQuelle(true);
+    const savingToast = toast.loading("Quelle wird aktualisiert...");
+    const uploadingToast =
+      payload.newImageFiles.length > 0
+        ? toast.loading(`Lade ${payload.newImageFiles.length} Bild(er) hoch...`)
+        : undefined;
+
+    let uploadedImages: ImageMetadata[] = [];
+    try {
+      const { uploadImagesToStorage, deleteImagesFromStorage } = await import(
+        "@/app/lib/firebase/storage"
+      );
+
+      if (payload.newImageFiles.length > 0) {
+        uploadedImages = await uploadImagesToStorage(
+          user.uid,
+          payload.newImageFiles
+        );
+      }
+
+      const finalImages = [...payload.keptImages, ...uploadedImages];
+
+      const result = await updateQuelleFull(
+        payload.quelleId,
+        {
+          title: payload.name,
+          content: payload.text,
+          images: finalImages,
+          advancedFields: payload.advancedFields,
+        }
+      );
+
+      if (result?.success === false) {
+        throw new Error(result.error || "Unknown error");
+      }
+
+      if (uploadingToast) toast.dismiss(uploadingToast);
+      toast.success("Quelle aktualisiert", { id: savingToast });
+
+      setQuellen((prev) =>
+        prev.map((q) => {
+          if (q.id !== payload.quelleId) return q;
+          const next: Quelle = {
+            ...q,
+            name: payload.name,
+            images: finalImages.length > 0 ? finalImages.map((img) => img.url) : undefined,
+          };
+
+          const af = payload.advancedFields;
+          const hasOwn = (key: string) =>
+            Object.prototype.hasOwnProperty.call(af, key);
+
+          if (hasOwn("autor")) next.autor = af.autor ?? undefined;
+          if (hasOwn("jahr")) next.jahr = af.jahr ?? undefined;
+          if (hasOwn("typ")) next.typ = af.typ ?? undefined;
+          if (hasOwn("url")) next.url = af.url ?? undefined;
+          if (hasOwn("zugriffAm")) next.zugriffAm = af.zugriffAm ?? undefined;
+          if (hasOwn("zitat")) next.zitat = af.zitat ?? undefined;
+          if (hasOwn("zitatModus")) next.zitatModus = af.zitatModus ?? undefined;
+          if (hasOwn("color")) next.color = af.color ?? null;
+
+          return next;
+        })
+      );
+
+      router.refresh();
+
+      if (payload.removedImagePaths.length > 0) {
+        deleteImagesFromStorage(payload.removedImagePaths).catch((err) => {
+          console.error("Failed to delete removed images:", err);
+        });
+      }
+
+      return true;
+    } catch (error) {
+      if (uploadingToast) toast.dismiss(uploadingToast);
+      toast.error("Fehler beim Speichern", {
+        description: error instanceof Error ? error.message : "Unbekannter Fehler",
+        id: savingToast,
+      });
+
+      if (uploadedImages.length > 0) {
+        const { deleteImagesFromStorage } = await import(
+          "@/app/lib/firebase/storage"
+        );
+        await deleteImagesFromStorage(uploadedImages.map((img) => img.path));
+      }
+
+      return false;
+    } finally {
+      setIsUpdatingQuelle(false);
+    }
   };
 
   const getLinkedKapiteln = (quelleId: string) => {
@@ -842,14 +971,26 @@ export function QuellenManager({
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => handleViewQuelle(quelle)}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => handleViewQuelle(quelle)}
+                            aria-label="Quelle ansehen"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => openEditDialogForQuelle(quelle.id)}
+                            aria-label="Quelle bearbeiten"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -877,6 +1018,16 @@ export function QuellenManager({
         isAddingQuelle={isAddingQuelle}
       />
 
+      <EditQuelleDialog
+        open={isEditDialogOpen}
+        quelleId={editingQuelleId}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open);
+          if (!open) setEditingQuelleId(null);
+        }}
+        onSave={handleSaveEditedQuelle}
+      />
+
       {/* Assign Dialog */}
       <Dialog
         open={assignDialogOpen}
@@ -892,7 +1043,7 @@ export function QuellenManager({
           <DialogHeader>
             <DialogTitle>Zu Kapiteln zuweisen</DialogTitle>
           </DialogHeader>
-          <div className="py-4 flex-1 min-h-0 overflow-hidden">
+          <div className="py-4 flex flex-col flex-1 min-h-0 overflow-hidden">
             <p className="text-sm text-muted-foreground mb-4">
               {(assigningQuelleId ? 1 : selectedIds.size)} Quelle(n) zu folgenden
               Kapiteln zuweisen:

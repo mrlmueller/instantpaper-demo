@@ -87,6 +87,7 @@ APPEND_HINTS: dict[str, dict[str, str]] = {
         "{KAPITEL_TITEL}": "Kapitelname: {KAPITEL_TITEL}",
         "{KAPITEL_BESCHREIBUNG}": "Kapitelbeschreibung (Scope): {KAPITEL_BESCHREIBUNG}",
         "{OPTIONAL_GRUNDLEGENDE_INFOS}": "[GRUNDLEGENDE INFORMATIONEN - OPTIONAL]\n{OPTIONAL_GRUNDLEGENDE_INFOS}",
+        "{QUELLE_ZITAT}": "{QUELLE_ZITAT}",
         "{QUELLTEXT}": "Quelltext:\n{QUELLTEXT}",
     },
     "combine": {

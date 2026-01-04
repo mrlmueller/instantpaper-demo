@@ -18,14 +18,16 @@ export const STAGE_CONFIG: Record<PromptStage, StageConfig> = {
       "{KAPITEL_TITEL}",
       "{KAPITEL_BESCHREIBUNG}",
       "{OPTIONAL_GRUNDLEGENDE_INFOS}",
+      "{QUELLE_ZITAT}",
       "{QUELLTEXT}",
     ],
     tooltip:
-      "Pflicht-Platzhalter: {KAPITEL_TITEL}, {KAPITEL_BESCHREIBUNG}, {OPTIONAL_GRUNDLEGENDE_INFOS}, {QUELLTEXT}. Bilder werden automatisch mitgesendet (falls vorhanden).",
+      "Pflicht-Platzhalter: {KAPITEL_TITEL}, {KAPITEL_BESCHREIBUNG}, {OPTIONAL_GRUNDLEGENDE_INFOS}, {QUELLE_ZITAT}, {QUELLTEXT}. Bilder werden automatisch mitgesendet (falls vorhanden).",
     sampleData: {
       KAPITEL_TITEL: "Digitale Transformation in KMU",
       KAPITEL_BESCHREIBUNG: "Einfluss von KI auf Effizienzgewinne",
       OPTIONAL_GRUNDLEGENDE_INFOS: "Konzentriere dich auf deutschsprachige Quellen mit Seitenzahlen.",
+      QUELLE_ZITAT: "Schmidt, 2023",
       QUELLTEXT: "Beispiel-Quelltext ...",
     },
     defaultInstructions: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`,

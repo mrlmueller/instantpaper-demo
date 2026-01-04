@@ -2391,6 +2391,111 @@ export function Dashboard({
     isCombining,
   ]);
 
+  const handleAdoptSingleTextAsCombined = useCallback(
+    async (quelleId: string) => {
+      if (!activeKapitelId || !selectedRun) {
+        toast.error('Kein Run ausgew„hlt');
+        return;
+      }
+
+      if (selectedRun.combinedStatus === 'running') {
+        toast.info('Kombination laeuft bereits', {
+          description: 'Bitte warte, bis die Kombination abgeschlossen ist.',
+        });
+        return;
+      }
+
+      const eligible =
+        selectedRun.quellenErgebnisse?.filter((r) => r.status === 'success' && r.text?.trim()) || [];
+      if (eligible.length !== 1) {
+        toast.error('Uebernehmen nicht moeglich', {
+          description: 'Es muss genau ein verwertbarer Quellentext vorhanden sein.',
+        });
+        return;
+      }
+
+      if (eligible[0].quelleId !== quelleId) {
+        toast.error('Uebernehmen nicht moeglich', {
+          description: 'Die ausgewaehlte Quelle ist nicht der einzige verwertbare Text in diesem Run.',
+        });
+        return;
+      }
+
+      const token = Cookies.get('__session');
+      if (!token) {
+        handleAuthFailure();
+        return;
+      }
+
+      if (isCombining) return;
+      setIsCombining(true);
+
+      const adoptToastId = toast.loading('Text uebernehmen', {
+        description: 'Der Quellentext wird als kombinierter Text uebernommen...',
+      });
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/adopt-combined`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            kapitel_id: activeKapitelId,
+            run_id: selectedRun.id,
+            quelle_id: quelleId,
+          }),
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            toast.error('Uebernehmen abgebrochen', {
+              description: 'Bitte melde dich erneut an.',
+              id: adoptToastId,
+            });
+            handleAuthFailure();
+            return;
+          }
+
+          if (response.status >= 500) {
+            notifyServerDown(adoptToastId);
+            return;
+          }
+
+          const error = await response.json().catch(() => ({}));
+          const err: any = new Error(error.detail || 'Fehler beim Uebernehmen');
+          err.status = response.status;
+          throw err;
+        }
+
+        toast.success('Text uebernommen', {
+          description: 'Der Quellentext ist jetzt der kombinierte Text.',
+          id: adoptToastId,
+        });
+      } catch (err: any) {
+        if (err instanceof TypeError) {
+          notifyServerDown(adoptToastId);
+          return;
+        }
+
+        if (err?.status === 401) {
+          handleAuthFailure();
+          return;
+        }
+
+        console.error('Fehler beim Uebernehmen:', err);
+        toast.error('Uebernehmen fehlgeschlagen', {
+          description: err.message || 'Unbekannter Fehler beim Uebernehmen',
+          id: adoptToastId,
+        });
+      } finally {
+        setIsCombining(false);
+      }
+    },
+    [activeKapitelId, handleAuthFailure, isCombining, notifyServerDown, selectedRun]
+  );
+
   const handleShorten = useCallback(
     async (contextKapitelIds: string[], promptChoice?: Partial<Record<PromptStage, string | 'default'>>) => {
       if (!activeKapitel || !selectedRun) return;
@@ -2869,6 +2974,7 @@ export function Dashboard({
               onOpenTextViewer={setTextViewerContent}
               onOpenProcessing={() => setProcessingDialogOpen(true)}
               onCombineTexts={handleCombineTexts}
+              onAdoptSingleTextAsCombined={handleAdoptSingleTextAsCombined}
               isCombining={isCombining}
               onToggleQuellenPanel={handleToggleQuellenPanel}
               onOpenShorten={() => setShortenDialogOpen(true)}
@@ -2967,6 +3073,7 @@ export function Dashboard({
         <LeseflussDialog
           open={leseflussDialogOpen}
           onOpenChange={setLeseflussDialogOpen}
+          projektId={projekt.id}
           allKapitels={kapiteln}
           currentKapitelId={activeKapitel.id}
           runModel={selectedRun.model}
