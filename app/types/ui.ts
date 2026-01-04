@@ -22,6 +22,8 @@ export interface Quelle {
   typ?: 'Book' | 'Article' | 'Website' | 'Thesis' | 'Report';
   url?: string;
   zugriffAm?: string;
+  zitat?: string;
+  zitatModus?: 'auto' | 'authorYear' | 'full' | 'none';
   color?: 'blue' | 'green' | 'teal' | 'lavender' | 'cream' | 'peach' | 'rose' | null;
 }
 

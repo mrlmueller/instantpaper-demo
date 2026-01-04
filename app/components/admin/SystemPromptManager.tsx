@@ -213,6 +213,13 @@ export function SystemPromptManager() {
     if (!instructions.trim())
       throw new Error("Instructions sind erforderlich.");
 
+    const missing = STAGE_CONFIG[state.stage].requiredPlaceholders.filter(
+      (ph) => !instructions.includes(ph)
+    );
+    if (missing.length > 0) {
+      throw new Error(`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`);
+    }
+
     setIsSaving(true);
     try {
       const res = await fetch("/api/admin/system-prompt-templates", {
@@ -668,7 +675,7 @@ export function SystemPromptManager() {
                   });
                 }
               }}
-              disabled={!editor || isSaving}
+              disabled={!editor || isSaving || missingPlaceholders.length > 0}
             >
               {isSaving ? "Speichern…" : "Speichern"}
             </Button>

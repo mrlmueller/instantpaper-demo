@@ -222,7 +222,7 @@ service cloud.firestore {
           && request.resource.data.keys().hasAll(['projektId', 'title', 'createdAt', 'updatedAt', 'archived'])
           && request.resource.data.keys().hasOnly([
             'projektId', 'title', 'createdAt', 'updatedAt', 'archived', 'archivedAt',
-            'wordCount', 'images', 'autor', 'jahr', 'typ', 'url', 'zugriffAm', 'color'
+            'wordCount', 'images', 'autor', 'jahr', 'typ', 'url', 'zugriffAm', 'zitat', 'zitatModus', 'color'
           ])
           && projectExists(userId, request.resource.data.projektId)
           && isNonEmptyString(request.resource.data.title, 500)
@@ -235,7 +235,7 @@ service cloud.firestore {
           && request.resource.data.keys().hasAll(['projektId', 'title', 'createdAt', 'updatedAt', 'archived'])
           && request.resource.data.keys().hasOnly([
             'projektId', 'title', 'createdAt', 'updatedAt', 'archived', 'archivedAt',
-            'wordCount', 'images', 'autor', 'jahr', 'typ', 'url', 'zugriffAm', 'color'
+            'wordCount', 'images', 'autor', 'jahr', 'typ', 'url', 'zugriffAm', 'zitat', 'zitatModus', 'color'
           ])
           && projectExists(userId, request.resource.data.projektId)
           && isNonEmptyString(request.resource.data.title, 500)

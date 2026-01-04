@@ -43,6 +43,8 @@ export type Quelle = {
   typ?: 'Book' | 'Article' | 'Website' | 'Thesis' | 'Report';
   url?: string;
   zugriffAm?: string; // ISO date string
+  zitat?: string;
+  zitatModus?: 'auto' | 'authorYear' | 'full' | 'none';
   color?: 'blue' | 'green' | 'teal' | 'lavender' | 'cream' | 'peach' | 'rose';
 };
 
@@ -83,6 +85,8 @@ export async function createQuelle(
     typ?: 'Book' | 'Article' | 'Website' | 'Thesis' | 'Report';
     url?: string;
     zugriffAm?: string;
+    zitat?: string;
+    zitatModus?: 'auto' | 'authorYear' | 'full' | 'none';
     color?: 'blue' | 'green' | 'teal' | 'lavender' | 'cream' | 'peach' | 'rose';
   },
   ctx?: ActionContext
@@ -123,6 +127,8 @@ export async function createQuelle(
       if (advancedFields.typ) docData.typ = advancedFields.typ;
       if (advancedFields.url) docData.url = advancedFields.url;
       if (advancedFields.zugriffAm) docData.zugriffAm = advancedFields.zugriffAm;
+      if (advancedFields.zitat) docData.zitat = advancedFields.zitat;
+      if (advancedFields.zitatModus) docData.zitatModus = advancedFields.zitatModus;
       if (advancedFields.color) docData.color = advancedFields.color;
     }
 
@@ -205,6 +211,8 @@ type QuelleAdvancedFieldsUpdate = {
   typ?: 'Book' | 'Article' | 'Website' | 'Thesis' | 'Report' | null;
   url?: string | null;
   zugriffAm?: string | null;
+  zitat?: string | null;
+  zitatModus?: 'auto' | 'authorYear' | 'full' | 'none' | null;
   color?: 'blue' | 'green' | 'teal' | 'lavender' | 'cream' | 'peach' | 'rose' | null;
 };
 
@@ -309,6 +317,20 @@ export async function updateQuelleFull(
         updateData.zugriffAm = zugriffAm === null ? deleteField() : zugriffAm;
       }
 
+      if (hasOwn(af, 'zitat')) {
+        const zitat = normalizeStringUpdate(af.zitat);
+        updateData.zitat = zitat === null ? deleteField() : zitat;
+      }
+
+      if (hasOwn(af, 'zitatModus')) {
+        const zitatModus = af.zitatModus;
+        if (zitatModus === null || zitatModus === undefined || zitatModus === '') {
+          updateData.zitatModus = deleteField();
+        } else {
+          updateData.zitatModus = zitatModus;
+        }
+      }
+
       if (hasOwn(af, 'color')) {
         const color = af.color as unknown;
         if (color === null || color === undefined || color === '') {
@@ -406,6 +428,8 @@ export async function getQuelle(quelleId: string, ctx?: ActionContext): Promise<
       typ: data.typ,
       url: data.url,
       zugriffAm: data.zugriffAm,
+      zitat: data.zitat,
+      zitatModus: data.zitatModus,
       color: data.color,
     };
   } catch (error: unknown) {
@@ -510,6 +534,8 @@ export async function getUserQuellen(projektId: string, ctx?: ActionContext): Pr
         typ: data.typ,
         url: data.url,
         zugriffAm: data.zugriffAm,
+        zitat: data.zitat,
+        zitatModus: data.zitatModus,
         color: data.color,
       });
     });

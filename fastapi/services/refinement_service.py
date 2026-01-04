@@ -14,6 +14,7 @@ from services.cost_service import get_cost_service, TokenUsage
 from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
 from utils.config import config
+from utils.quellen_zitat import resolve_quelle_zitat_value
 
 logger = logging.getLogger(__name__)
 
@@ -1521,6 +1522,10 @@ class RefinementService:
             run = await firebase_service.get_run(user_id, kapitel_id, run_id)
             grundlegende_informationen = (run or {}).get("grundlegendeInformationen")
 
+            quelle = await firebase_service.get_quelle(user_id, quelle_id)
+            if not quelle:
+                raise ValueError("Quelle not found.")
+
             base_user_input = (result_doc.get("userInput") or "").strip()
             # Prompts are no longer stored on result docs (hidden from user). Reconstruct from run settings.
             prompt_template_id = (
@@ -1557,6 +1562,8 @@ class RefinementService:
                 if not heading or not topic:
                     raise ValueError("Run promptPayload is missing heading/topic.")
 
+                quelle_zitat_value = resolve_quelle_zitat_value(quelle)
+
                 base_user_input = (
                     await prompt_service.get_rendered_instructions_for_template(
                         user_id=user_id,
@@ -1565,6 +1572,7 @@ class RefinementService:
                         payload={
                             "KAPITEL_TITEL": heading,
                             "KAPITEL_BESCHREIBUNG": topic,
+                            "QUELLE_ZITAT": quelle_zitat_value,
                         },
                     )
                 )
@@ -1583,10 +1591,6 @@ class RefinementService:
                 user_id, kapitel_id, run_id, quelle_id, version_id
             )
             model = (pending or {}).get("model") or "gpt-5-mini"
-
-            quelle = await firebase_service.get_quelle(user_id, quelle_id)
-            if not quelle:
-                raise ValueError("Quelle not found.")
 
             quelle_content_doc = await firebase_service.get_quelle_content(
                 user_id, quelle_id

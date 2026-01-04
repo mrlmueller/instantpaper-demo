@@ -4,6 +4,7 @@ from services.openai_service import openai_service
 from services.cost_service import get_cost_service, TokenUsage
 from services.user_key_service import user_key_service
 from services.prompt_service import prompt_service
+from utils.quellen_zitat import resolve_quelle_zitat_value
 import logging
 import asyncio
 from typing import Optional, List
@@ -130,6 +131,8 @@ class QuelleService:
             heading = str(payload.get("heading") or "").strip()
             topic = str(payload.get("topic") or "").strip()
 
+            quelle_zitat_value = resolve_quelle_zitat_value(quelle_meta)
+
             rendered_instructions = await prompt_service.get_rendered_instructions_for_template(
                 user_id=user_id,
                 stage="process_quelle",
@@ -137,6 +140,7 @@ class QuelleService:
                 payload={
                     "KAPITEL_TITEL": heading,
                     "KAPITEL_BESCHREIBUNG": topic,
+                    "QUELLE_ZITAT": quelle_zitat_value,
                 },
             )
             system_prompt = await prompt_service.get_system_prompt_for_template(

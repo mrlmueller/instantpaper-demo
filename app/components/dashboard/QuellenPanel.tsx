@@ -50,6 +50,11 @@ import {
   type QuelleColor,
 } from "@/app/lib/quellen/fieldConfig";
 import {
+  computeQuelleZitatPreview,
+  type QuelleZitatModus,
+  toOneLine,
+} from "@/app/lib/quellen/zitat";
+import {
   getQuellenModeAdvanced,
   setQuellenModeAdvanced,
 } from "@/app/lib/storage/preferences";
@@ -124,6 +129,8 @@ export function QuellenPanel({
   const [newQuelleColor, setNewQuelleColor] = useState<QuelleColor | null>(
     null
   );
+  const [zitat, setZitat] = useState("");
+  const [zitatModus, setZitatModus] = useState<QuelleZitatModus>("auto");
 
   // Image upload state
   const [imageUploadMode, setImageUploadMode] = useState<"upload" | "url">(
@@ -253,12 +260,13 @@ export function QuellenPanel({
 
   const handleAddQuelle = async () => {
     if (newQuelleName && newQuelleText) {
-      // Combine advanced field values with color
-      const allAdvancedFields = isAdvancedMode
-        ? { ...advancedFieldValues, color: newQuelleColor }
-        : newQuelleColor
-        ? { color: newQuelleColor }
-        : undefined;
+      const normalizedZitat = toOneLine(zitat);
+      const allAdvancedFields: Record<string, any> = {
+        ...(isAdvancedMode ? advancedFieldValues : {}),
+        ...(normalizedZitat ? { zitat: normalizedZitat } : {}),
+        zitatModus,
+        ...(newQuelleColor ? { color: newQuelleColor } : {}),
+      };
 
       const success = await onAddQuelle(
         newQuelleName,
@@ -274,6 +282,8 @@ export function QuellenPanel({
         setNewQuelleColor(null);
         setAdvancedFieldValues({});
         setImageUrl("");
+        setZitat("");
+        setZitatModus("auto");
         setIsAddDialogOpen(false);
       }
     }
@@ -791,6 +801,58 @@ export function QuellenPanel({
                 />
               </div>
 
+              {/* Zitierhinweis */}
+              <div className="space-y-2">
+                <Label>Quelle (optional)</Label>
+                <Textarea
+                  value={zitat}
+                  onChange={(e) => setZitat(e.target.value)}
+                  placeholder="z.B. Schmidt, M. (2023). Titel. Journal ..."
+                  rows={2}
+                  className="resize-none"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Im Prompt verwenden</Label>
+                <Select
+                  value={zitatModus}
+                  onValueChange={(value) => setZitatModus(value as QuelleZitatModus)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Auswählen..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Automatisch (Autor+Jahr &gt; Vollzitat)</SelectItem>
+                    <SelectItem value="authorYear">Autor + Jahr</SelectItem>
+                    <SelectItem value="full">Vollzitat</SelectItem>
+                    <SelectItem value="none">Nicht einfügen</SelectItem>
+                  </SelectContent>
+                </Select>
+                {(() => {
+                  const preview = computeQuelleZitatPreview({
+                    autor: isAdvancedMode ? advancedFieldValues.autor : undefined,
+                    jahr: isAdvancedMode ? advancedFieldValues.jahr : undefined,
+                    zitat,
+                    modus: zitatModus,
+                  });
+
+                  if (!preview.value) {
+                    return (
+                      <p className="text-xs text-muted-foreground">
+                        Kein Zitierhinweis wird beim Verarbeiten in den Prompt eingefügt.
+                      </p>
+                    );
+                  }
+
+                  return (
+                    <p className="text-xs text-muted-foreground break-words">
+                      Wird beim Verarbeiten im Prompt eingefügt: {preview.value}
+                    </p>
+                  );
+                })()}
+              </div>
+
               {/* Advanced fields - Typ, Jahr, Autor */}
               {isAdvancedMode && (
                 <>
@@ -827,7 +889,10 @@ export function QuellenPanel({
                       onChange={(e) =>
                         setAdvancedFieldValues({
                           ...advancedFieldValues,
-                          jahr: Number(e.target.value),
+                          jahr:
+                            e.target.value.trim().length === 0
+                              ? undefined
+                              : Number(e.target.value),
                         })
                       }
                     />

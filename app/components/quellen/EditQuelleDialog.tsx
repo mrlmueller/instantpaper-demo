@@ -39,6 +39,11 @@ import {
   type QuelleColor,
 } from "@/app/lib/quellen/fieldConfig";
 import {
+  computeQuelleZitatPreview,
+  type QuelleZitatModus,
+  toOneLine,
+} from "@/app/lib/quellen/zitat";
+import {
   getQuellenModeAdvanced,
   setQuellenModeAdvanced,
 } from "@/app/lib/storage/preferences";
@@ -56,6 +61,8 @@ type SavePayload = {
     typ?: (typeof QUELLE_TYPES)[number] | null;
     url?: string | null;
     zugriffAm?: string | null;
+    zitat?: string | null;
+    zitatModus?: QuelleZitatModus | null;
     color?: QuelleColor | null;
   };
 };
@@ -124,6 +131,8 @@ export function EditQuelleDialog({
       zugriffAm: "",
     });
   const [color, setColor] = useState<QuelleColor | null>(null);
+  const [zitat, setZitat] = useState("");
+  const [zitatModus, setZitatModus] = useState<QuelleZitatModus>("auto");
 
   useEffect(() => {
     setQuellenModeAdvanced(isAdvancedMode);
@@ -171,6 +180,8 @@ export function EditQuelleDialog({
           url: meta.url ?? "",
           zugriffAm: meta.zugriffAm ?? "",
         });
+        setZitat(meta.zitat ?? "");
+        setZitatModus((meta.zitatModus as QuelleZitatModus | undefined) ?? "auto");
       } catch {
         if (cancelled) return;
         toast.error("Fehler beim Laden der Quelle");
@@ -269,6 +280,9 @@ export function EditQuelleDialog({
       const advancedFields: SavePayload["advancedFields"] = {
         color,
       };
+
+      advancedFields.zitat = toNullableTrimmedString(toOneLine(zitat));
+      advancedFields.zitatModus = zitatModus;
 
       if (isAdvancedMode) {
         advancedFields.autor = toNullableTrimmedString(advancedFieldValues.autor);
@@ -517,6 +531,58 @@ export function EditQuelleDialog({
                   onChange={(e) => setName(e.target.value)}
                   placeholder="z.B. Schmidt (2023) - Kapitel 3"
                 />
+              </div>
+
+              {/* Zitierhinweis */}
+              <div className="space-y-2">
+                <Label>Quelle (optional)</Label>
+                <Textarea
+                  value={zitat}
+                  onChange={(e) => setZitat(e.target.value)}
+                  placeholder="z.B. Schmidt, M. (2023). Titel. Journal ..."
+                  rows={2}
+                  className="resize-none"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Im Prompt verwenden</Label>
+                <Select
+                  value={zitatModus}
+                  onValueChange={(value) => setZitatModus(value as QuelleZitatModus)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Auswählen..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Automatisch (Autor+Jahr &gt; Vollzitat)</SelectItem>
+                    <SelectItem value="authorYear">Autor + Jahr</SelectItem>
+                    <SelectItem value="full">Vollzitat</SelectItem>
+                    <SelectItem value="none">Nicht einfügen</SelectItem>
+                  </SelectContent>
+                </Select>
+                {(() => {
+                  const preview = computeQuelleZitatPreview({
+                    autor: advancedFieldValues.autor,
+                    jahr: advancedFieldValues.jahr ?? null,
+                    zitat,
+                    modus: zitatModus,
+                  });
+
+                  if (!preview.value) {
+                    return (
+                      <p className="text-xs text-muted-foreground">
+                        Kein Zitierhinweis wird beim Verarbeiten in den Prompt eingefügt.
+                      </p>
+                    );
+                  }
+
+                  return (
+                    <p className="text-xs text-muted-foreground break-words">
+                      Wird beim Verarbeiten im Prompt eingefügt: {preview.value}
+                    </p>
+                  );
+                })()}
               </div>
 
               {/* Advanced fields - Typ, Jahr, Autor */}

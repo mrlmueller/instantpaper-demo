@@ -482,6 +482,8 @@ export function QuellenManager({
       typ?: Quelle["typ"] | null;
       url?: string | null;
       zugriffAm?: string | null;
+      zitat?: string | null;
+      zitatModus?: Quelle["zitatModus"] | null;
       color?: QuelleColor | null;
     };
   }): Promise<boolean> => {
@@ -548,6 +550,8 @@ export function QuellenManager({
           if (hasOwn("typ")) next.typ = af.typ ?? undefined;
           if (hasOwn("url")) next.url = af.url ?? undefined;
           if (hasOwn("zugriffAm")) next.zugriffAm = af.zugriffAm ?? undefined;
+          if (hasOwn("zitat")) next.zitat = af.zitat ?? undefined;
+          if (hasOwn("zitatModus")) next.zitatModus = af.zitatModus ?? undefined;
           if (hasOwn("color")) next.color = af.color ?? null;
 
           return next;
