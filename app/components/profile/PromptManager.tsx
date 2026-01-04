@@ -24,19 +24,35 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { STAGE_CONFIG } from "@/app/lib/prompts/promptConfig";
- import type {
-   ActivePromptSelections,
-   PromptStage,
-   PromptTemplate,
-   SystemPromptPermissions,
-   SystemPromptTemplateMeta,
- } from "@/app/types/prompts";
+import type {
+  ActivePromptSelections,
+  PromptStage,
+  PromptTemplate,
+  SystemPromptPermissions,
+  SystemPromptTemplateMeta,
+} from "@/app/types/prompts";
 import { toast } from "sonner";
- import { Check, Copy, Eye, Info, Pencil, Plus, Star, StarOff, Trash2, X } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Eye,
+  Info,
+  Pencil,
+  Plus,
+  Star,
+  StarOff,
+  Trash2,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type EditorState = {
@@ -45,13 +61,13 @@ type EditorState = {
   instructions: string;
 };
 
- type TemplatesResponse = {
-   templates: PromptTemplate[];
-   active: ActivePromptSelections;
-   askOnEachProcess?: boolean;
-   systemTemplates?: SystemPromptTemplateMeta[];
-   systemPermissions?: SystemPromptPermissions;
- };
+type TemplatesResponse = {
+  templates: PromptTemplate[];
+  active: ActivePromptSelections;
+  askOnEachProcess?: boolean;
+  systemTemplates?: SystemPromptTemplateMeta[];
+  systemPermissions?: SystemPromptPermissions;
+};
 
 const stageOptions: { value: PromptStage; label: string }[] = [
   { value: "process_quelle", label: STAGE_CONFIG.process_quelle.label },
@@ -76,12 +92,18 @@ const stubInstructionsByStage: Record<PromptStage, string> = {
 export function PromptManager() {
   const [stage, setStage] = useState<PromptStage>("process_quelle");
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
-  const [systemTemplates, setSystemTemplates] = useState<SystemPromptTemplateMeta[]>([]);
-  const [canDuplicateSystemPrompts, setCanDuplicateSystemPrompts] = useState(false);
+  const [systemTemplates, setSystemTemplates] = useState<
+    SystemPromptTemplateMeta[]
+  >([]);
+  const [canDuplicateSystemPrompts, setCanDuplicateSystemPrompts] =
+    useState(false);
   const [active, setActive] = useState<ActivePromptSelections>({});
   const [editorOpen, setEditorOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [editor, setEditor] = useState<EditorState>({ name: "", instructions: "" });
+  const [editor, setEditor] = useState<EditorState>({
+    name: "",
+    instructions: "",
+  });
   const [missingPlaceholders, setMissingPlaceholders] = useState<string[]>([]);
   const [askOnEachProcess, setAskOnEachProcess] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -95,20 +117,29 @@ export function PromptManager() {
   const currentConfig = STAGE_CONFIG[stage];
 
   const computeMissing = (instructions: string, targetStage: PromptStage) =>
-    STAGE_CONFIG[targetStage].requiredPlaceholders.filter((ph) => !instructions.includes(ph));
+    STAGE_CONFIG[targetStage].requiredPlaceholders.filter(
+      (ph) => !instructions.includes(ph)
+    );
 
   const loadData = async () => {
     try {
       const res = await fetch("/api/prompt-templates", { cache: "no-store" });
       const data: TemplatesResponse = await res.json();
-      if (!res.ok) throw new Error((data as any).error || "Konnte Prompts nicht laden.");
+      if (!res.ok)
+        throw new Error((data as any).error || "Konnte Prompts nicht laden.");
       setTemplates(data.templates);
-      setSystemTemplates(Array.isArray(data.systemTemplates) ? data.systemTemplates : []);
-      setCanDuplicateSystemPrompts(Boolean(data.systemPermissions?.canDuplicateSystemPrompts));
+      setSystemTemplates(
+        Array.isArray(data.systemTemplates) ? data.systemTemplates : []
+      );
+      setCanDuplicateSystemPrompts(
+        Boolean(data.systemPermissions?.canDuplicateSystemPrompts)
+      );
       setActive(data.active || {});
       setAskOnEachProcess(Boolean(data.askOnEachProcess));
     } catch (err: any) {
-      toast.error("Prompts konnten nicht geladen werden", { description: err?.message });
+      toast.error("Prompts konnten nicht geladen werden", {
+        description: err?.message,
+      });
     }
   };
 
@@ -130,16 +161,23 @@ export function PromptManager() {
     const missing = computeMissing(payload.instructions, stage);
     setMissingPlaceholders(missing);
     if (missing.length > 0) {
-      toast.error("Pflicht-Platzhalter fehlen", { description: missing.join(", ") });
+      toast.error("Pflicht-Platzhalter fehlen", {
+        description: missing.join(", "),
+      });
       return;
     }
 
     try {
-      const res = await fetch(editor.id ? `/api/prompt-templates/${editor.id}` : "/api/prompt-templates", {
-        method: editor.id ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(
+        editor.id
+          ? `/api/prompt-templates/${editor.id}`
+          : "/api/prompt-templates",
+        {
+          method: editor.id ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Speichern fehlgeschlagen.");
       toast.success(editor.id ? "Prompt aktualisiert" : "Prompt angelegt");
@@ -153,7 +191,9 @@ export function PromptManager() {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api/prompt-templates/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/prompt-templates/${id}`, {
+        method: "DELETE",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Löschen fehlgeschlagen.");
       toast.success("Prompt gelöscht");
@@ -164,7 +204,10 @@ export function PromptManager() {
     }
   };
 
-  const handleSetActive = async (templateId: string | "default", targetStage?: PromptStage) => {
+  const handleSetActive = async (
+    templateId: string | "default",
+    targetStage?: PromptStage
+  ) => {
     const s = targetStage ?? stage;
     try {
       const res = await fetch("/api/prompt-templates/active", {
@@ -197,7 +240,11 @@ export function PromptManager() {
       const res = await fetch("/api/prompt-templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stage: tpl.stage, name, instructions: tpl.instructions }),
+        body: JSON.stringify({
+          stage: tpl.stage,
+          name,
+          instructions: tpl.instructions,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Duplizieren fehlgeschlagen.");
@@ -208,7 +255,11 @@ export function PromptManager() {
     }
   };
 
-  const handleDuplicateSystemTemplate = async (targetStage: PromptStage, templateKey: string, name: string) => {
+  const handleDuplicateSystemTemplate = async (
+    targetStage: PromptStage,
+    templateKey: string,
+    name: string
+  ) => {
     if (!canDuplicateSystemPrompts) return;
     const suffix = " (Kopie)";
     const maxLen = 80;
@@ -241,8 +292,14 @@ export function PromptManager() {
   };
 
   const stageVariables = useMemo(() => {
-    const req = STAGE_CONFIG[stage].requiredPlaceholders.map((p) => ({ name: p.replace(/[{}]/g, ""), required: true }));
-    const opt = (STAGE_CONFIG[stage].optionalPlaceholders || []).map((p) => ({ name: p.replace(/[{}]/g, ""), required: false }));
+    const req = STAGE_CONFIG[stage].requiredPlaceholders.map((p) => ({
+      name: p.replace(/[{}]/g, ""),
+      required: true,
+    }));
+    const opt = (STAGE_CONFIG[stage].optionalPlaceholders || []).map((p) => ({
+      name: p.replace(/[{}]/g, ""),
+      required: false,
+    }));
     return [...req, ...opt];
   }, [stage]);
 
@@ -251,7 +308,10 @@ export function PromptManager() {
       <Card className="p-5">
         <div className="flex items-center justify-between">
           <div>
-            <Label htmlFor="ask-on-process" className="text-sm font-medium cursor-pointer">
+            <Label
+              htmlFor="ask-on-process"
+              className="text-sm font-medium cursor-pointer"
+            >
               Prompt bei jeder Verarbeitung auswählen
             </Label>
             <p className="text-xs text-muted-foreground mt-1">
@@ -311,7 +371,8 @@ export function PromptManager() {
             .filter((t) => t.stage === opt.value)
             .slice()
             .sort((a, b) => {
-              const rank = (key: string) => (key === "default" ? 0 : key === "default_v2" ? 1 : 2);
+              const rank = (key: string) =>
+                key === "default" ? 0 : key === "default_v2" ? 1 : 2;
               const ra = rank(a.templateKey);
               const rb = rank(b.templateKey);
               if (ra !== rb) return ra - rb;
@@ -354,7 +415,10 @@ export function PromptManager() {
                   return (
                     <Card
                       key={`${opt.value}:${sys.templateKey}`}
-                      className={cn("p-4 transition-colors", isActive && "ring-2 ring-primary/50 bg-primary/5")}
+                      className={cn(
+                        "p-4 transition-colors",
+                        isActive && "ring-2 ring-primary/50 bg-primary/5"
+                      )}
                     >
                       <div className="flex items-start gap-4">
                         <div className="flex-1 min-w-0">
@@ -376,7 +440,9 @@ export function PromptManager() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => handleDuplicateSystemTemplate(opt.value, sys.templateKey, sys.name)}
+                              onClick={() =>
+                                handleDuplicateSystemTemplate(opt.value, sys.templateKey, sys.name)
+                              }
                               title="In eigene Prompts kopieren"
                             >
                               <Copy className="h-4 w-4" />
@@ -390,7 +456,11 @@ export function PromptManager() {
                             disabled={isActive}
                             title={isActive ? "Aktiv" : "Als Standard setzen"}
                           >
-                            {isActive ? <Check className="h-4 w-4 text-primary" /> : <Star className="h-4 w-4" />}
+                            {isActive ? (
+                              <Check className="h-4 w-4 text-primary" />
+                            ) : (
+                              <Star className="h-4 w-4" />
+                            )}
                           </Button>
                         </div>
                       </div>
@@ -404,7 +474,11 @@ export function PromptManager() {
                   <p className="text-sm text-muted-foreground">
                     Du hast noch keine eigenen Prompts für diese Stufe erstellt.
                   </p>
-                  {opt.value === "process_quelle" || opt.value === "combine" || opt.value === "summary" || opt.value === "shorten" || opt.value === "lesefluss" ? (
+                  {opt.value === "process_quelle" ||
+                  opt.value === "combine" ||
+                  opt.value === "summary" ||
+                  opt.value === "shorten" ||
+                  opt.value === "lesefluss" ? (
                     <p className="text-xs text-muted-foreground mt-1">
                       Wähle oben zwischen System-Standard und System-Standard (v2).
                     </p>
@@ -445,10 +519,16 @@ export function PromptManager() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => handleSetActive(isDefault ? "default" : tpl.id, opt.value)}
+                              onClick={() =>
+                                handleSetActive(isDefault ? "default" : tpl.id, opt.value)
+                              }
                               title={isDefault ? "Standard entfernen" : "Als Standard setzen"}
                             >
-                              {isDefault ? <StarOff className="h-4 w-4 text-primary" /> : <Star className="h-4 w-4" />}
+                              {isDefault ? (
+                                <StarOff className="h-4 w-4 text-primary" />
+                              ) : (
+                                <Star className="h-4 w-4" />
+                              )}
                             </Button>
                             <Button
                               variant="ghost"
@@ -456,8 +536,14 @@ export function PromptManager() {
                               className="h-8 w-8"
                               onClick={() => {
                                 setStage(opt.value);
-                                setEditor({ id: tpl.id, name: tpl.name, instructions: tpl.instructions });
-                                setMissingPlaceholders(computeMissing(tpl.instructions, opt.value));
+                                setEditor({
+                                  id: tpl.id,
+                                  name: tpl.name,
+                                  instructions: tpl.instructions,
+                                });
+                                setMissingPlaceholders(
+                                  computeMissing(tpl.instructions, opt.value)
+                                );
                                 setEditorOpen(true);
                               }}
                               title="Bearbeiten"
@@ -496,17 +582,26 @@ export function PromptManager() {
 
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogContent
-          className="w-auto max-w-none"
-          style={{ width: "70vw", maxWidth: "70vw", maxHeight: "92vh" }}
+          className="w-auto max-w-none flex flex-col h-[80vh] max-h-[80vh] overflow-hidden"
+          style={{ width: "70vw", maxWidth: "70vw" }}
           showCloseButton={false}
         >
           <DialogHeader className="pb-4 border-b">
             <div className="flex items-start justify-between">
               <div>
-                <DialogTitle className="text-lg">{editor.id ? "Prompt bearbeiten" : "Neuer Prompt"}</DialogTitle>
-                <p className="text-sm text-muted-foreground mt-1">{STAGE_CONFIG[stage].label}</p>
+                <DialogTitle className="text-lg">
+                  {editor.id ? "Prompt bearbeiten" : "Neuer Prompt"}
+                </DialogTitle>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {STAGE_CONFIG[stage].label}
+                </p>
               </div>
-              <Button variant="ghost" size="icon" className="-mr-2 h-8 w-8" onClick={() => setEditorOpen(false)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="-mr-2 h-8 w-8"
+                onClick={() => setEditorOpen(false)}
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -515,7 +610,9 @@ export function PromptManager() {
             {/* Variables panel on the left */}
             <div className="w-72 shrink-0 flex flex-col min-h-0">
               <div className="p-4 bg-muted/40 rounded-lg flex flex-col min-h-0 flex-1">
-                <p className="text-sm font-medium text-foreground shrink-0">Verfügbare Variablen</p>
+                <p className="text-sm font-medium text-foreground shrink-0">
+                  Verfügbare Variablen
+                </p>
                 <p className="text-xs text-muted-foreground mt-1 shrink-0">
                   Klicke auf eine Variable, um sie zu kopieren.
                 </p>
@@ -538,14 +635,18 @@ export function PromptManager() {
                       )}
                     >
                       {`{${variable.name}}`}
-                      {variable.required && <span className="text-[10px] font-sans text-primary">*</span>}
+                      {variable.required && (
+                        <span className="text-[10px] font-sans text-primary">*</span>
+                      )}
                       {copiedVar === variable.name && <Check className="h-3 w-3 ml-1" />}
                     </button>
                   ))}
                 </div>
 
                 <div className="mt-4 pt-4 border-t overflow-y-auto flex-1 min-h-0">
-                  <p className="text-xs font-medium text-foreground mb-2">Beschreibungen</p>
+                  <p className="text-xs font-medium text-foreground mb-2">
+                    Beschreibungen
+                  </p>
                   <div className="text-xs text-muted-foreground space-y-2">
                     {stageVariables.map((variable) => (
                       <div key={variable.name} className="leading-relaxed">
@@ -571,7 +672,9 @@ export function PromptManager() {
                 <Input
                   id="prompt-name"
                   value={editor.name}
-                  onChange={(e) => setEditor((prev) => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) =>
+                    setEditor((prev) => ({ ...prev, name: e.target.value }))
+                  }
                   placeholder="z. B. Wissenschaftlicher Stil"
                   className="mt-1.5"
                 />
@@ -608,13 +711,15 @@ export function PromptManager() {
                 </div>
 
                 {showPreview ? (
-                  <div className="flex-1 p-4 bg-muted/30 rounded-lg border overflow-y-auto text-sm whitespace-pre-wrap max-h-[60vh]">
-                    {renderPreview() || <span className="text-muted-foreground italic">Keine Vorschau verfügbar</span>}
+                  <div className="flex-1 min-h-0 p-4 bg-muted/30 rounded-lg border overflow-y-auto text-sm whitespace-pre-wrap">
+                    {renderPreview() || (
+                      <span className="text-muted-foreground italic">Keine Vorschau verfügbar</span>
+                    )}
                   </div>
                 ) : (
                   <Textarea
                     id="prompt-instructions"
-                    className="font-mono text-sm resize-none min-h-[200px] max-h-[60vh] overflow-auto"
+                    className="flex-1 min-h-0 font-mono text-sm resize-none overflow-auto"
                     value={editor.instructions}
                     onChange={(e) => {
                       const value = e.target.value;
@@ -642,14 +747,24 @@ export function PromptManager() {
             <Button variant="outline" onClick={() => setEditorOpen(false)}>
               Abbrechen
             </Button>
-            <Button onClick={handleSave} disabled={!editor.name.trim() || !editor.instructions.trim() || missingPlaceholders.length > 0}>
+            <Button
+              onClick={handleSave}
+              disabled={
+                !editor.name.trim() ||
+                !editor.instructions.trim() ||
+                missingPlaceholders.length > 0
+              }
+            >
               {editor.id ? "Speichern" : "Anlegen"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(null)}>
+      <AlertDialog
+        open={!!confirmDelete}
+        onOpenChange={(open) => !open && setConfirmDelete(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Prompt löschen?</AlertDialogTitle>
