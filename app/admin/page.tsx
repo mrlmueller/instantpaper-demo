@@ -43,7 +43,7 @@ function splitUsers(users: AdminUserRow[]) {
 }
 
 function stableRowKey(u: AdminUserRow): string {
-  return `${u.email || u.displayName || 'user'}-${u.createdAt || ''}-${u.lastSignInAt || ''}`;
+  return `${u.uid || u.email || u.displayName || 'user'}-${u.createdAt || ''}-${u.lastSignInAt || ''}`;
 }
 
 function PlatformKeyCell({ user, formId }: { user: AdminUserRow; formId: string }) {
@@ -278,25 +278,32 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           <span className="text-xs text-muted-foreground shrink-0">{formatIso(u.lastSignInAt)}</span>
                         </div>
                         <div className="mt-3">
-                          {u.email ? (
-                            <form id={`pending-approve-mobile-${idx}`} action={adminSetUserApproval} className="w-full">
-                              <input type="hidden" name="email" value={u.email} />
-                              <input type="hidden" name="approved" value="true" />
-                              <ConfirmSubmitDialog
-                                triggerLabel="Approve"
-                                triggerVariant="default"
-                                triggerSize="default"
-                                triggerClassName="w-full"
-                                title="User freischalten?"
-                                description={`M”chtest du ${u.email} freischalten?`}
-                                confirmLabel="Approve"
-                                confirmVariant="default"
-                                formId={`pending-approve-mobile-${idx}`}
-                              />
-                            </form>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">-</span>
-                          )}
+                          <div className="flex flex-col gap-2">
+                            {u.uid ? (
+                              <Button asChild variant="outline" className="w-full">
+                                <Link href={`/admin/users/${encodeURIComponent(u.uid)}`}>Details</Link>
+                              </Button>
+                            ) : null}
+                            {u.email ? (
+                              <form id={`pending-approve-mobile-${idx}`} action={adminSetUserApproval} className="w-full">
+                                <input type="hidden" name="email" value={u.email} />
+                                <input type="hidden" name="approved" value="true" />
+                                <ConfirmSubmitDialog
+                                  triggerLabel="Approve"
+                                  triggerVariant="default"
+                                  triggerSize="default"
+                                  triggerClassName="w-full"
+                                  title="User freischalten?"
+                                  description={`M"chtest du ${u.email} freischalten?`}
+                                  confirmLabel="Approve"
+                                  confirmVariant="default"
+                                  formId={`pending-approve-mobile-${idx}`}
+                                />
+                              </form>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">-</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -318,6 +325,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         <TableCell>{u.displayName || '-'}</TableCell>
                         <TableCell>{formatIso(u.lastSignInAt)}</TableCell>
                         <TableCell className="text-right">
+                          <div className="inline-flex items-center justify-end gap-2">
+                            {u.uid ? (
+                              <Button asChild variant="outline" size="sm">
+                                <Link href={`/admin/users/${encodeURIComponent(u.uid)}`}>Details</Link>
+                              </Button>
+                            ) : null}
                           {u.email ? (
                             <form
                               id={`pending-approve-desktop-${idx}`}
@@ -339,6 +352,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           ) : (
                             <span className="text-sm text-muted-foreground">-</span>
                           )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -388,25 +402,32 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         </div>
 
                         <div>
-                          {u.email ? (
-                            <form id={`approved-revoke-mobile-${idx}`} action={adminSetUserApproval} className="w-full">
-                              <input type="hidden" name="email" value={u.email} />
-                              <input type="hidden" name="approved" value="false" />
-                              <ConfirmSubmitDialog
-                                triggerLabel="Revoke"
-                                triggerVariant="outline"
-                                triggerSize="default"
-                                triggerClassName="w-full"
-                                title="User sperren?"
-                                description={`M”chtest du ${u.email} sperren?`}
-                                confirmLabel="Revoke"
-                                confirmVariant="destructive"
-                                formId={`approved-revoke-mobile-${idx}`}
-                              />
-                            </form>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">-</span>
-                          )}
+                          <div className="flex flex-col gap-2">
+                            {u.uid ? (
+                              <Button asChild variant="outline" className="w-full">
+                                <Link href={`/admin/users/${encodeURIComponent(u.uid)}`}>Details</Link>
+                              </Button>
+                            ) : null}
+                            {u.email ? (
+                              <form id={`approved-revoke-mobile-${idx}`} action={adminSetUserApproval} className="w-full">
+                                <input type="hidden" name="email" value={u.email} />
+                                <input type="hidden" name="approved" value="false" />
+                                <ConfirmSubmitDialog
+                                  triggerLabel="Revoke"
+                                  triggerVariant="outline"
+                                  triggerSize="default"
+                                  triggerClassName="w-full"
+                                  title="User sperren?"
+                                  description={`M"chtest du ${u.email} sperren?`}
+                                  confirmLabel="Revoke"
+                                  confirmVariant="destructive"
+                                  formId={`approved-revoke-mobile-${idx}`}
+                                />
+                              </form>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">-</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -436,6 +457,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         </TableCell>
                         <TableCell>{formatIso(u.lastSignInAt)}</TableCell>
                         <TableCell className="text-right">
+                          <div className="inline-flex items-center justify-end gap-2">
+                            {u.uid ? (
+                              <Button asChild variant="outline" size="sm">
+                                <Link href={`/admin/users/${encodeURIComponent(u.uid)}`}>Details</Link>
+                              </Button>
+                            ) : null}
                           {u.email ? (
                             <form id={`approved-revoke-desktop-${idx}`} action={adminSetUserApproval} className="inline">
                               <input type="hidden" name="email" value={u.email} />
@@ -453,6 +480,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           ) : (
                             <span className="text-sm text-muted-foreground">-</span>
                           )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
