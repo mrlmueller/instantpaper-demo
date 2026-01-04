@@ -199,6 +199,154 @@ export async function updateQuelle(quelleId: string, title: string, content: str
   }
 }
 
+type QuelleAdvancedFieldsUpdate = {
+  autor?: string | null;
+  jahr?: number | null;
+  typ?: 'Book' | 'Article' | 'Website' | 'Thesis' | 'Report' | null;
+  url?: string | null;
+  zugriffAm?: string | null;
+  color?: 'blue' | 'green' | 'teal' | 'lavender' | 'cream' | 'peach' | 'rose' | null;
+};
+
+function hasOwn(obj: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function normalizeStringUpdate(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function normalizeNumberUpdate(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== 'number' || Number.isNaN(value)) return undefined;
+  return value;
+}
+
+export async function updateQuelleFull(
+  quelleId: string,
+  data: {
+    title: string;
+    content: string;
+    images?: ImageMetadata[];
+    advancedFields?: QuelleAdvancedFieldsUpdate;
+  },
+  ctx?: ActionContext
+) {
+  try {
+    const { user, db } = await getContext(ctx);
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    const quelleRef = quelleDoc(db, user.uid, quelleId);
+    const quelleSnap = await getDoc(quelleRef);
+    if (!quelleSnap.exists()) {
+      throw new Error('Quelle not found');
+    }
+
+    const wordCount = countWords(data.content);
+    if (wordCount > MAX_WORDS) {
+      return {
+        success: false,
+        error: `Text zu lang (${wordCount} W”rter). Maximal ${MAX_WORDS} W”rter.`,
+      };
+    }
+    if (data.content.length > MAX_CHARS) {
+      return {
+        success: false,
+        error: `Text zu lang (${data.content.length} Zeichen). Bitte krzen.`,
+      };
+    }
+
+    const updateData: Record<string, unknown> = {
+      title: data.title,
+      wordCount,
+      updatedAt: serverTimestamp(),
+    };
+
+    if (data.images) {
+      if (data.images.length > 0) {
+        updateData.images = data.images;
+      } else {
+        updateData.images = deleteField();
+      }
+    }
+
+    if (data.advancedFields) {
+      const af = data.advancedFields as unknown as Record<string, unknown>;
+
+      if (hasOwn(af, 'autor')) {
+        const autor = normalizeStringUpdate(af.autor);
+        updateData.autor = autor === null ? deleteField() : autor;
+      }
+
+      if (hasOwn(af, 'jahr')) {
+        const jahr = normalizeNumberUpdate(af.jahr);
+        updateData.jahr = jahr === null ? deleteField() : jahr;
+      }
+
+      if (hasOwn(af, 'typ')) {
+        const typ = af.typ;
+        if (typ === null || typ === undefined || typ === '') {
+          updateData.typ = deleteField();
+        } else {
+          updateData.typ = typ;
+        }
+      }
+
+      if (hasOwn(af, 'url')) {
+        const url = normalizeStringUpdate(af.url);
+        updateData.url = url === null ? deleteField() : url;
+      }
+
+      if (hasOwn(af, 'zugriffAm')) {
+        const zugriffAm = normalizeStringUpdate(af.zugriffAm);
+        updateData.zugriffAm = zugriffAm === null ? deleteField() : zugriffAm;
+      }
+
+      if (hasOwn(af, 'color')) {
+        const color = af.color as unknown;
+        if (color === null || color === undefined || color === '') {
+          updateData.color = deleteField();
+        } else {
+          updateData.color = color;
+        }
+      }
+    }
+
+    await updateDoc(quelleRef, updateData);
+
+    const contentRef = quelleContentDoc(db, user.uid, quelleId);
+    const contentSnap = await getDoc(contentRef);
+    if (contentSnap.exists()) {
+      await updateDoc(contentRef, {
+        text: data.content,
+        wordCount,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(contentRef, {
+        text: data.content,
+        wordCount,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    revalidatePath('/dashboard');
+    revalidatePath('/quellen-manager');
+    return { success: true };
+  } catch (error: unknown) {
+    console.error('Error updating Quelle (full):', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
 export async function deleteQuelle(quelleId: string, ctx?: ActionContext) {
   try {
     const { user, db } = await getContext(ctx);
