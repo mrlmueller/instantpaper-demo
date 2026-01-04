@@ -2967,6 +2967,7 @@ export function Dashboard({
         <LeseflussDialog
           open={leseflussDialogOpen}
           onOpenChange={setLeseflussDialogOpen}
+          projektId={projekt.id}
           allKapitels={kapiteln}
           currentKapitelId={activeKapitel.id}
           runModel={selectedRun.model}
