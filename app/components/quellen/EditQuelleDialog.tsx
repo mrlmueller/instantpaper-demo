@@ -30,6 +30,7 @@ import {
   getQuelleContent,
   type ImageMetadata,
 } from "@/app/actions/quellen";
+import { fetchImageUrlAsFile } from "@/app/lib/images/imageUrlToFile";
 import {
   QUELLE_COLORS,
   QUELLE_TYPES,
@@ -107,6 +108,11 @@ export function EditQuelleDialog({
   const [newImageFiles, setNewImageFiles] = useState<File[]>([]);
   const [newImagePreviews, setNewImagePreviews] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [imageUploadMode, setImageUploadMode] = useState<"upload" | "url">(
+    "upload"
+  );
+  const [imageUrl, setImageUrl] = useState("");
+  const [isAddingImageUrl, setIsAddingImageUrl] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [advancedFieldValues, setAdvancedFieldValues] =
@@ -233,6 +239,27 @@ export function EditQuelleDialog({
     setNewImageFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const handleAddImageUrl = async () => {
+    const url = imageUrl.trim();
+    if (!url || remainingSlots <= 0 || isAddingImageUrl) return;
+
+    setIsAddingImageUrl(true);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    try {
+      const file = await fetchImageUrlAsFile(url, { signal: controller.signal });
+      handleFiles([file]);
+      setImageUrl("");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Bild konnte nicht geladen werden.";
+      toast.error("Bild konnte nicht geladen werden", { description: message });
+    } finally {
+      clearTimeout(timer);
+      setIsAddingImageUrl(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!quelleId || isSaving) return;
     if (!name.trim() || !text.trim()) return;
@@ -290,10 +317,66 @@ export function EditQuelleDialog({
           <div className="grid grid-cols-[380px_1fr] gap-6 px-6 flex-1 min-h-0">
             {/* Left Column */}
             <div className="space-y-4 overflow-y-auto pr-2">
-              {/* Images */}
-              <div className="space-y-3">
-                <Label>Bilder (optional, max. {MAX_IMAGES})</Label>
+            {/* Images */}
+            <div className="space-y-3">
+              <Label>Bilder (optional, max. {MAX_IMAGES})</Label>
 
+              {/* Upload Mode Tabs */}
+              <div className="inline-flex gap-0 border rounded-md overflow-hidden w-full">
+                <button
+                  type="button"
+                  className={cn(
+                    "flex-1 px-3 py-2 text-sm font-medium transition-colors",
+                    imageUploadMode === "upload"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background hover:bg-muted"
+                  )}
+                  onClick={() => setImageUploadMode("upload")}
+                >
+                  <svg
+                    className="h-4 w-4 inline-block mr-1.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                    />
+                  </svg>
+                  Hochladen
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "flex-1 px-3 py-2 text-sm font-medium transition-colors border-l",
+                    imageUploadMode === "url"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background hover:bg-muted"
+                  )}
+                  onClick={() => setImageUploadMode("url")}
+                >
+                  <svg
+                    className="h-4 w-4 inline-block mr-1.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                    />
+                  </svg>
+                  URL
+                </button>
+              </div>
+
+              {/* File Upload */}
+              {imageUploadMode === "upload" && (
                 <div
                   className={cn(
                     "border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer",
@@ -341,10 +424,43 @@ export function EditQuelleDialog({
                     disabled={remainingSlots <= 0}
                   />
                 </div>
+              )}
 
-                {(existingImages.length > 0 || newImagePreviews.length > 0) && (
-                  <div className="grid grid-cols-3 gap-2">
-                    {existingImages.map((img, index) => (
+              {/* URL Input */}
+              {imageUploadMode === "url" && (
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Bild-URL eingeben..."
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (imageUrl) {
+                          void handleAddImageUrl();
+                        }
+                      }
+                    }}
+                    disabled={isAddingImageUrl}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (imageUrl) {
+                        void handleAddImageUrl();
+                      }
+                    }}
+                    disabled={!imageUrl || remainingSlots <= 0 || isAddingImageUrl}
+                  >
+                    {isAddingImageUrl ? "L„dt..." : "Hinzufgen"}
+                  </Button>
+                </div>
+              )}
+
+              {(existingImages.length > 0 || newImagePreviews.length > 0) && (
+                <div className="grid grid-cols-3 gap-2">
+                  {existingImages.map((img, index) => (
                       <div
                         key={img.path || img.url || index}
                         className="relative group aspect-square rounded-md overflow-hidden border bg-muted"

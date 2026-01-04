@@ -35,6 +35,7 @@ import {
   getQuellenModeAdvanced,
   setQuellenModeAdvanced,
 } from "@/app/lib/storage/preferences";
+import { fetchImageUrlAsFile } from "@/app/lib/images/imageUrlToFile";
 
 interface AddQuelleDialogProps {
   open: boolean;
@@ -75,6 +76,7 @@ export function AddQuelleDialog({
     "upload"
   );
   const [imageUrl, setImageUrl] = useState("");
+  const [isAddingImageUrl, setIsAddingImageUrl] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,6 +117,27 @@ export function AddQuelleDialog({
 
   const removeImage = (index: number) => {
     setNewQuelleImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddImageUrl = async () => {
+    const url = imageUrl.trim();
+    if (!url || newQuelleImages.length >= 9 || isAddingImageUrl) return;
+
+    setIsAddingImageUrl(true);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    try {
+      const file = await fetchImageUrlAsFile(url, { signal: controller.signal });
+      setNewQuelleImages((prev) => [...prev, file].slice(0, 9));
+      setImageUrl("");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Bild konnte nicht geladen werden.";
+      alert(message);
+    } finally {
+      clearTimeout(timer);
+      setIsAddingImageUrl(false);
+    }
   };
 
   const handleAddQuelle = async () => {
@@ -267,22 +290,23 @@ export function AddQuelleDialog({
                       if (e.key === "Enter") {
                         e.preventDefault();
                         if (imageUrl) {
-                          alert("URL-Modus ist in Entwicklung");
+                          void handleAddImageUrl();
                         }
                       }
                     }}
+                    disabled={isAddingImageUrl}
                   />
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => {
                       if (imageUrl) {
-                        alert("URL-Modus ist in Entwicklung");
+                        void handleAddImageUrl();
                       }
                     }}
-                    disabled={!imageUrl || newQuelleImages.length >= 9}
+                    disabled={!imageUrl || newQuelleImages.length >= 9 || isAddingImageUrl}
                   >
-                    Hinzufügen
+                    {isAddingImageUrl ? "Lädt..." : "Hinzufügen"}
                   </Button>
                 </div>
               )}
