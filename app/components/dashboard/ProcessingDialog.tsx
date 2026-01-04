@@ -21,6 +21,9 @@ import type { ProcessingSettings } from "@/app/types/ui"
 import type { ActivePromptSelections, PromptStage, PromptTemplate, SystemPromptTemplateMeta } from "@/app/types/prompts"
 import { cn } from "@/lib/utils"
 
+const DEFAULT_PROCESSING_MODEL: ProcessingSettings["model"] =
+  process.env.NODE_ENV === "production" ? "gpt-5.2" : "gpt-5-nano"
+
 interface ProcessingDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -49,7 +52,7 @@ export function ProcessingDialog({
   isProcessing,
 }: ProcessingDialogProps) {
   const [settings, setSettings] = useState<ProcessingSettings>({
-    model: "gpt-5-mini",
+    model: DEFAULT_PROCESSING_MODEL,
     ueberschrift: kapitelTitle,
     thema: kapitelThema || "",
     grundlegendeInfos: "",
@@ -105,7 +108,7 @@ export function ProcessingDialog({
     if (!open || wasOpen) return
 
     setSettings({
-      model: "gpt-5-mini",
+      model: DEFAULT_PROCESSING_MODEL,
       ueberschrift: kapitelTitle,
       thema: kapitelThema || "",
       grundlegendeInfos: "",
