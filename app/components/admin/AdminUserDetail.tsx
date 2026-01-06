@@ -1,18 +1,20 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+
+import { ArrowLeft, RefreshCw } from 'lucide-react';
 
 import { AdminUserPromptManager } from '@/app/components/admin/AdminUserPromptManager';
 import { AdminUserProjectsPanel } from '@/app/components/admin/AdminUserProjectsPanel';
 import { AdminUserStatsPanel } from '@/app/components/admin/AdminUserStatsPanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 
-type AdminUserDetail = {
+type AdminUserDetailRow = {
   uid: string;
   email: string | null;
   displayName: string | null;
@@ -32,18 +34,9 @@ type AdminUserOpenAIKey = {
 };
 
 type AdminUserDetailResponse = {
-  user: AdminUserDetail;
+  user: AdminUserDetailRow;
   openaiKey: AdminUserOpenAIKey;
 };
-
-function formatIso(iso: string | null): string {
-  if (!iso) return '-';
-  try {
-    return new Date(iso).toLocaleString('de-DE');
-  } catch {
-    return iso;
-  }
-}
 
 function keySourceLabel(source: AdminUserOpenAIKey['source']): string {
   if (source === 'user') return 'User Key';
@@ -55,11 +48,13 @@ export function AdminUserDetail({ uid }: { uid: string }) {
   const [detail, setDetail] = useState<AdminUserDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [reloading, setReloading] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [tab, setTab] = useState<'prompts' | 'stats' | 'projects'>('prompts');
 
   const title = useMemo(() => {
-    const u = detail?.user;
-    if (!u) return uid;
-    return u.email || u.displayName || u.uid;
+    const user = detail?.user;
+    if (!user) return uid;
+    return user.displayName || user.email || user.uid;
   }, [detail, uid]);
 
   const load = async () => {
@@ -84,23 +79,37 @@ export function AdminUserDetail({ uid }: { uid: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid]);
 
+  const handleRefresh = () => {
+    load();
+    setRefreshNonce((n) => n + 1);
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
-        <Card className="p-6 space-y-3">
-          <Skeleton className="h-6 w-64" />
-          <Skeleton className="h-4 w-80" />
-        </Card>
-        <Card className="p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <Skeleton className="h-9 w-9 rounded-md" />
+            <div className="space-y-2">
+              <Skeleton className="h-6 w-64" />
+              <Skeleton className="h-4 w-40" />
+            </div>
+          </div>
+          <Skeleton className="h-9 w-9 rounded-md" />
+        </div>
+        <div className="border-b">
+          <Skeleton className="h-8 w-64" />
+        </div>
+        <div className="rounded-lg border p-6">
           <Skeleton className="h-10 w-full" />
-        </Card>
+        </div>
       </div>
     );
   }
 
   if (!detail) {
     return (
-      <Card className="p-6">
+      <div className="rounded-lg border p-6">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground truncate">{uid}</p>
@@ -110,71 +119,118 @@ export function AdminUserDetail({ uid }: { uid: string }) {
             Reload
           </Button>
         </div>
-      </Card>
+      </div>
     );
   }
 
-  const u = detail.user;
+  const user = detail.user;
   const key = detail.openaiKey;
+  const keyLabel = `${keySourceLabel(key.source)}${key.last4 ? ` (…${key.last4})` : ''}`;
 
   return (
     <div className="space-y-6">
-      <Card className="p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3 min-w-0">
+          <Button asChild variant="ghost" size="icon" className="h-9 w-9 shrink-0">
+            <Link href="/admin?section=users" aria-label="Zurück">
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+          </Button>
+
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-foreground truncate">{title}</h2>
-            <p className="text-xs text-muted-foreground mt-1 break-all">UID: {u.uid}</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge variant={u.approved ? 'default' : 'outline'}>{u.approved ? 'approved' : 'pending'}</Badge>
-              {u.disabled ? (
-                <Badge variant="outline" className="border-destructive text-destructive">
-                  disabled
+            <h1 className="text-xl font-semibold text-foreground truncate">{title}</h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted-foreground break-all">{user.uid}</span>
+
+              <Badge
+                className={cn(
+                  'rounded-md px-2 py-0.5 text-xs font-semibold',
+                  user.approved
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-transparent text-foreground border border-muted-foreground/30'
+                )}
+              >
+                {user.approved ? 'Approved' : 'Pending'}
+              </Badge>
+
+              {user.disabled ? (
+                <Badge
+                  variant="outline"
+                  className="rounded-md px-2 py-0.5 text-xs font-semibold border-destructive text-destructive"
+                >
+                  Disabled
                 </Badge>
               ) : null}
-              <Badge variant="secondary">platform-key: {u.allowPlatformKey ? 'allowed' : 'blocked'}</Badge>
-              <Badge variant="secondary">syscopy: {u.canDuplicateSystemPrompts ? 'allowed' : 'blocked'}</Badge>
-            </div>
-          </div>
 
-          <div className="flex flex-col items-start gap-2 sm:items-end">
-            <Button variant="outline" onClick={load} disabled={reloading}>
-              Reload
-            </Button>
-            <div className="text-xs text-muted-foreground space-y-1">
-              <div>Created: {formatIso(u.createdAt)}</div>
-              <div>Last login: {formatIso(u.lastSignInAt)}</div>
-              <div>
-                OpenAI: <span className="text-foreground">{keySourceLabel(key.source)}</span>
-                {key.last4 ? <span className="text-muted-foreground"> (…{key.last4})</span> : null}
-              </div>
+              <Badge
+                variant={user.allowPlatformKey ? 'default' : 'outline'}
+                className={cn(
+                  'rounded-md px-2 py-0.5 text-xs font-semibold',
+                  user.allowPlatformKey ? 'bg-primary text-primary-foreground' : 'bg-transparent'
+                )}
+              >
+                Platform Key: {user.allowPlatformKey ? 'Ja' : 'Nein'}
+              </Badge>
+
+              <Badge
+                variant={user.canDuplicateSystemPrompts ? 'default' : 'outline'}
+                className={cn(
+                  'rounded-md px-2 py-0.5 text-xs font-semibold',
+                  user.canDuplicateSystemPrompts ? 'bg-primary text-primary-foreground' : 'bg-transparent'
+                )}
+              >
+                Prompt Copy: {user.canDuplicateSystemPrompts ? 'Ja' : 'Nein'}
+              </Badge>
+
+              <Badge variant="secondary" className="rounded-md px-2 py-0.5 text-xs font-semibold">
+                OpenAI: {keyLabel}
+              </Badge>
             </div>
           </div>
         </div>
-      </Card>
 
-      <Tabs defaultValue="prompts">
-        <TabsList className="w-full flex-wrap h-auto gap-1 p-1">
-          <TabsTrigger value="prompts" className="text-xs px-3 py-1.5">
-            Prompts
-          </TabsTrigger>
-          <TabsTrigger value="stats" className="text-xs px-3 py-1.5">
-            Stats
-          </TabsTrigger>
-          <TabsTrigger value="projects" className="text-xs px-3 py-1.5">
-            Projects & Quellen
-          </TabsTrigger>
-        </TabsList>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0"
+          onClick={handleRefresh}
+          disabled={reloading}
+          aria-label="Aktualisieren"
+        >
+          <RefreshCw className={cn('h-5 w-5', reloading && 'animate-spin')} />
+        </Button>
+      </div>
 
-        <TabsContent value="prompts">
-          <AdminUserPromptManager uid={u.uid} />
-        </TabsContent>
-        <TabsContent value="stats">
-          <AdminUserStatsPanel uid={u.uid} />
-        </TabsContent>
-        <TabsContent value="projects">
-          <AdminUserProjectsPanel uid={u.uid} />
-        </TabsContent>
-      </Tabs>
+      <div className="border-b">
+        <nav className="flex items-center gap-6">
+          {(
+            [
+              { id: 'prompts', label: 'Prompts' },
+              { id: 'stats', label: 'Stats' },
+              { id: 'projects', label: 'Projects' },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={cn(
+                'pb-3 text-sm font-medium border-b-2 -mb-px transition-colors',
+                tab === t.id
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {tab === 'prompts' ? <AdminUserPromptManager uid={user.uid} refreshNonce={refreshNonce} /> : null}
+      {tab === 'stats' ? <AdminUserStatsPanel uid={user.uid} refreshNonce={refreshNonce} /> : null}
+      {tab === 'projects' ? <AdminUserProjectsPanel uid={user.uid} refreshNonce={refreshNonce} /> : null}
     </div>
   );
 }
+

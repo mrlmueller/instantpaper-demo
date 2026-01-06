@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { ExternalLink } from 'lucide-react';
+
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -15,7 +16,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 
 type ProjectRow = {
@@ -59,16 +59,13 @@ type QuelleDetailResponse = {
   error?: string;
 };
 
-function formatIso(iso: string | null): string {
-  if (!iso) return '-';
-  try {
-    return new Date(iso).toLocaleString('de-DE');
-  } catch {
-    return iso;
-  }
+function formatNumber(num: number): string {
+  const n = Number(num || 0);
+  if (!Number.isFinite(n)) return '0';
+  return n.toLocaleString('de-DE');
 }
 
-export function AdminUserProjectsPanel({ uid }: { uid: string }) {
+export function AdminUserProjectsPanel({ uid, refreshNonce }: { uid: string; refreshNonce?: number }) {
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [openProjectId, setOpenProjectId] = useState<string | undefined>(undefined);
@@ -88,6 +85,8 @@ export function AdminUserProjectsPanel({ uid }: { uid: string }) {
       const data = (await res.json()) as ProjectsResponse;
       if (!res.ok) throw new Error((data as any)?.error || 'Konnte Projekte nicht laden.');
       setProjects(Array.isArray(data.projects) ? data.projects : []);
+      setQuellenByProject({});
+      setOpenProjectId(undefined);
     } catch (err: any) {
       toast.error('Projekte', { description: err?.message || 'Konnte Projekte nicht laden.' });
       setProjects([]);
@@ -140,7 +139,7 @@ export function AdminUserProjectsPanel({ uid }: { uid: string }) {
   useEffect(() => {
     loadProjects();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uid]);
+  }, [uid, refreshNonce]);
 
   useEffect(() => {
     if (!openProjectId) return;
@@ -149,128 +148,104 @@ export function AdminUserProjectsPanel({ uid }: { uid: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openProjectId]);
 
-  const projectCount = projects.length;
-  const totalQuellenLoaded = useMemo(
-    () => Object.values(quellenByProject).reduce((acc, list) => acc + (Array.isArray(list) ? list.length : 0), 0),
-    [quellenByProject]
-  );
+  const totalQuellenLoaded = useMemo(() => Object.values(quellenByProject).reduce((acc, list) => acc + list.length, 0), [quellenByProject]);
 
   if (loading) {
     return (
-      <Card className="p-6 space-y-3">
-        <Skeleton className="h-5 w-48" />
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-10 w-full" />
-      </Card>
-    );
-  }
-
-  if (projects.length === 0) {
-    return (
-      <Card className="p-6">
-        <p className="text-sm text-muted-foreground">Keine Projekte gefunden.</p>
-      </Card>
+      <div className="space-y-4">
+        <div className="rounded-lg border bg-background p-6">
+          <Skeleton className="h-5 w-56" />
+          <Skeleton className="h-4 w-40 mt-2" />
+        </div>
+        <div className="space-y-2">
+          {[...Array(2)].map((_, i) => (
+            <div key={i} className="rounded-lg border bg-background px-4 py-3">
+              <Skeleton className="h-4 w-64" />
+              <Skeleton className="h-3 w-40 mt-2" />
+            </div>
+          ))}
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <Card className="p-5 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm text-muted-foreground">
-          {projectCount} Projekte • {totalQuellenLoaded} Quellen geladen
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-foreground">Projekte & Quellen</h3>
+        <p className="text-sm text-muted-foreground">
+          {projects.length} Projekte • {totalQuellenLoaded} Quellen geladen
+        </p>
+      </div>
+
+      {projects.length === 0 ? (
+        <div className="rounded-lg border bg-background p-6">
+          <p className="text-sm text-muted-foreground">Keine Projekte gefunden.</p>
         </div>
-        <Button variant="outline" size="sm" onClick={loadProjects} disabled={loading}>
-          Reload projects
-        </Button>
-      </Card>
+      ) : (
+        <Accordion type="single" collapsible value={openProjectId} onValueChange={setOpenProjectId}>
+          {projects.map((p) => {
+            const quellen = quellenByProject[p.id];
+            const count = typeof quellen === 'undefined' ? '—' : String(quellen.length);
+            const isLoadingQuellen = loadingProjectId === p.id;
 
-      <Accordion
-        type="single"
-        collapsible
-        value={openProjectId}
-        onValueChange={(v) => setOpenProjectId(v || undefined)}
-      >
-        {projects.map((p) => {
-          const quellen = quellenByProject[p.id];
-          const isLoadingQuellen = loadingProjectId === p.id;
-          return (
-            <AccordionItem key={p.id} value={p.id}>
-              <AccordionTrigger>
-                <div className="flex flex-wrap items-center gap-2 min-w-0">
-                  <span className="truncate">{p.name}</span>
-                  {p.archived ? <Badge variant="outline">archived</Badge> : null}
-                  <span className="text-xs text-muted-foreground">({p.id})</span>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                <Card className="p-4">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
-                    <div className="text-xs text-muted-foreground">
-                      Created: {formatIso(p.createdAt)} • Updated: {formatIso(p.updatedAt)}
+            return (
+              <AccordionItem key={p.id} value={p.id} className="border-b-0 mb-4 last:mb-0">
+                <div className="rounded-lg border bg-background px-4">
+                  <AccordionTrigger className="hover:no-underline py-4">
+                    <div className="flex items-center justify-between w-full gap-4">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="truncate">{p.name || p.id}</span>
+                        {p.archived ? <Badge variant="outline">archived</Badge> : null}
+                      </div>
+                      <div className="text-xs text-muted-foreground shrink-0">{count} Quellen</div>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => loadQuellenForProject(p.id)}
-                      disabled={isLoadingQuellen}
-                    >
-                      Reload Quellen
-                    </Button>
-                  </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-4">
+                    {isLoadingQuellen ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-10 w-full" />
+                        <Skeleton className="h-10 w-full" />
+                      </div>
+                    ) : !quellen ? (
+                      <p className="text-sm text-muted-foreground">Lade Quellen…</p>
+                    ) : quellen.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Keine Quellen in diesem Projekt.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {quellen.map((q) => {
+                          const meta = [
+                            q.wordCount ? `${formatNumber(q.wordCount)} Wörter` : null,
+                            q.autor || null,
+                            typeof q.jahr === 'number' ? String(q.jahr) : null,
+                            q.typ || null,
+                          ]
+                            .filter(Boolean)
+                            .join(' • ');
 
-                  {isLoadingQuellen ? (
-                    <div className="space-y-2">
-                      <Skeleton className="h-8 w-full" />
-                      <Skeleton className="h-8 w-full" />
-                    </div>
-                  ) : !quellen ? (
-                    <p className="text-sm text-muted-foreground">Lade Quellen…</p>
-                  ) : quellen.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Keine Quellen in diesem Projekt.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Titel</TableHead>
-                            <TableHead>Wörter</TableHead>
-                            <TableHead>Created</TableHead>
-                            <TableHead className="text-right">Aktion</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {quellen.map((q) => (
-                            <TableRow key={q.id}>
-                              <TableCell className="font-medium">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="truncate">{q.title}</span>
-                                  {q.archived ? <Badge variant="outline">archived</Badge> : null}
+                          return (
+                            <div key={q.id} className="rounded-md border bg-background px-3 py-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-foreground truncate">{q.title || q.id}</p>
+                                  {meta ? <p className="text-xs text-muted-foreground truncate">{meta}</p> : null}
                                 </div>
-                                {q.autor || q.jahr || q.typ ? (
-                                  <div className="text-xs text-muted-foreground mt-1">
-                                    {[q.autor, q.jahr ? String(q.jahr) : null, q.typ].filter(Boolean).join(' • ')}
-                                  </div>
-                                ) : null}
-                              </TableCell>
-                              <TableCell className="text-sm text-muted-foreground">{q.wordCount ?? 0}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground">{formatIso(q.createdAt)}</TableCell>
-                              <TableCell className="text-right">
-                                <Button variant="outline" size="sm" onClick={() => openQuelle(q.id)}>
-                                  View
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openQuelle(q.id)} aria-label="Quelle ansehen">
+                                  <ExternalLink className="h-4 w-4" />
                                 </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-                </Card>
-              </AccordionContent>
-            </AccordionItem>
-          );
-        })}
-      </Accordion>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </AccordionContent>
+                </div>
+              </AccordionItem>
+            );
+          })}
+        </Accordion>
+      )}
 
       <Dialog open={quelleDialogOpen} onOpenChange={(open) => (!loadingQuelle ? setQuelleDialogOpen(open) : null)}>
         <DialogContent className="max-w-4xl">
@@ -286,23 +261,7 @@ export function AdminUserProjectsPanel({ uid }: { uid: string }) {
           ) : !selectedQuelle ? (
             <p className="text-sm text-muted-foreground">Keine Daten.</p>
           ) : (
-            <div className="space-y-4">
-              <div className="text-xs text-muted-foreground space-y-1">
-                <div>ID: {selectedQuelle.meta.id}</div>
-                <div>Projekt: {selectedQuelle.meta.projektId}</div>
-                <div>
-                  Created: {formatIso(selectedQuelle.meta.createdAt)} • Updated: {formatIso(selectedQuelle.meta.updatedAt)}
-                </div>
-                {selectedQuelle.meta.url ? <div>URL: {selectedQuelle.meta.url}</div> : null}
-                {selectedQuelle.meta.zitat ? <div>Zitat: {selectedQuelle.meta.zitat}</div> : null}
-              </div>
-
-              <Textarea
-                readOnly
-                value={selectedQuelle.content.text || ''}
-                className="min-h-[360px] font-mono text-xs"
-              />
-            </div>
+            <Textarea readOnly value={selectedQuelle.content.text || ''} className="min-h-[360px] font-mono text-xs" />
           )}
 
           <DialogFooter>
