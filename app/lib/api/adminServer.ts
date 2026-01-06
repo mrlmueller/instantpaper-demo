@@ -30,6 +30,7 @@ export async function isAdminUser(): Promise<boolean> {
 }
 
 export type AdminUserRow = {
+  uid: string | null;
   email: string | null;
   displayName: string | null;
   approved: boolean;
@@ -70,6 +71,7 @@ export async function listAdminUsers(params?: {
   const data = (await res.json()) as { users?: unknown; nextPageToken?: unknown };
   const users = Array.isArray(data.users)
       ? (data.users as Array<Record<string, unknown>>).map((u) => ({
+          uid: typeof u.uid === 'string' ? u.uid : null,
           email: typeof u.email === 'string' ? u.email : null,
           displayName: typeof u.displayName === 'string' ? u.displayName : null,
           approved: u.approved === true,

@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useFormStatus } from 'react-dom';
 import { Loader2 } from 'lucide-react';
 import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
@@ -29,6 +30,8 @@ export function ConfirmSubmitDialog({
   triggerVariant = 'default',
   triggerSize = 'sm',
   triggerClassName,
+  triggerChildren,
+  triggerAriaLabel,
   title,
   description,
   confirmLabel,
@@ -49,6 +52,8 @@ export function ConfirmSubmitDialog({
   formId?: string;
   confirmClassName?: string;
   triggerClassName?: string;
+  triggerChildren?: ReactNode;
+  triggerAriaLabel?: string;
   disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
@@ -59,9 +64,10 @@ export function ConfirmSubmitDialog({
         <button
           type="button"
           className={cn(buttonVariants({ variant: triggerVariant, size: triggerSize }), triggerClassName)}
+          aria-label={triggerAriaLabel ?? triggerLabel}
           disabled={disabled || pending}
         >
-          {triggerLabel}
+          {triggerChildren ?? triggerLabel}
         </button>
       </AlertDialogTrigger>
       <AlertDialogContent>

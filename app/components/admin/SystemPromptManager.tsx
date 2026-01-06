@@ -1,11 +1,17 @@
 "use client";
 
+import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { Archive, Check, Pencil, Plus, RefreshCw, RotateCcw } from "lucide-react";
+
+import { STAGE_CONFIG } from "@/app/lib/prompts/promptConfig";
+import type { PromptStage } from "@/app/types/prompts";
+import { cn } from "@/lib/utils";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -16,11 +22,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -28,10 +32,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { STAGE_CONFIG } from "@/app/lib/prompts/promptConfig";
-import type { PromptStage } from "@/app/types/prompts";
-import { cn } from "@/lib/utils";
-import { Archive, Pencil, Plus, RefreshCw } from "lucide-react";
 
 type AdminSystemPromptTemplate = {
   stage: PromptStage;
@@ -56,6 +56,11 @@ type EditorState = {
   archived: boolean;
 };
 
+type ConfirmAction =
+  | { kind: "publish"; template: AdminSystemPromptTemplate }
+  | { kind: "archive"; template: AdminSystemPromptTemplate }
+  | { kind: "restore"; template: AdminSystemPromptTemplate };
+
 const stageOptions: { value: PromptStage; label: string }[] = [
   { value: "process_quelle", label: STAGE_CONFIG.process_quelle.label },
   { value: "combine", label: STAGE_CONFIG.combine.label },
@@ -67,9 +72,7 @@ const stageOptions: { value: PromptStage; label: string }[] = [
 const TEMPLATE_KEY_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 
 function isPromptStage(value: unknown): value is PromptStage {
-  return (
-    typeof value === "string" && stageOptions.some((s) => s.value === value)
-  );
+  return typeof value === "string" && stageOptions.some((s) => s.value === value);
 }
 
 function formatIso(iso: string | null): string {
@@ -90,15 +93,19 @@ function normalizeTemplate(input: any): AdminSystemPromptTemplate | null {
     stage,
     templateKey,
     name: typeof input?.name === "string" ? input.name : templateKey,
-    instructions:
-      typeof input?.instructions === "string" ? input.instructions : "",
-    systemPrompt:
-      typeof input?.systemPrompt === "string" ? input.systemPrompt : null,
+    instructions: typeof input?.instructions === "string" ? input.instructions : "",
+    systemPrompt: typeof input?.systemPrompt === "string" ? input.systemPrompt : null,
     published: input?.published === true,
     archived: input?.archived === true,
     createdAt: typeof input?.createdAt === "string" ? input.createdAt : null,
     updatedAt: typeof input?.updatedAt === "string" ? input.updatedAt : null,
   };
+}
+
+function sortByUpdatedDesc(a: AdminSystemPromptTemplate, b: AdminSystemPromptTemplate) {
+  const aKey = a.updatedAt || a.createdAt || "";
+  const bKey = b.updatedAt || b.createdAt || "";
+  return bKey.localeCompare(aKey, "de");
 }
 
 export function SystemPromptManager() {
@@ -108,8 +115,7 @@ export function SystemPromptManager() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editor, setEditor] = useState<EditorState | null>(null);
-  const [confirmArchive, setConfirmArchive] =
-    useState<AdminSystemPromptTemplate | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
 
   const load = async () => {
     setIsLoading(true);
@@ -118,8 +124,7 @@ export function SystemPromptManager() {
         cache: "no-store",
       });
       const data = await res.json();
-      if (!res.ok)
-        throw new Error(data.error || "Konnte System-Prompts nicht laden.");
+      if (!res.ok) throw new Error(data.error || "Konnte System-Prompts nicht laden.");
 
       const raw = Array.isArray(data?.templates) ? data.templates : [];
       const normalized = raw
@@ -129,13 +134,15 @@ export function SystemPromptManager() {
         if (a.stage !== b.stage) return a.stage.localeCompare(b.stage, "de");
         if (a.archived !== b.archived) return a.archived ? 1 : -1;
         if (a.published !== b.published) return a.published ? -1 : 1;
-        return (b.updatedAt || "").localeCompare(a.updatedAt || "");
+        return sortByUpdatedDesc(a, b);
       });
+
       setTemplates(normalized);
     } catch (err: any) {
       toast.error("System-Prompts", {
         description: err?.message || "Konnte System-Prompts nicht laden.",
       });
+      setTemplates([]);
     } finally {
       setIsLoading(false);
     }
@@ -143,30 +150,26 @@ export function SystemPromptManager() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const stageTemplates = useMemo(
-    () => templates.filter((t) => t.stage === stage),
-    [templates, stage]
-  );
+  const stageTemplates = useMemo(() => templates.filter((t) => t.stage === stage), [templates, stage]);
   const published = useMemo(
-    () => stageTemplates.filter((t) => t.published && !t.archived),
+    () => stageTemplates.filter((t) => t.published && !t.archived).slice().sort(sortByUpdatedDesc),
     [stageTemplates]
   );
   const drafts = useMemo(
-    () => stageTemplates.filter((t) => !t.published && !t.archived),
+    () => stageTemplates.filter((t) => !t.published && !t.archived).slice().sort(sortByUpdatedDesc),
     [stageTemplates]
   );
   const archived = useMemo(
-    () => stageTemplates.filter((t) => t.archived),
+    () => stageTemplates.filter((t) => t.archived).slice().sort(sortByUpdatedDesc),
     [stageTemplates]
   );
 
   const missingPlaceholders = useMemo(() => {
     if (!editor) return [];
-    return STAGE_CONFIG[editor.stage].requiredPlaceholders.filter(
-      (ph) => !editor.instructions.includes(ph)
-    );
+    return STAGE_CONFIG[editor.stage].requiredPlaceholders.filter((ph) => !editor.instructions.includes(ph));
   }, [editor]);
 
   const openNew = () => {
@@ -206,19 +209,12 @@ export function SystemPromptManager() {
     if (!name) throw new Error("Name ist erforderlich.");
     if (!templateKey) throw new Error("templateKey ist erforderlich.");
     if (!TEMPLATE_KEY_RE.test(templateKey)) {
-      throw new Error(
-        "templateKey ungültig. Erlaubt: Buchstaben/Zahlen plus '-'/'_' (max. 64 Zeichen)."
-      );
+      throw new Error("templateKey ungültig. Erlaubt: Buchstaben/Zahlen plus '-'/'_' (max. 64 Zeichen).");
     }
-    if (!instructions.trim())
-      throw new Error("Instructions sind erforderlich.");
+    if (!instructions.trim()) throw new Error("Instructions sind erforderlich.");
 
-    const missing = STAGE_CONFIG[state.stage].requiredPlaceholders.filter(
-      (ph) => !instructions.includes(ph)
-    );
-    if (missing.length > 0) {
-      throw new Error(`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`);
-    }
+    const missing = STAGE_CONFIG[state.stage].requiredPlaceholders.filter((ph) => !instructions.includes(ph));
+    if (missing.length > 0) throw new Error(`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`);
 
     setIsSaving(true);
     try {
@@ -234,6 +230,7 @@ export function SystemPromptManager() {
           published: Boolean(state.published),
           archived: Boolean(state.archived),
         }),
+        cache: "no-store",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Speichern fehlgeschlagen.");
@@ -259,10 +256,8 @@ export function SystemPromptManager() {
         name: tpl.name,
         instructions: tpl.instructions,
         systemPrompt: tpl.systemPrompt || "",
-        published:
-          typeof next.published === "boolean" ? next.published : tpl.published,
-        archived:
-          typeof next.archived === "boolean" ? next.archived : tpl.archived,
+        published: typeof next.published === "boolean" ? next.published : tpl.published,
+        archived: typeof next.archived === "boolean" ? next.archived : tpl.archived,
       });
     } catch (err: any) {
       toast.error("Aktion fehlgeschlagen", {
@@ -271,285 +266,291 @@ export function SystemPromptManager() {
     }
   };
 
+  const requiredPlaceholders = STAGE_CONFIG[stage].requiredPlaceholders.join(", ");
+  const stageCounts = useMemo(() => {
+    const counts: Partial<Record<PromptStage, number>> = {};
+    for (const opt of stageOptions) counts[opt.value] = 0;
+    for (const t of templates) {
+      if (t.archived) continue;
+      counts[t.stage] = (counts[t.stage] || 0) + 1;
+    }
+    return counts;
+  }, [templates]);
+
+  const confirmMeta = useMemo(() => {
+    if (!confirmAction) return null;
+    const tpl = confirmAction.template;
+    if (confirmAction.kind === "publish") {
+      return {
+        title: "Template veröffentlichen?",
+        description: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`,
+        buttonLabel: "Veröffentlichen",
+        buttonVariant: "default" as const,
+      };
+    }
+    if (confirmAction.kind === "restore") {
+      return {
+        title: "Template wiederherstellen?",
+        description: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`,
+        buttonLabel: "Wiederherstellen",
+        buttonVariant: "outline" as const,
+      };
+    }
+    return {
+      title: "Template archivieren?",
+      description: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`,
+      buttonLabel: "Archivieren",
+      buttonVariant: "destructive" as const,
+    };
+  }, [confirmAction]);
+
+  const runConfirmAction = async () => {
+    if (!confirmAction) return;
+    const tpl = confirmAction.template;
+
+    if (confirmAction.kind === "publish") {
+      await quickToggle(tpl, { published: true, archived: false });
+    } else if (confirmAction.kind === "restore") {
+      await quickToggle(tpl, { archived: false, published: false });
+    } else {
+      await quickToggle(tpl, { archived: true, published: false });
+    }
+
+    setConfirmAction(null);
+  };
+
   return (
     <div className="space-y-6">
-      <Card className="p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">
-              System Prompt Templates
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Publizierte Templates sind sichtbar/auswählbar für Nutzer (ohne
-              Text). Archivierte Templates werden automatisch ersetzt.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => load()}
-              disabled={isLoading}
-            >
-              <RefreshCw className="h-4 w-4 mr-1" />
-              Refresh
-            </Button>
-            <Button size="sm" onClick={openNew}>
-              <Plus className="h-4 w-4 mr-1" />
-              Neuer Prompt
-            </Button>
-          </div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold text-foreground">System Prompt Templates</h2>
+          <p className="text-sm text-muted-foreground">Templates für alle Nutzer</p>
         </div>
-      </Card>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={load} disabled={isLoading}>
+            <RefreshCw className="h-4 w-4" />
+            Aktualisieren
+          </Button>
+          <Button size="sm" onClick={openNew} disabled={isLoading}>
+            <Plus className="h-4 w-4" />
+            Neu
+          </Button>
+        </div>
+      </div>
 
-      <Tabs value={stage} onValueChange={(v) => setStage(v as PromptStage)}>
-        <TabsList className="w-full flex-wrap h-auto gap-1 p-1">
+      <div>
+        <div className="flex flex-wrap items-center gap-6 border-b">
           {stageOptions.map((opt) => {
-            const count = templates.filter(
-              (t) => t.stage === opt.value && !t.archived
-            ).length;
+            const count = stageCounts[opt.value] || 0;
+            const isActive = stage === opt.value;
             return (
-              <TabsTrigger
+              <button
                 key={opt.value}
-                value={opt.value}
-                className="text-xs px-3 py-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                type="button"
+                onClick={() => setStage(opt.value)}
+                className={cn(
+                  "flex items-center gap-2 pb-3 text-sm font-medium border-b-2 -mb-px transition-colors",
+                  isActive
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
               >
-                {opt.label}
-                {count > 0 && (
-                  <Badge
-                    variant="secondary"
-                    className="ml-1.5 h-4 px-1 text-[10px]"
-                  >
+                <span>{opt.label}</span>
+                {count > 0 ? (
+                  <Badge variant="secondary" className="rounded-md px-2 py-0.5 text-xs font-semibold">
                     {count}
                   </Badge>
-                )}
-              </TabsTrigger>
+                ) : null}
+              </button>
             );
           })}
-        </TabsList>
+        </div>
 
-        {stageOptions.map((opt) => (
-          <TabsContent
-            key={opt.value}
-            value={opt.value}
-            className="mt-4 space-y-6"
-          >
-            {isLoading ? (
-              <Card className="p-6">
-                <p className="text-sm text-muted-foreground">
-                  Lade System-Prompts…
-                </p>
-              </Card>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Pflicht-Platzhalter: <span className="font-mono">{requiredPlaceholders}</span>
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="rounded-lg border bg-background p-6">
+          <p className="text-sm text-muted-foreground">Lade System-Prompts.</p>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Veröffentlicht ({published.length})
+            </p>
+            {published.length === 0 ? (
+              <div className="rounded-lg border bg-background p-6">
+                <p className="text-sm text-muted-foreground">Keine veröffentlichten Templates.</p>
+              </div>
             ) : (
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">
-                    Published
-                  </p>
-                  {published.length === 0 ? (
-                    <Card className="p-6">
-                      <p className="text-sm text-muted-foreground">
-                        Keine publizierten Templates.
-                      </p>
-                    </Card>
-                  ) : (
-                    <div className="space-y-3">
-                      {published.map((tpl) => (
-                        <Card
-                          key={`${tpl.stage}:${tpl.templateKey}`}
-                          className="p-4 border-l-4 border-emerald-500"
+              <div className="space-y-2">
+                {published.map((tpl) => (
+                  <div key={`${tpl.stage}:${tpl.templateKey}`} className="rounded-lg border bg-background shadow-sm px-4 py-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-foreground truncate">{tpl.name}</p>
+                          <Badge variant="outline" className="rounded-md px-2 py-0.5 font-mono text-[11px]">
+                            {tpl.templateKey}
+                          </Badge>
+                          <Badge className="rounded-md bg-primary text-primary-foreground px-2 py-0.5 text-[11px] font-semibold">
+                            Published
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Erstellt: {formatIso(tpl.createdAt)} • Aktualisiert: {formatIso(tpl.updatedAt)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => openEdit(tpl)}
+                          aria-label="Bearbeiten"
                         >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className="text-sm font-medium text-foreground truncate">
-                                  {tpl.name}
-                                </p>
-                                <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
-                                  published
-                                </Badge>
-                                <Badge
-                                  variant="outline"
-                                  className="font-mono text-[10px]"
-                                >
-                                  {tpl.templateKey}
-                                </Badge>
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                updated: {formatIso(tpl.updatedAt)} · created:{" "}
-                                {formatIso(tpl.createdAt)}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openEdit(tpl)}
-                              >
-                                <Pencil className="h-4 w-4 mr-1" />
-                                Edit
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setConfirmArchive(tpl)}
-                              >
-                                <Archive className="h-4 w-4 mr-1" />
-                                Archive
-                              </Button>
-                            </div>
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">Drafts</p>
-                  {drafts.length === 0 ? (
-                    <Card className="p-6">
-                      <p className="text-sm text-muted-foreground">
-                        Keine Drafts.
-                      </p>
-                    </Card>
-                  ) : (
-                    <div className="space-y-3">
-                      {drafts.map((tpl) => (
-                        <Card
-                          key={`${tpl.stage}:${tpl.templateKey}`}
-                          className="p-4 border-l-4 border-amber-400"
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setConfirmAction({ kind: "archive", template: tpl })}
+                          aria-label="Archivieren"
                         >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className="text-sm font-medium text-foreground truncate">
-                                  {tpl.name}
-                                </p>
-                                <Badge variant="secondary">draft</Badge>
-                                <Badge
-                                  variant="outline"
-                                  className="font-mono text-[10px]"
-                                >
-                                  {tpl.templateKey}
-                                </Badge>
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                updated: {formatIso(tpl.updatedAt)} · created:{" "}
-                                {formatIso(tpl.createdAt)}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openEdit(tpl)}
-                              >
-                                <Pencil className="h-4 w-4 mr-1" />
-                                Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() =>
-                                  quickToggle(tpl, { published: true })
-                                }
-                              >
-                                Publish
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setConfirmArchive(tpl)}
-                              >
-                                <Archive className="h-4 w-4 mr-1" />
-                                Archive
-                              </Button>
-                            </div>
-                          </div>
-                        </Card>
-                      ))}
+                          <Archive className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">
-                    Archived
-                  </p>
-                  {archived.length === 0 ? (
-                    <Card className="p-6">
-                      <p className="text-sm text-muted-foreground">
-                        Keine archivierten Templates.
-                      </p>
-                    </Card>
-                  ) : (
-                    <div className="space-y-3">
-                      {archived.map((tpl) => (
-                        <Card
-                          key={`${tpl.stage}:${tpl.templateKey}`}
-                          className="p-4 border-l-4 border-zinc-400"
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className="text-sm font-medium text-foreground truncate">
-                                  {tpl.name}
-                                </p>
-                                <Badge variant="outline">archived</Badge>
-                                <Badge
-                                  variant="outline"
-                                  className="font-mono text-[10px]"
-                                >
-                                  {tpl.templateKey}
-                                </Badge>
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                updated: {formatIso(tpl.updatedAt)} · created:{" "}
-                                {formatIso(tpl.createdAt)}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openEdit(tpl)}
-                              >
-                                <Pencil className="h-4 w-4 mr-1" />
-                                View
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  quickToggle(tpl, { archived: false })
-                                }
-                              >
-                                Restore
-                              </Button>
-                            </div>
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                  </div>
+                ))}
               </div>
             )}
-          </TabsContent>
-        ))}
-      </Tabs>
+          </div>
 
-      <Dialog
-        open={editorOpen}
-        onOpenChange={(open) => !isSaving && setEditorOpen(open)}
-      >
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Entwürfe ({drafts.length})
+            </p>
+            {drafts.length === 0 ? (
+              <div className="rounded-lg border bg-background p-6">
+                <p className="text-sm text-muted-foreground">Keine Entwürfe.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {drafts.map((tpl) => (
+                  <div key={`${tpl.stage}:${tpl.templateKey}`} className="rounded-lg border bg-background shadow-sm px-4 py-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-foreground truncate">{tpl.name}</p>
+                          <Badge variant="outline" className="rounded-md px-2 py-0.5 font-mono text-[11px]">
+                            {tpl.templateKey}
+                          </Badge>
+                          <Badge variant="secondary" className="rounded-md px-2 py-0.5 text-[11px] font-semibold">
+                            Draft
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Erstellt: {formatIso(tpl.createdAt)} • Aktualisiert: {formatIso(tpl.updatedAt)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => openEdit(tpl)}
+                          aria-label="Bearbeiten"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setConfirmAction({ kind: "publish", template: tpl })}
+                          aria-label="Veröffentlichen"
+                        >
+                          <Check className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setConfirmAction({ kind: "archive", template: tpl })}
+                          aria-label="Archivieren"
+                        >
+                          <Archive className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Archiviert ({archived.length})
+            </p>
+            {archived.length === 0 ? (
+              <div className="rounded-lg border bg-background p-6">
+                <p className="text-sm text-muted-foreground">Keine archivierten Templates.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {archived.map((tpl) => (
+                  <div key={`${tpl.stage}:${tpl.templateKey}`} className="rounded-lg border bg-muted/30 shadow-sm px-4 py-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-foreground truncate">{tpl.name}</p>
+                          <Badge variant="outline" className="rounded-md px-2 py-0.5 font-mono text-[11px]">
+                            {tpl.templateKey}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Archiviert: {formatIso(tpl.updatedAt || tpl.createdAt)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => openEdit(tpl)}
+                          aria-label="Ansehen"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setConfirmAction({ kind: "restore", template: tpl })}
+                          aria-label="Wiederherstellen"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <Dialog open={editorOpen} onOpenChange={(open) => (!isSaving ? setEditorOpen(open) : null)}>
         <DialogContent className="h-[80vh] max-h-[80vh] sm:w-[90vw] sm:max-w-[90vw] flex flex-col">
           <DialogHeader>
-            <DialogTitle>
-              {editor?.isNew
-                ? "Neuen System-Prompt erstellen"
-                : "System-Prompt bearbeiten"}
-            </DialogTitle>
+            <DialogTitle>{editor?.isNew ? "Neuen System-Prompt erstellen" : "System-Prompt bearbeiten"}</DialogTitle>
           </DialogHeader>
 
           {editor ? (
@@ -564,11 +565,7 @@ export function SystemPromptManager() {
                   <Input
                     value={editor.templateKey}
                     disabled={!editor.isNew}
-                    onChange={(e) =>
-                      setEditor((prev) =>
-                        prev ? { ...prev, templateKey: e.target.value } : prev
-                      )
-                    }
+                    onChange={(e) => setEditor((prev) => (prev ? { ...prev, templateKey: e.target.value } : prev))}
                     placeholder="z.B. default_v3"
                     className="font-mono"
                   />
@@ -579,11 +576,7 @@ export function SystemPromptManager() {
                 <Label>Name</Label>
                 <Input
                   value={editor.name}
-                  onChange={(e) =>
-                    setEditor((prev) =>
-                      prev ? { ...prev, name: e.target.value } : prev
-                    )
-                  }
+                  onChange={(e) => setEditor((prev) => (prev ? { ...prev, name: e.target.value } : prev))}
                   placeholder="z.B. System-Standard (v3)"
                 />
               </div>
@@ -591,17 +584,11 @@ export function SystemPromptManager() {
               <div className="flex items-center justify-between gap-4">
                 <div className="space-y-0.5">
                   <Label className="text-sm font-medium">Published</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Nur publizierte Templates sind für Nutzer sichtbar.
-                  </p>
+                  <p className="text-xs text-muted-foreground">Nur publizierte Templates sind für Nutzer sichtbar.</p>
                 </div>
                 <Switch
                   checked={editor.published}
-                  onCheckedChange={(checked) =>
-                    setEditor((prev) =>
-                      prev ? { ...prev, published: checked } : prev
-                    )
-                  }
+                  onCheckedChange={(checked) => setEditor((prev) => (prev ? { ...prev, published: checked } : prev))}
                 />
               </div>
 
@@ -610,11 +597,7 @@ export function SystemPromptManager() {
                   <Label>System Prompt (optional)</Label>
                   <Textarea
                     value={editor.systemPrompt}
-                    onChange={(e) =>
-                      setEditor((prev) =>
-                        prev ? { ...prev, systemPrompt: e.target.value } : prev
-                      )
-                    }
+                    onChange={(e) => setEditor((prev) => (prev ? { ...prev, systemPrompt: e.target.value } : prev))}
                     placeholder="System role message (optional)"
                     className="flex-1 min-h-0 font-mono text-xs resize-none"
                   />
@@ -628,23 +611,16 @@ export function SystemPromptManager() {
                         Fehlende Platzhalter: {missingPlaceholders.join(", ")}
                       </Badge>
                     ) : (
-                      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 text-[10px]">
-                        OK
-                      </Badge>
+                      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 text-[10px]">OK</Badge>
                     )}
                   </div>
                   <Textarea
                     value={editor.instructions}
-                    onChange={(e) =>
-                      setEditor((prev) =>
-                        prev ? { ...prev, instructions: e.target.value } : prev
-                      )
-                    }
+                    onChange={(e) => setEditor((prev) => (prev ? { ...prev, instructions: e.target.value } : prev))}
                     placeholder="User instruction template"
                     className={cn(
                       "flex-1 min-h-0 font-mono text-xs resize-none",
-                      missingPlaceholders.length > 0 &&
-                        "border-amber-400 focus-visible:ring-amber-400"
+                      missingPlaceholders.length > 0 && "border-amber-400 focus-visible:ring-amber-400"
                     )}
                   />
                 </div>
@@ -684,35 +660,25 @@ export function SystemPromptManager() {
       </Dialog>
 
       <AlertDialog
-        open={Boolean(confirmArchive)}
-        onOpenChange={(open) => !open && setConfirmArchive(null)}
+        open={Boolean(confirmAction)}
+        onOpenChange={(open) => (!open && !isSaving ? setConfirmAction(null) : null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Template archivieren?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmArchive
-                ? `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`
-                : null}
-            </AlertDialogDescription>
+            <AlertDialogTitle>{confirmMeta?.title || "Aktion bestätigen"}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmMeta?.description || ""}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (!confirmArchive) return;
-                await quickToggle(confirmArchive, {
-                  archived: true,
-                  published: false,
-                });
-                setConfirmArchive(null);
-              }}
-            >
-              Archivieren
-            </AlertDialogAction>
+            <AlertDialogCancel disabled={isSaving}>Abbrechen</AlertDialogCancel>
+            <AlertDialogPrimitive.Action asChild>
+              <Button variant={confirmMeta?.buttonVariant || "destructive"} onClick={runConfirmAction} disabled={isSaving}>
+                {confirmMeta?.buttonLabel || "Bestätigen"}
+              </Button>
+            </AlertDialogPrimitive.Action>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
   );
 }
+

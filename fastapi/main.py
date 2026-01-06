@@ -36,6 +36,7 @@ from services.prompt_service import prompt_service
 from services.export_service import export_service
 from firebase_admin import auth
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
+from google.cloud import firestore
 from pydantic import BaseModel
 import logging
 import base64
@@ -122,6 +123,22 @@ class DuplicateSystemPromptTemplateRequest(BaseModel):
     stage: str
     templateKey: str
     name: str | None = None
+
+
+class AdminCreateUserPromptTemplateRequest(BaseModel):
+    stage: str
+    name: str
+    instructions: str
+
+
+class AdminUpdateUserPromptTemplateRequest(BaseModel):
+    name: str
+    instructions: str
+
+
+class AdminSetActiveUserPromptRequest(BaseModel):
+    stage: str
+    templateId: str
 
 
 @asynccontextmanager
@@ -265,6 +282,7 @@ async def admin_list_users(
 
             users_out.append(
                 {
+                    "uid": str(user.uid),
                     "email": email or None,
                     "displayName": display_name or None,
                     "approved": is_approved,
@@ -405,6 +423,819 @@ def _validate_required_placeholders(stage: str, instructions: str) -> None:
             status_code=400,
             detail=f"Missing required placeholders: {', '.join(missing)}",
         )
+
+
+_ADMIN_MIN_PROMPT_NAME_LEN = 3
+_ADMIN_MAX_PROMPT_NAME_LEN = 80
+_ADMIN_MAX_TEMPLATES_PER_STAGE = 10
+
+
+def _validate_user_prompt_name(name: str) -> str:
+    n = str(name or "").strip()
+    if len(n) < _ADMIN_MIN_PROMPT_NAME_LEN or len(n) > _ADMIN_MAX_PROMPT_NAME_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Name muss zwischen {_ADMIN_MIN_PROMPT_NAME_LEN} und {_ADMIN_MAX_PROMPT_NAME_LEN} Zeichen lang sein."
+            ),
+        )
+    return n
+
+
+def _require_non_empty_instructions(instructions: str) -> str:
+    ins = str(instructions or "").strip()
+    if not ins:
+        raise HTTPException(status_code=400, detail="Instructions dürfen nicht leer sein.")
+    return ins
+
+
+def _prompt_templates_col(user_id: str):
+    return (
+        firebase_service.db.collection("users")
+        .document(user_id)
+        .collection("promptTemplates")
+    )
+
+
+def _prompt_settings_ref(user_id: str):
+    return (
+        firebase_service.db.collection("users")
+        .document(user_id)
+        .collection("promptSettings")
+        .document("active")
+    )
+
+
+@app.get("/api/admin/users/{uid}")
+async def admin_get_user_detail(
+    uid: str,
+    _: str = Depends(verify_admin_user),
+):
+    """Get a single user's account + settings summary (admin-only)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    try:
+        user = auth.get_user(uid_norm)
+    except auth.UserNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="User not found.") from exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to load user.") from None
+
+    claims = user.custom_claims or {}
+    approved = bool(claims.get("approved") is True)
+
+    allow_platform_key = False
+    can_duplicate_system_prompts = False
+    try:
+        user_doc = await firebase_service.get_user_doc(user.uid)
+        allow_platform_key = bool((user_doc or {}).get("allowPlatformKey") is True)
+        can_duplicate_system_prompts = bool((user_doc or {}).get("canDuplicateSystemPrompts") is True)
+    except Exception:
+        allow_platform_key = False
+        can_duplicate_system_prompts = False
+
+    try:
+        key_status = await user_key_service.get_status(user.uid)
+        has_key = bool(key_status.get("has_key"))
+        last4 = key_status.get("last4") if has_key else None
+        allow_platform_from_status = bool(key_status.get("allow_platform_key"))
+    except Exception:
+        has_key = False
+        last4 = None
+        allow_platform_from_status = allow_platform_key
+
+    key_source = "user" if has_key else ("platform" if allow_platform_from_status else "none")
+
+    return {
+        "user": {
+            "uid": str(user.uid),
+            "email": (user.email or "").strip() or None,
+            "displayName": (user.display_name or "").strip() or None,
+            "approved": approved,
+            "disabled": bool(user.disabled),
+            "allowPlatformKey": allow_platform_key,
+            "canDuplicateSystemPrompts": can_duplicate_system_prompts,
+            "createdAt": _ms_to_iso(getattr(user.user_metadata, "creation_timestamp", None)),
+            "lastSignInAt": _ms_to_iso(getattr(user.user_metadata, "last_sign_in_timestamp", None)),
+        },
+        "openaiKey": {
+            "hasKey": has_key,
+            "last4": last4,
+            "allowPlatformKey": allow_platform_from_status,
+            "source": key_source,
+        },
+    }
+
+
+@app.get("/api/admin/users/{uid}/prompt-templates")
+async def admin_list_user_prompt_templates(
+    uid: str,
+    _: str = Depends(verify_admin_user),
+):
+    """List user-owned prompt templates + active selection (admin-only)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    try:
+        templates_ref = _prompt_templates_col(uid_norm)
+        docs = list(templates_ref.stream())
+        templates_out = []
+        for doc_snap in docs:
+            data = doc_snap.to_dict() or {}
+            stage = str(data.get("stage") or "").strip()
+            if stage not in ALLOWED_PROMPT_STAGES:
+                continue
+            templates_out.append(
+                {
+                    "id": doc_snap.id,
+                    "stage": stage,
+                    "name": str((data.get("name") or "")).strip() or doc_snap.id,
+                    "instructions": str((data.get("instructions") or "")).rstrip(),
+                    "placeholders": list(data.get("placeholders") or []) or list(prompt_service.REQUIRED_PLACEHOLDERS.get(stage, []) or []),
+                    "createdAt": _ts_to_iso(data.get("createdAt")),
+                    "updatedAt": _ts_to_iso(data.get("updatedAt")),
+                }
+            )
+
+        templates_out.sort(key=lambda t: (t.get("stage") or "", t.get("updatedAt") or t.get("createdAt") or ""), reverse=True)
+
+        settings_doc = _prompt_settings_ref(uid_norm).get()
+        settings = settings_doc.to_dict() if settings_doc.exists else {}
+        active = settings.get("activeTemplates", {}) if isinstance(settings, dict) else {}
+        ask_on_each = bool(settings.get("askOnEachProcess")) if isinstance(settings, dict) else False
+
+        return {
+            "templates": templates_out,
+            "active": active or {},
+            "askOnEachProcess": ask_on_each,
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to list prompt templates.") from None
+
+
+@app.post("/api/admin/users/{uid}/prompt-templates")
+async def admin_create_user_prompt_template(
+    uid: str,
+    payload: AdminCreateUserPromptTemplateRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Create a user-owned prompt template (admin-only)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    stage_norm = _validate_prompt_stage(payload.stage)
+    name = _validate_user_prompt_name(payload.name)
+    instructions = _require_non_empty_instructions(payload.instructions)
+    _validate_required_placeholders(stage_norm, instructions)
+
+    try:
+        templates_ref = _prompt_templates_col(uid_norm)
+        existing = list(templates_ref.where("stage", "==", stage_norm).stream())
+        if len(existing) >= _ADMIN_MAX_TEMPLATES_PER_STAGE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Maximal {_ADMIN_MAX_TEMPLATES_PER_STAGE} Prompts für diese Stage erlaubt.",
+            )
+
+        doc_ref = templates_ref.document()
+        doc_ref.set(
+            {
+                "stage": stage_norm,
+                "name": name,
+                "instructions": instructions,
+                "placeholders": list(prompt_service.REQUIRED_PLACEHOLDERS.get(stage_norm, []) or []),
+                "createdAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            }
+        )
+        return {"status": "ok", "id": doc_ref.id}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to create prompt template.") from None
+
+
+@app.put("/api/admin/users/{uid}/prompt-templates/{template_id}")
+async def admin_update_user_prompt_template(
+    uid: str,
+    template_id: str,
+    payload: AdminUpdateUserPromptTemplateRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Update a user-owned prompt template (admin-only)."""
+    uid_norm = (uid or "").strip()
+    tpl_id = (template_id or "").strip()
+    if not uid_norm or not tpl_id:
+        raise HTTPException(status_code=400, detail="uid and template_id are required.")
+
+    name = _validate_user_prompt_name(payload.name)
+    instructions = _require_non_empty_instructions(payload.instructions)
+
+    try:
+        tpl_ref = _prompt_templates_col(uid_norm).document(tpl_id)
+        snap = tpl_ref.get()
+        if not snap.exists:
+            raise HTTPException(status_code=404, detail="Template nicht gefunden.")
+
+        data = snap.to_dict() or {}
+        stage = str(data.get("stage") or "").strip()
+        stage_norm = _validate_prompt_stage(stage)
+        _validate_required_placeholders(stage_norm, instructions)
+
+        tpl_ref.set(
+            {
+                "name": name,
+                "instructions": instructions,
+                "placeholders": list(prompt_service.REQUIRED_PLACEHOLDERS.get(stage_norm, []) or []),
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to update prompt template.") from None
+
+
+@app.delete("/api/admin/users/{uid}/prompt-templates/{template_id}")
+async def admin_delete_user_prompt_template(
+    uid: str,
+    template_id: str,
+    _: str = Depends(verify_admin_user),
+):
+    """Delete a user-owned prompt template (admin-only)."""
+    uid_norm = (uid or "").strip()
+    tpl_id = (template_id or "").strip()
+    if not uid_norm or not tpl_id:
+        raise HTTPException(status_code=400, detail="uid and template_id are required.")
+
+    try:
+        tpl_ref = _prompt_templates_col(uid_norm).document(tpl_id)
+        snap = tpl_ref.get()
+        if not snap.exists:
+            return {"status": "ok"}
+
+        data = snap.to_dict() or {}
+        stage = str(data.get("stage") or "").strip()
+        stage_norm = _validate_prompt_stage(stage)
+
+        settings_ref = _prompt_settings_ref(uid_norm)
+        settings_snap = settings_ref.get()
+        if settings_snap.exists:
+            settings = settings_snap.to_dict() or {}
+            active = settings.get("activeTemplates", {}) or {}
+            if isinstance(active, dict) and active.get(stage_norm) == tpl_id:
+                active_next = {**active, stage_norm: "default"}
+                settings_ref.set({"activeTemplates": active_next, "updatedAt": SERVER_TIMESTAMP}, merge=True)
+
+        tpl_ref.delete()
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to delete prompt template.") from None
+
+
+@app.post("/api/admin/users/{uid}/prompt-templates/active")
+async def admin_set_user_active_prompt(
+    uid: str,
+    payload: AdminSetActiveUserPromptRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Set active prompt template (user template id or system templateKey) for a stage (admin-only)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    stage_norm = _validate_prompt_stage(payload.stage)
+    template_id = str(payload.templateId or "").strip()
+    if not template_id:
+        raise HTTPException(status_code=400, detail="templateId is required.")
+
+    try:
+        tpl_ref = _prompt_templates_col(uid_norm).document(template_id)
+        tpl_snap = tpl_ref.get()
+        if tpl_snap.exists:
+            data = tpl_snap.to_dict() or {}
+            tpl_stage = str(data.get("stage") or "").strip()
+            if tpl_stage != stage_norm:
+                raise HTTPException(status_code=400, detail="Template stage mismatch.")
+        else:
+            if template_id not in SYSTEM_TEMPLATE_KEYS_ALWAYS_AVAILABLE:
+                key_norm = _validate_template_key(template_id)
+                sys_tpl = await firebase_service.get_system_prompt_template(stage_norm, key_norm)
+                if not sys_tpl:
+                    raise HTTPException(status_code=404, detail="System prompt template not found.")
+                if bool(sys_tpl.get("published", True) is not True) or bool(sys_tpl.get("archived", False) is True):
+                    raise HTTPException(status_code=404, detail="System prompt template not available.")
+
+        settings_ref = _prompt_settings_ref(uid_norm)
+        settings_snap = settings_ref.get()
+        current = settings_snap.to_dict() if settings_snap.exists else {}
+        active = current.get("activeTemplates", {}) if isinstance(current, dict) else {}
+        if not isinstance(active, dict):
+            active = {}
+
+        active_next = {**active, stage_norm: template_id}
+        payload_out: dict = {"activeTemplates": active_next, "updatedAt": SERVER_TIMESTAMP}
+        if not settings_snap.exists:
+            payload_out["createdAt"] = SERVER_TIMESTAMP
+        settings_ref.set(payload_out, merge=True)
+
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to set active prompt.") from None
+
+
+_GERMAN_MONTHS = [
+    "Januar",
+    "Februar",
+    "März",
+    "April",
+    "Mai",
+    "Juni",
+    "Juli",
+    "August",
+    "September",
+    "Oktober",
+    "November",
+    "Dezember",
+]
+
+
+def _cents_from_usd(value) -> int:
+    try:
+        num = float(value or 0)
+    except Exception:
+        return 0
+    if num != num:
+        return 0
+    return int(round(num * 100))
+
+
+def _as_record(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _display_model_key(key: str) -> str:
+    return (key or "").replace("_", ".")
+
+
+def _month_key(dt: datetime) -> str:
+    return f"{dt.year:04d}-{dt.month:02d}"
+
+
+def _add_months(dt: datetime, delta: int) -> datetime:
+    year = int(dt.year)
+    month = int(dt.month) + int(delta)
+    while month <= 0:
+        month += 12
+        year -= 1
+    while month > 12:
+        month -= 12
+        year += 1
+    return datetime(year, month, 1, tzinfo=timezone.utc)
+
+
+def _month_label_de(month: int) -> str:
+    try:
+        return _GERMAN_MONTHS[int(month) - 1]
+    except Exception:
+        return str(month)
+
+
+def _parse_iso_dt(iso: str | None) -> datetime | None:
+    if not iso:
+        return None
+    raw = str(iso).strip()
+    if not raw:
+        return None
+    try:
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        return datetime.fromisoformat(raw)
+    except Exception:
+        return None
+
+
+def _first_created_at_iso(db, uid: str, col_name: str) -> str | None:
+    try:
+        col_ref = db.collection("users").document(uid).collection(col_name)
+        docs = (
+            col_ref.order_by("createdAt", direction=firestore.Query.ASCENDING)
+            .limit(1)
+            .stream()
+        )
+        first = next(docs, None)
+        if not first:
+            return None
+        data = first.to_dict() or {}
+        return _ts_to_iso(data.get("createdAt"))
+    except Exception:
+        return None
+
+
+def _get_member_since_iso(db, uid: str) -> str:
+    candidates: list[str] = []
+
+    try:
+        user_snap = db.collection("users").document(uid).get()
+        if user_snap.exists:
+            iso = _ts_to_iso((user_snap.to_dict() or {}).get("createdAt"))
+            if iso:
+                candidates.append(iso)
+    except Exception:
+        pass
+
+    for col in ("projects", "kapitels", "quellen"):
+        iso = _first_created_at_iso(db, uid, col)
+        if iso:
+            candidates.append(iso)
+
+    parsed = [d for d in (_parse_iso_dt(x) for x in candidates) if d is not None]
+    parsed.sort(key=lambda d: d.timestamp())
+    return (parsed[0] if parsed else datetime.now(timezone.utc)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _scan_operations_for_backfill(db, uid: str, max_docs: int = 5000) -> tuple[int, dict[str, int]]:
+    output_tokens = 0
+    model_counts: dict[str, int] = {}
+
+    fetched = 0
+    cursor = None
+    base = (
+        db.collection("users")
+        .document(uid)
+        .collection("costMetrics")
+        .document("v1")
+        .collection("operations")
+    )
+
+    while fetched < int(max_docs or 0):
+        q = base.order_by("timestamp", direction=firestore.Query.DESCENDING).limit(500)
+        if cursor is not None:
+            q = q.start_after(cursor)
+        docs = list(q.stream())
+        if not docs:
+            break
+
+        for doc_snap in docs:
+            data = doc_snap.to_dict() or {}
+            tokens = _as_record(data.get("tokens"))
+            out = tokens.get("outputTokens", 0)
+            try:
+                out_i = int(out or 0)
+            except Exception:
+                out_i = 0
+            if out_i > 0:
+                output_tokens += out_i
+
+            model_raw = data.get("modelNormalized") or data.get("model") or data.get("modelKey") or "unknown"
+            model = _display_model_key(str(model_raw or "unknown"))
+            model_counts[model] = int(model_counts.get(model, 0)) + 1
+
+        fetched += len(docs)
+        cursor = docs[-1]
+        if len(docs) < 500:
+            break
+
+    return output_tokens, model_counts
+
+
+def _safe_count_collection(db, uid: str, col: str) -> int:
+    try:
+        return len(list(db.collection("users").document(uid).collection(col).stream()))
+    except Exception:
+        return 0
+
+
+@app.get("/api/admin/users/{uid}/stats")
+async def admin_get_user_stats(
+    uid: str,
+    operations_limit: int = 25,
+    _: str = Depends(verify_admin_user),
+):
+    """Get live stats + recent operations for a user (admin-only, read-only)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    try:
+        db = firebase_service.db
+
+        total_projekte = _safe_count_collection(db, uid_norm, "projects")
+        total_kapitel = _safe_count_collection(db, uid_norm, "kapitels")
+        total_quellen = _safe_count_collection(db, uid_norm, "quellen")
+
+        agg_ref = (
+            db.collection("users")
+            .document(uid_norm)
+            .collection("costMetrics")
+            .document("v1")
+            .collection("aggregatesByUser")
+            .document("lifetime")
+        )
+        agg_snap = agg_ref.get()
+        agg = _as_record(agg_snap.to_dict() if agg_snap.exists else {})
+
+        total_cost = _cents_from_usd(agg.get("totalCostUsd"))
+        total_runs_raw = agg.get("operationCount", 0)
+        try:
+            total_runs = int(total_runs_raw or 0)
+        except Exception:
+            total_runs = 0
+
+        by_op = _as_record(agg.get("byOperationType"))
+        export_agg = _as_record(by_op.get("export_docx"))
+        export_cost = _cents_from_usd(export_agg.get("totalCostUsd"))
+        try:
+            export_count = int(export_agg.get("count", 0) or 0)
+        except Exception:
+            export_count = 0
+
+        by_time = _as_record(agg.get("byTimePeriod"))
+        now = datetime.now(timezone.utc)
+        runs_by_month = []
+        for idx in range(6):
+            dt = _add_months(now, -(5 - idx))
+            key = _month_key(dt)
+            entry = _as_record(by_time.get(key))
+            try:
+                runs = int(entry.get("count", 0) or 0)
+            except Exception:
+                runs = 0
+            runs_by_month.append(
+                {
+                    "month": _month_label_de(dt.month),
+                    "runs": runs,
+                    "cost": _cents_from_usd(entry.get("totalCostUsd")),
+                    "key": key,
+                }
+            )
+
+        projects_ref = db.collection("users").document(uid_norm).collection("projects")
+        projects = list(projects_ref.stream())
+        project_name_by_id: dict[str, str] = {}
+        for p in projects:
+            data = p.to_dict() or {}
+            project_name_by_id[p.id] = str(data.get("name") or p.id)
+
+        project_agg_ref = (
+            db.collection("users")
+            .document(uid_norm)
+            .collection("costMetrics")
+            .document("v1")
+            .collection("aggregatesByProject")
+        )
+        project_aggs = list(project_agg_ref.stream())
+        cost_by_project_id: dict[str, int] = {}
+        for doc_snap in project_aggs:
+            data = _as_record(doc_snap.to_dict())
+            cost_by_project_id[doc_snap.id] = _cents_from_usd(data.get("totalCostUsd"))
+            if doc_snap.id not in project_name_by_id:
+                snap = _as_record(data.get("projektSnapshot"))
+                if snap.get("name"):
+                    project_name_by_id[doc_snap.id] = str(snap.get("name"))
+
+        cost_by_projekt = [
+            {
+                "projektId": pid,
+                "projektName": pname,
+                "cost": int(cost_by_project_id.get(pid, 0)),
+            }
+            for pid, pname in project_name_by_id.items()
+        ]
+        cost_by_projekt.sort(key=lambda x: int(x.get("cost", 0)), reverse=True)
+        if not cost_by_projekt:
+            cost_by_projekt.append({"projektId": "__standard__", "projektName": "Standard", "cost": 0})
+
+        by_model = _as_record(agg.get("byModel"))
+        model_usage = []
+        for key, val in by_model.items():
+            if isinstance(val, (int, float)):
+                count = int(val or 0)
+            else:
+                count = int(_as_record(val).get("count", 0) or 0)
+            if count > 0:
+                model_usage.append({"model": _display_model_key(str(key)), "count": count})
+        model_usage.sort(key=lambda x: int(x.get("count", 0)), reverse=True)
+
+        total_output_tokens_raw = agg.get("totalOutputTokens", 0)
+        try:
+            total_output_tokens = int(total_output_tokens_raw or 0)
+        except Exception:
+            total_output_tokens = 0
+
+        if total_output_tokens <= 0 or not model_usage:
+            out_tokens, model_counts = _scan_operations_for_backfill(db, uid_norm)
+            if total_output_tokens <= 0:
+                total_output_tokens = int(out_tokens or 0)
+            if not model_usage:
+                model_usage = [
+                    {"model": model, "count": int(count)}
+                    for model, count in sorted(model_counts.items(), key=lambda kv: kv[1], reverse=True)
+                ]
+
+        if not model_usage:
+            model_usage = [{"model": "-", "count": 0}]
+
+        total_words = max(0, int(round(float(total_output_tokens) * 0.75)))
+        member_since = _get_member_since_iso(db, uid_norm)
+
+        ops_limit = max(0, min(int(operations_limit or 0), 200))
+        ops_out = []
+        if ops_limit > 0:
+            ops_ref = (
+                db.collection("users")
+                .document(uid_norm)
+                .collection("costMetrics")
+                .document("v1")
+                .collection("operations")
+            )
+            recent = (
+                ops_ref.order_by("timestamp", direction=firestore.Query.DESCENDING)
+                .limit(ops_limit)
+                .stream()
+            )
+            for op in recent:
+                data = op.to_dict() or {}
+                costs = _as_record(data.get("costs"))
+                tokens = _as_record(data.get("tokens"))
+                snapshots = _as_record(data.get("snapshots"))
+                proj_snap = _as_record(snapshots.get("projekt"))
+                ops_out.append(
+                    {
+                        "operationId": str(data.get("operationId") or op.id),
+                        "timestamp": _ts_to_iso(data.get("timestamp")),
+                        "operationType": str(data.get("operationType") or ""),
+                        "status": str(data.get("status") or ""),
+                        "errorMessage": str(data.get("errorMessage") or "") or None,
+                        "model": str(data.get("modelNormalized") or data.get("model") or "") or None,
+                        "keySource": str(data.get("keySource") or "") or None,
+                        "cost": _cents_from_usd(costs.get("totalCostUsd")),
+                        "outputTokens": int(tokens.get("outputTokens", 0) or 0),
+                        "projektId": str(data.get("projektId") or "") or None,
+                        "projektName": str(proj_snap.get("name") or "") or None,
+                    }
+                )
+
+        return {
+            "stats": {
+                "totalCost": total_cost,
+                "totalRuns": total_runs,
+                "exportCost": export_cost,
+                "exportCount": export_count,
+                "totalProjekte": total_projekte,
+                "totalKapitel": total_kapitel,
+                "totalQuellen": total_quellen,
+                "totalWords": total_words,
+                "runsByMonth": runs_by_month,
+                "costByProjekt": cost_by_projekt,
+                "modelUsage": model_usage,
+                "memberSince": member_since,
+            },
+            "operations": ops_out,
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to compute user stats.") from None
+
+
+@app.get("/api/admin/users/{uid}/projects")
+async def admin_list_user_projects(
+    uid: str,
+    include_archived: bool = True,
+    _: str = Depends(verify_admin_user),
+):
+    """List a user's projects (admin-only, read-only)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    try:
+        db = firebase_service.db
+        ref = db.collection("users").document(uid_norm).collection("projects")
+        docs = list(ref.stream())
+        out = []
+        for doc_snap in docs:
+            data = doc_snap.to_dict() or {}
+            archived = bool(data.get("archived") is True)
+            if not include_archived and archived:
+                continue
+            out.append(
+                {
+                    "id": doc_snap.id,
+                    "name": str(data.get("name") or doc_snap.id),
+                    "archived": archived,
+                    "createdAt": _ts_to_iso(data.get("createdAt")),
+                    "updatedAt": _ts_to_iso(data.get("updatedAt")),
+                }
+            )
+
+        out.sort(key=lambda p: p.get("createdAt") or "", reverse=True)
+        return {"projects": out}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to list projects.") from None
+
+
+@app.get("/api/admin/users/{uid}/projects/{projekt_id}/quellen")
+async def admin_list_user_quellen_for_project(
+    uid: str,
+    projekt_id: str,
+    _: str = Depends(verify_admin_user),
+):
+    """List Quellen metadata for a project (admin-only, read-only)."""
+    uid_norm = (uid or "").strip()
+    proj_norm = (projekt_id or "").strip()
+    if not uid_norm or not proj_norm:
+        raise HTTPException(status_code=400, detail="uid and projekt_id are required.")
+
+    try:
+        db = firebase_service.db
+        ref = db.collection("users").document(uid_norm).collection("quellen").where("projektId", "==", proj_norm)
+        docs = list(ref.stream())
+        out = []
+        for doc_snap in docs:
+            data = doc_snap.to_dict() or {}
+            out.append(
+                {
+                    "id": doc_snap.id,
+                    "title": str(data.get("title") or doc_snap.id),
+                    "projektId": str(data.get("projektId") or proj_norm),
+                    "archived": bool(data.get("archived") is True),
+                    "wordCount": int(data.get("wordCount") or 0),
+                    "createdAt": _ts_to_iso(data.get("createdAt")),
+                    "updatedAt": _ts_to_iso(data.get("updatedAt")),
+                    "autor": data.get("autor"),
+                    "jahr": data.get("jahr"),
+                    "typ": data.get("typ"),
+                    "url": data.get("url"),
+                    "zugriffAm": data.get("zugriffAm"),
+                    "zitat": data.get("zitat"),
+                    "zitatModus": data.get("zitatModus"),
+                }
+            )
+
+        out.sort(key=lambda q: q.get("createdAt") or "", reverse=True)
+        return {"quellen": out}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to list Quellen.") from None
+
+
+@app.get("/api/admin/users/{uid}/quellen/{quelle_id}")
+async def admin_get_user_quelle(
+    uid: str,
+    quelle_id: str,
+    _: str = Depends(verify_admin_user),
+):
+    """Get Quelle metadata + content (admin-only, read-only)."""
+    uid_norm = (uid or "").strip()
+    quelle_norm = (quelle_id or "").strip()
+    if not uid_norm or not quelle_norm:
+        raise HTTPException(status_code=400, detail="uid and quelle_id are required.")
+
+    try:
+        meta = await firebase_service.get_quelle_meta(uid_norm, quelle_norm)
+        if not meta:
+            raise HTTPException(status_code=404, detail="Quelle not found.")
+        content = await firebase_service.get_quelle_content(uid_norm, quelle_norm)
+        return {
+            "meta": {
+                "id": meta.get("id") or quelle_norm,
+                "title": meta.get("title"),
+                "projektId": meta.get("projektId"),
+                "archived": bool(meta.get("archived") is True),
+                "wordCount": meta.get("wordCount"),
+                "createdAt": _ts_to_iso(meta.get("createdAt")),
+                "updatedAt": _ts_to_iso(meta.get("updatedAt")),
+                "autor": meta.get("autor"),
+                "jahr": meta.get("jahr"),
+                "typ": meta.get("typ"),
+                "url": meta.get("url"),
+                "zugriffAm": meta.get("zugriffAm"),
+                "zitat": meta.get("zitat"),
+                "zitatModus": meta.get("zitatModus"),
+                "images": meta.get("images") or [],
+            },
+            "content": {
+                "text": (content or {}).get("text") if content else None,
+                "wordCount": (content or {}).get("wordCount") if content else None,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to load Quelle.") from None
 
 
 @app.get("/api/system-prompt-templates")
