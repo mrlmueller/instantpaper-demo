@@ -33,7 +33,11 @@ export type AdminUserRow = {
   uid: string | null;
   email: string | null;
   displayName: string | null;
-  approved: boolean;
+  fullAccess: boolean;
+  legacyApproved: boolean;
+  blocked: boolean;
+  isAdmin: boolean;
+  accountStatus: string | null;
   disabled: boolean;
   allowPlatformKey: boolean;
   canDuplicateSystemPrompts: boolean;
@@ -42,7 +46,7 @@ export type AdminUserRow = {
 };
 
 export async function listAdminUsers(params?: {
-  approved?: boolean;
+  fullAccess?: boolean;
   query?: string;
   pageToken?: string;
   maxResults?: number;
@@ -51,7 +55,7 @@ export async function listAdminUsers(params?: {
   if (!token) throw new Error('Not authenticated');
 
   const qs = new URLSearchParams();
-  if (typeof params?.approved === 'boolean') qs.set('approved', String(params.approved));
+  if (typeof params?.fullAccess === 'boolean') qs.set('fullAccess', String(params.fullAccess));
   if (params?.query) qs.set('query', params.query);
   if (params?.pageToken) qs.set('page_token', params.pageToken);
   if (typeof params?.maxResults === 'number') qs.set('max_results', String(params.maxResults));
@@ -74,7 +78,11 @@ export async function listAdminUsers(params?: {
           uid: typeof u.uid === 'string' ? u.uid : null,
           email: typeof u.email === 'string' ? u.email : null,
           displayName: typeof u.displayName === 'string' ? u.displayName : null,
-          approved: u.approved === true,
+          fullAccess: u.fullAccess === true || u.approved === true,
+          legacyApproved: u.legacyApproved === true,
+          blocked: u.blocked === true,
+          isAdmin: u.isAdmin === true,
+          accountStatus: typeof u.accountStatus === 'string' ? u.accountStatus : null,
           disabled: u.disabled === true,
           allowPlatformKey: u.allowPlatformKey === true,
           canDuplicateSystemPrompts: u.canDuplicateSystemPrompts === true,
@@ -86,23 +94,43 @@ export async function listAdminUsers(params?: {
   return { users, nextPageToken };
 }
 
-export async function setUserApprovedByEmail(email: string, approved: boolean): Promise<void> {
+export async function setUserFullAccessByEmail(email: string, fullAccess: boolean): Promise<void> {
   const token = await getAuthTokenOrNullAsync();
   if (!token) throw new Error('Not authenticated');
 
-  const res = await fetch(`${API_BASE_URL}/api/admin/users/approve`, {
+  const res = await fetch(`${API_BASE_URL}/api/admin/users/full-access`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ email, approved }),
+    body: JSON.stringify({ email, fullAccess }),
     cache: 'no-store',
   });
 
   if (!res.ok) {
     const detail = await readErrorDetail(res);
-    throw new Error(detail || 'Failed to update user approval.');
+    throw new Error(detail || 'Failed to update user access.');
+  }
+}
+
+export async function setUserBlockedByEmail(email: string, blocked: boolean): Promise<void> {
+  const token = await getAuthTokenOrNullAsync();
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${API_BASE_URL}/api/admin/users/block`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, blocked }),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const detail = await readErrorDetail(res);
+    throw new Error(detail || 'Failed to update user block status.');
   }
 }
 

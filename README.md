@@ -87,12 +87,14 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-### 5) Approve your user (allowlist)
+### 5) Grant access (`fullAccess`)
 
-InstantPaper is allowlisted. After you sign in, you must be approved (Firebase custom claim `approved: true`):
+Login is always allowed. Without access, users are redirected to `/activate`.
 
-- Use the backend approval UI (`GET http://localhost:8000/approve`) or the admin endpoints described in `fastapi/README.md`.
-- Then sign out and sign in again (or refresh token) so the claim is applied.
+Grant access by setting the Firebase custom claim `fullAccess: true` (legacy `approved: true` is accepted during migration):
+
+- Use the backend access UI (`GET http://localhost:8000/approve`) or the admin endpoints described in `fastapi/README.md`.
+- Then refresh the token (or sign out and sign in again) so the claim is applied.
 
 ---
 
@@ -153,7 +155,9 @@ InstantPaper uses German domain terms in the UI and Firestore schema:
 Main routes you will use while working with InstantPaper:
 
 - `/login`  
-  Google sign-in. Users must be approved before they can access the app.
+  Google sign-in. Login is always allowed; access is gated via `fullAccess`.
+- `/activate`  
+  Activation gate (logged in, but no access): redeem Access Code or refresh token after admin grant.
 - `/dashboard`  
   Main workspace: project selection, Kapitel list, Quellen panel, run creation, processing state, and artifacts (combined/shortened/lesefluss).
 - `/quellen-manager`  
@@ -161,7 +165,7 @@ Main routes you will use while working with InstantPaper:
 - `/profil`  
   OpenAI key management, prompt templates, export history, and usage stats.
 - `/admin`  
-  Admin UI for user approvals and permissions (requires backend admin access).
+  Admin UI for users, access codes, and permissions (requires backend admin access).
 
 ---
 
@@ -216,15 +220,15 @@ This makes the UI responsive even while backend tasks are running.
 
 ## Authentication flow
 
-InstantPaper uses Firebase Auth (Google provider) and an allowlist.
+InstantPaper uses Firebase Auth (Google provider) and an access gate.
 
 - Client login uses Firebase Web SDK (`app/lib/firebase/auth.ts`).
 - The current Firebase ID token is stored in the `__session` cookie (used by Next.js Server Components).
-- Protected routes use the `app/(protected)/layout.tsx` server layout, which calls `requireAuth()`.
+- Protected routes use the `app/(protected)/layout.tsx` server layout, which calls `requireFullAccess()`.
   - If there is no cookie: redirect to `/login`.
   - If a cookie exists but the token is expired: pages render and the client refreshes the token automatically.
-- The allowlist is enforced via the Firebase custom claim `approved: true`.
-  - If the claim is missing, the client signs out immediately and the backend returns `403`.
+- If logged in but missing access (`fullAccess` or legacy `approved`): redirect to `/activate` (user stays logged in).
+- Hard blocks are stored in Firestore (`users/{uid}.accountStatus = "blocked"`) and are enforced immediately (Firestore rules + backend).
 
 ---
 
@@ -554,7 +558,9 @@ Firebase auth uses the `__session` cookie to share the current ID token between 
 ## Security and privacy notes
 
 - OpenAI keys are never stored in the frontend; they are sent to the backend and encrypted at rest.
-- The app is allowlisted. If the `approved` claim is missing, access is revoked immediately.
+- The app is gated via the Firebase custom claim `fullAccess` (legacy `approved` accepted during migration).
+  - Without access, users are redirected to `/activate` and Firestore/Storage/Backend access is denied.
+  - Hard blocks are stored in Firestore (`users/{uid}.accountStatus = "blocked"`) and are enforced immediately for new actions.
 - External images are proxied with SSRF protection.
 - `.env.local` is ignored by git and should never be committed.
 
@@ -586,7 +592,7 @@ npm run lint
 
 For end to end validation, run both servers locally and walk through:
 
-1) Login and approval
+1) Login and activation / access grant
 2) Create a project, sources, and a run
 3) Process sources and verify results and artifacts update
 4) Export DOCX and download
@@ -601,7 +607,9 @@ For end to end validation, run both servers locally and walk through:
 
 ### 403 "Account not authorized"
 
-- Your Firebase user is not allowlisted (`approved: true`). Approve via the backend and sign out and sign in again.
+- Your Firebase user has no access (`fullAccess`) or is blocked.
+  - Grant/revoke access in `/admin` or via `fastapi/README.md` and refresh the token.
+  - If blocked, unblock first (hard gate).
 
 ### Firestore permission errors
 

@@ -8,6 +8,7 @@ from middleware.auth import (
     verify_firebase_token,
     verify_admin_user,
     verify_firebase_token_decoded,
+    verify_firebase_token_decoded_any_user,
     verify_system_prompt_export_user,
 )
 from models.request import (
@@ -42,6 +43,7 @@ import logging
 import base64
 import json
 import secrets
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -96,7 +98,34 @@ class RevokeSessionRequest(BaseModel):
 
 class AdminApproveUserRequest(BaseModel):
     email: str
-    approved: bool = True
+    approved: bool = True  # Legacy: maps to `fullAccess`
+
+
+class AdminSetFullAccessRequest(BaseModel):
+    email: str
+    fullAccess: bool = True
+
+
+class AdminSetBlockedRequest(BaseModel):
+    email: str
+    blocked: bool = True
+
+
+class RedeemAccessCodeRequest(BaseModel):
+    code: str
+
+
+class AdminCreateAccessCodeRequest(BaseModel):
+    name: str
+    maxUses: int = 1
+    note: str | None = None
+
+
+class AdminUpdateAccessCodeRequest(BaseModel):
+    disabled: bool | None = None
+    name: str | None = None
+    maxUses: int | None = None
+    note: str | None = None
 
 
 class AdminSetPlatformKeyRequest(BaseModel):
@@ -237,8 +266,368 @@ def _ts_to_iso(value) -> str | None:
     return None
 
 
+def _normalize_access_code(raw: str) -> str:
+    return str(raw or "").strip().upper().replace(" ", "").replace("_", "-")
+
+
+ACCESS_CODE_RE = re.compile(r"^[A-Z]{2}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$")
+
+
+def _access_codes_doc():
+    return firebase_service.db.collection("_config").document("accessCodes")
+
+
+def _access_codes_col():
+    return _access_codes_doc().collection("codes")
+
+
+def _access_code_ref(code: str):
+    return _access_codes_col().document(code)
+
+
+def _access_code_attempts_col():
+    return _access_codes_doc().collection("attempts")
+
+
+def _access_code_rate_limits_col():
+    return _access_codes_doc().collection("rateLimits")
+
+
+def _read_client_ip(request: Request) -> str | None:
+    xff = (request.headers.get("x-forwarded-for") or "").strip()
+    if xff:
+        # First hop is the client IP.
+        ip = xff.split(",")[0].strip()
+        return ip or None
+    xrip = (request.headers.get("x-real-ip") or "").strip()
+    if xrip:
+        return xrip
+    return getattr(getattr(request, "client", None), "host", None) or None
+
+
+def _truncate_header(value: str | None, max_len: int) -> str | None:
+    if not value:
+        return None
+    txt = str(value)
+    if len(txt) <= max_len:
+        return txt
+    return txt[:max_len]
+
+
+def _rate_bucket(now: datetime, window_seconds: int) -> int:
+    return int(now.timestamp()) // int(window_seconds)
+
+
+def _hash_rate_key(value: str) -> str:
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:32]
+
+
+def _check_and_increment_rate_limit(*, kind: str, key: str, limit: int, window_seconds: int) -> bool:
+    """
+    Returns True if allowed, False if rate-limited.
+
+    Uses Firestore transaction counters stored under `_config/accessCodes/rateLimits/*`.
+    """
+    kind_norm = str(kind or "").strip().lower()
+    key_norm = str(key or "").strip()
+    if not kind_norm or not key_norm:
+        return True
+
+    now = datetime.now(timezone.utc)
+    bucket = _rate_bucket(now, window_seconds)
+    key_hash = _hash_rate_key(key_norm)
+    doc_id = f"redeem-{kind_norm}-{bucket}-{key_hash}"
+    ref = _access_code_rate_limits_col().document(doc_id)
+
+    transaction = firebase_service.db.transaction()
+
+    @firestore.transactional
+    def txn(transaction):
+        snap = ref.get(transaction=transaction)
+        current = 0
+        if snap.exists:
+            current = int((snap.to_dict() or {}).get("count") or 0)
+        if current >= int(limit):
+            return False
+
+        payload = {
+            "kind": kind_norm,
+            "keyHash": key_hash,
+            "bucket": int(bucket),
+            "windowSeconds": int(window_seconds),
+            "count": int(current) + 1,
+            "updatedAt": SERVER_TIMESTAMP,
+        }
+        if not snap.exists:
+            payload["createdAt"] = SERVER_TIMESTAMP
+            payload["key"] = key_norm
+        transaction.set(ref, payload, merge=True)
+        return True
+
+    return bool(txn(transaction))
+
+
+async def _is_user_blocked(uid: str) -> bool:
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        return True
+    try:
+        doc = await firebase_service.get_user_doc(uid_norm)
+    except Exception:
+        # Fail-closed on transient Firestore reads.
+        return True
+    if not doc:
+        return False
+    return str(doc.get("accountStatus") or "").strip().lower() == "blocked"
+
+
+@app.get("/api/me")
+async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any_user)):
+    uid = str(decoded_token.get("uid") or "").strip()
+    if not uid:
+        raise HTTPException(status_code=401, detail="Invalid token (missing uid).")
+
+    email = (decoded_token.get("email") or "").strip() or None
+
+    try:
+        claims = await firebase_service.get_user_custom_claims(uid)
+    except Exception:
+        claims = {}
+
+    full_access = bool(claims.get("fullAccess") is True or claims.get("approved") is True)
+    legacy_approved = bool(claims.get("approved") is True)
+
+    try:
+        user_doc = await firebase_service.get_user_doc(uid)
+    except Exception:
+        user_doc = None
+
+    status = str((user_doc or {}).get("accountStatus") or "").strip().lower()
+    blocked = status == "blocked"
+    if not status:
+        status = "active" if full_access else "pending"
+
+    return {
+        "uid": uid,
+        "email": email,
+        "accountStatus": status,
+        "blocked": blocked,
+        "fullAccess": full_access,
+        "legacyApproved": legacy_approved,
+    }
+
+
+@app.post("/api/access-codes/redeem")
+async def redeem_access_code(
+    payload: RedeemAccessCodeRequest,
+    request: Request,
+    decoded_token: dict = Depends(verify_firebase_token_decoded_any_user),
+):
+    uid = str(decoded_token.get("uid") or "").strip()
+    if not uid:
+        raise HTTPException(status_code=401, detail="Invalid token (missing uid).")
+
+    email = (decoded_token.get("email") or "").strip() or None
+    display_name = (decoded_token.get("name") or "").strip() or None
+
+    code_in = _normalize_access_code(payload.code)
+    if not code_in or not ACCESS_CODE_RE.match(code_in):
+        raise HTTPException(status_code=400, detail="Ungültiger Code.")
+
+    # Hard gate: blocked overrides everything (including redeem).
+    if await _is_user_blocked(uid):
+        raise HTTPException(status_code=403, detail="Account gesperrt.")
+
+    ip = _read_client_ip(request)
+    user_agent = _truncate_header(request.headers.get("user-agent"), 400)
+
+    # Rate limit: per-uid and per-ip (best-effort; deny if limit exceeded).
+    try:
+        if not _check_and_increment_rate_limit(kind="uid", key=uid, limit=5, window_seconds=300):
+            raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warte kurz und versuche es erneut.")
+        if ip and not _check_and_increment_rate_limit(kind="ip", key=ip, limit=20, window_seconds=300):
+            raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warte kurz und versuche es erneut.")
+    except HTTPException:
+        raise
+    except Exception:
+        # Fail-closed: treat rate-limit failures as denial.
+        raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warte kurz und versuche es erneut.") from None
+
+    # Do not consume uses if the user already has access (authoritative, not token-based).
+    try:
+        current_claims = await firebase_service.get_user_custom_claims(uid)
+    except Exception:
+        current_claims = {}
+    if bool(current_claims.get("fullAccess") is True or current_claims.get("approved") is True):
+        _access_code_attempts_col().document().set(
+            {
+                "uid": uid,
+                "email": email,
+                "displayName": display_name,
+                "code": code_in,
+                "success": True,
+                "reason": "already_full_access",
+                "ip": ip,
+                "userAgent": user_agent,
+                "createdAt": SERVER_TIMESTAMP,
+            }
+        )
+        return {"status": "ok", "result": "already_full_access"}
+
+    # Transaction: validate code, enforce maxUses, store redemption, update counters.
+    code_ref = _access_code_ref(code_in)
+    redemption_ref = code_ref.collection("redemptions").document(uid)
+
+    transaction = firebase_service.db.transaction()
+
+    @firestore.transactional
+    def redeem_txn(transaction):
+        code_snap = code_ref.get(transaction=transaction)
+        if not code_snap.exists:
+            return ("not_found", None)
+
+        data = code_snap.to_dict() or {}
+        if bool(data.get("disabled") is True):
+            return ("disabled", data)
+
+        max_uses = int(data.get("maxUses") or 1)
+        uses = int(data.get("uses") or 0)
+
+        red_snap = redemption_ref.get(transaction=transaction)
+        if red_snap.exists:
+            transaction.set(
+                redemption_ref,
+                {
+                    "uid": uid,
+                    "lastRedeemedAt": SERVER_TIMESTAMP,
+                    "lastIp": ip,
+                    "lastUserAgent": user_agent,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            transaction.set(
+                code_ref,
+                {
+                    "lastUsedAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            return ("already_redeemed", data)
+
+        if uses >= max_uses:
+            return ("exhausted", data)
+
+        transaction.set(
+            redemption_ref,
+            {
+                "uid": uid,
+                "firstRedeemedAt": SERVER_TIMESTAMP,
+                "lastRedeemedAt": SERVER_TIMESTAMP,
+                "firstIp": ip,
+                "firstUserAgent": user_agent,
+                "lastIp": ip,
+                "lastUserAgent": user_agent,
+                "createdAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+        transaction.set(
+            code_ref,
+            {
+                "uses": uses + 1,
+                "lastUsedAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+        return ("redeemed", data)
+
+    outcome, code_data = redeem_txn(transaction)
+
+    # Log attempt (also for failures, but keep user-facing errors non-enumerating).
+    _access_code_attempts_col().document().set(
+        {
+            "uid": uid,
+            "email": email,
+            "displayName": display_name,
+            "code": code_in,
+            "success": outcome in {"redeemed", "already_redeemed"},
+            "reason": outcome,
+            "ip": ip,
+            "userAgent": user_agent,
+            "createdAt": SERVER_TIMESTAMP,
+        }
+    )
+
+    if outcome == "not_found":
+        raise HTTPException(status_code=400, detail="Ungültiger Code.")
+    if outcome in {"disabled", "exhausted"}:
+        raise HTTPException(status_code=400, detail="Code ungültig oder nicht mehr aktiv.")
+    if outcome not in {"redeemed", "already_redeemed"}:
+        raise HTTPException(status_code=500, detail="Code konnte nicht eingelöst werden.")
+
+    # Persist user metadata for admin audit.
+    try:
+        auth_user = auth.get_user(uid)
+        user_email = (auth_user.email or "").strip() or None
+        user_display = (auth_user.display_name or "").strip() or None
+        user_photo = (auth_user.photo_url or "").strip() or None
+    except Exception:
+        user_email = (decoded_token.get("email") or "").strip() or None
+        user_display = None
+        user_photo = None
+
+    try:
+        redemption_ref.set(
+            {
+                "email": user_email,
+                "displayName": user_display,
+                "photoURL": user_photo,
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+    except Exception:
+        pass
+
+    # Update user profile doc (server-side) for later admin inspection.
+    try:
+        user_ref = firebase_service.db.collection("users").document(uid)
+        existing = user_ref.get()
+        upsert = {
+            "uid": uid,
+            "email": user_email,
+            "displayName": user_display,
+            "photoURL": user_photo,
+            "activatedAt": SERVER_TIMESTAMP,
+            "activatedByCode": code_in,
+            "accountStatus": "active",
+            "updatedAt": SERVER_TIMESTAMP,
+        }
+        if not existing.exists:
+            upsert["createdAt"] = SERVER_TIMESTAMP
+        user_ref.set(upsert, merge=True)
+    except Exception:
+        pass
+
+    # Grant access via custom claim (token refresh required client-side).
+    try:
+        existing_claims = current_claims or {}
+        next_claims = {**existing_claims, "fullAccess": True}
+        next_claims.pop("approved", None)
+        auth.set_custom_user_claims(uid, next_claims)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Aktivierung fehlgeschlagen.") from None
+
+    return {"status": "ok", "result": outcome}
+
+
 @app.get("/api/admin/users")
 async def admin_list_users(
+    fullAccess: bool | None = None,
     approved: bool | None = None,
     query: str | None = None,
     page_token: str | None = None,
@@ -248,7 +637,7 @@ async def admin_list_users(
     """
     List Firebase Auth users (admin-only).
 
-    This powers the admin approval UI: pending users are those with `approved != true`.
+    This powers the admin user UI: pending users are those with `fullAccess != true`.
     """
     try:
         # Ensure Firebase Admin SDK is initialized.
@@ -256,6 +645,7 @@ async def admin_list_users(
 
         max_results = max(1, min(int(max_results or 200), 1000))
         q = (query or "").strip().lower()
+        filter_access = fullAccess if fullAccess is not None else approved
 
         page = auth.list_users(page_token=page_token, max_results=max_results)
         users_out = []
@@ -266,26 +656,40 @@ async def admin_list_users(
                 continue
 
             claims = user.custom_claims or {}
-            is_approved = bool(claims.get("approved") is True)
-            if approved is not None and is_approved != bool(approved):
+            has_access = bool(claims.get("fullAccess") is True or claims.get("approved") is True)
+            legacy_approved = bool(claims.get("approved") is True)
+            if filter_access is not None and has_access != bool(filter_access):
                 continue
 
             allow_platform_key = False
             can_duplicate_system_prompts = False
+            blocked = False
+            account_status = None
             try:
                 user_doc = await firebase_service.get_user_doc(user.uid)
                 allow_platform_key = bool((user_doc or {}).get("allowPlatformKey") is True)
                 can_duplicate_system_prompts = bool((user_doc or {}).get("canDuplicateSystemPrompts") is True)
+                account_status = str((user_doc or {}).get("accountStatus") or "").strip().lower() or None
+                blocked = account_status == "blocked"
             except Exception:
                 allow_platform_key = False
                 can_duplicate_system_prompts = False
+                blocked = False
+                account_status = None
 
             users_out.append(
                 {
                     "uid": str(user.uid),
                     "email": email or None,
                     "displayName": display_name or None,
-                    "approved": is_approved,
+                    "isAdmin": bool(config.ADMIN_UIDS and user.uid in config.ADMIN_UIDS),
+                    # New access state
+                    "fullAccess": has_access,
+                    "legacyApproved": legacy_approved,
+                    "blocked": blocked,
+                    "accountStatus": account_status,
+                    # Legacy field (kept temporarily for older clients)
+                    "approved": has_access,
                     "canDuplicateSystemPrompts": can_duplicate_system_prompts,
                     "disabled": bool(user.disabled),
                     "allowPlatformKey": allow_platform_key,
@@ -304,23 +708,290 @@ async def admin_approve_user(
     payload: AdminApproveUserRequest,
     _: str = Depends(verify_admin_user),
 ):
-    """Approve/revoke a user by email by setting the Firebase Auth custom claim `approved`."""
+    """Legacy endpoint (migration): maps `approved` to `fullAccess`."""
     email = (payload.email or "").strip()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="A valid email is required.")
 
     try:
-        result = await firebase_service.set_user_approved_by_email(email=email, approved=bool(payload.approved))
+        result = await firebase_service.set_user_full_access_by_email(email=email, full_access=bool(payload.approved))
         return {
             "status": "ok",
             "email": result.get("email"),
-            "approved": result.get("approved"),
-            "note": "User must sign out/in (or refresh token) for the claim to take effect.",
+            "fullAccess": result.get("fullAccess"),
+            "note": "User must refresh token (or re-login) for the claim to take effect.",
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to update user approval.") from None
+
+
+@app.post("/api/admin/users/full-access")
+async def admin_set_user_full_access(
+    payload: AdminSetFullAccessRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Grant/revoke access by email by setting the Firebase Auth custom claim `fullAccess`."""
+    email = (payload.email or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required.")
+
+    try:
+        result = await firebase_service.set_user_full_access_by_email(email=email, full_access=bool(payload.fullAccess))
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "fullAccess": result.get("fullAccess"),
+            "note": "User must refresh token (or re-login) for the claim to take effect.",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to update user access.") from None
+
+
+@app.post("/api/admin/users/block")
+async def admin_set_user_blocked(
+    payload: AdminSetBlockedRequest,
+    admin_uid: str = Depends(verify_admin_user),
+):
+    """Block/unblock a user (hard gate, immediate via Firestore)."""
+    email = (payload.email or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required.")
+
+    try:
+        result = await firebase_service.set_user_blocked_by_email(
+            email=email,
+            blocked=bool(payload.blocked),
+            admin_uid=admin_uid,
+        )
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "blocked": result.get("blocked"),
+            "note": "Firestore enforcement is immediate; Storage may take up to ~1h (stale token).",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to update user block status.") from None
+
+
+ACCESS_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def _generate_access_code(*, prefix: str = "IP") -> str:
+    p = str(prefix or "IP").strip().upper()
+    if not p or not p.isalpha() or len(p) != 2:
+        p = "IP"
+    groups = ["".join(secrets.choice(ACCESS_CODE_ALPHABET) for _ in range(4)) for _ in range(3)]
+    return f"{p}-{groups[0]}-{groups[1]}-{groups[2]}"
+
+
+def _clamp_str(value: str | None, max_len: int) -> str | None:
+    if value is None:
+        return None
+    txt = str(value).strip()
+    if not txt:
+        return None
+    if len(txt) <= int(max_len):
+        return txt
+    return txt[: int(max_len)].strip() or None
+
+
+@app.get("/api/admin/access-codes")
+async def admin_list_access_codes(_: str = Depends(verify_admin_user)):
+    """List access codes (admin-only)."""
+    try:
+        docs = list(_access_codes_col().stream())
+        out = []
+        for snap in docs:
+            data = snap.to_dict() or {}
+            out.append(
+                {
+                    "code": snap.id,
+                    "name": _clamp_str(data.get("name"), 120) or snap.id,
+                    "note": _clamp_str(data.get("note"), 2000),
+                    "maxUses": int(data.get("maxUses") or 1),
+                    "uses": int(data.get("uses") or 0),
+                    "disabled": bool(data.get("disabled") is True),
+                    "createdAt": _ts_to_iso(data.get("createdAt")),
+                    "lastUsedAt": _ts_to_iso(data.get("lastUsedAt")),
+                }
+            )
+        out.sort(key=lambda c: (c.get("createdAt") or ""), reverse=True)
+        return {"codes": out}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to list access codes.") from None
+
+
+@app.post("/api/admin/access-codes")
+async def admin_create_access_code(
+    payload: AdminCreateAccessCodeRequest,
+    admin_uid: str = Depends(verify_admin_user),
+):
+    """Create an access code (admin-only)."""
+    name = _clamp_str(payload.name, 80)
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required.")
+
+    max_uses = int(payload.maxUses or 1)
+    if max_uses < 1 or max_uses > 10000:
+        raise HTTPException(status_code=400, detail="maxUses must be between 1 and 10000.")
+
+    note = _clamp_str(payload.note, 500)
+
+    # Try a few times to avoid collisions.
+    code = None
+    for _ in range(20):
+        candidate = _generate_access_code(prefix="IP")
+        if not ACCESS_CODE_RE.match(candidate):
+            continue
+        if not _access_code_ref(candidate).get().exists:
+            code = candidate
+            break
+    if not code:
+        raise HTTPException(status_code=500, detail="Failed to generate a unique code.")
+
+    ref = _access_code_ref(code)
+    ref.set(
+        {
+            "name": name,
+            "note": note,
+            "maxUses": max_uses,
+            "uses": 0,
+            "disabled": False,
+            "createdBy": admin_uid,
+            "createdAt": SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP,
+            "lastUsedAt": None,
+        },
+        merge=True,
+    )
+
+    return {
+        "status": "ok",
+        "code": code,
+        "name": name,
+        "note": note,
+        "maxUses": max_uses,
+        "uses": 0,
+        "disabled": False,
+    }
+
+
+@app.get("/api/admin/access-codes/{code}")
+async def admin_get_access_code_detail(code: str, _: str = Depends(verify_admin_user)):
+    code_norm = _normalize_access_code(code)
+    if not code_norm or not ACCESS_CODE_RE.match(code_norm):
+        raise HTTPException(status_code=400, detail="Invalid code.")
+
+    ref = _access_code_ref(code_norm)
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Access code not found.")
+
+    data = snap.to_dict() or {}
+
+    redemptions = []
+    try:
+        q = ref.collection("redemptions").order_by("firstRedeemedAt", direction=firestore.Query.DESCENDING).limit(200)
+        for rsnap in q.stream():
+            r = rsnap.to_dict() or {}
+            redemptions.append(
+                {
+                    "uid": r.get("uid") or rsnap.id,
+                    "email": r.get("email") or None,
+                    "displayName": r.get("displayName") or None,
+                    "photoURL": r.get("photoURL") or None,
+                    "firstRedeemedAt": _ts_to_iso(r.get("firstRedeemedAt")),
+                    "lastRedeemedAt": _ts_to_iso(r.get("lastRedeemedAt")),
+                    "firstIp": r.get("firstIp") or None,
+                    "lastIp": r.get("lastIp") or None,
+                    "firstUserAgent": _truncate_header(r.get("firstUserAgent"), 400),
+                    "lastUserAgent": _truncate_header(r.get("lastUserAgent"), 400),
+                }
+            )
+    except Exception:
+        redemptions = []
+
+    attempts = []
+    try:
+        q = (
+            _access_code_attempts_col()
+            .where("code", "==", code_norm)
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(200)
+        )
+        for asnap in q.stream():
+            a = asnap.to_dict() or {}
+            attempts.append(
+                {
+                    "id": asnap.id,
+                    "uid": a.get("uid") or None,
+                    "email": a.get("email") or None,
+                    "displayName": a.get("displayName") or None,
+                    "success": bool(a.get("success") is True),
+                    "reason": a.get("reason") or None,
+                    "ip": a.get("ip") or None,
+                    "userAgent": _truncate_header(a.get("userAgent"), 400),
+                    "createdAt": _ts_to_iso(a.get("createdAt")),
+                }
+            )
+    except Exception:
+        attempts = []
+
+    return {
+        "code": {
+            "code": code_norm,
+            "name": _clamp_str(data.get("name"), 120) or code_norm,
+            "note": _clamp_str(data.get("note"), 2000),
+            "maxUses": int(data.get("maxUses") or 1),
+            "uses": int(data.get("uses") or 0),
+            "disabled": bool(data.get("disabled") is True),
+            "createdAt": _ts_to_iso(data.get("createdAt")),
+            "lastUsedAt": _ts_to_iso(data.get("lastUsedAt")),
+        },
+        "redemptions": redemptions,
+        "attempts": attempts,
+    }
+
+
+@app.patch("/api/admin/access-codes/{code}")
+async def admin_update_access_code(
+    code: str,
+    payload: AdminUpdateAccessCodeRequest,
+    admin_uid: str = Depends(verify_admin_user),
+):
+    code_norm = _normalize_access_code(code)
+    if not code_norm or not ACCESS_CODE_RE.match(code_norm):
+        raise HTTPException(status_code=400, detail="Invalid code.")
+
+    ref = _access_code_ref(code_norm)
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Access code not found.")
+
+    update: dict = {"updatedAt": SERVER_TIMESTAMP, "updatedBy": admin_uid}
+    if payload.disabled is not None:
+        update["disabled"] = bool(payload.disabled)
+    if payload.maxUses is not None:
+        max_uses = int(payload.maxUses)
+        if max_uses < 1 or max_uses > 10000:
+            raise HTTPException(status_code=400, detail="maxUses must be between 1 and 10000.")
+        update["maxUses"] = max_uses
+    if payload.name is not None:
+        name = _clamp_str(payload.name, 80)
+        if not name:
+            raise HTTPException(status_code=400, detail="name must not be empty.")
+        update["name"] = name
+    if payload.note is not None:
+        update["note"] = _clamp_str(payload.note, 500)
+
+    ref.set(update, merge=True)
+    return {"status": "ok"}
 
 
 @app.post("/api/admin/users/platform-key")
@@ -484,17 +1155,31 @@ async def admin_get_user_detail(
         raise HTTPException(status_code=500, detail="Failed to load user.") from None
 
     claims = user.custom_claims or {}
-    approved = bool(claims.get("approved") is True)
+    full_access = bool(claims.get("fullAccess") is True or claims.get("approved") is True)
+    legacy_approved = bool(claims.get("approved") is True)
+    blocked_claim = bool(claims.get("blocked") is True)
 
     allow_platform_key = False
     can_duplicate_system_prompts = False
+    account_status = None
+    blocked = False
+    activated_by_code = None
+    activated_at = None
     try:
         user_doc = await firebase_service.get_user_doc(user.uid)
         allow_platform_key = bool((user_doc or {}).get("allowPlatformKey") is True)
         can_duplicate_system_prompts = bool((user_doc or {}).get("canDuplicateSystemPrompts") is True)
+        account_status = str((user_doc or {}).get("accountStatus") or "").strip().lower() or None
+        blocked = account_status == "blocked"
+        activated_by_code = (user_doc or {}).get("activatedByCode") or None
+        activated_at = _ts_to_iso((user_doc or {}).get("activatedAt"))
     except Exception:
         allow_platform_key = False
         can_duplicate_system_prompts = False
+        account_status = None
+        blocked = False
+        activated_by_code = None
+        activated_at = None
 
     try:
         key_status = await user_key_service.get_status(user.uid)
@@ -513,10 +1198,16 @@ async def admin_get_user_detail(
             "uid": str(user.uid),
             "email": (user.email or "").strip() or None,
             "displayName": (user.display_name or "").strip() or None,
-            "approved": approved,
+            "isAdmin": bool(config.ADMIN_UIDS and user.uid in config.ADMIN_UIDS),
+            "fullAccess": full_access,
+            "legacyApproved": legacy_approved,
+            "blocked": blocked or blocked_claim,
+            "accountStatus": account_status,
             "disabled": bool(user.disabled),
             "allowPlatformKey": allow_platform_key,
             "canDuplicateSystemPrompts": can_duplicate_system_prompts,
+            "activatedByCode": activated_by_code,
+            "activatedAt": activated_at,
             "createdAt": _ms_to_iso(getattr(user.user_metadata, "creation_timestamp", None)),
             "lastSignInAt": _ms_to_iso(getattr(user.user_metadata, "last_sign_in_timestamp", None)),
         },
@@ -1471,30 +2162,36 @@ def _require_admin_password_and_get_target_email(
 
 
 @app.get("/api/admin/approve")
-async def admin_set_user_approved(
+async def admin_set_user_full_access_basic(
     email: str,
-    approved: bool = True,
+    fullAccess: bool = True,
+    approved: bool | None = None,
     _: None = Depends(_require_admin),
 ):
     """
-    Approve/revoke a Google user by setting a Firebase Auth custom claim.
+    Grant/revoke access by setting the Firebase Auth custom claim `fullAccess`.
+
+    Backwards compatible alias: `approved` maps to `fullAccess`.
 
     Usage (browser will prompt for basic auth):
-      /api/admin/approve?email=user@gmail.com&approved=true
+      /api/admin/approve?email=user@gmail.com&fullAccess=true
     """
     try:
-        result = await firebase_service.set_user_approved_by_email(email=email, approved=approved)
+        if approved is not None:
+            fullAccess = bool(approved)
+
+        result = await firebase_service.set_user_full_access_by_email(email=email, full_access=bool(fullAccess))
         return {
             "status": "ok",
             "email": result.get("email"),
             "uid": result.get("uid"),
-            "approved": result.get("approved"),
-            "note": "User must sign out/in (or refresh token) for the claim to take effect.",
+            "fullAccess": result.get("fullAccess"),
+            "note": "User must refresh token (or re-login) for the claim to take effect.",
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to update user approval.") from None
+        raise HTTPException(status_code=500, detail="Failed to update user access.") from None
 
 
 @app.get("/api/admin/quick-approve")
@@ -1508,18 +2205,18 @@ async def admin_quick_approve(
     - Basic Auth prompt: username = target email, password = ADMIN_BASIC_PASSWORD
     """
     try:
-        result = await firebase_service.set_user_approved_by_email(email=email, approved=True)
+        result = await firebase_service.set_user_full_access_by_email(email=email, full_access=True)
         return {
             "status": "ok",
             "email": result.get("email"),
             "uid": result.get("uid"),
-            "approved": True,
-            "note": "User must sign out/in (or refresh token) for the claim to take effect.",
+            "fullAccess": True,
+            "note": "User must refresh token (or re-login) for the claim to take effect.",
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to update user approval.") from None
+        raise HTTPException(status_code=500, detail="Failed to update user access.") from None
 
 
 @app.get("/api/admin/quick-revoke")
@@ -1533,24 +2230,24 @@ async def admin_quick_revoke(
     - Basic Auth prompt: username = target email, password = ADMIN_BASIC_PASSWORD
     """
     try:
-        result = await firebase_service.set_user_approved_by_email(email=email, approved=False)
+        result = await firebase_service.set_user_full_access_by_email(email=email, full_access=False)
         return {
             "status": "ok",
             "email": result.get("email"),
             "uid": result.get("uid"),
-            "approved": False,
-            "note": "User must sign out/in (or refresh token) for the claim to take effect.",
+            "fullAccess": False,
+            "note": "User must refresh token (or re-login) for the claim to take effect.",
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to update user approval.") from None
+        raise HTTPException(status_code=500, detail="Failed to update user access.") from None
 
 
 @app.get("/approve", response_class=HTMLResponse)
 async def approve_page(
     email: str | None = None,
-    approved: bool = True,
+    fullAccess: bool = True,
     _: None = Depends(_require_admin),
 ):
     """
@@ -1558,7 +2255,7 @@ async def approve_page(
 
     Uses POST (form) so email doesn't end up in the URL.
     """
-    return _render_approve_page(email=email, approved=approved, message_html="")
+    return _render_approve_page(email=email, full_access=fullAccess, message_html="")
 
 
 @app.post("/approve", response_class=HTMLResponse)
@@ -1574,14 +2271,16 @@ async def approve_page_submit(
     body = (await request.body()).decode("utf-8", errors="ignore")
     params = parse_qs(body)
     email = (params.get("email", [""]) or [""])[0].strip() or None
-    approved_raw = ((params.get("approved", ["true"]) or ["true"])[0] or "true").strip().lower()
-    approved = approved_raw in {"true", "1", "yes", "on"}
+    full_access_raw = ((params.get("fullAccess", [""]) or [""])[0] or "").strip().lower()
+    approved_raw = ((params.get("approved", [""]) or [""])[0] or "").strip().lower()
+    raw = full_access_raw or approved_raw or "true"
+    full_access = raw in {"true", "1", "yes", "on"}
 
     message_html = ""
     if email is not None and email.strip():
         try:
-            result = await firebase_service.set_user_approved_by_email(email=email, approved=approved)
-            state = "APPROVED" if result.get("approved") else "REVOKED"
+            result = await firebase_service.set_user_full_access_by_email(email=email, full_access=full_access)
+            state = "FULL ACCESS" if result.get("fullAccess") else "REVOKED"
             message_html = f"""
               <div class="ok">
                 <div><strong>{state}</strong></div>
@@ -1598,12 +2297,12 @@ async def approve_page_submit(
               </div>
             """
 
-    return _render_approve_page(email=email, approved=approved, message_html=message_html)
+    return _render_approve_page(email=email, full_access=full_access, message_html=message_html)
 
 
-def _render_approve_page(email: str | None, approved: bool, message_html: str) -> HTMLResponse:
-    selected_true = "selected" if approved else ""
-    selected_false = "selected" if not approved else ""
+def _render_approve_page(email: str | None, full_access: bool, message_html: str) -> HTMLResponse:
+    selected_true = "selected" if full_access else ""
+    selected_false = "selected" if not full_access else ""
 
     html_doc = f"""
     <!doctype html>
@@ -1611,7 +2310,7 @@ def _render_approve_page(email: str | None, approved: bool, message_html: str) -
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>InstantPaper - User Approval</title>
+        <title>InstantPaper - User Access</title>
         <style>
           body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; background: #0b0b0c; color: #f5f5f5; }}
           .card {{ max-width: 560px; margin: 0 auto; background: #141416; border: 1px solid #2a2a2e; border-radius: 14px; padding: 18px; }}
@@ -1631,15 +2330,15 @@ def _render_approve_page(email: str | None, approved: bool, message_html: str) -
       </head>
       <body>
         <div class="card">
-          <h1>User Approval</h1>
+          <h1>User Access</h1>
           <form method="post" action="/approve">
             <label for="email">Google Email</label>
             <input id="email" name="email" type="email" placeholder="name@gmail.com" required value="{html_lib.escape(email or "")}" />
             <div class="row">
               <div>
-                <label for="approved" style="margin:0 0 6px;">Status</label>
-                <select id="approved" name="approved">
-                  <option value="true" {selected_true}>approved</option>
+                <label for="fullAccess" style="margin:0 0 6px;">Status</label>
+                <select id="fullAccess" name="fullAccess">
+                  <option value="true" {selected_true}>fullAccess</option>
                   <option value="false" {selected_false}>revoked</option>
                 </select>
               </div>
@@ -1665,9 +2364,7 @@ async def create_session(request: CreateSessionRequest):
     """
     try:
         # Verify ID token first
-        decoded_token = await firebase_service.verify_token(request.idToken)
-        if not bool(decoded_token.get("approved") is True):
-            raise HTTPException(status_code=403, detail="Account not authorized")
+        await firebase_service.verify_token(request.idToken)
 
         # Create session cookie (14 days)
         session_cookie = await firebase_service.create_session_cookie(request.idToken, expires_in_days=14)

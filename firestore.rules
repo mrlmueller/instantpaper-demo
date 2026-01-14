@@ -7,7 +7,15 @@ service cloud.firestore {
     // ---------------------------------------------------------------------
 
     function isAuthenticated() {
-      return request.auth != null && request.auth.token.approved == true;
+      return request.auth != null
+        && (request.auth.token.fullAccess == true || request.auth.token.approved == true)
+        && !isBlocked();
+    }
+
+    function isBlocked() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountStatus == 'blocked';
     }
 
     function isOwner(userId) {

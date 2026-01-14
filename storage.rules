@@ -1,26 +1,38 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    function hasFullAccess() {
+      return request.auth != null
+        && (request.auth.token.fullAccess == true || request.auth.token.approved == true);
+    }
+
+    function isNotBlocked() {
+      // Storage rules cannot read Firestore; rely on the `blocked` claim (stale tokens up to ~1h are acceptable).
+      return request.auth != null && request.auth.token.blocked != true;
+    }
+
     // User-scoped image access for Quellen
     match /users/{userId}/quellen/{quelleId}/{imageName} {
       // Allow authenticated users to read their own images
-      allow read: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked();
 
       // Allow authenticated users to upload their own images
       // Enforce file size (5MB max) and type restrictions
       allow write: if request.auth != null
                    && request.auth.uid == userId
+                   && hasFullAccess()
+                   && isNotBlocked()
                    && request.resource.size < 5 * 1024 * 1024  // 5MB limit
                    && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
 
       // Allow deletion by owner
-      allow delete: if request.auth != null && request.auth.uid == userId;
+      allow delete: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked();
     }
 
     // User-scoped DOCX exports
     match /users/{userId}/exports/{exportId}/{fileName} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow delete: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked();
+      allow delete: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked();
     }
   }
 }

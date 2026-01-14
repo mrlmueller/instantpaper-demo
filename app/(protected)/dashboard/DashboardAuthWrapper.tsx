@@ -4,26 +4,32 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/components/providers/AuthProvider';
 import { DashboardSkeleton } from '@/app/components/dashboard/DashboardSkeleton';
+import { hasFullAccess } from '@/app/lib/firebase/auth';
 
 type DashboardAuthWrapperProps = {
   initialShowQuellenPanel?: boolean;
 };
 
 export function DashboardAuthWrapper({ initialShowQuellenPanel = false }: DashboardAuthWrapperProps) {
-  const { user, loading } = useAuth();
+  const { user, access, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (loading) return;
 
     if (user) {
-      // Auth succeeded - refresh the page to fetch data with valid token
+      if (!hasFullAccess(access) || access.blocked) {
+        router.replace('/activate');
+        return;
+      }
+
+      // Auth succeeded - refresh the page to fetch data with valid token + claims
       router.refresh();
     } else {
       // Auth failed - no valid refresh token, redirect to login
       router.replace('/login?reason=session-expired');
     }
-  }, [user, loading, router]);
+  }, [user, access, loading, router]);
 
   // Show loading skeleton while waiting for auth to complete
   return <DashboardSkeleton showQuellenPanel={initialShowQuellenPanel} />;

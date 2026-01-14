@@ -221,6 +221,107 @@ class FirebaseService:
             "customClaims": next_claims,
         }
 
+    async def set_user_full_access_by_email(self, email: str, full_access: bool) -> dict:
+        """
+        Set/revoke the Firebase Auth custom claim `fullAccess` for a user identified by email.
+
+        Legacy claim `approved` is treated as access during migration, but new writes use `fullAccess`.
+        """
+        self._ensure_initialized()
+        email_norm = (email or "").strip()
+        if not email_norm:
+            raise ValueError("email is required")
+
+        try:
+            user = auth.get_user_by_email(email_norm)
+        except auth.UserNotFoundError as exc:
+            raise ValueError("User not found. Ask the user to sign in once, then try again.") from exc
+
+        existing_claims = user.custom_claims or {}
+        next_claims = {**existing_claims}
+
+        if bool(full_access):
+            next_claims["fullAccess"] = True
+            # Phase out the legacy claim when toggling access via the admin UI.
+            next_claims.pop("approved", None)
+        else:
+            # Revoke both to ensure legacy tokens don't retain access.
+            next_claims.pop("fullAccess", None)
+            next_claims.pop("approved", None)
+
+        auth.set_custom_user_claims(user.uid, next_claims)
+
+        return {
+            "uid": user.uid,
+            "email": user.email,
+            "fullAccess": bool(full_access),
+            "customClaims": next_claims,
+        }
+
+    async def set_user_blocked_by_email(self, *, email: str, blocked: bool, admin_uid: str) -> dict:
+        """
+        Block/unblock a user (hard gate).
+
+        - Immediate enforcement is done via Firestore: `users/{uid}.accountStatus = "blocked"`.
+        - A `blocked` custom claim is also set so Storage rules can deny uploads (token staleness accepted).
+        """
+        self._ensure_initialized()
+        email_norm = (email or "").strip()
+        if not email_norm:
+            raise ValueError("email is required")
+
+        admin_uid_norm = (admin_uid or "").strip()
+        if not admin_uid_norm:
+            raise ValueError("admin_uid is required")
+
+        try:
+            user = auth.get_user_by_email(email_norm)
+        except auth.UserNotFoundError as exc:
+            raise ValueError("User not found. Ask the user to sign in once, then try again.") from exc
+
+        if bool(blocked) and config.ADMIN_UIDS and user.uid in config.ADMIN_UIDS:
+            raise ValueError("Admin users cannot be blocked.")
+
+        existing_claims = user.custom_claims or {}
+        next_claims = {**existing_claims}
+        if bool(blocked):
+            next_claims["blocked"] = True
+        else:
+            next_claims.pop("blocked", None)
+
+        auth.set_custom_user_claims(user.uid, next_claims)
+
+        user_ref = self.db.collection("users").document(user.uid)
+        existing = user_ref.get()
+
+        status = "blocked" if bool(blocked) else "active"
+        payload: dict = {
+            "uid": user.uid,
+            "email": (user.email or "").strip() or email_norm,
+            "displayName": (user.display_name or "").strip() or None,
+            "photoURL": (user.photo_url or "").strip() or None,
+            "accountStatus": status,
+            "updatedAt": SERVER_TIMESTAMP,
+        }
+        if not existing.exists:
+            payload["createdAt"] = SERVER_TIMESTAMP
+
+        if bool(blocked):
+            payload["blockedAt"] = SERVER_TIMESTAMP
+            payload["blockedBy"] = admin_uid_norm
+        else:
+            payload["unblockedAt"] = SERVER_TIMESTAMP
+            payload["unblockedBy"] = admin_uid_norm
+
+        user_ref.set(payload, merge=True)
+
+        return {
+            "uid": user.uid,
+            "email": user.email,
+            "blocked": bool(blocked),
+            "customClaims": next_claims,
+        }
+
     async def set_user_can_duplicate_system_prompts_by_email(self, email: str, allowed: bool) -> dict:
         """
         Allow or block a user from duplicating server-only system prompts.

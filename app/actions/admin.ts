@@ -3,8 +3,9 @@
 import { revalidatePath } from 'next/cache';
 import {
   setUserAllowPlatformKeyByEmail,
-  setUserApprovedByEmail,
+  setUserBlockedByEmail,
   setUserCanDuplicateSystemPromptsByEmail,
+  setUserFullAccessByEmail,
 } from '@/app/lib/api/adminServer';
 
 function normalizeEmail(value: unknown): string {
@@ -12,16 +13,29 @@ function normalizeEmail(value: unknown): string {
   return email;
 }
 
-export async function adminSetUserApproval(formData: FormData) {
+export async function adminSetUserFullAccess(formData: FormData) {
   const email = normalizeEmail(formData.get('email'));
-  const approvedRaw = String(formData.get('approved') ?? 'true').trim().toLowerCase();
-  const approved = approvedRaw === 'true' || approvedRaw === '1' || approvedRaw === 'yes' || approvedRaw === 'on';
+  const raw = String(formData.get('fullAccess') ?? 'true').trim().toLowerCase();
+  const fullAccess = raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
 
   if (!email || !email.includes('@')) {
-    throw new Error('Bitte eine gültige E-Mail angeben.');
+    throw new Error('Bitte eine g〕tige E-Mail angeben.');
   }
 
-  await setUserApprovedByEmail(email, approved);
+  await setUserFullAccessByEmail(email, fullAccess);
+  revalidatePath('/admin');
+}
+
+export async function adminSetUserBlocked(formData: FormData) {
+  const email = normalizeEmail(formData.get('email'));
+  const raw = String(formData.get('blocked') ?? 'true').trim().toLowerCase();
+  const blocked = raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
+
+  if (!email || !email.includes('@')) {
+    throw new Error('Bitte eine g〕tige E-Mail angeben.');
+  }
+
+  await setUserBlockedByEmail(email, blocked);
   revalidatePath('/admin');
 }
 
@@ -31,7 +45,7 @@ export async function adminSetAllowPlatformKey(formData: FormData) {
   const allow = allowRaw === 'true' || allowRaw === '1' || allowRaw === 'yes' || allowRaw === 'on';
 
   if (!email || !email.includes('@')) {
-    throw new Error('Bitte eine gültige E-Mail angeben.');
+    throw new Error('Bitte eine g〕tige E-Mail angeben.');
   }
 
   await setUserAllowPlatformKeyByEmail(email, allow);
@@ -44,9 +58,10 @@ export async function adminSetCanDuplicateSystemPrompts(formData: FormData) {
   const allow = allowRaw === 'true' || allowRaw === '1' || allowRaw === 'yes' || allowRaw === 'on';
 
   if (!email || !email.includes('@')) {
-    throw new Error('Bitte eine g〕tige E-Mail angeben.');
+    throw new Error('Bitte eine g?tige E-Mail angeben.');
   }
 
   await setUserCanDuplicateSystemPromptsByEmail(email, allow);
   revalidatePath('/admin');
 }
+
