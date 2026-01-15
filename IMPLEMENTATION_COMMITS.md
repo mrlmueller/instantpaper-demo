@@ -16,10 +16,11 @@ Constraints:
 
 Diese Zahlen sind ab jetzt „Source of Truth“ für alle folgenden Schritte:
 
-- **Purchase‑Rate (Kauf)**: `$1 bezahlt -> 3 Credits`
-- **Spend‑Rate (Verbrauch, Default)**: `OpenAI $1 Kosten -> 6 Credits`
-- **Folge (Default)**: `$1 bezahlt -> $0.50 OpenAI‑Budget`
-- Beispiel: `$10` bezahlt -> `30 Credits` -> entspricht `$5` OpenAI‑Budget -> wenn OpenAI‑Kosten `$5`, werden `30 Credits` verbraucht.
+- **Purchase-Rate (Kauf)**: `$1 bezahlt -> 3 Credits`
+- **Spend-Rate (Verbrauch, Default)**: `OpenAI $1 Kosten -> 6 Credits`
+- **Subscription Bonus (Abo)**: +`10 Credits` pro bezahlter Periode (damit `$25` Abo -> `85 Credits` statt `75`)
+- **Folge (Default)**: `$1 bezahlt -> $0.50 OpenAI-Budget`
+- Beispiel: `$10` bezahlt -> `30 Credits` -> entspricht `$5` OpenAI-Budget -> wenn OpenAI-Kosten `$5`, werden `30 Credits` verbraucht.
 
 Wichtig:
 
@@ -253,8 +254,9 @@ Dieser Branch ist groß: arbeite in kleinen „vertikalen“ Commits und teste n
 - In `PLAN_PUBLIC_BETA.md` prüfen/ergänzen:
   - Kauf: `$1 bezahlt -> 3 Credits`
   - Verbrauch Default: `OpenAI $1 -> 6 Credits`
-  - Abo‑Credits expiren am period end; Top‑up nicht.
-  - Ledger zeigt Admin‑Adjustments als Gutschrift/Belastung.
+  - Subscription Bonus: +`10 Credits` pro bezahlter Periode (Abo `$25` -> `85 Credits`)
+  - Abo-Credits expiren am period end; Top-up nicht.
+  - Ledger zeigt Admin-Adjustments als Gutschrift/Belastung.
   **Akzeptanzkriterien**:
 - Keine Interpretationsfragen mehr.
 
@@ -336,7 +338,8 @@ Dieser Branch ist groß: arbeite in kleinen „vertikalen“ Commits und teste n
   - Payment failed/canceled -> Billing State update (keine Grants)
   - Erster erfolgreicher Payment‑Event -> falls User noch kein `fullAccess`: `fullAccess = true` setzen (damit er aus `/activate` rauskommt).
 - Grant Regel fixieren:
-  - `credits_granted = paid_usd * 3`
+  - Top-up: `credits_granted = paid_usd * 3`
+  - Abo: `credits_granted = paid_usd * 3 + 10` (bei `$25` -> `85 Credits`)
   - Expiry nur für Abo‑Grants (period end)
   - `fullAccess` nicht automatisch entziehen bei Kündigung/0 Credits (User muss sonst nicht mehr nachkaufen können); Sperre bleibt Admin‑Tool.
   **Externe Schritte (vor dem Test dieses Commits)**:
