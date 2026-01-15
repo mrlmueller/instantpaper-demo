@@ -112,6 +112,15 @@ class AdminSetBlockedRequest(BaseModel):
     blocked: bool = True
 
 
+class AdminSetSpendRateRequest(BaseModel):
+    spendRate: float | None = None
+
+
+class AdminCreateCreditAdjustmentRequest(BaseModel):
+    credits: float
+    note: str | None = None
+
+
 class RedeemAccessCodeRequest(BaseModel):
     code: str
 
@@ -443,6 +452,80 @@ def _epoch_to_iso(value) -> str | None:
         return None
 
 
+def _compute_balance_summary(data: dict | None) -> dict:
+    topup_credits = _as_float((data or {}).get("topupCredits"), 0.0)
+    subscription_credits_raw = _as_float((data or {}).get("subscriptionCredits"), 0.0)
+    subscription_expires_at = (data or {}).get("subscriptionExpiresAt")
+
+    subscription_active = subscription_credits_raw
+    if subscription_expires_at:
+        try:
+            dt = subscription_expires_at.to_datetime() if hasattr(subscription_expires_at, "to_datetime") else None
+            if isinstance(dt, datetime):
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                if dt <= datetime.now(timezone.utc):
+                    subscription_active = 0.0
+        except Exception:
+            pass
+
+    total = subscription_active + topup_credits
+    return {
+        "totalCredits": float(total),
+        "subscriptionCredits": float(subscription_active),
+        "subscriptionExpiresAt": _ts_to_iso(subscription_expires_at),
+        "topupCredits": float(topup_credits),
+        "isNegative": bool(total < 0),
+    }
+
+
+async def _read_subscription_summary_for_user(user_id: str) -> dict | None:
+    try:
+        subs_ref = (
+            firebase_service.db.collection("customers")
+            .document(user_id)
+            .collection("subscriptions")
+        )
+        subs = list(subs_ref.stream())
+    except Exception:
+        subs = []
+
+    best = None
+    best_id = None
+    best_status = ""
+
+    def _score(status: str) -> int:
+        s = (status or "").strip().lower()
+        if s == "active":
+            return 4
+        if s == "trialing":
+            return 3
+        if s == "past_due":
+            return 2
+        if s:
+            return 1
+        return 0
+
+    for snap in subs:
+        data = snap.to_dict() or {}
+        status = str(data.get("status") or "").strip()
+        if best is None or _score(status) > _score(best_status):
+            best = data
+            best_id = snap.id
+            best_status = status
+
+    if not best:
+        return None
+
+    current_period_end = best.get("current_period_end")
+    return {
+        "id": best_id,
+        "status": str(best.get("status") or "") or None,
+        "cancelAtPeriodEnd": bool(best.get("cancel_at_period_end") is True),
+        "currentPeriodEnd": _ts_to_iso(current_period_end) or _epoch_to_iso(current_period_end),
+    }
+
+
 @app.get("/api/billing/balance")
 async def billing_get_balance(user_id: str = Depends(verify_firebase_token)):
     """
@@ -462,32 +545,7 @@ async def billing_get_balance(user_id: str = Depends(verify_firebase_token)):
     except Exception:
         data = {}
 
-    topup_credits = _as_float((data or {}).get("topupCredits"), 0.0)
-    subscription_credits_raw = _as_float((data or {}).get("subscriptionCredits"), 0.0)
-    subscription_expires_at = (data or {}).get("subscriptionExpiresAt")
-
-    subscription_active = subscription_credits_raw
-    if subscription_expires_at:
-        try:
-            dt = subscription_expires_at.to_datetime() if hasattr(subscription_expires_at, "to_datetime") else None
-            if isinstance(dt, datetime):
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                if dt <= datetime.now(timezone.utc):
-                    subscription_active = 0.0
-        except Exception:
-            pass
-
-    total = subscription_active + topup_credits
-    return {
-        "balance": {
-            "totalCredits": float(total),
-            "subscriptionCredits": float(subscription_active),
-            "subscriptionExpiresAt": _ts_to_iso(subscription_expires_at),
-            "topupCredits": float(topup_credits),
-            "isNegative": bool(total < 0),
-        }
-    }
+    return {"balance": _compute_balance_summary(data)}
 
 
 @app.get("/api/billing/ledger")
@@ -550,52 +608,7 @@ async def billing_get_status(user_id: str = Depends(verify_firebase_token)):
 
     Data comes from the Firebase Stripe Extension synced collection: customers/{uid}/subscriptions/*.
     """
-    try:
-        subs_ref = (
-            firebase_service.db.collection("customers")
-            .document(user_id)
-            .collection("subscriptions")
-        )
-        subs = list(subs_ref.stream())
-    except Exception:
-        subs = []
-
-    best = None
-    best_id = None
-    best_status = ""
-
-    def _score(status: str) -> int:
-        s = (status or "").strip().lower()
-        if s == "active":
-            return 4
-        if s == "trialing":
-            return 3
-        if s == "past_due":
-            return 2
-        if s:
-            return 1
-        return 0
-
-    for snap in subs:
-        data = snap.to_dict() or {}
-        status = str(data.get("status") or "").strip()
-        if best is None or _score(status) > _score(best_status):
-            best = data
-            best_id = snap.id
-            best_status = status
-
-    if not best:
-        return {"subscription": None}
-
-    current_period_end = best.get("current_period_end")
-    return {
-        "subscription": {
-            "id": best_id,
-            "status": str(best.get("status") or "") or None,
-            "cancelAtPeriodEnd": bool(best.get("cancel_at_period_end") is True),
-            "currentPeriodEnd": _ts_to_iso(current_period_end) or _epoch_to_iso(current_period_end),
-        }
-    }
+    return {"subscription": await _read_subscription_summary_for_user(user_id)}
 
 
 @app.post("/api/access-codes/redeem")
@@ -1346,6 +1359,7 @@ async def admin_get_user_detail(
     blocked = False
     activated_by_code = None
     activated_at = None
+    spend_rate_override = None
     try:
         user_doc = await firebase_service.get_user_doc(user.uid)
         allow_platform_key = bool((user_doc or {}).get("allowPlatformKey") is True)
@@ -1354,6 +1368,9 @@ async def admin_get_user_detail(
         blocked = account_status == "blocked"
         activated_by_code = (user_doc or {}).get("activatedByCode") or None
         activated_at = _ts_to_iso((user_doc or {}).get("activatedAt"))
+        spend_rate_raw = _as_float((user_doc or {}).get("spendRate"), 0.0)
+        if spend_rate_raw and spend_rate_raw > 0:
+            spend_rate_override = float(spend_rate_raw)
     except Exception:
         allow_platform_key = False
         can_duplicate_system_prompts = False
@@ -1361,6 +1378,35 @@ async def admin_get_user_detail(
         blocked = False
         activated_by_code = None
         activated_at = None
+        spend_rate_override = None
+
+    try:
+        cfg = await get_credits_service(firebase_service).get_config()
+        default_rate = float(cfg.default_spend_rate or 0.0)
+        if default_rate <= 0:
+            default_rate = 6.0
+        effective_spend_rate = float(spend_rate_override) if spend_rate_override is not None else float(default_rate)
+    except Exception:
+        effective_spend_rate = float(spend_rate_override) if spend_rate_override is not None else 6.0
+
+    try:
+        bal_ref = (
+            firebase_service.db.collection("users")
+            .document(user.uid)
+            .collection("billing")
+            .document("balance")
+        )
+        bal_snap = bal_ref.get()
+        balance_data = bal_snap.to_dict() if bal_snap.exists else {}
+    except Exception:
+        balance_data = {}
+
+    billing_balance = _compute_balance_summary(balance_data)
+
+    try:
+        billing_subscription = await _read_subscription_summary_for_user(user.uid)
+    except Exception:
+        billing_subscription = None
 
     try:
         key_status = await user_key_service.get_status(user.uid)
@@ -1387,6 +1433,8 @@ async def admin_get_user_detail(
             "disabled": bool(user.disabled),
             "allowPlatformKey": allow_platform_key,
             "canDuplicateSystemPrompts": can_duplicate_system_prompts,
+            "spendRate": spend_rate_override,
+            "effectiveSpendRate": float(effective_spend_rate),
             "activatedByCode": activated_by_code,
             "activatedAt": activated_at,
             "createdAt": _ms_to_iso(getattr(user.user_metadata, "creation_timestamp", None)),
@@ -1398,6 +1446,210 @@ async def admin_get_user_detail(
             "allowPlatformKey": allow_platform_from_status,
             "source": key_source,
         },
+        "billing": {
+            "balance": billing_balance,
+            "subscription": billing_subscription,
+        },
+    }
+
+
+@app.post("/api/admin/users/{uid}/spend-rate")
+async def admin_set_user_spend_rate(
+    uid: str,
+    payload: AdminSetSpendRateRequest,
+    admin_uid: str = Depends(verify_admin_user),
+):
+    """Set per-user spend rate override (`users/{uid}.spendRate`)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    try:
+        auth.get_user(uid_norm)
+    except auth.UserNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="User not found.") from exc
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to load user.") from None
+
+    spend_rate_override = None
+    spend_rate = payload.spendRate
+    if spend_rate is not None:
+        try:
+            n = float(spend_rate)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid spendRate.") from None
+        if n and n > 0:
+            spend_rate_override = float(n)
+
+    user_ref = firebase_service.db.collection("users").document(uid_norm)
+    update: dict = {
+        "updatedAt": SERVER_TIMESTAMP,
+        "spendRateUpdatedAt": SERVER_TIMESTAMP,
+        "spendRateUpdatedBy": str(admin_uid),
+    }
+    if spend_rate_override is None:
+        update["spendRate"] = firestore.DELETE_FIELD
+    else:
+        update["spendRate"] = float(spend_rate_override)
+
+    user_ref.set(update, merge=True)
+
+    try:
+        cfg = await get_credits_service(firebase_service).get_config()
+        default_rate = float(cfg.default_spend_rate or 0.0)
+        if default_rate <= 0:
+            default_rate = 6.0
+    except Exception:
+        default_rate = 6.0
+
+    effective = float(spend_rate_override) if spend_rate_override is not None else float(default_rate)
+    return {
+        "status": "ok",
+        "uid": uid_norm,
+        "spendRate": spend_rate_override,
+        "effectiveSpendRate": float(effective),
+    }
+
+
+@app.get("/api/admin/users/{uid}/billing/ledger")
+async def admin_get_user_credit_ledger(
+    uid: str,
+    limit: int = 50,
+    cursor: str | None = None,
+    _: str = Depends(verify_admin_user),
+):
+    """Return credit ledger entries for a user (paginated, newest first; admin-only)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    limit = max(1, min(int(limit or 50), 200))
+
+    base = (
+        firebase_service.db.collection("users")
+        .document(uid_norm)
+        .collection("creditLedger")
+        .order_by("createdAt", direction=firestore.Query.DESCENDING)
+    )
+
+    if cursor:
+        try:
+            cursor_snap = (
+                firebase_service.db.collection("users")
+                .document(uid_norm)
+                .collection("creditLedger")
+                .document(str(cursor))
+                .get()
+            )
+            if cursor_snap.exists:
+                base = base.start_after(cursor_snap)
+        except Exception:
+            pass
+
+    docs = list(base.limit(limit).stream())
+    out = []
+    for snap in docs:
+        data = snap.to_dict() or {}
+        out.append(
+            {
+                "id": snap.id,
+                "type": str(data.get("type") or ""),
+                "source": str(data.get("source") or ""),
+                "credits": _as_float(data.get("credits"), 0.0),
+                "createdAt": _ts_to_iso(data.get("createdAt")),
+                "expiresAt": _ts_to_iso(data.get("expiresAt")),
+                "note": str(data.get("note") or "") or None,
+            }
+        )
+
+    next_cursor = docs[-1].id if len(docs) == limit else None
+    return {"entries": out, "nextCursor": next_cursor}
+
+
+@app.post("/api/admin/users/{uid}/billing/adjustments")
+async def admin_create_credit_adjustment(
+    uid: str,
+    payload: AdminCreateCreditAdjustmentRequest,
+    admin_uid: str = Depends(verify_admin_user),
+):
+    """Create a manual +/- credit adjustment for a user (admin-only)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    try:
+        credits = float(payload.credits)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid credits.") from None
+
+    if not credits:
+        raise HTTPException(status_code=400, detail="credits must be non-zero.")
+
+    note = _clamp_str(payload.note, 500)
+
+    ledger_id = f"admin_adj_{secrets.token_hex(12)}"
+    ledger_ref = (
+        firebase_service.db.collection("users")
+        .document(uid_norm)
+        .collection("creditLedger")
+        .document(ledger_id)
+    )
+    balance_ref = (
+        firebase_service.db.collection("users")
+        .document(uid_norm)
+        .collection("billing")
+        .document("balance")
+    )
+
+    transaction = firebase_service.db.transaction()
+
+    @firestore.transactional
+    def txn(transaction):
+        bal_snap = balance_ref.get(transaction=transaction)
+        bal = bal_snap.to_dict() if bal_snap.exists else {}
+
+        topup_raw = _as_float(bal.get("topupCredits"), 0.0)
+        new_topup = float(topup_raw + float(credits))
+
+        transaction.set(
+            balance_ref,
+            {
+                "topupCredits": float(new_topup),
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+
+        transaction.set(
+            ledger_ref,
+            {
+                "type": "credit" if credits > 0 else "debit",
+                "source": "admin_adjustment",
+                "credits": float(credits),
+                "note": note,
+                "createdAt": SERVER_TIMESTAMP,
+                "expiresAt": None,
+                "admin": {"uid": str(admin_uid)},
+            },
+        )
+
+    try:
+        txn(transaction)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to write adjustment.") from None
+
+    try:
+        bal_post = balance_ref.get()
+        balance_data = bal_post.to_dict() if bal_post.exists else {}
+    except Exception:
+        balance_data = {}
+
+    return {
+        "status": "ok",
+        "id": ledger_id,
+        "credits": float(credits),
+        "note": note,
+        "balance": _compute_balance_summary(balance_data),
     }
 
 
