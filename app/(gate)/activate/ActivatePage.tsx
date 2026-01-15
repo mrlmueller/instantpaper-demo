@@ -6,6 +6,11 @@ import { Loader2, LogOut, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { hasFullAccess, refreshIdTokenAndCookie, signOut } from '@/app/lib/firebase/auth';
+import {
+  STRIPE_SUBSCRIPTION_PRICE_ID,
+  STRIPE_TOPUP_PRICE_ID,
+  createCheckoutSessionUrl,
+} from '@/app/lib/firebase/stripeCheckout';
 import { useAuth } from '@/app/components/providers/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,6 +41,7 @@ export function ActivatePage() {
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState<'subscription' | 'topup' | null>(null);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [meLoading, setMeLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +156,37 @@ export function ActivatePage() {
     }
   };
 
+  const startCheckout = async (kind: 'subscription' | 'topup') => {
+    setError(null);
+
+    if (!user) return;
+    if (effectiveBlocked) {
+      setError('Dein Account ist gesperrt. Bitte kontaktiere den Admin.');
+      return;
+    }
+
+    setCheckoutLoading(kind);
+    try {
+      const mode = kind === 'subscription' ? 'subscription' : 'payment';
+      const priceId = kind === 'subscription' ? STRIPE_SUBSCRIPTION_PRICE_ID : STRIPE_TOPUP_PRICE_ID;
+      const returnBase = `${window.location.origin}/activate`;
+      const url = await createCheckoutSessionUrl({
+        uid: user.uid,
+        mode,
+        priceId,
+        successUrl: `${returnBase}?checkout=success`,
+        cancelUrl: `${returnBase}?checkout=cancel`,
+      });
+      window.location.assign(url);
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err, 'Checkout konnte nicht gestartet werden.');
+      setError(msg);
+      toast.error('Checkout', { description: msg });
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
+
   const email = user?.email || me?.email || null;
 
   return (
@@ -201,6 +238,25 @@ export function ActivatePage() {
               <Button variant="outline" onClick={handleLogout} disabled={submitting || refreshing}>
                 <LogOut className="h-4 w-4 mr-2" />
                 Logout
+              </Button>
+            </div>
+
+            <div className="border-t pt-4 space-y-2">
+              <p className="text-sm text-muted-foreground">Kein Code? Du kannst auch Credits kaufen.</p>
+              <Button
+                onClick={() => startCheckout('subscription')}
+                disabled={Boolean(checkoutLoading) || submitting || refreshing || effectiveBlocked || meLoading}
+              >
+                {checkoutLoading === 'subscription' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Abo starten ($25/Monat)
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => startCheckout('topup')}
+                disabled={Boolean(checkoutLoading) || submitting || refreshing || effectiveBlocked || meLoading}
+              >
+                {checkoutLoading === 'topup' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Credits aufladen
               </Button>
             </div>
 
