@@ -30,6 +30,7 @@ import {
   STRIPE_SUBSCRIPTION_PRICE_ID,
   STRIPE_TOPUP_PRICE_ID,
   createCheckoutSessionUrl,
+  createCustomerPortalUrl,
 } from "@/app/lib/firebase/stripeCheckout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -193,6 +194,7 @@ export default function ProfilPage() {
   const [showSavedKey, setShowSavedKey] = useState(false);
   const [backLoading, setBackLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState<"subscription" | "topup" | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -229,6 +231,28 @@ export default function ProfilPage() {
       toast.error("Checkout", { description: message });
     } finally {
       setCheckoutLoading(null);
+    }
+  };
+
+  const openCustomerPortal = async () => {
+    if (!authUser?.uid) {
+      toast.error("Portal", { description: "Nicht eingeloggt." });
+      return;
+    }
+
+    setPortalLoading(true);
+    try {
+      const returnUrl = `${window.location.origin}/profil?tab=billing`;
+      const url = await createCustomerPortalUrl({ returnUrl });
+      window.location.assign(url);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "Portal konnte nicht geoeffnet werden.";
+      toast.error("Portal", { description: message });
+    } finally {
+      setPortalLoading(false);
     }
   };
 
@@ -557,6 +581,16 @@ export default function ProfilPage() {
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       ) : null}
                       Credits aufladen
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={openCustomerPortal}
+                      disabled={portalLoading || Boolean(checkoutLoading)}
+                    >
+                      {portalLoading ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : null}
+                      Abo verwalten (Stripe)
                     </Button>
                   </div>
                 </Card>

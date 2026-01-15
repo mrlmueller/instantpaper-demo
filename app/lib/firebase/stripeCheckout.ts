@@ -1,5 +1,7 @@
 import { addDoc, collection, onSnapshot } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 
+import { functionsClient } from "./functionsClient";
 import { firestoreClient } from "./firestoreClient";
 
 export type StripeCheckoutMode = "subscription" | "payment";
@@ -12,6 +14,12 @@ export const STRIPE_SUBSCRIPTION_PRICE_ID =
   FALLBACK_SUBSCRIPTION_PRICE_ID;
 export const STRIPE_TOPUP_PRICE_ID =
   process.env.NEXT_PUBLIC_STRIPE_TOPUP_PRICE_ID || FALLBACK_TOPUP_PRICE_ID;
+
+const FALLBACK_PORTAL_FUNCTION_NAME =
+  "ext-firestore-stripe-payments-createPortalLink";
+export const STRIPE_PORTAL_FUNCTION_NAME =
+  process.env.NEXT_PUBLIC_STRIPE_PORTAL_FUNCTION_NAME ||
+  FALLBACK_PORTAL_FUNCTION_NAME;
 
 type StripeCheckoutSessionDoc = {
   url?: unknown;
@@ -100,4 +108,28 @@ export async function createCheckoutSessionUrl(params: {
       }
     );
   });
+}
+
+export async function createCustomerPortalUrl(params: {
+  returnUrl: string;
+}): Promise<string> {
+  const returnUrl = asNonEmptyString(params.returnUrl);
+  if (!returnUrl) throw new Error("Return URL fehlt.");
+
+  const createPortalLink = httpsCallable(
+    functionsClient,
+    STRIPE_PORTAL_FUNCTION_NAME
+  );
+  const result = await createPortalLink({ returnUrl });
+
+  const data = result.data as unknown;
+  if (data && typeof data === "object") {
+    const url = asNonEmptyString((data as { url?: unknown }).url);
+    if (url) return url;
+  }
+
+  const rawUrl = asNonEmptyString(data);
+  if (rawUrl) return rawUrl;
+
+  throw new Error("Portal URL fehlt.");
 }
