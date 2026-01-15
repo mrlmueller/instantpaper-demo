@@ -417,6 +417,186 @@ async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any
     }
 
 
+def _as_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value if value is not None else default)
+    except Exception:
+        return float(default)
+
+
+def _epoch_to_iso(value) -> str | None:
+    """
+    Convert a Stripe-style epoch (seconds or ms) to ISO.
+    Returns None for invalid values.
+    """
+    try:
+        if value is None:
+            return None
+        n = float(value)
+        if not n:
+            return None
+        # Heuristic: Stripe epochs are seconds; treat very large values as ms.
+        ms = int(n if n > 1e12 else n * 1000.0)
+        return datetime.utcfromtimestamp(ms / 1000.0).replace(microsecond=0).isoformat() + "Z"
+    except Exception:
+        return None
+
+
+@app.get("/api/billing/balance")
+async def billing_get_balance(user_id: str = Depends(verify_firebase_token)):
+    """
+    Return the user's cached credit balance.
+
+    Source of truth for writes is the server-side credit ledger; this endpoint returns a safe read model.
+    """
+    try:
+        bal_ref = (
+            firebase_service.db.collection("users")
+            .document(user_id)
+            .collection("billing")
+            .document("balance")
+        )
+        bal_snap = bal_ref.get()
+        data = bal_snap.to_dict() if bal_snap.exists else {}
+    except Exception:
+        data = {}
+
+    topup_credits = _as_float((data or {}).get("topupCredits"), 0.0)
+    subscription_credits_raw = _as_float((data or {}).get("subscriptionCredits"), 0.0)
+    subscription_expires_at = (data or {}).get("subscriptionExpiresAt")
+
+    subscription_active = subscription_credits_raw
+    if subscription_expires_at:
+        try:
+            dt = subscription_expires_at.to_datetime() if hasattr(subscription_expires_at, "to_datetime") else None
+            if isinstance(dt, datetime):
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                if dt <= datetime.now(timezone.utc):
+                    subscription_active = 0.0
+        except Exception:
+            pass
+
+    total = subscription_active + topup_credits
+    return {
+        "balance": {
+            "totalCredits": float(total),
+            "subscriptionCredits": float(subscription_active),
+            "subscriptionExpiresAt": _ts_to_iso(subscription_expires_at),
+            "topupCredits": float(topup_credits),
+            "isNegative": bool(total < 0),
+        }
+    }
+
+
+@app.get("/api/billing/ledger")
+async def billing_get_ledger(
+    limit: int = 50,
+    cursor: str | None = None,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Return credit ledger entries (paginated, newest first).
+
+    Cursor is the last returned entry id (doc id).
+    """
+    limit = max(1, min(int(limit or 50), 200))
+
+    base = (
+        firebase_service.db.collection("users")
+        .document(user_id)
+        .collection("creditLedger")
+        .order_by("createdAt", direction=firestore.Query.DESCENDING)
+    )
+
+    if cursor:
+        try:
+            cursor_snap = (
+                firebase_service.db.collection("users")
+                .document(user_id)
+                .collection("creditLedger")
+                .document(str(cursor))
+                .get()
+            )
+            if cursor_snap.exists:
+                base = base.start_after(cursor_snap)
+        except Exception:
+            pass
+
+    docs = list(base.limit(limit).stream())
+    out = []
+    for snap in docs:
+        data = snap.to_dict() or {}
+        out.append(
+            {
+                "id": snap.id,
+                "type": str(data.get("type") or ""),
+                "source": str(data.get("source") or ""),
+                "credits": _as_float(data.get("credits"), 0.0),
+                "createdAt": _ts_to_iso(data.get("createdAt")),
+                "expiresAt": _ts_to_iso(data.get("expiresAt")),
+            }
+        )
+
+    next_cursor = docs[-1].id if len(docs) == limit else None
+    return {"entries": out, "nextCursor": next_cursor}
+
+
+@app.get("/api/billing/status")
+async def billing_get_status(user_id: str = Depends(verify_firebase_token)):
+    """
+    Return a safe summary of the Stripe subscription status (read-only).
+
+    Data comes from the Firebase Stripe Extension synced collection: customers/{uid}/subscriptions/*.
+    """
+    try:
+        subs_ref = (
+            firebase_service.db.collection("customers")
+            .document(user_id)
+            .collection("subscriptions")
+        )
+        subs = list(subs_ref.stream())
+    except Exception:
+        subs = []
+
+    best = None
+    best_id = None
+    best_status = ""
+
+    def _score(status: str) -> int:
+        s = (status or "").strip().lower()
+        if s == "active":
+            return 4
+        if s == "trialing":
+            return 3
+        if s == "past_due":
+            return 2
+        if s:
+            return 1
+        return 0
+
+    for snap in subs:
+        data = snap.to_dict() or {}
+        status = str(data.get("status") or "").strip()
+        if best is None or _score(status) > _score(best_status):
+            best = data
+            best_id = snap.id
+            best_status = status
+
+    if not best:
+        return {"subscription": None}
+
+    current_period_end = best.get("current_period_end")
+    return {
+        "subscription": {
+            "id": best_id,
+            "status": str(best.get("status") or "") or None,
+            "cancelAtPeriodEnd": bool(best.get("cancel_at_period_end") is True),
+            "currentPeriodEnd": _ts_to_iso(current_period_end) or _epoch_to_iso(current_period_end),
+        }
+    }
+
+
 @app.post("/api/access-codes/redeem")
 async def redeem_access_code(
     payload: RedeemAccessCodeRequest,
