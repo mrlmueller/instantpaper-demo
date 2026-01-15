@@ -19,6 +19,7 @@ from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 from openai import AsyncOpenAI
 
 from services.cost_service import TokenUsage, get_cost_service
+from services.credits_service import get_credits_service
 from services.firebase_service import AI_GENERIC_ERROR_MESSAGE, firebase_service
 from services.user_key_service import user_key_service
 from utils.config import config
@@ -981,6 +982,8 @@ class ExportService:
                 else []
             )
             projekt_id = str(export_doc.get("projektId") or "").strip()
+
+            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
             api_key, key_source = await user_key_service.resolve_api_key_for_user(
                 user_id

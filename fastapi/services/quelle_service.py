@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from services.firebase_service import firebase_service
 from services.openai_service import openai_service
 from services.cost_service import get_cost_service, TokenUsage
+from services.credits_service import get_credits_service
 from services.user_key_service import user_key_service
 from services.prompt_service import prompt_service
 from utils.quellen_zitat import resolve_quelle_zitat_value
@@ -171,6 +172,8 @@ class QuelleService:
             # Step 2: Process with OpenAI
             api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
             logger.info(f"Processing Quelle {quelle_id} with OpenAI model {model}")
+            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
             openai_result = await self.openai.process_quelle(
                 quelle_content_doc.get("text") or "",
                 rendered_instructions,
@@ -612,6 +615,8 @@ class QuelleService:
             source_quelle_ids = [res["id"] for res in eligible]
             texts = [res["content"] for res in eligible]
 
+            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
             openai_result = await self.openai.combine_texts(
                 texts,
                 heading,
@@ -813,6 +818,8 @@ class QuelleService:
             logger.info(f"Combining group {group_number} with {len(group_texts)} sources")
 
             # Call OpenAI to combine this group
+            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
             openai_result = await self.openai.combine_texts(
                 group_texts,
                 heading,
@@ -894,6 +901,8 @@ class QuelleService:
         logger.info(f"Combining {len(intermediate_results)} intermediate results into final text")
 
         intermediate_texts = [r['content'] for r in intermediate_results]
+
+        await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
         final_openai_result = await self.openai.combine_texts(
             intermediate_texts,

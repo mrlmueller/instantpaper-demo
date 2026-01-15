@@ -33,6 +33,7 @@ from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
 from services.refinement_service import refinement_service
 from services.firebase_service import firebase_service
+from services.credits_service import get_credits_service
 from services.prompt_service import prompt_service
 from services.export_service import export_service
 from firebase_admin import auth
@@ -2651,6 +2652,8 @@ async def process_quelle(
     if existing_result and existing_result.get("status") == "running":
         raise HTTPException(status_code=400, detail="Diese Quelle wird bereits verarbeitet.")
 
+    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
     run_doc = await firebase_service.get_run(user_id, request.kapitel_id, request.run_id)
     run_model = (run_doc.get("model") or "").strip() if run_doc else ""
     model_to_use = run_model or request.model
@@ -2719,6 +2722,8 @@ async def combine_run(
             raise HTTPException(status_code=400, detail="Kombination läuft bereits.")
         if existing_content and (existing_status == "success" or not existing_status):
             raise HTTPException(status_code=400, detail="Kombinierter Text existiert bereits für diesen Run.")
+
+    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
     run_doc = await firebase_service.get_run(user_id, request.kapitel_id, request.run_id)
     run_model = (run_doc.get("model") or "").strip() if run_doc else None
@@ -2805,6 +2810,8 @@ async def shorten_kapitel(
         raise HTTPException(status_code=400, detail="Text wird bereits gekürzt.")
 
     # Create/merge placeholder artifact doc immediately so the UI can show running/error state.
+    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
     await firebase_service.mark_artifact_running(
         user_id=user_id,
         kapitel_id=request.kapitel_id,
@@ -2871,6 +2878,8 @@ async def improve_lesefluss(
         existing_lesefluss = await firebase_service.get_lesefluss_result(user_id, request.kapitel_id, request.run_id)
         if existing_lesefluss and (existing_lesefluss.get("status") or "").strip() == "running":
             raise HTTPException(status_code=400, detail="Lesefluss wird bereits erstellt.")
+
+        await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
         # Resolve API key (user key or platform key)
         api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
@@ -2942,6 +2951,8 @@ async def export_docx(
     Queues a background task and returns immediately. The UI should read export status from
     Firestore (`users/{uid}/exports/{exportId}`).
     """
+    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
     # Validate that an API key is available (user key or platform key). The export may need LLM fixups.
     await user_key_service.resolve_api_key_for_user(user_id)
 
@@ -3003,6 +3014,8 @@ async def refine_combined_text(
         f"(kapitel {request.kapitel_id}, run {request.run_id}, parent {request.parent_version_id})"
     )
     try:
+        await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
         # Validate that an API key is available (user key or platform key)
         await user_key_service.resolve_api_key_for_user(user_id)
 
@@ -3075,6 +3088,8 @@ async def refine_shortened_text(
         f"(kapitel {request.kapitel_id}, run {request.run_id}, parent {request.parent_version_id})"
     )
     try:
+        await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
         # Validate that an API key is available (user key or platform key)
         await user_key_service.resolve_api_key_for_user(user_id)
 
@@ -3147,6 +3162,8 @@ async def refine_lesefluss_text(
         f"(kapitel {request.kapitel_id}, run {request.run_id}, parent {request.parent_version_id})"
     )
     try:
+        await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
         # Validate that an API key is available (user key or platform key)
         await user_key_service.resolve_api_key_for_user(user_id)
 
@@ -3220,6 +3237,8 @@ async def refine_result_text(
         f"(kapitel {request.kapitel_id}, run {request.run_id}, quelle {request.quelle_id}, parent {request.parent_version_id})"
     )
     try:
+        await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
         # Validate that an API key is available (user key or platform key)
         await user_key_service.resolve_api_key_for_user(user_id)
 

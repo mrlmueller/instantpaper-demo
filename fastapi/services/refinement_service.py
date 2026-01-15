@@ -11,6 +11,7 @@ from services.firebase_service import firebase_service, AI_GENERIC_ERROR_MESSAGE
 from services.openai_service import openai_service
 from services.prompt_service import prompt_service
 from services.cost_service import get_cost_service, TokenUsage
+from services.credits_service import get_credits_service
 from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
 from utils.config import config
@@ -513,6 +514,8 @@ class RefinementService:
 
             debug_dump_path = self._get_prompt_dump_path("refine_combined", version_id)
 
+            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
             openai_result = await openai_service.generate_text(
                 prompt_body,
                 model,
@@ -872,6 +875,8 @@ class RefinementService:
             model = (pending or {}).get("model") or "gpt-5-mini"
 
             debug_dump_path = self._get_prompt_dump_path("refine_shortened", version_id)
+
+            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
             openai_result = await openai_service.generate_text(
                 prompt_body,
@@ -1265,6 +1270,8 @@ class RefinementService:
 
             debug_dump_path = self._get_prompt_dump_path("refine_lesefluss", version_id)
 
+            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
             openai_result = await openai_service.generate_text(
                 prompt_body,
                 model,
@@ -1612,6 +1619,8 @@ class RefinementService:
                     quelle_images = urls
 
             debug_dump_path = self._get_prompt_dump_path("refine_result", version_id)
+
+            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
             openai_result = await openai_service.process_quelle(
                 quelle_content_doc.get("text") or "",

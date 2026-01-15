@@ -1,6 +1,7 @@
 from services.firebase_service import firebase_service
 from services.openai_service import openai_service
 from services.cost_service import get_cost_service, TokenUsage
+from services.credits_service import get_credits_service
 from services.user_key_service import user_key_service
 from services.prompt_service import prompt_service
 import logging
@@ -174,6 +175,8 @@ class ShortenService:
                 stage="summary",
                 template_id=summary_template_id,
             )
+            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
             summary_content, usage = await self.summarize_text(
                 source_text,
                 model,
@@ -548,6 +551,8 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
 
 ### Text zum Kürzen:
 {target_text}"""
+
+            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
             shortened_content, usage = await self.shorten_and_deduplicate(
                 prompt_body,
@@ -943,6 +948,8 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
 
 ### Kapitel {kapitel_nummer} (TEXT AN DEM DU ARBEITEN SOLLST)
 {target_text}"""
+
+            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
             lesefluss_content, usage = await openai_service.improve_reading_flow(
                 prompt_body,
