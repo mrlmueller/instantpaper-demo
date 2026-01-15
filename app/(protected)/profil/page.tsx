@@ -26,12 +26,6 @@ import { toast } from "sonner";
 import Cookies from "js-cookie";
 
 import { useAuth } from "@/app/components/providers/AuthProvider";
-import {
-  STRIPE_SUBSCRIPTION_PRICE_ID,
-  STRIPE_TOPUP_PRICE_ID,
-  createCheckoutSessionUrl,
-  createCustomerPortalUrl,
-} from "@/app/lib/firebase/stripeCheckout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -44,6 +38,7 @@ import {
   saveOpenAIKey,
   type OpenAIKeyStatus,
 } from "@/app/lib/api/openaiKeyClient";
+import { BillingTab } from "@/app/components/profile/BillingTab";
 import { PromptManager } from "@/app/components/profile/PromptManager";
 import { ExportsTab } from "@/app/components/profile/ExportsTab";
 import { getLiveUserStats, type LiveUserStats } from "@/app/actions/stats";
@@ -193,68 +188,11 @@ export default function ProfilPage() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [showSavedKey, setShowSavedKey] = useState(false);
   const [backLoading, setBackLoading] = useState(false);
-  const [checkoutLoading, setCheckoutLoading] = useState<"subscription" | "topup" | null>(null);
-  const [portalLoading, setPortalLoading] = useState(false);
 
   useEffect(() => {
     const tab = searchParams.get("tab");
     if (tab === "billing") setActiveTab("billing");
   }, [searchParams]);
-
-  const startCheckout = async (kind: "subscription" | "topup") => {
-    if (!authUser?.uid) {
-      toast.error("Checkout", { description: "Nicht eingeloggt." });
-      return;
-    }
-
-    setCheckoutLoading(kind);
-    try {
-      const mode = kind === "subscription" ? "subscription" : "payment";
-      const priceId =
-        kind === "subscription"
-          ? STRIPE_SUBSCRIPTION_PRICE_ID
-          : STRIPE_TOPUP_PRICE_ID;
-      const returnUrl = `${window.location.origin}/profil?tab=billing`;
-      const url = await createCheckoutSessionUrl({
-        uid: authUser.uid,
-        mode,
-        priceId,
-        successUrl: returnUrl,
-        cancelUrl: returnUrl,
-      });
-      window.location.assign(url);
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : "Checkout konnte nicht gestartet werden.";
-      toast.error("Checkout", { description: message });
-    } finally {
-      setCheckoutLoading(null);
-    }
-  };
-
-  const openCustomerPortal = async () => {
-    if (!authUser?.uid) {
-      toast.error("Portal", { description: "Nicht eingeloggt." });
-      return;
-    }
-
-    setPortalLoading(true);
-    try {
-      const returnUrl = `${window.location.origin}/profil?tab=billing`;
-      const url = await createCustomerPortalUrl({ returnUrl });
-      window.location.assign(url);
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : "Portal konnte nicht geoeffnet werden.";
-      toast.error("Portal", { description: message });
-    } finally {
-      setPortalLoading(false);
-    }
-  };
 
   useEffect(() => {
     if (authLoading) return;
@@ -558,42 +496,7 @@ export default function ProfilPage() {
 
               <TabsContent value="billing">
                 <h2 className="text-lg font-semibold text-foreground mb-4">Billing</h2>
-                <Card className="p-6 space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    Verwalte dein Abo oder lade Credits auf.
-                  </p>
-                  <div className="grid gap-2">
-                    <Button
-                      onClick={() => startCheckout("subscription")}
-                      disabled={Boolean(checkoutLoading)}
-                    >
-                      {checkoutLoading === "subscription" ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : null}
-                      Abo starten ($25/Monat)
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => startCheckout("topup")}
-                      disabled={Boolean(checkoutLoading)}
-                    >
-                      {checkoutLoading === "topup" ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : null}
-                      Credits aufladen
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={openCustomerPortal}
-                      disabled={portalLoading || Boolean(checkoutLoading)}
-                    >
-                      {portalLoading ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : null}
-                      Abo verwalten (Stripe)
-                    </Button>
-                  </div>
-                </Card>
+                <BillingTab active={activeTab === "billing"} />
               </TabsContent>
 
               <TabsContent value="statistiken">
