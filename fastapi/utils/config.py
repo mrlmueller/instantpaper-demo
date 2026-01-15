@@ -104,7 +104,6 @@ class Config:
             "FIREBASE_PRIVATE_KEY",
             "FIREBASE_CLIENT_EMAIL",
             "OPENAI_API_KEY",
-            "USER_KEY_ENCRYPTION_KEY",
         ]
 
         missing_fields = []

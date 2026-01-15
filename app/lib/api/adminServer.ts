@@ -39,7 +39,6 @@ export type AdminUserRow = {
   isAdmin: boolean;
   accountStatus: string | null;
   disabled: boolean;
-  allowPlatformKey: boolean;
   canDuplicateSystemPrompts: boolean;
   createdAt: string | null;
   lastSignInAt: string | null;
@@ -84,7 +83,6 @@ export async function listAdminUsers(params?: {
           isAdmin: u.isAdmin === true,
           accountStatus: typeof u.accountStatus === 'string' ? u.accountStatus : null,
           disabled: u.disabled === true,
-          allowPlatformKey: u.allowPlatformKey === true,
           canDuplicateSystemPrompts: u.canDuplicateSystemPrompts === true,
           createdAt: typeof u.createdAt === 'string' ? u.createdAt : null,
           lastSignInAt: typeof u.lastSignInAt === 'string' ? u.lastSignInAt : null,
@@ -131,29 +129,6 @@ export async function setUserBlockedByEmail(email: string, blocked: boolean): Pr
   if (!res.ok) {
     const detail = await readErrorDetail(res);
     throw new Error(detail || 'Failed to update user block status.');
-  }
-}
-
-export async function setUserAllowPlatformKeyByEmail(
-  email: string,
-  allowPlatformKey: boolean
-): Promise<void> {
-  const token = await getAuthTokenOrNullAsync();
-  if (!token) throw new Error('Not authenticated');
-
-  const res = await fetch(`${API_BASE_URL}/api/admin/users/platform-key`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email, allowPlatformKey }),
-    cache: 'no-store',
-  });
-
-  if (!res.ok) {
-    const detail = await readErrorDetail(res);
-    throw new Error(detail || 'Failed to update platform-key permission.');
   }
 }
 

@@ -4,7 +4,6 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, Key, MessageSquareText, Users } from 'lucide-react';
 
 import {
-  adminSetAllowPlatformKey,
   adminSetCanDuplicateSystemPrompts,
   adminSetUserBlocked,
   adminSetUserFullAccess,
@@ -132,30 +131,6 @@ function PillForm({
         formId={formId}
       />
     </form>
-  );
-}
-
-function PlatformKeyPill({ user, formKey }: { user: AdminUserRow; formKey: string }) {
-  const enabled = user.allowPlatformKey === true;
-  const label = `Platform Key: ${enabled ? 'Ja' : 'Nein'}`;
-
-  return (
-    <PillForm
-      formId={`allow-platform-${formKey}`}
-      action={adminSetAllowPlatformKey}
-      email={user.email}
-      label={label}
-      enabledVariant={enabled ? 'default' : 'outline'}
-      hiddenInputs={[{ name: 'allowPlatformKey', value: enabled ? 'false' : 'true' }]}
-      title={enabled ? 'Platform Key sperren?' : 'Platform Key erlauben?'}
-      description={
-        enabled
-          ? `Plattform OpenAI-Key für ${user.email} deaktivieren?`
-          : `Plattform OpenAI-Key für ${user.email} aktivieren? (Kosten laufen dann über deinen Key.)`
-      }
-      confirmLabel={enabled ? 'Sperren' : 'Erlauben'}
-      confirmVariant={enabled ? 'outline' : 'default'}
-    />
   );
 }
 
@@ -299,7 +274,6 @@ function UserRow({ user, idx }: { user: AdminUserRow; idx: number }) {
 
         {user.fullAccess ? (
           <div className="flex flex-wrap items-center gap-2 md:flex-1 md:justify-center">
-            <PlatformKeyPill user={user} formKey={formKey} />
             <PromptCopyPill user={user} formKey={formKey} />
           </div>
         ) : null}

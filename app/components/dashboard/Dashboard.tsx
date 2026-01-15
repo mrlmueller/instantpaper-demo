@@ -84,7 +84,6 @@ import {
   addDoc,
 } from 'firebase/firestore';
 import Cookies from 'js-cookie';
-import { fetchOpenAIKeyStatus, type OpenAIKeyStatus } from '@/app/lib/api/openaiKeyClient';
 import { getQuellenPanelState, setQuellenPanelState, STORAGE_KEYS } from '@/app/lib/storage/preferences';
 import { getActiveKapitelCookieName } from '@/app/lib/ui/kapitelSelection';
 import { getActiveProjektCookieName } from '@/app/lib/ui/projektSelection';
@@ -287,9 +286,6 @@ export function Dashboard({
   const userSelectedRunRef = useRef(false);
   const selectedRun = runs.find((r) => r.id === selectedRunId);
   const hasShownNoticeRef = useRef(false);
-  const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
-  const [keyStatusLoading, setKeyStatusLoading] = useState(false);
-  const keyNoticeShownRef = useRef(false);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [systemPromptTemplates, setSystemPromptTemplates] = useState<SystemPromptTemplateMeta[]>([]);
   const [promptActive, setPromptActive] = useState<ActivePromptSelections>({});
@@ -342,60 +338,14 @@ export function Dashboard({
   }, [router]);
 
   const ensureOpenAIAccess = useCallback(async (): Promise<boolean> => {
-    if (keyStatusLoading) {
-      toast.info('Bitte warten', {
-        description: 'Wir prüfen deinen OpenAI-Key...',
-        id: 'openai-key-loading',
-      });
-      return false;
-    }
-
-    let status = keyStatus;
-
-    if (!status) {
-      const token = Cookies.get('__session');
-      if (!token) {
-        handleAuthFailure();
-        return false;
-      }
-
-      try {
-        setKeyStatusLoading(true);
-        status = await fetchOpenAIKeyStatus(token);
-        setKeyStatus(status);
-      } catch (err) {
-        console.error('OpenAI key status failed', err);
-        if (!keyNoticeShownRef.current) {
-          keyNoticeShownRef.current = true;
-          toast.error('OpenAI Key erforderlich', {
-            description: 'Bitte hinterlege deinen OpenAI Key im Profil, sonst können keine Läufe gestartet werden.',
-            id: 'openai-key-missing',
-          });
-        }
-        return false;
-      } finally {
-        setKeyStatusLoading(false);
-      }
-    }
-
-    if (!status) {
-      return false;
-    }
-
-    if (!status.hasKey && !status.allowPlatformKey) {
-      if (!keyNoticeShownRef.current) {
-        keyNoticeShownRef.current = true;
-        toast.error('OpenAI Key erforderlich', {
-          description: 'Füge deinen OpenAI Key im Profil hinzu, um weiterzumachen.',
-          id: 'openai-key-missing',
-        });
-      }
-      router.push('/profil');
+    const token = Cookies.get('__session');
+    if (!token) {
+      handleAuthFailure();
       return false;
     }
 
     return true;
-  }, [handleAuthFailure, keyStatus, keyStatusLoading, router]);
+  }, [handleAuthFailure]);
 
   const notifyServerDown = useCallback(
     (toastId: string | number = 'fastapi-down') => {

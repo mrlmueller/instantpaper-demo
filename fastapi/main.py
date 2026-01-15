@@ -138,11 +138,6 @@ class AdminUpdateAccessCodeRequest(BaseModel):
     note: str | None = None
 
 
-class AdminSetPlatformKeyRequest(BaseModel):
-    email: str
-    allowPlatformKey: bool
-
-
 class AdminSetSystemPromptExportRequest(BaseModel):
     email: str
     canDuplicateSystemPrompts: bool
@@ -855,18 +850,15 @@ async def admin_list_users(
             if filter_access is not None and has_access != bool(filter_access):
                 continue
 
-            allow_platform_key = False
             can_duplicate_system_prompts = False
             blocked = False
             account_status = None
             try:
                 user_doc = await firebase_service.get_user_doc(user.uid)
-                allow_platform_key = bool((user_doc or {}).get("allowPlatformKey") is True)
                 can_duplicate_system_prompts = bool((user_doc or {}).get("canDuplicateSystemPrompts") is True)
                 account_status = str((user_doc or {}).get("accountStatus") or "").strip().lower() or None
                 blocked = account_status == "blocked"
             except Exception:
-                allow_platform_key = False
                 can_duplicate_system_prompts = False
                 blocked = False
                 account_status = None
@@ -886,7 +878,6 @@ async def admin_list_users(
                     "approved": has_access,
                     "canDuplicateSystemPrompts": can_duplicate_system_prompts,
                     "disabled": bool(user.disabled),
-                    "allowPlatformKey": allow_platform_key,
                     "createdAt": _ms_to_iso(getattr(user.user_metadata, "creation_timestamp", None)),
                     "lastSignInAt": _ms_to_iso(getattr(user.user_metadata, "last_sign_in_timestamp", None)),
                 }
@@ -1188,52 +1179,6 @@ async def admin_update_access_code(
     return {"status": "ok"}
 
 
-@app.post("/api/admin/users/platform-key")
-async def admin_set_platform_key(
-    payload: AdminSetPlatformKeyRequest,
-    _: str = Depends(verify_admin_user),
-):
-    """Allow or block a user from using the platform OpenAI key (Firestore: users/{uid}.allowPlatformKey)."""
-    email = (payload.email or "").strip()
-    if not email or "@" not in email:
-        raise HTTPException(status_code=400, detail="A valid email is required.")
-
-    allow_platform = bool(payload.allowPlatformKey)
-
-    try:
-        # Ensure Firebase Admin SDK is initialized.
-        _ = firebase_service.db
-
-        user = auth.get_user_by_email(email)
-
-        user_ref = firebase_service.db.collection("users").document(user.uid)
-        existing = user_ref.get()
-
-        write_payload = {
-            "uid": user.uid,
-            "email": (user.email or "").strip() or email,
-            "allowPlatformKey": allow_platform,
-            "updatedAt": SERVER_TIMESTAMP,
-        }
-        if not existing.exists:
-            write_payload["createdAt"] = SERVER_TIMESTAMP
-
-        user_ref.set(write_payload, merge=True)
-
-        return {
-            "status": "ok",
-            "email": (user.email or "").strip() or email,
-            "allowPlatformKey": allow_platform,
-        }
-    except auth.UserNotFoundError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="User not found. Ask the user to sign in once, then try again.",
-        ) from exc
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to update platform-key permission.") from None
-
-
 @app.post("/api/admin/users/system-prompt-copy")
 async def admin_set_system_prompt_export(
     payload: AdminSetSystemPromptExportRequest,
@@ -1353,7 +1298,6 @@ async def admin_get_user_detail(
     legacy_approved = bool(claims.get("approved") is True)
     blocked_claim = bool(claims.get("blocked") is True)
 
-    allow_platform_key = False
     can_duplicate_system_prompts = False
     account_status = None
     blocked = False
@@ -1362,7 +1306,6 @@ async def admin_get_user_detail(
     spend_rate_override = None
     try:
         user_doc = await firebase_service.get_user_doc(user.uid)
-        allow_platform_key = bool((user_doc or {}).get("allowPlatformKey") is True)
         can_duplicate_system_prompts = bool((user_doc or {}).get("canDuplicateSystemPrompts") is True)
         account_status = str((user_doc or {}).get("accountStatus") or "").strip().lower() or None
         blocked = account_status == "blocked"
@@ -1372,7 +1315,6 @@ async def admin_get_user_detail(
         if spend_rate_raw and spend_rate_raw > 0:
             spend_rate_override = float(spend_rate_raw)
     except Exception:
-        allow_platform_key = False
         can_duplicate_system_prompts = False
         account_status = None
         blocked = False
@@ -1408,18 +1350,6 @@ async def admin_get_user_detail(
     except Exception:
         billing_subscription = None
 
-    try:
-        key_status = await user_key_service.get_status(user.uid)
-        has_key = bool(key_status.get("has_key"))
-        last4 = key_status.get("last4") if has_key else None
-        allow_platform_from_status = bool(key_status.get("allow_platform_key"))
-    except Exception:
-        has_key = False
-        last4 = None
-        allow_platform_from_status = allow_platform_key
-
-    key_source = "user" if has_key else ("platform" if allow_platform_from_status else "none")
-
     return {
         "user": {
             "uid": str(user.uid),
@@ -1431,7 +1361,6 @@ async def admin_get_user_detail(
             "blocked": blocked or blocked_claim,
             "accountStatus": account_status,
             "disabled": bool(user.disabled),
-            "allowPlatformKey": allow_platform_key,
             "canDuplicateSystemPrompts": can_duplicate_system_prompts,
             "spendRate": spend_rate_override,
             "effectiveSpendRate": float(effective_spend_rate),
@@ -1439,12 +1368,6 @@ async def admin_get_user_detail(
             "activatedAt": activated_at,
             "createdAt": _ms_to_iso(getattr(user.user_metadata, "creation_timestamp", None)),
             "lastSignInAt": _ms_to_iso(getattr(user.user_metadata, "last_sign_in_timestamp", None)),
-        },
-        "openaiKey": {
-            "hasKey": has_key,
-            "last4": last4,
-            "allowPlatformKey": allow_platform_from_status,
-            "source": key_source,
         },
         "billing": {
             "balance": billing_balance,

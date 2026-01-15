@@ -13,31 +13,19 @@ import {
   BarChart3,
   Zap,
   PenTool,
-  Key,
-  Eye,
-  EyeOff,
-  Trash2,
   Settings,
   TrendingUp,
   MessageSquareText,
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import Cookies from "js-cookie";
 
 import { useAuth } from "@/app/components/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import {
-  deleteOpenAIKey,
-  fetchOpenAIKeyStatus,
-  saveOpenAIKey,
-  type OpenAIKeyStatus,
-} from "@/app/lib/api/openaiKeyClient";
 import { BillingTab } from "@/app/components/profile/BillingTab";
 import { PromptManager } from "@/app/components/profile/PromptManager";
 import { ExportsTab } from "@/app/components/profile/ExportsTab";
@@ -181,12 +169,6 @@ export default function ProfilPage() {
   const [activeTab, setActiveTab] = useState<ProfileTab>("einstellungen");
   const [stats, setStats] = useState<LiveUserStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
-  const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
-  const [keyLoading, setKeyLoading] = useState(true);
-  const [savingKey, setSavingKey] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState("");
-  const [statusError, setStatusError] = useState<string | null>(null);
-  const [showSavedKey, setShowSavedKey] = useState(false);
   const [backLoading, setBackLoading] = useState(false);
   const displayedTab: ProfileTab = effectiveBlocked ? "billing" : activeTab;
 
@@ -198,30 +180,6 @@ export default function ProfilPage() {
   useEffect(() => {
     if (effectiveBlocked) setActiveTab("billing");
   }, [effectiveBlocked]);
-
-  useEffect(() => {
-    if (authLoading) return;
-    if (effectiveBlocked) {
-      setKeyStatus(null);
-      setKeyLoading(false);
-      return;
-    }
-    const token = Cookies.get("__session");
-    if (!token) {
-      setStatusError("Keine Sitzung gefunden. Bitte melde dich erneut an.");
-      setKeyLoading(false);
-      return;
-    }
-
-    fetchOpenAIKeyStatus(token)
-      .then(setKeyStatus)
-      .catch((err: any) => {
-        const message = err?.message || "OpenAI-Schlüsselstatus konnte nicht geladen werden.";
-        setStatusError(message);
-        toast.error("OpenAI Key", { description: message });
-      })
-      .finally(() => setKeyLoading(false));
-  }, [authLoading, authUser?.uid, effectiveBlocked]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -258,53 +216,7 @@ export default function ProfilPage() {
     };
   }, [authLoading, authUser?.uid, effectiveBlocked]);
 
-  const handleSaveKey = async () => {
-    if (!apiKeyInput.trim()) return;
-    const token = Cookies.get("__session");
-    if (!token) {
-      toast.error("Sitzung abgelaufen", {
-        description: "Bitte melde dich erneut an.",
-      });
-      return;
-    }
-    try {
-      setSavingKey(true);
-      const status = await saveOpenAIKey(token, apiKeyInput.trim());
-      setKeyStatus(status);
-      setApiKeyInput("");
-      toast.success("API-Schlüssel gespeichert", {
-        description: "Dein API-Schlüssel wurde erfolgreich hinzugefügt.",
-      });
-    } catch (err: any) {
-      const message = err?.message || "Key konnte nicht gespeichert werden.";
-      toast.error("Fehler", { description: message });
-    } finally {
-      setSavingKey(false);
-    }
-  };
-
-  const handleDeleteKey = async () => {
-    const token = Cookies.get("__session");
-    if (!token) {
-      toast.error("Sitzung abgelaufen", {
-        description: "Bitte melde dich erneut an.",
-      });
-      return;
-    }
-    try {
-      setSavingKey(true);
-      const status = await deleteOpenAIKey(token);
-      setKeyStatus(status);
-      toast.success("API-Schlüssel gelöscht");
-    } catch (err: any) {
-      const message = err?.message || "Key konnte nicht entfernt werden.";
-      toast.error("Fehler", { description: message });
-    } finally {
-      setSavingKey(false);
-    }
-  };
-
-  const isLoading = authLoading || !authUser || (!effectiveBlocked && keyLoading);
+  const isLoading = authLoading || !authUser;
   const userName = authUser?.displayName || authUser?.email || "Benutzer";
   const userEmail = authUser?.email || "user@example.com";
   const memberSince = useMemo(() => new Date(stats?.memberSince ?? new Date().toISOString()), [stats?.memberSince]);
@@ -317,7 +229,6 @@ export default function ProfilPage() {
 
   const formatCost = (cents: number) => `$${(cents / 100).toFixed(2)}`;
   const formatNumber = (num: number) => num.toLocaleString("de-DE");
-  const maskedSavedKey = `sk-**************************************${keyStatus?.last4 || "****"}`;
   const maxMonthlyRuns = Math.max(1, ...(stats?.runsByMonth ?? []).map((m) => m.runs));
   const maxProjektCost = Math.max(1, ...(stats?.costByProjekt ?? []).map((p) => p.cost));
 
@@ -444,79 +355,18 @@ export default function ProfilPage() {
 
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-5xl mx-auto py-8 px-8">
-            <Tabs value={displayedTab} onValueChange={(v) => setActiveTab(v as ProfileTab)}>
-              {!effectiveBlocked ? (
-                <TabsContent value="einstellungen">
-                <h2 className="text-lg font-semibold text-foreground mb-4">API-Konfiguration</h2>
-                <Card className="p-6 mb-8">
-                  <h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
-                    <Key className="h-4 w-4 text-muted-foreground" />
-                    API-Schlüssel
-                  </h3>
-
-                  {keyStatus?.hasKey ? (
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 relative">
-                        <Input
-                          type={showSavedKey ? "text" : "password"}
-                          value={showSavedKey ? maskedSavedKey : maskedSavedKey}
-                          readOnly
-                          disabled={savingKey}
-                          className="pr-10 font-mono text-sm bg-muted/50"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowSavedKey(!showSavedKey)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                          disabled={savingKey}
-                        >
-                          {showSavedKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </button>
-                      </div>
-                      <Button variant="destructive" size="icon" onClick={handleDeleteKey} disabled={savingKey}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-3">
-                      <Input
-                        type="text"
-                        placeholder="sk-..."
-                        value={apiKeyInput}
-                        onChange={(e) => setApiKeyInput(e.target.value)}
-                        disabled={savingKey}
-                        className="font-mono text-sm"
-                      />
-                      <Button onClick={handleSaveKey} disabled={!apiKeyInput.trim() || savingKey}>
-                        Speichern
-                      </Button>
-                    </div>
-                  )}
-
-                  {statusError && <p className="text-sm text-destructive mt-3">{statusError}</p>}
-
-                  {keyStatus && !keyStatus.hasKey && keyStatus.allowPlatformKey && (
-                    <p className="text-xs text-muted-foreground mt-3 p-3 bg-blue-50/50 dark:bg-blue-950/20 rounded border border-blue-200/50 dark:border-blue-800/30">
-                      Du bist für den Plattform-Key freigeschaltet und kannst auch ohne eigenen Key verarbeiten.
-                    </p>
-                  )}
-
-                  <p className="text-xs text-muted-foreground mt-3">
-                    {keyStatus?.hasKey
-                      ? "Dein API-Schlüssel ist sicher verschlüsselt gespeichert."
-                      : "Füge deinen API-Schlüssel hinzu, um die Verarbeitung zu aktivieren."}
-                  </p>
-                </Card>
-
-                <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                  <MessageSquareText className="h-5 w-5 text-muted-foreground" />
-                  Prompt-Bibliothek
-                </h2>
-                <Card className="p-4">
-                  <PromptManager />
-                </Card>
-                </TabsContent>
-              ) : null}
+              <Tabs value={displayedTab} onValueChange={(v) => setActiveTab(v as ProfileTab)}>
+                {!effectiveBlocked ? (
+                  <TabsContent value="einstellungen">
+                    <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                      <MessageSquareText className="h-5 w-5 text-muted-foreground" />
+                      Prompt-Bibliothek
+                    </h2>
+                    <Card className="p-4">
+                      <PromptManager />
+                    </Card>
+                  </TabsContent>
+                ) : null}
 
               <TabsContent value="billing">
                 <h2 className="text-lg font-semibold text-foreground mb-4">Billing</h2>

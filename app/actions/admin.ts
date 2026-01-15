@@ -2,7 +2,6 @@
 
 import { revalidatePath } from 'next/cache';
 import {
-  setUserAllowPlatformKeyByEmail,
   setUserBlockedByEmail,
   setUserCanDuplicateSystemPromptsByEmail,
   setUserFullAccessByEmail,
@@ -36,19 +35,6 @@ export async function adminSetUserBlocked(formData: FormData) {
   }
 
   await setUserBlockedByEmail(email, blocked);
-  revalidatePath('/admin');
-}
-
-export async function adminSetAllowPlatformKey(formData: FormData) {
-  const email = normalizeEmail(formData.get('email'));
-  const allowRaw = String(formData.get('allowPlatformKey') ?? 'false').trim().toLowerCase();
-  const allow = allowRaw === 'true' || allowRaw === '1' || allowRaw === 'yes' || allowRaw === 'on';
-
-  if (!email || !email.includes('@')) {
-    throw new Error('Bitte eine g〕tige E-Mail angeben.');
-  }
-
-  await setUserAllowPlatformKeyByEmail(email, allow);
   revalidatePath('/admin');
 }
 

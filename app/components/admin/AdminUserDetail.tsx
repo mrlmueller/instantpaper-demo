@@ -28,7 +28,6 @@ type AdminUserDetailRow = {
   activatedByCode: string | null;
   activatedAt: string | null;
   disabled: boolean;
-  allowPlatformKey: boolean;
   canDuplicateSystemPrompts: boolean;
   spendRate: number | null;
   effectiveSpendRate: number;
@@ -66,24 +65,10 @@ type AdminBillingLedgerEntry = {
   note: string | null;
 };
 
-type AdminUserOpenAIKey = {
-  hasKey: boolean;
-  last4: string | null;
-  allowPlatformKey: boolean;
-  source: 'user' | 'platform' | 'none';
-};
-
 type AdminUserDetailResponse = {
   user: AdminUserDetailRow;
-  openaiKey: AdminUserOpenAIKey;
   billing: AdminBillingSummary;
 };
-
-function keySourceLabel(source: AdminUserOpenAIKey['source']): string {
-  if (source === 'user') return 'User Key';
-  if (source === 'platform') return 'Platform Key';
-  return 'No Key';
-}
 
 function ledgerLabel(entry: AdminBillingLedgerEntry): string {
   const source = String(entry.source || '').trim();
@@ -256,8 +241,6 @@ export function AdminUserDetail({ uid }: { uid: string }) {
   }
 
   const user = detail.user;
-  const key = detail.openaiKey;
-  const keyLabel = `${keySourceLabel(key.source)}${key.last4 ? ` (.${key.last4})` : ''}`;
   const effectiveSpendRateLabel = Number.isFinite(user.effectiveSpendRate)
     ? formatCredits(user.effectiveSpendRate)
     : formatCredits(6.0);
@@ -313,16 +296,6 @@ export function AdminUserDetail({ uid }: { uid: string }) {
               ) : null}
 
               <Badge
-                variant={user.allowPlatformKey ? 'default' : 'outline'}
-                className={cn(
-                  'rounded-md px-2 py-0.5 text-xs font-semibold',
-                  user.allowPlatformKey ? 'bg-primary text-primary-foreground' : 'bg-transparent'
-                )}
-              >
-                Platform Key: {user.allowPlatformKey ? 'Ja' : 'Nein'}
-              </Badge>
-
-              <Badge
                 variant={user.canDuplicateSystemPrompts ? 'default' : 'outline'}
                 className={cn(
                   'rounded-md px-2 py-0.5 text-xs font-semibold',
@@ -330,10 +303,6 @@ export function AdminUserDetail({ uid }: { uid: string }) {
                 )}
               >
                 Prompt Copy: {user.canDuplicateSystemPrompts ? 'Ja' : 'Nein'}
-              </Badge>
-
-              <Badge variant="secondary" className="rounded-md px-2 py-0.5 text-xs font-semibold">
-                OpenAI: {keyLabel}
               </Badge>
             </div>
 
