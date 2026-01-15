@@ -175,7 +175,7 @@ function ProfilePageSkeleton() {
 }
 
 export default function ProfilPage() {
-  const { user: authUser, loading: authLoading } = useAuth();
+  const { user: authUser, effectiveBlocked, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<ProfileTab>("einstellungen");
@@ -188,6 +188,7 @@ export default function ProfilPage() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [showSavedKey, setShowSavedKey] = useState(false);
   const [backLoading, setBackLoading] = useState(false);
+  const displayedTab: ProfileTab = effectiveBlocked ? "billing" : activeTab;
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -195,7 +196,16 @@ export default function ProfilPage() {
   }, [searchParams]);
 
   useEffect(() => {
+    if (effectiveBlocked) setActiveTab("billing");
+  }, [effectiveBlocked]);
+
+  useEffect(() => {
     if (authLoading) return;
+    if (effectiveBlocked) {
+      setKeyStatus(null);
+      setKeyLoading(false);
+      return;
+    }
     const token = Cookies.get("__session");
     if (!token) {
       setStatusError("Keine Sitzung gefunden. Bitte melde dich erneut an.");
@@ -211,11 +221,16 @@ export default function ProfilPage() {
         toast.error("OpenAI Key", { description: message });
       })
       .finally(() => setKeyLoading(false));
-  }, [authLoading, authUser?.uid]);
+  }, [authLoading, authUser?.uid, effectiveBlocked]);
 
   useEffect(() => {
     if (authLoading) return;
     if (!authUser?.uid) return;
+    if (effectiveBlocked) {
+      setStats(null);
+      setStatsLoading(false);
+      return;
+    }
 
     let cancelled = false;
     setStatsLoading(true);
@@ -241,7 +256,7 @@ export default function ProfilPage() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, authUser?.uid]);
+  }, [authLoading, authUser?.uid, effectiveBlocked]);
 
   const handleSaveKey = async () => {
     if (!apiKeyInput.trim()) return;
@@ -289,7 +304,7 @@ export default function ProfilPage() {
     }
   };
 
-  const isLoading = authLoading || keyLoading || !authUser;
+  const isLoading = authLoading || !authUser || (!effectiveBlocked && keyLoading);
   const userName = authUser?.displayName || authUser?.email || "Benutzer";
   const userEmail = authUser?.email || "user@example.com";
   const memberSince = useMemo(() => new Date(stats?.memberSince ?? new Date().toISOString()), [stats?.memberSince]);
@@ -307,6 +322,7 @@ export default function ProfilPage() {
   const maxProjektCost = Math.max(1, ...(stats?.costByProjekt ?? []).map((p) => p.cost));
 
   const handleBack = () => {
+    if (effectiveBlocked) return;
     if (backLoading) return;
     setBackLoading(true);
     try {
@@ -331,7 +347,7 @@ export default function ProfilPage() {
                 size="icon"
                 className="h-9 w-9"
                 onClick={handleBack}
-                disabled={backLoading}
+                disabled={backLoading || effectiveBlocked}
               >
                 {backLoading ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -368,23 +384,25 @@ export default function ProfilPage() {
 
           <div className="p-4 flex-1">
             <nav className="space-y-1">
-              <button
-                onClick={() => setActiveTab("einstellungen")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  activeTab === "einstellungen"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                <Settings className="h-4 w-4" />
-                Einstellungen
-              </button>
+              {!effectiveBlocked ? (
+                <button
+                  onClick={() => setActiveTab("einstellungen")}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                    displayedTab === "einstellungen"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  <Settings className="h-4 w-4" />
+                  Einstellungen
+                </button>
+              ) : null}
               <button
                 onClick={() => setActiveTab("billing")}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  activeTab === "billing"
+                  displayedTab === "billing"
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
@@ -392,38 +410,43 @@ export default function ProfilPage() {
                 <Coins className="h-4 w-4" />
                 Billing
               </button>
-              <button
-                onClick={() => setActiveTab("statistiken")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  activeTab === "statistiken"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                <TrendingUp className="h-4 w-4" />
-                Statistiken
-              </button>
-              <button
-                onClick={() => setActiveTab("exporte")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  activeTab === "exporte"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                <Download className="h-4 w-4" />
-                Meine Exporte
-              </button>
+              {!effectiveBlocked ? (
+                <button
+                  onClick={() => setActiveTab("statistiken")}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                    displayedTab === "statistiken"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  <TrendingUp className="h-4 w-4" />
+                  Statistiken
+                </button>
+              ) : null}
+              {!effectiveBlocked ? (
+                <button
+                  onClick={() => setActiveTab("exporte")}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                    displayedTab === "exporte"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  <Download className="h-4 w-4" />
+                  Meine Exporte
+                </button>
+              ) : null}
             </nav>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-5xl mx-auto py-8 px-8">
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ProfileTab)}>
-              <TabsContent value="einstellungen">
+            <Tabs value={displayedTab} onValueChange={(v) => setActiveTab(v as ProfileTab)}>
+              {!effectiveBlocked ? (
+                <TabsContent value="einstellungen">
                 <h2 className="text-lg font-semibold text-foreground mb-4">API-Konfiguration</h2>
                 <Card className="p-6 mb-8">
                   <h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
@@ -492,14 +515,16 @@ export default function ProfilPage() {
                 <Card className="p-4">
                   <PromptManager />
                 </Card>
-              </TabsContent>
+                </TabsContent>
+              ) : null}
 
               <TabsContent value="billing">
                 <h2 className="text-lg font-semibold text-foreground mb-4">Billing</h2>
-                <BillingTab active={activeTab === "billing"} />
+                <BillingTab active={displayedTab === "billing"} />
               </TabsContent>
 
-              <TabsContent value="statistiken">
+              {!effectiveBlocked ? (
+                <TabsContent value="statistiken">
                 <h2 className="text-lg font-semibold text-foreground mb-4">Übersicht</h2>
 
                 {statsLoading ? (
@@ -626,11 +651,14 @@ export default function ProfilPage() {
                     </Card>
                   </>
                 )}
-              </TabsContent>
+                </TabsContent>
+              ) : null}
 
-              <TabsContent value="exporte">
-                <ExportsTab userId={authUser.uid} />
-              </TabsContent>
+              {!effectiveBlocked ? (
+                <TabsContent value="exporte">
+                  <ExportsTab userId={authUser.uid} />
+                </TabsContent>
+              ) : null}
             </Tabs>
           </div>
         </div>

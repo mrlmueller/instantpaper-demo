@@ -11,14 +11,19 @@ type DashboardAuthWrapperProps = {
 };
 
 export function DashboardAuthWrapper({ initialShowQuellenPanel = false }: DashboardAuthWrapperProps) {
-  const { user, access, loading } = useAuth();
+  const { user, access, effectiveBlocked, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (loading) return;
 
     if (user) {
-      if (!hasFullAccess(access) || access.blocked) {
+      if (effectiveBlocked) {
+        router.replace('/profil');
+        return;
+      }
+
+      if (!hasFullAccess(access)) {
         router.replace('/activate');
         return;
       }
@@ -29,7 +34,7 @@ export function DashboardAuthWrapper({ initialShowQuellenPanel = false }: Dashbo
       // Auth failed - no valid refresh token, redirect to login
       router.replace('/login?reason=session-expired');
     }
-  }, [user, access, loading, router]);
+  }, [user, access, effectiveBlocked, loading, router]);
 
   // Show loading skeleton while waiting for auth to complete
   return <DashboardSkeleton showQuellenPanel={initialShowQuellenPanel} />;

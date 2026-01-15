@@ -59,7 +59,7 @@ function ledgerLabel(entry: BillingLedgerEntry): string {
 }
 
 export function BillingTab({ active }: { active: boolean }) {
-  const { user, access, loading: authLoading } = useAuth();
+  const { user, effectiveBlocked, loading: authLoading } = useAuth();
 
   const [balance, setBalance] = useState<BillingBalance | null>(null);
   const [subscription, setSubscription] =
@@ -74,7 +74,7 @@ export function BillingTab({ active }: { active: boolean }) {
   >(null);
   const [portalLoading, setPortalLoading] = useState(false);
 
-  const isBlocked = access.blocked;
+  const isBlocked = effectiveBlocked;
 
   const refreshAll = useCallback(async () => {
     const token = getSessionTokenOrNull();
@@ -131,8 +131,10 @@ export function BillingTab({ active }: { active: boolean }) {
   useEffect(() => {
     if (!active) return;
     if (authLoading) return;
+    if (!user?.uid) return;
+    if (isBlocked) return;
     void refreshAll();
-  }, [active, authLoading, refreshAll]);
+  }, [active, authLoading, isBlocked, user?.uid, refreshAll]);
 
   const expiresAtLabel = useMemo(
     () => formatIsoDate(balance?.subscriptionExpiresAt),
@@ -205,6 +207,32 @@ export function BillingTab({ active }: { active: boolean }) {
     }
   }, [user?.uid]);
 
+  if (isBlocked) {
+    return (
+      <div className="space-y-4">
+        <Card className="p-6">
+          <p className="text-sm font-medium text-foreground">Account gesperrt</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Du kannst dein Abo weiterhin kuendigen oder deine Zahlungsmethode
+            verwalten.
+          </p>
+          <div className="mt-4">
+            <Button
+              variant="outline"
+              onClick={openPortal}
+              disabled={portalLoading}
+            >
+              {portalLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Abo verwalten (Stripe)
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-end gap-2">
@@ -227,28 +255,6 @@ export function BillingTab({ active }: { active: boolean }) {
           Aktualisieren
         </Button>
       </div>
-
-      {isBlocked ? (
-        <Card className="p-6">
-          <p className="text-sm font-medium text-foreground">Account gesperrt</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            Du kannst dein Abo weiterhin kuendigen oder deine Zahlungsmethode
-            verwalten.
-          </p>
-          <div className="mt-4">
-            <Button
-              variant="outline"
-              onClick={openPortal}
-              disabled={portalLoading}
-            >
-              {portalLoading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : null}
-              Abo verwalten (Stripe)
-            </Button>
-          </div>
-        </Card>
-      ) : null}
 
       <Card className="p-6">
         <div className="flex items-start justify-between gap-6">
@@ -389,4 +395,3 @@ export function BillingTab({ active }: { active: boolean }) {
     </div>
   );
 }
-
