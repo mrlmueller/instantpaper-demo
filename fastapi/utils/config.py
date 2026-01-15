@@ -62,8 +62,8 @@ class Config:
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
     IS_CLOUD_RUN: bool = bool(os.getenv("K_SERVICE", "").strip())
 
-    # Admin approval endpoint (Basic Auth)
-    # Used to set Firebase Auth custom claims (e.g. {"approved": true}) for allowlisting users.
+    # Admin access endpoint (Basic Auth)
+    # Used to set Firebase Auth custom claims (e.g. {"fullAccess": true}) for gating user access.
     ADMIN_BASIC_USER: str = os.getenv("ADMIN_BASIC_USER", "admin").strip() or "admin"
     ADMIN_BASIC_PASSWORD: str = os.getenv("ADMIN_BASIC_PASSWORD", "").strip()
 

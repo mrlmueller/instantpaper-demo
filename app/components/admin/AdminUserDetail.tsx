@@ -18,7 +18,13 @@ type AdminUserDetailRow = {
   uid: string;
   email: string | null;
   displayName: string | null;
-  approved: boolean;
+  fullAccess: boolean;
+  legacyApproved: boolean;
+  blocked: boolean;
+  isAdmin: boolean;
+  accountStatus: string | null;
+  activatedByCode: string | null;
+  activatedAt: string | null;
   disabled: boolean;
   allowPlatformKey: boolean;
   canDuplicateSystemPrompts: boolean;
@@ -125,7 +131,7 @@ export function AdminUserDetail({ uid }: { uid: string }) {
 
   const user = detail.user;
   const key = detail.openaiKey;
-  const keyLabel = `${keySourceLabel(key.source)}${key.last4 ? ` (…${key.last4})` : ''}`;
+  const keyLabel = `${keySourceLabel(key.source)}${key.last4 ? ` (.${key.last4})` : ''}`;
 
   return (
     <div className="space-y-6">
@@ -145,13 +151,28 @@ export function AdminUserDetail({ uid }: { uid: string }) {
               <Badge
                 className={cn(
                   'rounded-md px-2 py-0.5 text-xs font-semibold',
-                  user.approved
+                  user.fullAccess
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-transparent text-foreground border border-muted-foreground/30'
                 )}
               >
-                {user.approved ? 'Approved' : 'Pending'}
+                {user.fullAccess ? 'Full Access' : 'Pending'}
               </Badge>
+
+              {user.blocked ? (
+                <Badge
+                  variant="outline"
+                  className="rounded-md px-2 py-0.5 text-xs font-semibold border-destructive text-destructive"
+                >
+                  Blocked
+                </Badge>
+              ) : null}
+
+              {user.isAdmin ? (
+                <Badge variant="secondary" className="rounded-md px-2 py-0.5 text-xs font-semibold">
+                  Admin
+                </Badge>
+              ) : null}
 
               {user.disabled ? (
                 <Badge
@@ -186,6 +207,13 @@ export function AdminUserDetail({ uid }: { uid: string }) {
                 OpenAI: {keyLabel}
               </Badge>
             </div>
+
+            {user.activatedByCode || user.activatedAt ? (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Aktiviert: {user.activatedByCode ? <span className="font-mono">{user.activatedByCode}</span> : '-'} ·{' '}
+                {user.activatedAt || '-'}
+              </p>
+            ) : null}
           </div>
         </div>
 

@@ -362,9 +362,14 @@ Default log level is `WARNING` to keep background processing quiet. To temporari
 
 Uvicorn access logs (HTTP requests) stay enabled at `INFO`.
 
-## User Approval (Allowlist)
+## User Access (Gate)
 
-This app is restricted to manually approved Google accounts using a Firebase Auth custom claim (`approved: true`).
+InstantPaper is gated via Firebase Auth custom claims:
+
+- Legacy (migration): `approved: true`
+- New: `fullAccess: true`
+
+Login is always allowed; without access the frontend redirects users to `/activate`.
 
 ### Configure Admin Credentials
 
@@ -372,16 +377,21 @@ Set these env vars on the FastAPI server:
 - `ADMIN_BASIC_USER` (default: `admin`)
 - `ADMIN_BASIC_PASSWORD` (required)
 
-### Approve / Revoke a User
+### Grant / Revoke Access
 
 Open (browser prompts for basic auth):
-- Approve: `/api/admin/approve?email=user@gmail.com&approved=true`
-- Revoke: `/api/admin/approve?email=user@gmail.com&approved=false`
+- Grant access: `/api/admin/approve?email=user@gmail.com&fullAccess=true`
+- Revoke access: `/api/admin/approve?email=user@gmail.com&fullAccess=false`
 - Web form (no email in URL): open `/approve` and submit the form (Basic Auth protected).
 - Quick approve (no query string): `/api/admin/quick-approve` (Basic Auth username=email, password=`ADMIN_BASIC_PASSWORD`)
 - Quick revoke (no query string): `/api/admin/quick-revoke` (Basic Auth username=email, password=`ADMIN_BASIC_PASSWORD`)
 
-Users must sign out/in (or refresh token) after approval for the claim to apply.
+Users must refresh their token (or re-login) after access changes for the claim to apply.
+
+### Block / Unblock (Hard Gate)
+
+Blocking is stored in Firestore (`users/{uid}.accountStatus = "blocked"`) and is enforced immediately for Firestore + backend requests.
+Storage enforcement uses a `blocked` custom claim (stale tokens up to ~1h are acceptable).
 
 ## Development
 

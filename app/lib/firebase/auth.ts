@@ -4,6 +4,7 @@ import {
   GoogleAuthProvider,
   signOut as firebaseSignOut,
   onIdTokenChanged,
+  type IdTokenResult,
   type Auth,
   type User,
 } from "firebase/auth";
@@ -13,6 +14,12 @@ import { firebaseApp } from "./config";
 let authInstance: Auth | null = null;
 
 export const SESSION_COOKIE_NAME = "__session";
+
+export type AccessState = {
+  fullAccess: boolean;
+  legacyApproved: boolean;
+  blocked: boolean;
+};
 
 function isProduction() {
   return process.env.NODE_ENV === "production";
@@ -74,6 +81,17 @@ googleProvider.setCustomParameters({
   prompt: "select_account",
 });
 
+export function parseAccessStateFromClaims(claims: Record<string, unknown> | null | undefined): AccessState {
+  const fullAccess = claims?.['fullAccess'] === true;
+  const legacyApproved = claims?.['approved'] === true;
+  const blocked = claims?.['blocked'] === true;
+  return { fullAccess, legacyApproved, blocked };
+}
+
+export function hasFullAccess(access: AccessState | null | undefined): boolean {
+  return Boolean(access?.fullAccess || access?.legacyApproved);
+}
+
 export const signInWithGoogle = async () => {
   try {
     const auth = getFirebaseAuth();
@@ -98,42 +116,43 @@ export const signOut = async () => {
   }
 };
 
+export async function getIdTokenResultOrNull(forceRefresh = false): Promise<IdTokenResult | null> {
+  try {
+    const auth = getFirebaseAuth();
+    const user = auth.currentUser;
+    if (!user) return null;
+    return await user.getIdTokenResult(forceRefresh);
+  } catch (error) {
+    console.error("Failed to read ID token:", error);
+    return null;
+  }
+}
+
+export async function refreshIdTokenAndCookie(): Promise<{ token: string; access: AccessState } | null> {
+  const result = await getIdTokenResultOrNull(true);
+  if (!result) return null;
+  setSessionCookie(result.token);
+  return { token: result.token, access: parseAccessStateFromClaims(result.claims as unknown as Record<string, unknown>) };
+}
+
 // Subscribe to auth state changes and keep ID token fresh
-export const onAuthStateChange = (callback: (user: User | null) => void) => {
+export const onAuthStateChange = (callback: (user: User | null, access?: AccessState) => void) => {
   try {
     const auth = getFirebaseAuth();
 
     return onIdTokenChanged(auth, async (user) => {
       if (user) {
-        let idTokenResult = await user.getIdTokenResult();
-        let approved = Boolean((idTokenResult.claims as any)?.approved === true);
+        const idTokenResult = await user.getIdTokenResult();
+        const access = parseAccessStateFromClaims(idTokenResult.claims as unknown as Record<string, unknown>);
 
-        // If the user was just approved, the current token can still be stale.
-        // Only force-refresh when needed to avoid an infinite refresh loop.
-        if (!approved) {
-          idTokenResult = await user.getIdTokenResult(true);
-          approved = Boolean((idTokenResult.claims as any)?.approved === true);
-        }
-
-        // Not approved -> immediately sign out and clear cookie.
-        if (!approved) {
-          clearSessionCookie();
-          try {
-            await firebaseSignOut(auth);
-          } catch (err) {
-            console.error("Sign out after unauthorized login failed:", err);
-          }
-          callback(null);
-          return;
-        }
-
-        // Approved user: store fresh ID token for server components (cookie is read by Next.js server).
+        // Always store a fresh ID token for server components/actions (cookie is read by Next.js server).
         setSessionCookie(idTokenResult.token);
+        callback(user, access);
       } else {
         // User signed out - clean up cookie
         clearSessionCookie();
+        callback(null);
       }
-      callback(user);
     });
   } catch (error) {
     console.error("Firebase auth init failed:", error);

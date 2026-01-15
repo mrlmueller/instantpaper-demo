@@ -1,3 +1,5 @@
+import type { AccessState } from '@/app/lib/firebase/auth';
+
 export interface User {
   uid: string;
   email: string | null;
@@ -8,5 +10,6 @@ export interface User {
 
 export interface AuthContextType {
   user: User | null;
+  access: AccessState;
   loading: boolean;
 }

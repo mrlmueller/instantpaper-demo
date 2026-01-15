@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { FileText } from 'lucide-react';
-import { signInWithGoogle, signOut, setSessionCookie } from '@/app/lib/firebase/auth';
+import { hasFullAccess, parseAccessStateFromClaims, signInWithGoogle, setSessionCookie } from '@/app/lib/firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -35,6 +35,12 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
+  const readErrorMessage = (err: unknown) => {
+    if (err instanceof Error && err.message) return err.message;
+    if (typeof err === 'string' && err.trim()) return err.trim();
+    return 'Login fehlgeschlagen. Bitte erneut versuchen.';
+  };
+
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
@@ -44,23 +50,17 @@ export default function LoginPage() {
         throw new Error('Login fehlgeschlagen. Bitte erneut versuchen.');
       }
 
-      // Enforce allowlist via custom claim.
-      // If not approved, immediately sign out and show a generic message.
+      // Always allow login. Access is gated via custom claims (`fullAccess`) and the /activate flow.
       const tokenResult = await user.getIdTokenResult(true);
-      const approved = Boolean((tokenResult.claims as any)?.approved === true);
-      if (!approved) {
-        await signOut();
-        setError('Dein Account ist nicht freigeschaltet. Bitte kontaktiere den Admin.');
-        setLoading(false);
-        return;
-      }
+      const access = parseAccessStateFromClaims(tokenResult.claims as unknown as Record<string, unknown>);
 
       // Ensure the server can immediately authenticate Server Components/Actions on the next navigation.
       setSessionCookie(tokenResult.token);
-      router.replace('/dashboard');
-    } catch (err: any) {
+
+      router.replace(hasFullAccess(access) && !access.blocked ? '/dashboard' : '/activate');
+    } catch (err: unknown) {
       console.error('Login failed:', err);
-      setError(err.message || 'Login fehlgeschlagen. Bitte erneut versuchen.');
+      setError(readErrorMessage(err));
       setLoading(false);
     }
   };
