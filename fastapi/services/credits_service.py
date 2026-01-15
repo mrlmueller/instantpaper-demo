@@ -158,7 +158,7 @@ class CreditsService:
         if total < 0:
             raise HTTPException(
                 status_code=402,
-                detail="Kein Guthaben verfuegbar. Bitte im Profil unter Billing Credits aufladen.",
+                detail="Kein Guthaben verfügbar. Bitte lade Credits im Profil unter Billing auf.",
             )
 
     async def debit_openai_operation(
@@ -294,4 +294,3 @@ def get_credits_service(firebase_service) -> CreditsService:
     if _credits_service_instance is None:
         _credits_service_instance = CreditsService(firebase_service)
     return _credits_service_instance
-
