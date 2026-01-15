@@ -455,7 +455,11 @@ def _compute_balance_summary(data: dict | None) -> dict:
     subscription_active = subscription_credits_raw
     if subscription_expires_at:
         try:
-            dt = subscription_expires_at.to_datetime() if hasattr(subscription_expires_at, "to_datetime") else None
+            dt = (
+                subscription_expires_at.to_datetime()
+                if hasattr(subscription_expires_at, "to_datetime")
+                else subscription_expires_at
+            )
             if isinstance(dt, datetime):
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
@@ -529,6 +533,11 @@ async def billing_get_balance(user_id: str = Depends(verify_firebase_token)):
     Source of truth for writes is the server-side credit ledger; this endpoint returns a safe read model.
     """
     try:
+        await get_credits_service(firebase_service).sync_stripe_grants_for_user(user_id)
+    except Exception:
+        pass
+
+    try:
         bal_ref = (
             firebase_service.db.collection("users")
             .document(user_id)
@@ -555,6 +564,11 @@ async def billing_get_ledger(
     Cursor is the last returned entry id (doc id).
     """
     limit = max(1, min(int(limit or 50), 200))
+
+    try:
+        await get_credits_service(firebase_service).sync_stripe_grants_for_user(user_id)
+    except Exception:
+        pass
 
     base = (
         firebase_service.db.collection("users")
