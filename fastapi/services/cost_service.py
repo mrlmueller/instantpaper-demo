@@ -18,6 +18,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from google.cloud.firestore_v1 import Increment, SERVER_TIMESTAMP
+from services.credits_service import get_credits_service
 
 logger = logging.getLogger(__name__)
 
@@ -249,7 +250,8 @@ class CostService:
         """
         Write an immutable per-operation cost log and update aggregates.
 
-        The operation log write is CRITICAL (must succeed). Aggregate updates are best-effort.
+        The operation log write + credits debit are CRITICAL (must succeed).
+        Aggregate updates are best-effort.
         """
 
         operation_id = str(uuid.uuid4())
@@ -379,6 +381,15 @@ class CostService:
                 )
             except Exception as exc:
                 logger.error(f"Non-critical: failed to update project cost aggregate: {exc}")
+
+        # Credits debit: append-only ledger entry + cached balance update (critical).
+        credits_service = get_credits_service(self.firebase)
+        await credits_service.debit_openai_operation(
+            user_id=user_id,
+            operation_id=operation_id,
+            operation_type=operation_type,
+            cost_usd=cost_usd,
+        )
 
         return operation_id
 
