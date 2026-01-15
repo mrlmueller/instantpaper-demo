@@ -315,6 +315,7 @@ Dieser Branch ist groß: arbeite in kleinen „vertikalen“ Commits und teste n
 **Kontext**: User müssen Credits kaufen können (auch wenn sie aktuell auf `/activate` hängen).
 **Änderungen (im Repo)**:
 
+- Stripe integration: Firebase Extension (firestore-stripe-payments) + Firestore `/customers/{uid}/checkout_sessions/*` (no FastAPI Stripe secrets/webhooks).
 - Checkout Session Creation:
   - Subscription: $25/Monat (Price ID aus Stripe)
   - Top‑up: custom amount (>= $5)
@@ -322,6 +323,7 @@ Dieser Branch ist groß: arbeite in kleinen „vertikalen“ Commits und teste n
 - Portal Session Creation (Customer Portal)
   **Externe Schritte (vor dem Test dieses Commits)**:
 
+NOTE: With Firebase Stripe Extension, you do NOT configure Stripe keys/webhooks in FastAPI; only Price IDs + success/cancel URLs matter.
 1. Stripe Test Mode: Produkt/Price existiert, Price ID bekannt.
 2. Backend Env Vars setzen (Test):
    - Stripe Secret Key (Test)
@@ -333,7 +335,8 @@ Dieser Branch ist groß: arbeite in kleinen „vertikalen“ Commits und teste n
 - Checkout startet und kehrt sauber zurück.
 - Customer Portal öffnet.
 
-### Commit B6 — „Stripe Webhooks: Credits Grants (Abo expiring, Top‑up non‑expiring)“
+### Commit B6 - "Stripe Webhooks: Credits Grants (Abo expiring, Top-up non-expiring)"
+NOTE: Repo implementation uses Firebase Cloud Functions (Firestore triggers on Stripe Extension collections), not a FastAPI Stripe webhook endpoint.
 
 **Kontext**: Webhooks sind die Wahrheit. Credits dürfen nicht über Client‑Events vergeben werden.
 **Änderungen (im Repo)**:
