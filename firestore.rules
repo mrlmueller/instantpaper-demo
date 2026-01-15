@@ -34,6 +34,10 @@ service cloud.firestore {
       return s is string && s.size() <= maxSize;
     }
 
+    function isNullableString(s, maxSize) {
+      return s == null || (s is string && s.size() <= maxSize);
+    }
+
     function isValidStage(stage) {
       return stage in ['process_quelle', 'combine', 'shorten', 'lesefluss', 'summary'];
     }
@@ -118,20 +122,25 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId);
 
-      // Users may create their profile doc, but cannot grant themselves platform access or system prompt copy access.
+      // Users may create their profile doc (server-only fields are not client writable).
       allow create: if isOwner(userId)
-        && (
-          !request.resource.data.keys().hasAny(['allowPlatformKey'])
-          || request.resource.data.allowPlatformKey == false
-        )
-        && (
-          !request.resource.data.keys().hasAny(['canDuplicateSystemPrompts'])
-          || request.resource.data.canDuplicateSystemPrompts == false
-        );
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'updatedAt'])
+        && request.resource.data.uid == userId
+        && isNullableString(request.resource.data.email, 320)
+        && isNullableString(request.resource.data.displayName, 200)
+        && isNullableString(request.resource.data.photoURL, 2000)
+        && isTs(request.resource.data.createdAt)
+        && isTs(request.resource.data.updatedAt);
 
-      // Users may update their profile, but not change server-controlled flags.
+      // Users may update their profile, but cannot change server-controlled fields like blocks/billing flags.
       allow update: if isOwner(userId)
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['allowPlatformKey', 'canDuplicateSystemPrompts']);
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && isNullableString(request.resource.data.email, 320)
+        && isNullableString(request.resource.data.displayName, 200)
+        && isNullableString(request.resource.data.photoURL, 2000)
+        && isTs(request.resource.data.updatedAt)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email', 'displayName', 'photoURL', 'updatedAt']);
 
       allow delete: if isOwner(userId);
 
@@ -151,6 +160,17 @@ service cloud.firestore {
 
       // Exports are server-written. Clients may read their own exports only.
       match /exports/{exportId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
+      // Credits/billing data is server-written and immutable from the client.
+      match /billing/{doc=**} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
+      match /creditLedger/{doc=**} {
         allow read: if isOwner(userId);
         allow write: if false;
       }
@@ -481,6 +501,36 @@ service cloud.firestore {
             allow write: if false;
           }
         }
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Stripe (Firebase Extension: firestore-stripe-payments)
+    // ---------------------------------------------------------------------
+
+    match /customers/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+
+      match /checkout_sessions/{id} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+      match /subscriptions/{id} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+      }
+      match /payments/{id} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+
+    match /products/{id} {
+      allow read: if true;
+
+      match /prices/{id} {
+        allow read: if true;
+      }
+
+      match /tax_rates/{id} {
+        allow read: if true;
       }
     }
 

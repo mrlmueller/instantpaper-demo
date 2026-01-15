@@ -267,12 +267,18 @@ Dieser Branch ist groß: arbeite in kleinen „vertikalen“ Commits und teste n
 
 - Datenmodell festlegen für:
   - Stripe Customer/Subscription State (pro User)
-  - Credit Ledger (append‑only, pro User)
+  - Credit Ledger (append-only, pro User)
   - Credit Balances (entweder berechnet oder gecached)
-  - Per‑User Spend‑Rate Override
+  - Per-User Spend-Rate Override
+  - Firestore-Pfade (konkret):
+    - Stripe (Firebase Extension): `/customers/{uid}` (read), `/customers/{uid}/checkout_sessions/*` (user write), `/customers/{uid}/subscriptions/*` + `/customers/{uid}/payments/*` (read)
+    - Stripe Catalog: `/products/*` + `/products/*/prices/*` (read)
+    - Credits Ledger: `users/{uid}/creditLedger/*` (server-only writes, user read)
+    - Credits Balance Cache: `users/{uid}/billing/balance` (server-only writes, user read)
+    - Spend-Rate Override: `users/{uid}.spendRate` (server/admin setzt; Default 6.0)
 - Firestore Rules erweitern:
   - Neue Collections: User darf lesen, aber nicht schreiben.
-  - Server‑only Writes sind der Standard.
+  - Server-only Writes sind der Standard.
   **Externe Schritte (direkt nach dem Commit)**:
 - Deploy Firestore Rules in Staging/Test (oder Production, wenn du keine Staging hast).
   **Akzeptanzkriterien**:
