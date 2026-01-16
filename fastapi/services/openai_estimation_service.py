@@ -11,6 +11,9 @@ from utils.token_estimation import count_tokens, count_words, estimate_image_tok
 
 logger = logging.getLogger(__name__)
 
+MIN_OUTPUT_TOKENS_DEFAULT = 1500
+MAX_OUTPUT_TOKENS_DEFAULT = 35000
+
 
 def _clamp_int(value: float, min_value: int | None, max_value: int | None) -> int:
     try:
@@ -122,29 +125,35 @@ class OpenAIEstimationService:
             if not parent_text:
                 raise ValueError("parent_generated_text is required for refinement estimation")
             output_words = count_words(parent_text)
-            output_tokens = count_tokens(parent_text)
+            output_tokens = _clamp_int(
+                count_tokens(parent_text),
+                None,
+                MAX_OUTPUT_TOKENS_DEFAULT,
+            )
         else:
             if output_source_text is None:
                 raise ValueError("output_source_text is required for estimation")
 
             source_words = count_words(source_text)
+            source_tokens = count_tokens(source_text)
+            tokens_per_word = float(source_tokens) / float(max(int(source_words), 1))
+            if not tokens_per_word or not float(tokens_per_word) > 0:
+                tokens_per_word = 1.0
 
             if op_lower == "summary":
-                output_words = _clamp_int(0.35 * float(source_words), 50, 2000)
+                output_tokens = _clamp_int(0.35 * float(source_tokens), MIN_OUTPUT_TOKENS_DEFAULT, MAX_OUTPUT_TOKENS_DEFAULT)
             elif op_lower in {"process_quelle", "refine_result"}:
-                output_words = _clamp_int(0.50 * float(source_words), 50, 2000)
+                output_tokens = _clamp_int(0.50 * float(source_tokens), MIN_OUTPUT_TOKENS_DEFAULT, MAX_OUTPUT_TOKENS_DEFAULT)
             elif op_lower in {"combine", "combine_intermediate"}:
-                output_words = _clamp_int(0.70 * float(source_words), 50, 2000)
+                output_tokens = _clamp_int(0.70 * float(source_tokens), MIN_OUTPUT_TOKENS_DEFAULT, MAX_OUTPUT_TOKENS_DEFAULT)
             elif op_lower == "shorten":
-                output_words = _clamp_int(0.70 * float(source_words), 50, 2000)
+                output_tokens = _clamp_int(0.70 * float(source_tokens), MIN_OUTPUT_TOKENS_DEFAULT, MAX_OUTPUT_TOKENS_DEFAULT)
             elif op_lower == "lesefluss":
-                output_words = _clamp_int(1.20 * float(source_words), 50, 2500)
+                output_tokens = _clamp_int(1.20 * float(source_tokens), MIN_OUTPUT_TOKENS_DEFAULT, MAX_OUTPUT_TOKENS_DEFAULT)
             else:
                 raise ValueError(f"Unsupported operation_type for estimation: {op_type}")
 
-            source_tokens = count_tokens(source_text)
-            tokens_per_word = float(source_tokens) / float(max(int(source_words), 1))
-            output_tokens = int(round(float(output_words) * float(tokens_per_word)))
+            output_words = _clamp_int(float(output_tokens) / float(tokens_per_word), 0, None)
 
         total_tokens = int(input_tokens + output_tokens)
 

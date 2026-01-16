@@ -426,14 +426,15 @@ Each commit below is meant to be **self-contained**: it repeats the critical con
 **Changes**
 
 - Implement operation-type rules exactly:
-  - `summary`: 35% KAPITELTEXT, clamp 50..2000
-  - `process_quelle`: 50% QUELLTEXT, clamp 50..2000
-  - `combine`: 70% DRAFTS, clamp 50..2000
-  - `shorten`: 70% KAPITELTEXT, clamp 50..2000
-  - `lesefluss`: 120% KAPITELTEXT, clamp 50..2500
-  - `refine_*`: output words = parent words (no clamp), output tokens = parent tokens
+  - `summary`: outputTokens = 35% SOURCE tokens, clamp **1500..35000**
+  - `process_quelle`: outputTokens = 50% SOURCE tokens, clamp **1500..35000**
+  - `combine`: outputTokens = 70% SOURCE tokens, clamp **1500..35000**
+  - `shorten`: outputTokens = 70% SOURCE tokens, clamp **1500..35000**
+  - `lesefluss`: outputTokens = 120% SOURCE tokens, clamp **1500..35000**
+  - `refine_*`: outputTokens = parent tokens (clamp max **35000**)
 - Output token estimation:
-  - compute tokens-per-word from the same source text used by the formula (tokenize source text, divide by its word count)
+  - outputTokens uses the token-based rule above
+  - tokens-per-word is only used to derive `outputWords` for observability
 - USD cost estimation:
   - call `CostService.resolve_model_pricing(model)` and compute USD from tokens
 - Credits estimation:
