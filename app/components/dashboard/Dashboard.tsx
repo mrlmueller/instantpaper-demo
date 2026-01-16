@@ -362,7 +362,7 @@ export function Dashboard({
 
     const cached = negativeBalanceGateRef.current;
     const now = Date.now();
-    if (cached?.isNegative) {
+    if (cached?.isNegative && now - cached.checkedAt <= 15_000) {
       showNoCreditsToast();
       return false;
     }
@@ -387,7 +387,9 @@ export function Dashboard({
 
         if (res.ok) {
           const data = await res.json().catch(() => ({}));
-          const isNegative = Boolean((data as any)?.isNegative);
+          const isNegative = Boolean(
+            (data as any)?.balance?.isNegative ?? (data as any)?.isNegative
+          );
           negativeBalanceGateRef.current = { isNegative, checkedAt: now };
           if (isNegative) {
             showNoCreditsToast();
