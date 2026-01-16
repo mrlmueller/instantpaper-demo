@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 MIN_OUTPUT_TOKENS_DEFAULT = 1500
 MAX_OUTPUT_TOKENS_DEFAULT = 35000
+OUTPUT_FACTOR_OFFSET_DEFAULT = 0.5
 
 
 def _clamp_int(value: float, min_value: int | None, max_value: int | None) -> int:
@@ -140,18 +141,29 @@ class OpenAIEstimationService:
             if not tokens_per_word or not float(tokens_per_word) > 0:
                 tokens_per_word = 1.0
 
+            base_factor: float | None
             if op_lower == "summary":
-                output_tokens = _clamp_int(0.35 * float(source_tokens), MIN_OUTPUT_TOKENS_DEFAULT, MAX_OUTPUT_TOKENS_DEFAULT)
+                base_factor = 0.35
             elif op_lower in {"process_quelle", "refine_result"}:
-                output_tokens = _clamp_int(0.50 * float(source_tokens), MIN_OUTPUT_TOKENS_DEFAULT, MAX_OUTPUT_TOKENS_DEFAULT)
+                base_factor = 0.50
             elif op_lower in {"combine", "combine_intermediate"}:
-                output_tokens = _clamp_int(0.70 * float(source_tokens), MIN_OUTPUT_TOKENS_DEFAULT, MAX_OUTPUT_TOKENS_DEFAULT)
+                base_factor = 0.70
             elif op_lower == "shorten":
-                output_tokens = _clamp_int(0.70 * float(source_tokens), MIN_OUTPUT_TOKENS_DEFAULT, MAX_OUTPUT_TOKENS_DEFAULT)
+                base_factor = 0.70
             elif op_lower == "lesefluss":
-                output_tokens = _clamp_int(1.20 * float(source_tokens), MIN_OUTPUT_TOKENS_DEFAULT, MAX_OUTPUT_TOKENS_DEFAULT)
+                base_factor = 1.20
             else:
+                base_factor = None
+
+            if base_factor is None:
                 raise ValueError(f"Unsupported operation_type for estimation: {op_type}")
+
+            factor = float(base_factor) + float(OUTPUT_FACTOR_OFFSET_DEFAULT)
+            output_tokens = _clamp_int(
+                factor * float(source_tokens),
+                MIN_OUTPUT_TOKENS_DEFAULT,
+                MAX_OUTPUT_TOKENS_DEFAULT,
+            )
 
             output_words = _clamp_int(float(output_tokens) / float(tokens_per_word), 0, None)
 

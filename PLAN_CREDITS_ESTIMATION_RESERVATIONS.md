@@ -426,11 +426,11 @@ Each commit below is meant to be **self-contained**: it repeats the critical con
 **Changes**
 
 - Implement operation-type rules exactly:
-  - `summary`: outputTokens = 35% SOURCE tokens, clamp **1500..35000**
-  - `process_quelle`: outputTokens = 50% SOURCE tokens, clamp **1500..35000**
-  - `combine`: outputTokens = 70% SOURCE tokens, clamp **1500..35000**
-  - `shorten`: outputTokens = 70% SOURCE tokens, clamp **1500..35000**
-  - `lesefluss`: outputTokens = 120% SOURCE tokens, clamp **1500..35000**
+  - `summary`: outputTokens = **85%** SOURCE tokens, clamp **1500..35000**
+  - `process_quelle`: outputTokens = **100%** SOURCE tokens, clamp **1500..35000**
+  - `combine`: outputTokens = **120%** SOURCE tokens, clamp **1500..35000**
+  - `shorten`: outputTokens = **120%** SOURCE tokens, clamp **1500..35000**
+  - `lesefluss`: outputTokens = **170%** SOURCE tokens, clamp **1500..35000**
   - `refine_*`: outputTokens = parent tokens (clamp max **35000**)
 - Output token estimation:
   - outputTokens uses the token-based rule above
