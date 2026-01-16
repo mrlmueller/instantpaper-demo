@@ -3660,11 +3660,18 @@ async def refine_result_text(
 
 if __name__ == "__main__":
     import uvicorn
+
+    reload_raw = (os.getenv("UVICORN_RELOAD") or "").strip().lower()
+    if reload_raw:
+        reload_enabled = reload_raw in {"1", "true", "yes", "y", "on"}
+    else:
+        reload_enabled = not config.IS_CLOUD_RUN
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=config.PORT,
-        reload=config.DEBUG,
+        reload=reload_enabled,
         # Use our in-app logging config; keep access logs.
         log_config=None,
         access_log=True,

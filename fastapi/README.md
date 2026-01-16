@@ -103,6 +103,8 @@ Or simply:
 python main.py
 ```
 
+`python main.py` enables auto-reload by default in local dev (unless `UVICORN_RELOAD=false` is set).
+
 ### Production Mode
 
 ```bash
