@@ -451,6 +451,7 @@ def _compute_balance_summary(data: dict | None) -> dict:
     topup_credits = _as_float((data or {}).get("topupCredits"), 0.0)
     subscription_credits_raw = _as_float((data or {}).get("subscriptionCredits"), 0.0)
     subscription_expires_at = (data or {}).get("subscriptionExpiresAt")
+    reserved_credits = _as_float((data or {}).get("reservedCredits"), 0.0)
 
     subscription_active = subscription_credits_raw
     if subscription_expires_at:
@@ -469,11 +470,14 @@ def _compute_balance_summary(data: dict | None) -> dict:
             pass
 
     total = subscription_active + topup_credits
+    available = float(total - reserved_credits)
     return {
         "totalCredits": float(total),
         "subscriptionCredits": float(subscription_active),
         "subscriptionExpiresAt": _ts_to_iso(subscription_expires_at),
         "topupCredits": float(topup_credits),
+        "reservedCredits": float(reserved_credits),
+        "availableCredits": float(available),
         "isNegative": bool(total < 0),
     }
 

@@ -534,6 +534,21 @@ class CreditsService:
             else DEFAULT_CREDITS_CONFIG.default_spend_rate
         )
 
+    async def get_available_credits(self, user_id: str) -> float:
+        try:
+            await self.sync_stripe_grants_for_user(user_id)
+        except Exception:
+            pass
+
+        try:
+            balance = self._read_balance_doc(user_id)
+        except Exception:
+            return 0.0
+
+        sub, topup, _expires_at = self._normalize_balance(balance)
+        reserved = _as_float((balance or {}).get("reservedCredits"), 0.0)
+        return float(float(sub + topup) - float(reserved))
+
     def _read_balance_doc(self, user_id: str) -> dict:
         ref = (
             self.firebase.db.collection("users")

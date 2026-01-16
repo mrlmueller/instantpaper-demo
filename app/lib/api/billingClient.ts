@@ -5,6 +5,8 @@ export type BillingBalance = {
   subscriptionCredits: number;
   subscriptionExpiresAt: string | null;
   topupCredits: number;
+  reservedCredits: number;
+  availableCredits: number;
   isNegative: boolean;
 };
 
@@ -77,4 +79,3 @@ export async function fetchBillingSubscriptionStatus(token: string): Promise<Bil
   const res = await request<{ subscription: BillingSubscriptionStatus }>("/api/billing/status", token);
   return res.subscription;
 }
-

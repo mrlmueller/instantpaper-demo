@@ -40,6 +40,8 @@ type AdminBillingBalance = {
   subscriptionCredits: number;
   subscriptionExpiresAt: string | null;
   topupCredits: number;
+  reservedCredits: number;
+  availableCredits: number;
   isNegative: boolean;
 };
 
