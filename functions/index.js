@@ -204,8 +204,22 @@ exports.onStripePaymentWrite = functions.firestore
     if (!isSuccessfulPayment(data)) return;
 
     const cfg = await getCreditsConfig();
+
+    const invoiceCandidate = data?.invoice || data?.invoiceId || data?.invoice_id;
+    const invoiceId =
+      typeof invoiceCandidate === "string"
+        ? invoiceCandidate.trim()
+        : invoiceCandidate
+        ? String(invoiceCandidate).trim()
+        : "";
+
+    // Subscription payments are invoice-based; avoid double-granting by ignoring invoice payments here.
+    if (invoiceId) return;
+
     const priceIds = collectPriceIds(data);
-    const isTopup = priceIds.has(cfg.topupPriceId);
+
+    // Stripe PaymentIntents often don't carry price IDs; treat successful non-invoice payments as top-ups.
+    const isTopup = priceIds.size ? priceIds.has(cfg.topupPriceId) : true;
     if (!isTopup) return;
 
     const amountUsd =
@@ -314,4 +328,3 @@ exports.onStripeSubscriptionWrite = functions.firestore
 
     await upsertActivationFromPayment(uid, { subscriptionId });
   });
-
