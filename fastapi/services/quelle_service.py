@@ -683,6 +683,7 @@ class QuelleService:
                 key_source=key_source,
             )
             marked_running = True
+            workflow_id = uuid.uuid4().hex
 
             # DECISION POINT: Single-level vs Hierarchical combining
             if len(eligible) > 5:
@@ -693,6 +694,7 @@ class QuelleService:
                     kapitel_id,
                     run_id,
                     eligible,
+                    workflow_id,
                     heading,
                     topic,
                     model,
@@ -706,17 +708,81 @@ class QuelleService:
             source_quelle_ids = [res["id"] for res in eligible]
             texts = [res["content"] for res in eligible]
 
-            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+            draft_parts: list[str] = []
+            for idx, text in enumerate(texts, start=1):
+                draft_parts.append(f"Text {idx}:\n{text}")
+            drafts_content = "\n\n".join(draft_parts)
 
-            openai_result = await self.openai.combine_texts(
-                texts,
-                heading,
-                topic,
-                model,
-                api_key=api_key,
-                instructions=combine_instructions,
-                system_prompt=combine_system_prompt,
+            prompt_body = combine_instructions or ""
+            if "{DRAFTS}" in prompt_body:
+                prompt_text = prompt_body.replace("{DRAFTS}", drafts_content)
+            else:
+                prompt_text = f"{prompt_body}\n\n[ENTWšRFE]\n{drafts_content}"
+
+            system_message = (combine_system_prompt or "").strip() or (
+                "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
             )
+
+            operation_id = f"{workflow_id}_combine_final"
+            estimation_service = get_openai_estimation_service(firebase_service)
+            estimate_obj = await estimation_service.estimate_operation(
+                user_id=user_id,
+                operation_type="combine",
+                model=model,
+                system_text=system_message,
+                user_text=prompt_text,
+                output_source_text=drafts_content,
+            )
+
+            budget_service = get_openai_budget_service(firebase_service)
+            reservation_released = False
+            reservation = await budget_service.reserve_operation(
+                user_id=user_id,
+                operation_id=operation_id,
+                operation_type="combine",
+                user_action_id=run_id,
+                estimate=estimate_obj.to_dict(),
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                operation_details={"sourceCount": len(source_quelle_ids)},
+            )
+            if reservation.result == "blocked":
+                raise HTTPException(
+                    status_code=402,
+                    detail="Kein Guthaben verfügbar. Bitte lade Credits im Profil unter Billing auf.",
+                )
+            if reservation.result in {"already_reserved", "finalized"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Operation already exists. Please retry later.",
+                )
+
+            await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
+
+            try:
+                openai_result = await self.openai.combine_texts(
+                    texts,
+                    heading,
+                    topic,
+                    model,
+                    api_key=api_key,
+                    instructions=combine_instructions,
+                    system_prompt=combine_system_prompt,
+                )
+            except Exception as exc:
+                await budget_service.mark_status(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    status="error",
+                    error_message=str(exc),
+                )
+                await budget_service.release_reservation(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    reason="error",
+                )
+                reservation_released = True
+                raise
 
             cost_service = get_cost_service(firebase_service)
             usage = TokenUsage.from_any(
@@ -758,6 +824,7 @@ class QuelleService:
             }
 
             await cost_service.log_operation(
+                operation_id=operation_id,
                 operation_type="combine",
                 user_id=user_id,
                 user_action_id=run_id,
@@ -779,6 +846,12 @@ class QuelleService:
             )
 
             cost = float(cost_breakdown.total_cost_usd)
+            await budget_service.release_reservation(
+                user_id=user_id,
+                operation_id=operation_id,
+                reason="success",
+            )
+            reservation_released = True
 
             combined_id = await self.firebase.save_combined_result(
                 user_id=user_id,
@@ -818,8 +891,28 @@ class QuelleService:
                 "topic": topic,
             }
 
-        except HTTPException:
-            raise
+        except HTTPException as exc:
+            if marked_running:
+                try:
+                    await self.firebase.mark_artifact_error(
+                        user_id=user_id,
+                        kapitel_id=kapitel_id,
+                        run_id=run_id,
+                        artifact_id="combined",
+                        key_source=key_source,
+                    )
+                except Exception:
+                    pass
+            try:
+                if "budget_service" in locals() and "operation_id" in locals() and not locals().get("reservation_released"):
+                    await budget_service.release_reservation(
+                        user_id=user_id,
+                        operation_id=operation_id,
+                        reason="error",
+                    )
+            except Exception:
+                pass
+            raise exc
         except Exception as e:
             logger.error(f"Error combining run results: {str(e)}")
             if marked_running:
@@ -830,6 +923,15 @@ class QuelleService:
                     artifact_id="combined",
                     key_source=key_source,
                 )
+            try:
+                if "budget_service" in locals() and "operation_id" in locals() and not locals().get("reservation_released"):
+                    await budget_service.release_reservation(
+                        user_id=user_id,
+                        operation_id=operation_id,
+                        reason="error",
+                    )
+            except Exception:
+                pass
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to combine run results: {str(e)}"
@@ -841,6 +943,7 @@ class QuelleService:
         kapitel_id: str,
         run_id: str,
         eligible: list,
+        workflow_id: str,
         heading: str,
         topic: str,
         model: str,
@@ -901,54 +1004,142 @@ class QuelleService:
 
             logger.info(f"Combining group {group_number} with {len(group_texts)} sources")
 
-            # Call OpenAI to combine this group
-            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+            draft_parts: list[str] = []
+            for idx, text in enumerate(group_texts, start=1):
+                draft_parts.append(f"Text {idx}:\n{text}")
+            drafts_content = "\n\n".join(draft_parts)
 
-            openai_result = await self.openai.combine_texts(
-                group_texts,
-                heading,
-                topic,
-                model,
-                api_key=api_key,
-                instructions=instructions,
-                system_prompt=system_prompt,
+            prompt_body = instructions or ""
+            if "{DRAFTS}" in prompt_body:
+                prompt_text = prompt_body.replace("{DRAFTS}", drafts_content)
+            else:
+                prompt_text = f"{prompt_body}\n\n[ENTWšRFE]\n{drafts_content}"
+
+            system_message = (system_prompt or "").strip() or (
+                "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
             )
 
-            usage = TokenUsage.from_any(
-                openai_result.get("input_tokens", 0),
-                openai_result.get("cached_input_tokens", 0),
-                openai_result.get("output_tokens", 0),
-            )
-            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
-                model=openai_result.get("model") or model,
-                usage=usage,
-            )
-
-            await cost_service.log_operation(
-                operation_type="combine_intermediate",
+            operation_id = f"{workflow_id}_combine_group_{group_number}"
+            estimation_service = get_openai_estimation_service(firebase_service)
+            estimate_obj = await estimation_service.estimate_operation(
                 user_id=user_id,
+                operation_type="combine_intermediate",
+                model=model,
+                system_text=system_message,
+                user_text=prompt_text,
+                output_source_text=drafts_content,
+            )
+
+            budget_service = get_openai_budget_service(firebase_service)
+            reservation_released = False
+            reservation = await budget_service.reserve_operation(
+                user_id=user_id,
+                operation_id=operation_id,
+                operation_type="combine_intermediate",
                 user_action_id=run_id,
+                estimate=estimate_obj.to_dict(),
+                kapitel_id=kapitel_id,
+                run_id=run_id,
                 operation_details={
                     "groupNumber": int(group_number),
                     "sourceCount": len(group_quelle_ids),
                 },
-                model=openai_result.get("model") or model,
-                usage=usage,
-                cost_breakdown=cost_breakdown,
-                matched_model_key=matched_model,
-                pricing=pricing,
-                key_source=key_source,
-                projekt_id=projekt_id,
-                kapitel_id=kapitel_id,
-                run_id=run_id,
-                quelle_id=None,
-                projekt_snapshot=projekt_snapshot,
-                kapitel_snapshot=kapitel_snapshot,
-                run_snapshot=run_snapshot,
-                quelle_snapshot=None,
             )
+            if reservation.result == "blocked":
+                raise HTTPException(
+                    status_code=402,
+                    detail="Kein Guthaben verfügbar. Bitte lade Credits im Profil unter Billing auf.",
+                )
+            if reservation.result in {"already_reserved", "finalized"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Operation already exists. Please retry later.",
+                )
 
-            cost = float(cost_breakdown.total_cost_usd)
+            await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
+
+            try:
+                openai_result = await self.openai.combine_texts(
+                    group_texts,
+                    heading,
+                    topic,
+                    model,
+                    api_key=api_key,
+                    instructions=instructions,
+                    system_prompt=system_prompt,
+                )
+            except Exception as exc:
+                await budget_service.mark_status(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    status="error",
+                    error_message=str(exc),
+                )
+                await budget_service.release_reservation(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    reason="error",
+                )
+                reservation_released = True
+                raise
+
+            try:
+                usage = TokenUsage.from_any(
+                    openai_result.get("input_tokens", 0),
+                    openai_result.get("cached_input_tokens", 0),
+                    openai_result.get("output_tokens", 0),
+                )
+                cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                    model=openai_result.get("model") or model,
+                    usage=usage,
+                )
+
+                await cost_service.log_operation(
+                    operation_id=operation_id,
+                    operation_type="combine_intermediate",
+                    user_id=user_id,
+                    user_action_id=run_id,
+                    operation_details={
+                        "groupNumber": int(group_number),
+                        "sourceCount": len(group_quelle_ids),
+                    },
+                    model=openai_result.get("model") or model,
+                    usage=usage,
+                    cost_breakdown=cost_breakdown,
+                    matched_model_key=matched_model,
+                    pricing=pricing,
+                    key_source=key_source,
+                    projekt_id=projekt_id,
+                    kapitel_id=kapitel_id,
+                    run_id=run_id,
+                    quelle_id=None,
+                    projekt_snapshot=projekt_snapshot,
+                    kapitel_snapshot=kapitel_snapshot,
+                    run_snapshot=run_snapshot,
+                    quelle_snapshot=None,
+                )
+
+                cost = float(cost_breakdown.total_cost_usd)
+                await budget_service.release_reservation(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    reason="success",
+                )
+                reservation_released = True
+            except Exception as exc:
+                await budget_service.mark_status(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    status="error",
+                    error_message=str(exc),
+                )
+                await budget_service.release_reservation(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    reason="error",
+                )
+                reservation_released = True
+                raise
             total_intermediate_cost += cost
             total_usage_input += usage.input_tokens
             total_usage_cached += usage.cached_input_tokens
@@ -986,51 +1177,140 @@ class QuelleService:
 
         intermediate_texts = [r['content'] for r in intermediate_results]
 
-        await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+        draft_parts: list[str] = []
+        for idx, text in enumerate(intermediate_texts, start=1):
+            draft_parts.append(f"Text {idx}:\n{text}")
+        drafts_content = "\n\n".join(draft_parts)
 
-        final_openai_result = await self.openai.combine_texts(
-            intermediate_texts,
-            heading,
-            topic,
-            model,
-            api_key=api_key,
-            instructions=instructions,
-            system_prompt=system_prompt,
+        prompt_body = instructions or ""
+        if "{DRAFTS}" in prompt_body:
+            prompt_text = prompt_body.replace("{DRAFTS}", drafts_content)
+        else:
+            prompt_text = f"{prompt_body}\n\n[ENTWšRFE]\n{drafts_content}"
+
+        system_message = (system_prompt or "").strip() or (
+            "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         )
+
+        operation_id = f"{workflow_id}_combine_final"
+        estimation_service = get_openai_estimation_service(firebase_service)
+        estimate_obj = await estimation_service.estimate_operation(
+            user_id=user_id,
+            operation_type="combine",
+            model=model,
+            system_text=system_message,
+            user_text=prompt_text,
+            output_source_text=drafts_content,
+        )
+
+        budget_service = get_openai_budget_service(firebase_service)
+        reservation_released = False
+        reservation = await budget_service.reserve_operation(
+            user_id=user_id,
+            operation_id=operation_id,
+            operation_type="combine",
+            user_action_id=run_id,
+            estimate=estimate_obj.to_dict(),
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            operation_details={
+                "intermediateGroupsCount": len(groups),
+                "sourceCount": len(eligible),
+            },
+        )
+        if reservation.result == "blocked":
+            raise HTTPException(
+                status_code=402,
+                detail="Kein Guthaben verfügbar. Bitte lade Credits im Profil unter Billing auf.",
+            )
+        if reservation.result in {"already_reserved", "finalized"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Operation already exists. Please retry later.",
+            )
+
+        await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
+
+        try:
+            final_openai_result = await self.openai.combine_texts(
+                intermediate_texts,
+                heading,
+                topic,
+                model,
+                api_key=api_key,
+                instructions=instructions,
+                system_prompt=system_prompt,
+            )
+        except Exception as exc:
+            await budget_service.mark_status(
+                user_id=user_id,
+                operation_id=operation_id,
+                status="error",
+                error_message=str(exc),
+            )
+            await budget_service.release_reservation(
+                user_id=user_id,
+                operation_id=operation_id,
+                reason="error",
+            )
+            reservation_released = True
+            raise
 
         final_usage = TokenUsage.from_any(
             final_openai_result.get("input_tokens", 0),
             final_openai_result.get("cached_input_tokens", 0),
             final_openai_result.get("output_tokens", 0),
         )
-        final_breakdown, final_matched_model, final_pricing, _final_match_type = await cost_service.calculate_cost(
-            model=final_openai_result.get("model") or model,
-            usage=final_usage,
-        )
-
-        await cost_service.log_operation(
-            operation_type="combine",
-            user_id=user_id,
-            user_action_id=run_id,
-            operation_details={
-                "intermediateGroupsCount": len(groups),
-                "sourceCount": len(eligible),
-            },
-            model=final_openai_result.get("model") or model,
-            usage=final_usage,
-            cost_breakdown=final_breakdown,
-            matched_model_key=final_matched_model,
-            pricing=final_pricing,
-            key_source=key_source,
-            projekt_id=projekt_id,
-            kapitel_id=kapitel_id,
-            run_id=run_id,
-            quelle_id=None,
-            projekt_snapshot=projekt_snapshot,
-            kapitel_snapshot=kapitel_snapshot,
-            run_snapshot=run_snapshot,
-            quelle_snapshot=None,
-        )
+        try:
+            final_breakdown, final_matched_model, final_pricing, _final_match_type = await cost_service.calculate_cost(
+                model=final_openai_result.get("model") or model,
+                usage=final_usage,
+            )
+            await cost_service.log_operation(
+                operation_id=operation_id,
+                operation_type="combine",
+                user_id=user_id,
+                user_action_id=run_id,
+                operation_details={
+                    "intermediateGroupsCount": len(groups),
+                    "sourceCount": len(eligible),
+                },
+                model=final_openai_result.get("model") or model,
+                usage=final_usage,
+                cost_breakdown=final_breakdown,
+                matched_model_key=final_matched_model,
+                pricing=final_pricing,
+                key_source=key_source,
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                quelle_id=None,
+                projekt_snapshot=projekt_snapshot,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot=run_snapshot,
+                quelle_snapshot=None,
+            )
+            await budget_service.release_reservation(
+                user_id=user_id,
+                operation_id=operation_id,
+                reason="success",
+            )
+            reservation_released = True
+        except Exception as exc:
+            await budget_service.mark_status(
+                user_id=user_id,
+                operation_id=operation_id,
+                status="error",
+                error_message=str(exc),
+            )
+            if not reservation_released:
+                await budget_service.release_reservation(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    reason="error",
+                )
+                reservation_released = True
+            raise
 
         final_cost = float(final_breakdown.total_cost_usd)
 
