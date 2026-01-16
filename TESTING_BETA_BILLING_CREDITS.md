@@ -317,7 +317,79 @@ Erwartung: Ledger/Billing sind **server-only writes**; Checkout Session ist die 
 
 ---
 
-## 11) Troubleshooting (wenn etwas nicht wie erwartet ist)
+## 11) Credits Reservations (reservedCredits + availableCredits)
+
+### 11.1 Balance Felder (Source of Truth)
+
+Definitionen:
+
+- `totalCredits` = aktive Abo Credits (0 wenn expired) + Top-up Credits
+- `reservedCredits` = Credits, die für laufende/queued OpenAI Ops „gehalten“ werden
+- `availableCredits = totalCredits - reservedCredits`
+
+Wichtig: Alle Start-Checks und Reservations basieren auf `availableCredits` (nicht nur auf “Total < 0”).
+
+### 11.2 Reserve → Run → Release (Happy Path)
+
+1. Admin: `/admin` → User auswählen → Tab **OpenAI** öffnen.
+2. Als User: starte eine OpenAI Aktion (z.B. Quelle verarbeiten, Combine, Shorten, Lesefluss, Refinement).
+3. Erwartung im Admin OpenAI Tab:
+   - Balance Panel: `Reserved` steigt kurzfristig.
+   - Es erscheint eine neue Operation mit Status `reserved` oder `running`.
+4. Nach Abschluss:
+   - Operation Status `success`
+   - `ReleasedAt` ist gesetzt
+   - `Reserved` fällt wieder (typisch zurück auf 0)
+   - `Act` Credits und `USD` sind sichtbar (Estimate vs Actual).
+
+### 11.3 Summary Cache (Skipped) darf keine Credits „festhalten“
+
+1. Als User: führe zweimal denselben Shorten/Lesefluss aus (gleiches Input/Quelle).
+2. Erwartung:
+   - Mindestens eine Summary-Operation wird beim zweiten Run sehr schnell `skipped`.
+   - `reservedCredits` bleibt danach nicht hängen.
+
+---
+
+## 12) Concurrency / Parallel Jobs (Blocking durch Reservations)
+
+### 12.1 Deterministischer Test mit Admin Reserved-Credits
+
+1. Admin: `/admin` → User → Tab **OpenAI**.
+2. Merke dir `totalCredits` und `availableCredits`.
+3. Setze `reservedCredits` so, dass `availableCredits` sehr klein wird:
+   - Modus **Set**
+   - Betrag: `totalCredits - 1` (oder ein Wert, der `available` < 1 macht)
+4. Als User: starte eine OpenAI Aktion.
+5. Erwartung:
+   - Aktion wird geblockt (HTTP **402** / Billing Message)
+   - In Admin OpenAI Tab erscheint eine Operation mit Status `blocked` (Estimate vorhanden).
+6. Admin: Setze `reservedCredits` wieder auf `0`.
+7. Als User: starte dieselbe Aktion erneut → sollte wieder funktionieren.
+
+---
+
+## 13) Admin: OpenAI Operationen + reservedCredits Recovery
+
+### 13.1 OpenAI Tab verifizieren
+
+1. `/admin` → User → Tab **OpenAI**.
+2. Erwartung:
+   - Balance Panel zeigt `Available` + `Reserved` + Abo/Top-up Split.
+   - Operationen-Liste zeigt pro Op: Status, Model, Estimate vs Actual (Tokens + Credits), Reservation Times.
+   - `Reload` und `Mehr laden` funktionieren.
+
+### 13.2 reservedCredits manuell korrigieren (Recovery)
+
+1. Im **OpenAI** Tab: „Reserved Credits → Manuelle Korrektur“.
+2. Teste **Delta** (z.B. `+10`, dann `-10`) und **Set** (z.B. `0`).
+3. Erwartung:
+   - Balance Panel aktualisiert sich.
+   - Audit Write existiert in `users/{uid}/billing/audit/reservedCredits/*` (mit Note, falls gesetzt).
+
+---
+
+## 14) Troubleshooting (wenn etwas nicht wie erwartet ist)
 
 - Checkout “hängt” (keine URL):
   - Prüfe Firestore Rules für `customers/{uid}/checkout_sessions/*` (write muss erlaubt sein).
@@ -328,7 +400,6 @@ Erwartung: Ledger/Billing sind **server-only writes**; Checkout Session ist die 
 - Billing Tab zeigt Fehler:
   - Prüfe `NEXT_PUBLIC_FASTAPI_URL`.
   - Prüfe Backend Logs für `/api/billing/*`.
-- “Kein Guthaben” wirkt nicht:
-  - Prüfe, ob im Ledger Debits entstehen und Balance wirklich negativ wird.
-  - Prüfe Backend: `assert_not_negative_balance` muss `402` liefern, wenn Total < 0.
-
+- “Kein Guthaben” / 402 kommt zu früh (obwohl Credits da sind):
+  - Prüfe `availableCredits` (kann < 0 sein, wenn `reservedCredits` hängen).
+  - Admin: Tab **OpenAI** → `reservedCredits` ggf. per **Set = 0** korrigieren.
