@@ -50,6 +50,7 @@ cp .env.example .env
 Required environment variables:
 
 #### Firebase Admin SDK
+
 Get these from Firebase Console → Project Settings → Service Accounts → Generate New Private Key
 
 ```env
@@ -61,6 +62,7 @@ FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project.iam.gserviceaccount.c
 **Important**: The private key must include the escaped newlines (`\n`). When copying from the JSON file, make sure to preserve them.
 
 #### OpenAI API
+
 Get your API key from https://platform.openai.com/api-keys
 
 ```env
@@ -68,6 +70,7 @@ OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxx
 ```
 
 #### User key encryption
+
 Base64-encoded AES key used to encrypt per-user OpenAI keys. Generate one (32 bytes recommended) and keep it secret.
 
 ```bash
@@ -103,8 +106,6 @@ Or simply:
 python main.py
 ```
 
-`python main.py` enables auto-reload by default in local dev (unless `UVICORN_RELOAD=false` is set).
-
 ### Production Mode
 
 ```bash
@@ -124,6 +125,7 @@ GET /health
 Returns server status and configuration check.
 
 **Response**:
+
 ```json
 {
   "status": "healthy",
@@ -143,6 +145,7 @@ Authorization: Bearer <firebase-id-token>
 Test endpoint to verify Firebase token verification works.
 
 **Response**:
+
 ```json
 {
   "message": "Authentication successful",
@@ -161,6 +164,7 @@ Content-Type: application/json
 Process a paper with OpenAI based on user instructions.
 
 **Request Body**:
+
 ```json
 {
   "paper_id": "paper123",
@@ -172,6 +176,7 @@ Process a paper with OpenAI based on user instructions.
 **Models**: `gpt-4o-mini` (default), `gpt-4o`, `o1`
 
 **Response**:
+
 ```json
 {
   "result_id": "result456",
@@ -184,6 +189,7 @@ Process a paper with OpenAI based on user instructions.
 ```
 
 **Errors**:
+
 - `401`: Invalid or missing Firebase token
 - `404`: Paper not found or user doesn't own it
 - `500`: OpenAI API error or server error
@@ -258,6 +264,7 @@ python main.py
 ```
 
 Should see:
+
 ```
 INFO:     Starting InstantPaper API server...
 INFO:     Debug mode: True
@@ -273,6 +280,7 @@ curl http://localhost:8000/health
 ### 3. Test Authentication
 
 Get your Firebase token from the browser:
+
 - Open Next.js app and sign in
 - Open browser DevTools → Application → Cookies
 - Copy the `__session` cookie value
@@ -301,6 +309,7 @@ curl -X POST http://localhost:8000/api/process \
 **Problem**: Missing or invalid credentials
 
 **Solution**:
+
 1. Check `.env` file exists and has all required variables
 2. Verify Firebase private key includes escaped newlines (`\n`)
 3. Test with just health endpoint first (doesn't require credentials)
@@ -310,6 +319,7 @@ curl -X POST http://localhost:8000/api/process \
 **Problem**: Firebase private key is empty or malformed
 
 **Solution**:
+
 1. Download fresh credentials from Firebase Console
 2. When copying private key, ensure it's in this format:
    ```
@@ -322,6 +332,7 @@ curl -X POST http://localhost:8000/api/process \
 **Problem**: Missing required OAuth2 fields
 
 **Solution**: This should be handled automatically. If you see this error, verify your `firebase_service.py` includes these fields in the credential dictionary:
+
 - `token_uri`
 - `auth_uri`
 - `auth_provider_x509_cert_url`
@@ -331,6 +342,7 @@ curl -X POST http://localhost:8000/api/process \
 **Problem**: Next.js frontend can't connect to FastAPI
 
 **Solution**:
+
 1. Verify `ALLOWED_ORIGINS` in `.env` matches your Next.js URL (default: `http://localhost:3000`)
 2. Check both servers are running
 3. Ensure Next.js is using the correct FastAPI URL in `ProcessPaperDialog.tsx`
@@ -340,6 +352,7 @@ curl -X POST http://localhost:8000/api/process \
 **Problem**: Rate limit or API key issues
 
 **Solution**:
+
 1. Verify `OPENAI_API_KEY` is correct
 2. Check your OpenAI account has credits/quota
 3. Review console logs for detailed error messages (increase verbosity via `FASTAPI_LOG_LEVEL=INFO` if needed)
@@ -349,6 +362,7 @@ curl -X POST http://localhost:8000/api/process \
 **Problem**: Token verification fails
 
 **Solution**:
+
 1. Ensure Firebase Admin SDK credentials match your Firebase project
 2. Verify the token is from the same Firebase project
 3. Check token hasn't expired (tokens expire after 1 hour)
@@ -359,6 +373,7 @@ curl -X POST http://localhost:8000/api/process \
 Logs are written to console output (stdout).
 
 Default log level is `WARNING` to keep background processing quiet. To temporarily increase verbosity:
+
 - `FASTAPI_LOG_LEVEL=INFO` (more details)
 - `FASTAPI_LOG_LEVEL=DEBUG` (very verbose)
 
@@ -376,12 +391,14 @@ Login is always allowed; without access the frontend redirects users to `/activa
 ### Configure Admin Credentials
 
 Set these env vars on the FastAPI server:
+
 - `ADMIN_BASIC_USER` (default: `admin`)
 - `ADMIN_BASIC_PASSWORD` (required)
 
 ### Grant / Revoke Access
 
 Open (browser prompts for basic auth):
+
 - Grant access: `/api/admin/approve?email=user@gmail.com&fullAccess=true`
 - Revoke access: `/api/admin/approve?email=user@gmail.com&fullAccess=false`
 - Web form (no email in URL): open `/approve` and submit the form (Basic Auth protected).
@@ -417,12 +434,14 @@ Storage enforcement uses a `blocked` custom claim (stale tokens up to ~1h are ac
 ## Next Steps
 
 ### Immediate
+
 1. Add your Firebase Admin SDK credentials to `.env`
 2. Add your OpenAI API key to `.env`
 3. Deploy Firestore security rules: `firebase deploy --only firestore:rules`
 4. Test the complete flow from Next.js UI
 
 ### Future Enhancements
+
 - Multi-paper concurrent processing (with `asyncio.Semaphore`)
 - Additional endpoints: `GET /api/results`, `GET /api/results/{result_id}`
 - Streaming responses from OpenAI
@@ -434,6 +453,7 @@ Storage enforcement uses a `blocked` custom claim (stale tokens up to ~1h are ac
 ## Support
 
 For issues or questions:
+
 1. Check the server console logs
 2. Verify environment variables are set correctly
 3. Test endpoints individually (health → auth → process)
