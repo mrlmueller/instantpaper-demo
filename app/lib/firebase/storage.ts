@@ -2,6 +2,42 @@ import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, getBlob } f
 import { firebaseApp } from './config';
 import type { ImageMetadata } from '@/app/actions/quellen';
 
+async function readImageDimensions(file: File): Promise<{ widthPx: number; heightPx: number } | null> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    try {
+      return { widthPx: bitmap.width, heightPx: bitmap.height };
+    } finally {
+      bitmap.close();
+    }
+  } catch {
+    // ignore
+  }
+
+  let objectUrl: string | null = null;
+  try {
+    objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = objectUrl;
+
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('Failed to load image for dimension probing'));
+    });
+
+    const widthPx = img.naturalWidth || img.width;
+    const heightPx = img.naturalHeight || img.height;
+    if (widthPx > 0 && heightPx > 0) return { widthPx, heightPx };
+  } catch {
+    // ignore
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+
+  return null;
+}
+
 /**
  * Upload images to Firebase Storage from the client
  * Returns metadata for each uploaded image
@@ -18,6 +54,8 @@ export async function uploadImagesToStorage(
     const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const path = `users/${userId}/quellen/${tempId}/${timestamp}_${index}_${sanitized}`;
 
+    const dims = await readImageDimensions(file);
+
     const storageRef = ref(storage, path);
     await uploadBytes(storageRef, file, { contentType: file.type });
     const url = await getDownloadURL(storageRef);
@@ -28,6 +66,7 @@ export async function uploadImagesToStorage(
       filename: file.name,
       size: file.size,
       contentType: file.type,
+      ...(dims ?? {}),
     };
   });
 

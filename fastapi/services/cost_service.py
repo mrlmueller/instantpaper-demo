@@ -226,6 +226,7 @@ class CostService:
     async def log_operation(
         self,
         *,
+        operation_id: str | None = None,
         operation_type: str,
         user_id: str,
         user_action_id: str,
@@ -254,7 +255,8 @@ class CostService:
         Aggregate updates are best-effort.
         """
 
-        operation_id = str(uuid.uuid4())
+        operation_id_in = (operation_id or "").strip()
+        operation_id = operation_id_in or str(uuid.uuid4())
         year_month = datetime.utcnow().strftime("%Y-%m")
 
         model_key = _sanitize_map_key(matched_model_key)
@@ -308,7 +310,7 @@ class CostService:
             .collection("operations")
             .document(operation_id)
         )
-        op_ref.set(operation_data)
+        op_ref.set(operation_data, merge=bool(operation_id_in))
 
         # 2) Aggregates (best-effort)
         cost_usd = float(cost_breakdown.total_cost_usd)

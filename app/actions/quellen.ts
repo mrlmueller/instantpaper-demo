@@ -36,6 +36,8 @@ export type Quelle = {
     filename: string;
     size: number;
     contentType: string;
+    widthPx?: number;
+    heightPx?: number;
   }[];
   // Advanced metadata fields
   autor?: string;
@@ -65,6 +67,8 @@ export type ImageMetadata = {
   filename: string;
   size: number;
   contentType: string;
+  widthPx?: number;
+  heightPx?: number;
 };
 
 function countWords(text: string) {

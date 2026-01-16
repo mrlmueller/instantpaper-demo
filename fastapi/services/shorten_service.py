@@ -1,7 +1,9 @@
+from fastapi import HTTPException
 from services.firebase_service import firebase_service
 from services.openai_service import openai_service
 from services.cost_service import get_cost_service, TokenUsage
-from services.credits_service import get_credits_service
+from services.openai_budget_service import get_openai_budget_service
+from services.openai_estimation_service import get_openai_estimation_service
 from services.user_key_service import user_key_service
 from services.prompt_service import prompt_service
 import logging
@@ -135,47 +137,97 @@ class ShortenService:
             logger.warning(f"Could not get text for Kapitel {source_kapitel_id}: {e}")
             raise ValueError(f"Kapitel {source_kapitel_id} has no processable text")
 
-        # Check if we have a cached summary
+        operation_id = f"{user_action_id}_summary_{source_kapitel_id}"
+
         cached_summary = await firebase_service.get_summary_result(
             user_id, target_kapitel_id, target_run_id, source_kapitel_id
         )
 
+        cache_is_valid = False
         if cached_summary:
-            # Validate the cache
-            is_valid = await self.is_summary_valid(
-                cached_summary, source_run_id, source_type
-            )
-
-            if is_valid:
-                logger.info(f"Using cached summary for Kapitel {source_kapitel_id}")
-                return cached_summary["content"]
+            cache_is_valid = await self.is_summary_valid(cached_summary, source_run_id, source_type)
+            if cache_is_valid:
+                logger.info(f"Cache hit for Kapitel {source_kapitel_id} summary")
             else:
                 logger.info(f"Cached summary invalid for Kapitel {source_kapitel_id}, regenerating")
 
-        # Generate new summary
-        logger.info(f"Generating new summary for Kapitel {source_kapitel_id}")
-        await firebase_service.mark_summary_running(
-            user_id,
-            target_kapitel_id,
-            target_run_id,
-            source_kapitel_id,
-            source_run_id=source_run_id,
-            source_type=source_type,
-            model=model,
-            key_source=key_source,
+        instructions = await prompt_service.get_rendered_instructions(
+            user_id, "summary", {"KAPITELTEXT": source_text}
+        )
+        summary_template_id = await firebase_service.get_active_prompt_id(user_id, "summary")
+        summary_template_id = (summary_template_id or "").strip() or "default"
+        summary_system_prompt = await prompt_service.get_system_prompt_for_template(
+            stage="summary",
+            template_id=summary_template_id,
         )
 
+        prompt_text = instructions
+        if not prompt_text:
+            prompt_text = f"""### Aufgabe:
+ Fasse folgenden Text zusammen, sodass er auf ungef„hr 30% W”rter vom Original Text kommt. Ziel dieser Zusammenfassung ist es, die Rhetorik und nebens„chliche Informationen wegzulassen, aber die grundlegenden Informationen beizubehalten. Schreibe lieber S„tze die sich nicht flssig lesen lassen, also ohne viele Stopw”rter sind und integriere dafr aber mehr Information. Das Ziel ist einen Text der so kurz wie m”glich aber auch so viele Informationen wie m”glich hat. Quellen k”nnen weggelassen werden.
+
+ ### Text:
+ {source_text}"""
+
+        system_message = (summary_system_prompt or "").strip() or openai_module.SUMMARIZE_SYSTEM_MESSAGE
+
+        estimation_service = get_openai_estimation_service(firebase_service)
+        estimate_obj = await estimation_service.estimate_operation(
+            user_id=user_id,
+            operation_type="summary",
+            model=model,
+            system_text=system_message,
+            user_text=prompt_text,
+            output_source_text=source_text,
+        )
+
+        budget_service = get_openai_budget_service(firebase_service)
+        reservation_released = False
+        reservation = await budget_service.reserve_operation(
+            user_id=user_id,
+            operation_id=operation_id,
+            operation_type="summary",
+            user_action_id=user_action_id,
+            estimate=estimate_obj.to_dict(),
+            kapitel_id=target_kapitel_id,
+            run_id=target_run_id,
+            operation_details={
+                "sourceKapitelId": source_kapitel_id,
+                "sourceRunId": source_run_id,
+                "sourceType": source_type,
+            },
+        )
+        if reservation.result == "blocked":
+            raise HTTPException(
+                status_code=402,
+                detail="Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
+            )
+        if reservation.result in {"already_reserved", "finalized"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Operation already exists. Please retry later.",
+            )
+
+        if cache_is_valid:
+            await budget_service.mark_status(user_id=user_id, operation_id=operation_id, status="skipped")
+            await budget_service.release_reservation(user_id=user_id, operation_id=operation_id, reason="skipped")
+            reservation_released = True
+            return str((cached_summary or {}).get("content") or "")
+
         try:
-            instructions = await prompt_service.get_rendered_instructions(
-                user_id, "summary", {"KAPITELTEXT": source_text}
+            logger.info(f"Generating new summary for Kapitel {source_kapitel_id}")
+            await firebase_service.mark_summary_running(
+                user_id,
+                target_kapitel_id,
+                target_run_id,
+                source_kapitel_id,
+                source_run_id=source_run_id,
+                source_type=source_type,
+                model=model,
+                key_source=key_source,
             )
-            summary_template_id = await firebase_service.get_active_prompt_id(user_id, "summary")
-            summary_template_id = (summary_template_id or "").strip() or "default"
-            summary_system_prompt = await prompt_service.get_system_prompt_for_template(
-                stage="summary",
-                template_id=summary_template_id,
-            )
-            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
+            await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
 
             summary_content, usage = await self.summarize_text(
                 source_text,
@@ -226,6 +278,7 @@ class ShortenService:
             }
 
             await cost_service.log_operation(
+                operation_id=operation_id,
                 operation_type="summary",
                 user_id=user_id,
                 user_action_id=user_action_id,
@@ -284,8 +337,21 @@ class ShortenService:
                 f"cost: ${cost:.4f}"
             )
 
+            await budget_service.release_reservation(
+                user_id=user_id,
+                operation_id=operation_id,
+                reason="success",
+            )
+            reservation_released = True
+
             return summary_content
-        except Exception:
+        except Exception as exc:
+            await budget_service.mark_status(
+                user_id=user_id,
+                operation_id=operation_id,
+                status="error",
+                error_message=str(exc),
+            )
             await firebase_service.mark_summary_error(
                 user_id,
                 target_kapitel_id,
@@ -294,6 +360,13 @@ class ShortenService:
                 key_source=key_source,
             )
             raise
+        finally:
+            if not reservation_released:
+                await budget_service.release_reservation(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    reason="error",
+                )
 
     async def summarize_text(
         self,
@@ -473,11 +546,16 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
             projekt_id = (kapitel or {}).get("projektId")
 
             # Step 1: Generate/fetch summaries for context Kapitels (in parallel)
-            context_ids = [str(cid) for cid in (context_kapitel_ids or []) if str(cid) != str(kapitel_id)]
+            context_ids = [
+                cid
+                for cid in dict.fromkeys(str(cid).strip() for cid in (context_kapitel_ids or []))
+                if cid and cid != str(kapitel_id)
+            ]
             logger.info(f"Generating summaries for {len(context_ids)} context Kapitels")
 
             summaries: dict[str, str] = {}
             valid_context_ids: list[str] = []
+            blocked_for_credits = False
 
             if context_ids:
                 summary_tasks = [
@@ -552,14 +630,68 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
 ### Text zum Kürzen:
 {target_text}"""
 
-            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+            operation_id = f"{user_action_id}_shorten"
+            system_message = (template_system_prompt or "").strip() or openai_module.SHORTEN_SYSTEM_MESSAGE
 
-            shortened_content, usage = await self.shorten_and_deduplicate(
-                prompt_body,
-                model,
-                api_key=api_key,
-                system_prompt=template_system_prompt,
+            estimation_service = get_openai_estimation_service(firebase_service)
+            estimate_obj = await estimation_service.estimate_operation(
+                user_id=user_id,
+                operation_type="shorten",
+                model=model,
+                system_text=system_message,
+                user_text=prompt_body,
+                output_source_text=target_text,
             )
+
+            budget_service = get_openai_budget_service(firebase_service)
+            reservation_released = False
+            reservation = await budget_service.reserve_operation(
+                user_id=user_id,
+                operation_id=operation_id,
+                operation_type="shorten",
+                user_action_id=user_action_id,
+                estimate=estimate_obj.to_dict(),
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                operation_details={
+                    "usedKapitelIds": valid_context_ids,
+                    "summaryCount": len(summaries),
+                },
+            )
+            if reservation.result == "blocked":
+                raise HTTPException(
+                    status_code=402,
+                    detail="Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
+                )
+            if reservation.result in {"already_reserved", "finalized"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Operation already exists. Please retry later.",
+                )
+
+            await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
+            try:
+                shortened_content, usage = await self.shorten_and_deduplicate(
+                    prompt_body,
+                    model,
+                    api_key=api_key,
+                    system_prompt=template_system_prompt,
+                )
+            except Exception as exc:
+                await budget_service.mark_status(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    status="error",
+                    error_message=str(exc),
+                )
+                await budget_service.release_reservation(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    reason="error",
+                )
+                reservation_released = True
+                raise
 
             input_tokens = int(usage.get("prompt_tokens", 0))
             cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
@@ -599,6 +731,7 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
             }
 
             await cost_service.log_operation(
+                operation_id=operation_id,
                 operation_type="shorten",
                 user_id=user_id,
                 user_action_id=user_action_id,
@@ -619,6 +752,13 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
                 kapitel_snapshot=kapitel_snapshot,
                 run_snapshot=run_snapshot,
             )
+
+            await budget_service.release_reservation(
+                user_id=user_id,
+                operation_id=operation_id,
+                reason="success",
+            )
+            reservation_released = True
 
             cost = float(cost_breakdown.total_cost_usd)
 
@@ -662,6 +802,25 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
                 f"Error in shorten process for Kapitel {kapitel_id}, run {run_id}: {e}",
                 exc_info=True
             )
+            try:
+                if (
+                    "budget_service" in locals()
+                    and "operation_id" in locals()
+                    and not locals().get("reservation_released")
+                ):
+                    await budget_service.mark_status(
+                        user_id=user_id,
+                        operation_id=operation_id,
+                        status="error",
+                        error_message=str(e),
+                    )
+                    await budget_service.release_reservation(
+                        user_id=user_id,
+                        operation_id=operation_id,
+                        reason="error",
+                    )
+            except Exception:
+                pass
             raise
 
     async def build_gliederung_with_descriptions(
@@ -852,7 +1011,11 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
             kapitel_nummer = (kapitel or {}).get("nummer") or run_data.get("nummer") or "?"
 
             # Step 2: Generate/fetch summaries for context Kapitels (in parallel)
-            context_ids = [str(cid) for cid in (context_kapitel_ids or []) if str(cid) != str(kapitel_id)]
+            context_ids = [
+                cid
+                for cid in dict.fromkeys(str(cid).strip() for cid in (context_kapitel_ids or []))
+                if cid and cid != str(kapitel_id)
+            ]
             logger.info(f"Generating summaries for {len(context_ids)} context Kapitels")
 
             summaries: dict[str, str] = {}
@@ -876,12 +1039,19 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
 
                 for ctx_id, summary_result in zip(context_ids, summaries_list):
                     if isinstance(summary_result, Exception):
+                        if isinstance(summary_result, HTTPException) and summary_result.status_code == 402:
+                            blocked_for_credits = True
                         logger.error(f"Failed to get summary for Kapitel {ctx_id}: {summary_result}")
                     else:
                         summaries[str(ctx_id)] = str(summary_result or "")
                         valid_context_ids.append(str(ctx_id))
 
             if not summaries:
+                if blocked_for_credits:
+                    raise HTTPException(
+                        status_code=402,
+                        detail="Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
+                    )
                 raise ValueError("No valid summaries could be generated for context Kapitels")
 
             # Step 3: Build full Gliederung for the entire project (summaries only where available)
@@ -949,14 +1119,68 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
 ### Kapitel {kapitel_nummer} (TEXT AN DEM DU ARBEITEN SOLLST)
 {target_text}"""
 
-            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+            operation_id = f"{user_action_id}_lesefluss"
+            system_message = (template_system_prompt or "").strip() or openai_module.LESEFLUSS_SYSTEM_MESSAGE
 
-            lesefluss_content, usage = await openai_service.improve_reading_flow(
-                prompt_body,
-                model,
-                api_key=api_key,
-                system_prompt=template_system_prompt,
+            estimation_service = get_openai_estimation_service(firebase_service)
+            estimate_obj = await estimation_service.estimate_operation(
+                user_id=user_id,
+                operation_type="lesefluss",
+                model=model,
+                system_text=system_message,
+                user_text=prompt_body,
+                output_source_text=target_text,
             )
+
+            budget_service = get_openai_budget_service(firebase_service)
+            reservation_released = False
+            reservation = await budget_service.reserve_operation(
+                user_id=user_id,
+                operation_id=operation_id,
+                operation_type="lesefluss",
+                user_action_id=user_action_id,
+                estimate=estimate_obj.to_dict(),
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                operation_details={
+                    "usedKapitelIds": valid_context_ids,
+                    "summaryCount": len(summaries),
+                },
+            )
+            if reservation.result == "blocked":
+                raise HTTPException(
+                    status_code=402,
+                    detail="Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
+                )
+            if reservation.result in {"already_reserved", "finalized"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Operation already exists. Please retry later.",
+                )
+
+            await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
+            try:
+                lesefluss_content, usage = await openai_service.improve_reading_flow(
+                    prompt_body,
+                    model,
+                    api_key=api_key,
+                    system_prompt=template_system_prompt,
+                )
+            except Exception as exc:
+                await budget_service.mark_status(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    status="error",
+                    error_message=str(exc),
+                )
+                await budget_service.release_reservation(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    reason="error",
+                )
+                reservation_released = True
+                raise
 
             input_tokens = int(usage.get("prompt_tokens", 0))
             cached_input_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0))
@@ -996,6 +1220,7 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
             }
 
             await cost_service.log_operation(
+                operation_id=operation_id,
                 operation_type="lesefluss",
                 user_id=user_id,
                 user_action_id=user_action_id,
@@ -1016,6 +1241,13 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
                 kapitel_snapshot=kapitel_snapshot,
                 run_snapshot=run_snapshot,
             )
+
+            await budget_service.release_reservation(
+                user_id=user_id,
+                operation_id=operation_id,
+                reason="success",
+            )
+            reservation_released = True
 
             cost = float(cost_breakdown.total_cost_usd)
 
@@ -1059,6 +1291,25 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
                 f"Error in lesefluss process for Kapitel {kapitel_id}, run {run_id}: {e}",
                 exc_info=True
             )
+            try:
+                if (
+                    "budget_service" in locals()
+                    and "operation_id" in locals()
+                    and not locals().get("reservation_released")
+                ):
+                    await budget_service.mark_status(
+                        user_id=user_id,
+                        operation_id=operation_id,
+                        status="error",
+                        error_message=str(e),
+                    )
+                    await budget_service.release_reservation(
+                        user_id=user_id,
+                        operation_id=operation_id,
+                        reason="error",
+                    )
+            except Exception:
+                pass
             raise
 
 

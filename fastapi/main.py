@@ -64,6 +64,7 @@ ALLOWED_PROMPT_STAGES = {"process_quelle", "combine", "summary", "shorten", "les
 SYSTEM_TEMPLATE_KEYS_ALWAYS_AVAILABLE = {"default", "default_v2"}
 TEMPLATE_KEY_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 
+
 def _safe_env_diagnostics() -> dict:
     """
     Safe diagnostics for env injection issues (never includes secret values).
@@ -118,6 +119,12 @@ class AdminSetSpendRateRequest(BaseModel):
 
 class AdminCreateCreditAdjustmentRequest(BaseModel):
     credits: float
+    note: str | None = None
+
+
+class AdminAdjustReservedCreditsRequest(BaseModel):
+    mode: str  # "set" | "delta"
+    amount: float
     note: str | None = None
 
 
@@ -186,7 +193,10 @@ async def lifespan(app: FastAPI):
     # Safe diagnostics (no secrets) to debug Cloud Run env injection issues.
     if not config.ADMIN_BASIC_PASSWORD:
         diag = _safe_env_diagnostics()
-        logger.warning("ADMIN_BASIC_PASSWORD is empty (admin approval endpoints disabled). env_diag=%s", diag)
+        logger.warning(
+            "ADMIN_BASIC_PASSWORD is empty (admin approval endpoints disabled). env_diag=%s",
+            diag,
+        )
 
     yield
 
@@ -199,7 +209,7 @@ app = FastAPI(
     title="InstantPaper API",
     version="1.0.0",
     description="FastAPI backend for processing Quellen with OpenAI",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Configure CORS to allow Next.js frontend
@@ -216,11 +226,7 @@ app.add_middleware(
 @app.get("/")
 async def root():
     """Root endpoint"""
-    return {
-        "message": "InstantPaper API",
-        "version": "1.0.0",
-        "status": "running"
-    }
+    return {"message": "InstantPaper API", "version": "1.0.0", "status": "running"}
 
 
 @app.get("/health")
@@ -247,7 +253,12 @@ def _ms_to_iso(ts_ms: int | None) -> str | None:
     if not ts_ms:
         return None
     try:
-        return datetime.utcfromtimestamp(int(ts_ms) / 1000.0).replace(microsecond=0).isoformat() + "Z"
+        return (
+            datetime.utcfromtimestamp(int(ts_ms) / 1000.0)
+            .replace(microsecond=0)
+            .isoformat()
+            + "Z"
+        )
     except Exception:
         return None
 
@@ -327,7 +338,9 @@ def _hash_rate_key(value: str) -> str:
     return hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:32]
 
 
-def _check_and_increment_rate_limit(*, kind: str, key: str, limit: int, window_seconds: int) -> bool:
+def _check_and_increment_rate_limit(
+    *, kind: str, key: str, limit: int, window_seconds: int
+) -> bool:
     """
     Returns True if allowed, False if rate-limited.
 
@@ -399,7 +412,9 @@ async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any
     except Exception:
         claims = {}
 
-    full_access = bool(claims.get("fullAccess") is True or claims.get("approved") is True)
+    full_access = bool(
+        claims.get("fullAccess") is True or claims.get("approved") is True
+    )
     legacy_approved = bool(claims.get("approved") is True)
 
     try:
@@ -442,7 +457,10 @@ def _epoch_to_iso(value) -> str | None:
             return None
         # Heuristic: Stripe epochs are seconds; treat very large values as ms.
         ms = int(n if n > 1e12 else n * 1000.0)
-        return datetime.utcfromtimestamp(ms / 1000.0).replace(microsecond=0).isoformat() + "Z"
+        return (
+            datetime.utcfromtimestamp(ms / 1000.0).replace(microsecond=0).isoformat()
+            + "Z"
+        )
     except Exception:
         return None
 
@@ -451,6 +469,7 @@ def _compute_balance_summary(data: dict | None) -> dict:
     topup_credits = _as_float((data or {}).get("topupCredits"), 0.0)
     subscription_credits_raw = _as_float((data or {}).get("subscriptionCredits"), 0.0)
     subscription_expires_at = (data or {}).get("subscriptionExpiresAt")
+    reserved_credits = _as_float((data or {}).get("reservedCredits"), 0.0)
 
     subscription_active = subscription_credits_raw
     if subscription_expires_at:
@@ -469,11 +488,14 @@ def _compute_balance_summary(data: dict | None) -> dict:
             pass
 
     total = subscription_active + topup_credits
+    available = float(total - reserved_credits)
     return {
         "totalCredits": float(total),
         "subscriptionCredits": float(subscription_active),
         "subscriptionExpiresAt": _ts_to_iso(subscription_expires_at),
         "topupCredits": float(topup_credits),
+        "reservedCredits": float(reserved_credits),
+        "availableCredits": float(available),
         "isNegative": bool(total < 0),
     }
 
@@ -521,7 +543,8 @@ async def _read_subscription_summary_for_user(user_id: str) -> dict | None:
         "id": best_id,
         "status": str(best.get("status") or "") or None,
         "cancelAtPeriodEnd": bool(best.get("cancel_at_period_end") is True),
-        "currentPeriodEnd": _ts_to_iso(current_period_end) or _epoch_to_iso(current_period_end),
+        "currentPeriodEnd": _ts_to_iso(current_period_end)
+        or _epoch_to_iso(current_period_end),
     }
 
 
@@ -646,22 +669,38 @@ async def redeem_access_code(
 
     # Rate limit: per-uid and per-ip (best-effort; deny if limit exceeded).
     try:
-        if not _check_and_increment_rate_limit(kind="uid", key=uid, limit=5, window_seconds=300):
-            raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warte kurz und versuche es erneut.")
-        if ip and not _check_and_increment_rate_limit(kind="ip", key=ip, limit=20, window_seconds=300):
-            raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warte kurz und versuche es erneut.")
+        if not _check_and_increment_rate_limit(
+            kind="uid", key=uid, limit=5, window_seconds=300
+        ):
+            raise HTTPException(
+                status_code=429,
+                detail="Zu viele Versuche. Bitte warte kurz und versuche es erneut.",
+            )
+        if ip and not _check_and_increment_rate_limit(
+            kind="ip", key=ip, limit=20, window_seconds=300
+        ):
+            raise HTTPException(
+                status_code=429,
+                detail="Zu viele Versuche. Bitte warte kurz und versuche es erneut.",
+            )
     except HTTPException:
         raise
     except Exception:
         # Fail-closed: treat rate-limit failures as denial.
-        raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warte kurz und versuche es erneut.") from None
+        raise HTTPException(
+            status_code=429,
+            detail="Zu viele Versuche. Bitte warte kurz und versuche es erneut.",
+        ) from None
 
     # Do not consume uses if the user already has access (authoritative, not token-based).
     try:
         current_claims = await firebase_service.get_user_custom_claims(uid)
     except Exception:
         current_claims = {}
-    if bool(current_claims.get("fullAccess") is True or current_claims.get("approved") is True):
+    if bool(
+        current_claims.get("fullAccess") is True
+        or current_claims.get("approved") is True
+    ):
         _access_code_attempts_col().document().set(
             {
                 "uid": uid,
@@ -768,9 +807,13 @@ async def redeem_access_code(
     if outcome == "not_found":
         raise HTTPException(status_code=400, detail="Ungültiger Code.")
     if outcome in {"disabled", "exhausted"}:
-        raise HTTPException(status_code=400, detail="Code ungültig oder nicht mehr aktiv.")
+        raise HTTPException(
+            status_code=400, detail="Code ungültig oder nicht mehr aktiv."
+        )
     if outcome not in {"redeemed", "already_redeemed"}:
-        raise HTTPException(status_code=500, detail="Code konnte nicht eingelöst werden.")
+        raise HTTPException(
+            status_code=500, detail="Code konnte nicht eingelöst werden."
+        )
 
     # Persist user metadata for admin audit.
     try:
@@ -823,7 +866,9 @@ async def redeem_access_code(
         next_claims.pop("approved", None)
         auth.set_custom_user_claims(uid, next_claims)
     except Exception:
-        raise HTTPException(status_code=500, detail="Aktivierung fehlgeschlagen.") from None
+        raise HTTPException(
+            status_code=500, detail="Aktivierung fehlgeschlagen."
+        ) from None
 
     return {"status": "ok", "result": outcome}
 
@@ -859,7 +904,9 @@ async def admin_list_users(
                 continue
 
             claims = user.custom_claims or {}
-            has_access = bool(claims.get("fullAccess") is True or claims.get("approved") is True)
+            has_access = bool(
+                claims.get("fullAccess") is True or claims.get("approved") is True
+            )
             legacy_approved = bool(claims.get("approved") is True)
             if filter_access is not None and has_access != bool(filter_access):
                 continue
@@ -869,8 +916,13 @@ async def admin_list_users(
             account_status = None
             try:
                 user_doc = await firebase_service.get_user_doc(user.uid)
-                can_duplicate_system_prompts = bool((user_doc or {}).get("canDuplicateSystemPrompts") is True)
-                account_status = str((user_doc or {}).get("accountStatus") or "").strip().lower() or None
+                can_duplicate_system_prompts = bool(
+                    (user_doc or {}).get("canDuplicateSystemPrompts") is True
+                )
+                account_status = (
+                    str((user_doc or {}).get("accountStatus") or "").strip().lower()
+                    or None
+                )
                 blocked = account_status == "blocked"
             except Exception:
                 can_duplicate_system_prompts = False
@@ -882,7 +934,9 @@ async def admin_list_users(
                     "uid": str(user.uid),
                     "email": email or None,
                     "displayName": display_name or None,
-                    "isAdmin": bool(config.ADMIN_UIDS and user.uid in config.ADMIN_UIDS),
+                    "isAdmin": bool(
+                        config.ADMIN_UIDS and user.uid in config.ADMIN_UIDS
+                    ),
                     # New access state
                     "fullAccess": has_access,
                     "legacyApproved": legacy_approved,
@@ -892,8 +946,12 @@ async def admin_list_users(
                     "approved": has_access,
                     "canDuplicateSystemPrompts": can_duplicate_system_prompts,
                     "disabled": bool(user.disabled),
-                    "createdAt": _ms_to_iso(getattr(user.user_metadata, "creation_timestamp", None)),
-                    "lastSignInAt": _ms_to_iso(getattr(user.user_metadata, "last_sign_in_timestamp", None)),
+                    "createdAt": _ms_to_iso(
+                        getattr(user.user_metadata, "creation_timestamp", None)
+                    ),
+                    "lastSignInAt": _ms_to_iso(
+                        getattr(user.user_metadata, "last_sign_in_timestamp", None)
+                    ),
                 }
             )
 
@@ -913,7 +971,9 @@ async def admin_approve_user(
         raise HTTPException(status_code=400, detail="A valid email is required.")
 
     try:
-        result = await firebase_service.set_user_full_access_by_email(email=email, full_access=bool(payload.approved))
+        result = await firebase_service.set_user_full_access_by_email(
+            email=email, full_access=bool(payload.approved)
+        )
         return {
             "status": "ok",
             "email": result.get("email"),
@@ -923,7 +983,9 @@ async def admin_approve_user(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to update user approval.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to update user approval."
+        ) from None
 
 
 @app.post("/api/admin/users/full-access")
@@ -937,7 +999,9 @@ async def admin_set_user_full_access(
         raise HTTPException(status_code=400, detail="A valid email is required.")
 
     try:
-        result = await firebase_service.set_user_full_access_by_email(email=email, full_access=bool(payload.fullAccess))
+        result = await firebase_service.set_user_full_access_by_email(
+            email=email, full_access=bool(payload.fullAccess)
+        )
         return {
             "status": "ok",
             "email": result.get("email"),
@@ -947,7 +1011,9 @@ async def admin_set_user_full_access(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to update user access.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to update user access."
+        ) from None
 
 
 @app.post("/api/admin/users/block")
@@ -975,7 +1041,9 @@ async def admin_set_user_blocked(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to update user block status.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to update user block status."
+        ) from None
 
 
 ACCESS_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -985,7 +1053,10 @@ def _generate_access_code(*, prefix: str = "IP") -> str:
     p = str(prefix or "IP").strip().upper()
     if not p or not p.isalpha() or len(p) != 2:
         p = "IP"
-    groups = ["".join(secrets.choice(ACCESS_CODE_ALPHABET) for _ in range(4)) for _ in range(3)]
+    groups = [
+        "".join(secrets.choice(ACCESS_CODE_ALPHABET) for _ in range(4))
+        for _ in range(3)
+    ]
     return f"{p}-{groups[0]}-{groups[1]}-{groups[2]}"
 
 
@@ -1023,7 +1094,9 @@ async def admin_list_access_codes(_: str = Depends(verify_admin_user)):
         out.sort(key=lambda c: (c.get("createdAt") or ""), reverse=True)
         return {"codes": out}
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to list access codes.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to list access codes."
+        ) from None
 
 
 @app.post("/api/admin/access-codes")
@@ -1038,7 +1111,9 @@ async def admin_create_access_code(
 
     max_uses = int(payload.maxUses or 1)
     if max_uses < 1 or max_uses > 10000:
-        raise HTTPException(status_code=400, detail="maxUses must be between 1 and 10000.")
+        raise HTTPException(
+            status_code=400, detail="maxUses must be between 1 and 10000."
+        )
 
     note = _clamp_str(payload.note, 500)
 
@@ -1096,7 +1171,11 @@ async def admin_get_access_code_detail(code: str, _: str = Depends(verify_admin_
 
     redemptions = []
     try:
-        q = ref.collection("redemptions").order_by("firstRedeemedAt", direction=firestore.Query.DESCENDING).limit(200)
+        q = (
+            ref.collection("redemptions")
+            .order_by("firstRedeemedAt", direction=firestore.Query.DESCENDING)
+            .limit(200)
+        )
         for rsnap in q.stream():
             r = rsnap.to_dict() or {}
             redemptions.append(
@@ -1179,7 +1258,9 @@ async def admin_update_access_code(
     if payload.maxUses is not None:
         max_uses = int(payload.maxUses)
         if max_uses < 1 or max_uses > 10000:
-            raise HTTPException(status_code=400, detail="maxUses must be between 1 and 10000.")
+            raise HTTPException(
+                status_code=400, detail="maxUses must be between 1 and 10000."
+            )
         update["maxUses"] = max_uses
     if payload.name is not None:
         name = _clamp_str(payload.name, 80)
@@ -1217,7 +1298,9 @@ async def admin_set_system_prompt_export(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to update system prompt copy permission.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to update system prompt copy permission."
+        ) from None
 
 
 def _validate_prompt_stage(stage: str) -> str:
@@ -1269,7 +1352,9 @@ def _validate_user_prompt_name(name: str) -> str:
 def _require_non_empty_instructions(instructions: str) -> str:
     ins = str(instructions or "").strip()
     if not ins:
-        raise HTTPException(status_code=400, detail="Instructions dürfen nicht leer sein.")
+        raise HTTPException(
+            status_code=400, detail="Instructions dürfen nicht leer sein."
+        )
     return ins
 
 
@@ -1308,7 +1393,9 @@ async def admin_get_user_detail(
         raise HTTPException(status_code=500, detail="Failed to load user.") from None
 
     claims = user.custom_claims or {}
-    full_access = bool(claims.get("fullAccess") is True or claims.get("approved") is True)
+    full_access = bool(
+        claims.get("fullAccess") is True or claims.get("approved") is True
+    )
     legacy_approved = bool(claims.get("approved") is True)
     blocked_claim = bool(claims.get("blocked") is True)
 
@@ -1320,8 +1407,12 @@ async def admin_get_user_detail(
     spend_rate_override = None
     try:
         user_doc = await firebase_service.get_user_doc(user.uid)
-        can_duplicate_system_prompts = bool((user_doc or {}).get("canDuplicateSystemPrompts") is True)
-        account_status = str((user_doc or {}).get("accountStatus") or "").strip().lower() or None
+        can_duplicate_system_prompts = bool(
+            (user_doc or {}).get("canDuplicateSystemPrompts") is True
+        )
+        account_status = (
+            str((user_doc or {}).get("accountStatus") or "").strip().lower() or None
+        )
         blocked = account_status == "blocked"
         activated_by_code = (user_doc or {}).get("activatedByCode") or None
         activated_at = _ts_to_iso((user_doc or {}).get("activatedAt"))
@@ -1341,9 +1432,15 @@ async def admin_get_user_detail(
         default_rate = float(cfg.default_spend_rate or 0.0)
         if default_rate <= 0:
             default_rate = 6.0
-        effective_spend_rate = float(spend_rate_override) if spend_rate_override is not None else float(default_rate)
+        effective_spend_rate = (
+            float(spend_rate_override)
+            if spend_rate_override is not None
+            else float(default_rate)
+        )
     except Exception:
-        effective_spend_rate = float(spend_rate_override) if spend_rate_override is not None else 6.0
+        effective_spend_rate = (
+            float(spend_rate_override) if spend_rate_override is not None else 6.0
+        )
 
     try:
         bal_ref = (
@@ -1380,8 +1477,12 @@ async def admin_get_user_detail(
             "effectiveSpendRate": float(effective_spend_rate),
             "activatedByCode": activated_by_code,
             "activatedAt": activated_at,
-            "createdAt": _ms_to_iso(getattr(user.user_metadata, "creation_timestamp", None)),
-            "lastSignInAt": _ms_to_iso(getattr(user.user_metadata, "last_sign_in_timestamp", None)),
+            "createdAt": _ms_to_iso(
+                getattr(user.user_metadata, "creation_timestamp", None)
+            ),
+            "lastSignInAt": _ms_to_iso(
+                getattr(user.user_metadata, "last_sign_in_timestamp", None)
+            ),
         },
         "billing": {
             "balance": billing_balance,
@@ -1439,13 +1540,106 @@ async def admin_set_user_spend_rate(
     except Exception:
         default_rate = 6.0
 
-    effective = float(spend_rate_override) if spend_rate_override is not None else float(default_rate)
+    effective = (
+        float(spend_rate_override)
+        if spend_rate_override is not None
+        else float(default_rate)
+    )
     return {
         "status": "ok",
         "uid": uid_norm,
         "spendRate": spend_rate_override,
         "effectiveSpendRate": float(effective),
     }
+
+
+@app.get("/api/admin/users/{uid}/openai/operations")
+async def admin_get_user_openai_operations(
+    uid: str,
+    limit: int = 50,
+    cursor: str | None = None,
+    status: str | None = None,
+    _: str = Depends(verify_admin_user),
+):
+    """Return OpenAI operations for a user (paginated, newest first; admin-only)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    limit = max(1, min(int(limit or 50), 200))
+    status_norm = str(status or "").strip().lower() or None
+
+    ops_ref = (
+        firebase_service.db.collection("users")
+        .document(uid_norm)
+        .collection("costMetrics")
+        .document("v1")
+        .collection("operations")
+    )
+    base = ops_ref.order_by("timestamp", direction=firestore.Query.DESCENDING)
+    if status_norm:
+        base = base.where("status", "==", status_norm)
+
+    if cursor:
+        try:
+            cursor_snap = ops_ref.document(str(cursor)).get()
+            if cursor_snap.exists:
+                base = base.start_after(cursor_snap)
+        except Exception:
+            pass
+
+    docs = list(base.limit(limit).stream())
+    out = []
+    for snap in docs:
+        data = snap.to_dict() or {}
+        estimate = _as_record(data.get("estimate"))
+        costs = _as_record(data.get("costs"))
+        reservation = _as_record(data.get("reservation"))
+
+        actual_credits = None
+        if estimate and costs:
+            try:
+                spend_rate = float(estimate.get("spendRate") or 0.0)
+                cost_usd = float(costs.get("totalCostUsd") or 0.0)
+                if spend_rate > 0 and cost_usd > 0:
+                    actual_credits = float(cost_usd * spend_rate)
+            except Exception:
+                actual_credits = None
+
+        reservation_out = None
+        if reservation:
+            reservation_out = dict(reservation)
+            reservation_out["reservedAt"] = _ts_to_iso(reservation.get("reservedAt"))
+            reservation_out["releasedAt"] = _ts_to_iso(reservation.get("releasedAt"))
+
+        out.append(
+            {
+                "id": snap.id,
+                "operationId": str(data.get("operationId") or snap.id),
+                "timestamp": _ts_to_iso(data.get("timestamp")),
+                "runningAt": _ts_to_iso(data.get("runningAt")),
+                "status": str(data.get("status") or ""),
+                "errorMessage": str(data.get("errorMessage") or "") or None,
+                "operationType": str(data.get("operationType") or ""),
+                "operationDetails": data.get("operationDetails"),
+                "userActionId": str(data.get("userActionId") or "") or None,
+                "model": str(data.get("modelNormalized") or data.get("model") or "")
+                or None,
+                "keySource": str(data.get("keySource") or "") or None,
+                "projektId": str(data.get("projektId") or "") or None,
+                "kapitelId": str(data.get("kapitelId") or "") or None,
+                "runId": str(data.get("runId") or "") or None,
+                "quelleId": str(data.get("quelleId") or "") or None,
+                "tokens": _as_record(data.get("tokens")),
+                "costs": costs,
+                "estimate": estimate,
+                "reservation": reservation_out,
+                "actualCredits": actual_credits,
+            }
+        )
+
+    next_cursor = docs[-1].id if len(docs) == limit else None
+    return {"operations": out, "nextCursor": next_cursor}
 
 
 @app.get("/api/admin/users/{uid}/billing/ledger")
@@ -1501,6 +1695,97 @@ async def admin_get_user_credit_ledger(
 
     next_cursor = docs[-1].id if len(docs) == limit else None
     return {"entries": out, "nextCursor": next_cursor}
+
+
+@app.post("/api/admin/users/{uid}/billing/reserved-credits")
+async def admin_adjust_reserved_credits(
+    uid: str,
+    payload: AdminAdjustReservedCreditsRequest,
+    admin_uid: str = Depends(verify_admin_user),
+):
+    """Set or delta-adjust a user's reservedCredits (admin-only)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    mode = str(payload.mode or "").strip().lower()
+    if mode not in {"set", "delta"}:
+        raise HTTPException(status_code=400, detail="mode must be 'set' or 'delta'.")
+
+    try:
+        amount = float(payload.amount)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid amount.") from None
+
+    note = _clamp_str(payload.note, 500)
+
+    balance_ref = (
+        firebase_service.db.collection("users")
+        .document(uid_norm)
+        .collection("billing")
+        .document("balance")
+    )
+    audit_id = f"reserved_adj_{secrets.token_hex(12)}"
+    audit_ref = (
+        firebase_service.db.collection("users")
+        .document(uid_norm)
+        .collection("billing")
+        .document("audit")
+        .collection("reservedCredits")
+        .document(audit_id)
+    )
+
+    transaction = firebase_service.db.transaction()
+
+    @firestore.transactional
+    def txn(transaction):
+        bal_snap = balance_ref.get(transaction=transaction)
+        bal = bal_snap.to_dict() if bal_snap.exists else {}
+
+        prev_reserved = _as_float(bal.get("reservedCredits"), 0.0)
+        if mode == "set":
+            next_reserved = float(max(0.0, float(amount)))
+        else:
+            next_reserved = float(max(0.0, float(prev_reserved) + float(amount)))
+
+        transaction.set(
+            balance_ref,
+            {
+                "reservedCredits": float(next_reserved),
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+
+        transaction.set(
+            audit_ref,
+            {
+                "id": audit_id,
+                "userId": uid_norm,
+                "adminUid": str(admin_uid),
+                "mode": mode,
+                "amount": float(amount),
+                "previousReservedCredits": float(prev_reserved),
+                "newReservedCredits": float(next_reserved),
+                "note": note,
+                "createdAt": SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+
+        return float(prev_reserved), float(next_reserved)
+
+    prev, new = txn(transaction)
+    return {
+        "status": "ok",
+        "uid": uid_norm,
+        "mode": mode,
+        "amount": float(amount),
+        "previousReservedCredits": float(prev),
+        "reservedCredits": float(new),
+        "deltaApplied": float(new - prev),
+        "auditId": audit_id,
+    }
 
 
 @app.post("/api/admin/users/{uid}/billing/adjustments")
@@ -1573,7 +1858,9 @@ async def admin_create_credit_adjustment(
     try:
         txn(transaction)
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to write adjustment.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to write adjustment."
+        ) from None
 
     try:
         bal_post = balance_ref.get()
@@ -1615,18 +1902,31 @@ async def admin_list_user_prompt_templates(
                     "stage": stage,
                     "name": str((data.get("name") or "")).strip() or doc_snap.id,
                     "instructions": str((data.get("instructions") or "")).rstrip(),
-                    "placeholders": list(data.get("placeholders") or []) or list(prompt_service.REQUIRED_PLACEHOLDERS.get(stage, []) or []),
+                    "placeholders": list(data.get("placeholders") or [])
+                    or list(prompt_service.REQUIRED_PLACEHOLDERS.get(stage, []) or []),
                     "createdAt": _ts_to_iso(data.get("createdAt")),
                     "updatedAt": _ts_to_iso(data.get("updatedAt")),
                 }
             )
 
-        templates_out.sort(key=lambda t: (t.get("stage") or "", t.get("updatedAt") or t.get("createdAt") or ""), reverse=True)
+        templates_out.sort(
+            key=lambda t: (
+                t.get("stage") or "",
+                t.get("updatedAt") or t.get("createdAt") or "",
+            ),
+            reverse=True,
+        )
 
         settings_doc = _prompt_settings_ref(uid_norm).get()
         settings = settings_doc.to_dict() if settings_doc.exists else {}
-        active = settings.get("activeTemplates", {}) if isinstance(settings, dict) else {}
-        ask_on_each = bool(settings.get("askOnEachProcess")) if isinstance(settings, dict) else False
+        active = (
+            settings.get("activeTemplates", {}) if isinstance(settings, dict) else {}
+        )
+        ask_on_each = (
+            bool(settings.get("askOnEachProcess"))
+            if isinstance(settings, dict)
+            else False
+        )
 
         return {
             "templates": templates_out,
@@ -1636,7 +1936,9 @@ async def admin_list_user_prompt_templates(
     except HTTPException:
         raise
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to list prompt templates.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to list prompt templates."
+        ) from None
 
 
 @app.post("/api/admin/users/{uid}/prompt-templates")
@@ -1670,7 +1972,9 @@ async def admin_create_user_prompt_template(
                 "stage": stage_norm,
                 "name": name,
                 "instructions": instructions,
-                "placeholders": list(prompt_service.REQUIRED_PLACEHOLDERS.get(stage_norm, []) or []),
+                "placeholders": list(
+                    prompt_service.REQUIRED_PLACEHOLDERS.get(stage_norm, []) or []
+                ),
                 "createdAt": SERVER_TIMESTAMP,
                 "updatedAt": SERVER_TIMESTAMP,
             }
@@ -1679,7 +1983,9 @@ async def admin_create_user_prompt_template(
     except HTTPException:
         raise
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to create prompt template.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to create prompt template."
+        ) from None
 
 
 @app.put("/api/admin/users/{uid}/prompt-templates/{template_id}")
@@ -1713,7 +2019,9 @@ async def admin_update_user_prompt_template(
             {
                 "name": name,
                 "instructions": instructions,
-                "placeholders": list(prompt_service.REQUIRED_PLACEHOLDERS.get(stage_norm, []) or []),
+                "placeholders": list(
+                    prompt_service.REQUIRED_PLACEHOLDERS.get(stage_norm, []) or []
+                ),
                 "updatedAt": SERVER_TIMESTAMP,
             },
             merge=True,
@@ -1722,7 +2030,9 @@ async def admin_update_user_prompt_template(
     except HTTPException:
         raise
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to update prompt template.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to update prompt template."
+        ) from None
 
 
 @app.delete("/api/admin/users/{uid}/prompt-templates/{template_id}")
@@ -1754,14 +2064,19 @@ async def admin_delete_user_prompt_template(
             active = settings.get("activeTemplates", {}) or {}
             if isinstance(active, dict) and active.get(stage_norm) == tpl_id:
                 active_next = {**active, stage_norm: "default"}
-                settings_ref.set({"activeTemplates": active_next, "updatedAt": SERVER_TIMESTAMP}, merge=True)
+                settings_ref.set(
+                    {"activeTemplates": active_next, "updatedAt": SERVER_TIMESTAMP},
+                    merge=True,
+                )
 
         tpl_ref.delete()
         return {"status": "ok"}
     except HTTPException:
         raise
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to delete prompt template.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to delete prompt template."
+        ) from None
 
 
 @app.post("/api/admin/users/{uid}/prompt-templates/active")
@@ -1791,11 +2106,19 @@ async def admin_set_user_active_prompt(
         else:
             if template_id not in SYSTEM_TEMPLATE_KEYS_ALWAYS_AVAILABLE:
                 key_norm = _validate_template_key(template_id)
-                sys_tpl = await firebase_service.get_system_prompt_template(stage_norm, key_norm)
+                sys_tpl = await firebase_service.get_system_prompt_template(
+                    stage_norm, key_norm
+                )
                 if not sys_tpl:
-                    raise HTTPException(status_code=404, detail="System prompt template not found.")
-                if bool(sys_tpl.get("published", True) is not True) or bool(sys_tpl.get("archived", False) is True):
-                    raise HTTPException(status_code=404, detail="System prompt template not available.")
+                    raise HTTPException(
+                        status_code=404, detail="System prompt template not found."
+                    )
+                if bool(sys_tpl.get("published", True) is not True) or bool(
+                    sys_tpl.get("archived", False) is True
+                ):
+                    raise HTTPException(
+                        status_code=404, detail="System prompt template not available."
+                    )
 
         settings_ref = _prompt_settings_ref(uid_norm)
         settings_snap = settings_ref.get()
@@ -1805,7 +2128,10 @@ async def admin_set_user_active_prompt(
             active = {}
 
         active_next = {**active, stage_norm: template_id}
-        payload_out: dict = {"activeTemplates": active_next, "updatedAt": SERVER_TIMESTAMP}
+        payload_out: dict = {
+            "activeTemplates": active_next,
+            "updatedAt": SERVER_TIMESTAMP,
+        }
         if not settings_snap.exists:
             payload_out["createdAt"] = SERVER_TIMESTAMP
         settings_ref.set(payload_out, merge=True)
@@ -1814,7 +2140,9 @@ async def admin_set_user_active_prompt(
     except HTTPException:
         raise
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to set active prompt.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to set active prompt."
+        ) from None
 
 
 _GERMAN_MONTHS = [
@@ -1924,10 +2252,17 @@ def _get_member_since_iso(db, uid: str) -> str:
 
     parsed = [d for d in (_parse_iso_dt(x) for x in candidates) if d is not None]
     parsed.sort(key=lambda d: d.timestamp())
-    return (parsed[0] if parsed else datetime.now(timezone.utc)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return (
+        (parsed[0] if parsed else datetime.now(timezone.utc))
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
-def _scan_operations_for_backfill(db, uid: str, max_docs: int = 5000) -> tuple[int, dict[str, int]]:
+def _scan_operations_for_backfill(
+    db, uid: str, max_docs: int = 5000
+) -> tuple[int, dict[str, int]]:
     output_tokens = 0
     model_counts: dict[str, int] = {}
 
@@ -1960,7 +2295,12 @@ def _scan_operations_for_backfill(db, uid: str, max_docs: int = 5000) -> tuple[i
             if out_i > 0:
                 output_tokens += out_i
 
-            model_raw = data.get("modelNormalized") or data.get("model") or data.get("modelKey") or "unknown"
+            model_raw = (
+                data.get("modelNormalized")
+                or data.get("model")
+                or data.get("modelKey")
+                or "unknown"
+            )
             model = _display_model_key(str(model_raw or "unknown"))
             model_counts[model] = int(model_counts.get(model, 0)) + 1
 
@@ -2077,7 +2417,9 @@ async def admin_get_user_stats(
         ]
         cost_by_projekt.sort(key=lambda x: int(x.get("cost", 0)), reverse=True)
         if not cost_by_projekt:
-            cost_by_projekt.append({"projektId": "__standard__", "projektName": "Standard", "cost": 0})
+            cost_by_projekt.append(
+                {"projektId": "__standard__", "projektName": "Standard", "cost": 0}
+            )
 
         by_model = _as_record(agg.get("byModel"))
         model_usage = []
@@ -2087,7 +2429,9 @@ async def admin_get_user_stats(
             else:
                 count = int(_as_record(val).get("count", 0) or 0)
             if count > 0:
-                model_usage.append({"model": _display_model_key(str(key)), "count": count})
+                model_usage.append(
+                    {"model": _display_model_key(str(key)), "count": count}
+                )
         model_usage.sort(key=lambda x: int(x.get("count", 0)), reverse=True)
 
         total_output_tokens_raw = agg.get("totalOutputTokens", 0)
@@ -2103,7 +2447,9 @@ async def admin_get_user_stats(
             if not model_usage:
                 model_usage = [
                     {"model": model, "count": int(count)}
-                    for model, count in sorted(model_counts.items(), key=lambda kv: kv[1], reverse=True)
+                    for model, count in sorted(
+                        model_counts.items(), key=lambda kv: kv[1], reverse=True
+                    )
                 ]
 
         if not model_usage:
@@ -2140,7 +2486,10 @@ async def admin_get_user_stats(
                         "operationType": str(data.get("operationType") or ""),
                         "status": str(data.get("status") or ""),
                         "errorMessage": str(data.get("errorMessage") or "") or None,
-                        "model": str(data.get("modelNormalized") or data.get("model") or "") or None,
+                        "model": str(
+                            data.get("modelNormalized") or data.get("model") or ""
+                        )
+                        or None,
                         "keySource": str(data.get("keySource") or "") or None,
                         "cost": _cents_from_usd(costs.get("totalCostUsd")),
                         "outputTokens": int(tokens.get("outputTokens", 0) or 0),
@@ -2169,7 +2518,9 @@ async def admin_get_user_stats(
     except HTTPException:
         raise
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to compute user stats.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to compute user stats."
+        ) from None
 
 
 @app.get("/api/admin/users/{uid}/projects")
@@ -2206,7 +2557,9 @@ async def admin_list_user_projects(
         out.sort(key=lambda p: p.get("createdAt") or "", reverse=True)
         return {"projects": out}
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to list projects.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to list projects."
+        ) from None
 
 
 @app.get("/api/admin/users/{uid}/projects/{projekt_id}/quellen")
@@ -2223,7 +2576,12 @@ async def admin_list_user_quellen_for_project(
 
     try:
         db = firebase_service.db
-        ref = db.collection("users").document(uid_norm).collection("quellen").where("projektId", "==", proj_norm)
+        ref = (
+            db.collection("users")
+            .document(uid_norm)
+            .collection("quellen")
+            .where("projektId", "==", proj_norm)
+        )
         docs = list(ref.stream())
         out = []
         for doc_snap in docs:
@@ -2313,7 +2671,9 @@ async def list_system_prompt_templates(
         if uid:
             try:
                 user_doc = await firebase_service.get_user_doc(uid)
-                can_duplicate = bool((user_doc or {}).get("canDuplicateSystemPrompts") is True)
+                can_duplicate = bool(
+                    (user_doc or {}).get("canDuplicateSystemPrompts") is True
+                )
             except Exception:
                 can_duplicate = False
 
@@ -2363,7 +2723,11 @@ async def list_system_prompt_templates(
                     {
                         "stage": st,
                         "templateKey": key,
-                        "name": "System-Standard" if key == "default" else "System-Standard (v2)",
+                        "name": (
+                            "System-Standard"
+                            if key == "default"
+                            else "System-Standard (v2)"
+                        ),
                         "createdAt": None,
                         "updatedAt": None,
                     }
@@ -2376,7 +2740,9 @@ async def list_system_prompt_templates(
             },
         }
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to list system prompt templates.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to list system prompt templates."
+        ) from None
 
 
 @app.post("/api/system-prompt-templates/duplicate")
@@ -2389,11 +2755,19 @@ async def duplicate_system_prompt_template(
     key_norm = _validate_template_key(payload.templateKey)
 
     try:
-        sys_tpl = await firebase_service.get_system_prompt_template(stage_norm, key_norm)
+        sys_tpl = await firebase_service.get_system_prompt_template(
+            stage_norm, key_norm
+        )
         if not sys_tpl:
-            raise HTTPException(status_code=404, detail="System prompt template not found.")
-        if bool(sys_tpl.get("published", True) is not True) or bool(sys_tpl.get("archived", False) is True):
-            raise HTTPException(status_code=404, detail="System prompt template not available.")
+            raise HTTPException(
+                status_code=404, detail="System prompt template not found."
+            )
+        if bool(sys_tpl.get("published", True) is not True) or bool(
+            sys_tpl.get("archived", False) is True
+        ):
+            raise HTTPException(
+                status_code=404, detail="System prompt template not available."
+            )
 
         name_override = (payload.name or "").strip() or None
         result = await firebase_service.duplicate_system_prompt_template_to_user(
@@ -2408,7 +2782,9 @@ async def duplicate_system_prompt_template(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to duplicate system prompt template.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to duplicate system prompt template."
+        ) from None
 
 
 @app.get("/api/admin/system-prompt-templates")
@@ -2435,7 +2811,11 @@ async def admin_list_system_prompt_templates(
                     "templateKey": tpl_key,
                     "name": str((tpl.get("name") or "")).strip() or tpl_key,
                     "instructions": str((tpl.get("instructions") or "")).rstrip(),
-                    "systemPrompt": (str(tpl.get("systemPrompt")).rstrip() if tpl.get("systemPrompt") is not None else None),
+                    "systemPrompt": (
+                        str(tpl.get("systemPrompt")).rstrip()
+                        if tpl.get("systemPrompt") is not None
+                        else None
+                    ),
                     "published": bool(tpl.get("published", True) is True),
                     "archived": bool(tpl.get("archived", False) is True),
                     "createdAt": _ts_to_iso(tpl.get("createdAt")),
@@ -2445,7 +2825,9 @@ async def admin_list_system_prompt_templates(
 
         return {"templates": templates_out}
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to list system prompt templates.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to list system prompt templates."
+        ) from None
 
 
 @app.post("/api/admin/system-prompt-templates")
@@ -2458,7 +2840,9 @@ async def admin_upsert_system_prompt_template(
     key_norm = _validate_template_key(payload.templateKey)
     name = (payload.name or "").strip()
     instructions = (payload.instructions or "").rstrip()
-    system_prompt = payload.systemPrompt.rstrip() if isinstance(payload.systemPrompt, str) else None
+    system_prompt = (
+        payload.systemPrompt.rstrip() if isinstance(payload.systemPrompt, str) else None
+    )
 
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
@@ -2479,7 +2863,10 @@ async def admin_upsert_system_prompt_template(
         )
         return {"status": "ok"}
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to upsert system prompt template.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to upsert system prompt template."
+        ) from None
+
 
 def _require_admin(credentials: HTTPBasicCredentials = Depends(basic_security)) -> None:
     """
@@ -2488,13 +2875,27 @@ def _require_admin(credentials: HTTPBasicCredentials = Depends(basic_security)) 
     Browser-friendly: opening the URL prompts for username/password.
     """
     if not config.ADMIN_BASIC_PASSWORD:
-        logger.error("ADMIN_BASIC_PASSWORD is not configured. env_diag=%s", _safe_env_diagnostics())
-        raise HTTPException(status_code=500, detail="ADMIN_BASIC_PASSWORD is not configured on the server.")
+        logger.error(
+            "ADMIN_BASIC_PASSWORD is not configured. env_diag=%s",
+            _safe_env_diagnostics(),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="ADMIN_BASIC_PASSWORD is not configured on the server.",
+        )
 
-    username_ok = secrets.compare_digest(credentials.username or "", config.ADMIN_BASIC_USER)
-    password_ok = secrets.compare_digest(credentials.password or "", config.ADMIN_BASIC_PASSWORD)
+    username_ok = secrets.compare_digest(
+        credentials.username or "", config.ADMIN_BASIC_USER
+    )
+    password_ok = secrets.compare_digest(
+        credentials.password or "", config.ADMIN_BASIC_PASSWORD
+    )
     if not (username_ok and password_ok):
-        raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Basic"})
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 
 def _require_admin_password_and_get_target_email(
@@ -2509,15 +2910,25 @@ def _require_admin_password_and_get_target_email(
     This avoids passing the email in the query string (URL).
     """
     if not config.ADMIN_BASIC_PASSWORD:
-        logger.error("ADMIN_BASIC_PASSWORD is not configured. env_diag=%s", _safe_env_diagnostics())
-        raise HTTPException(status_code=500, detail="ADMIN_BASIC_PASSWORD is not configured on the server.")
+        logger.error(
+            "ADMIN_BASIC_PASSWORD is not configured. env_diag=%s",
+            _safe_env_diagnostics(),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="ADMIN_BASIC_PASSWORD is not configured on the server.",
+        )
 
-    password_ok = secrets.compare_digest(credentials.password or "", config.ADMIN_BASIC_PASSWORD)
+    password_ok = secrets.compare_digest(
+        credentials.password or "", config.ADMIN_BASIC_PASSWORD
+    )
     if not password_ok:
         raise HTTPException(
             status_code=401,
             detail="Unauthorized",
-            headers={"WWW-Authenticate": 'Basic realm="InstantPaper Admin (password required)"'},
+            headers={
+                "WWW-Authenticate": 'Basic realm="InstantPaper Admin (password required)"'
+            },
         )
 
     email = (credentials.username or "").strip()
@@ -2526,7 +2937,9 @@ def _require_admin_password_and_get_target_email(
         raise HTTPException(
             status_code=401,
             detail="Basic auth username must be the user's email.",
-            headers={"WWW-Authenticate": 'Basic realm="InstantPaper Approve: username = user email"'},
+            headers={
+                "WWW-Authenticate": 'Basic realm="InstantPaper Approve: username = user email"'
+            },
         )
     return email
 
@@ -2550,7 +2963,9 @@ async def admin_set_user_full_access_basic(
         if approved is not None:
             fullAccess = bool(approved)
 
-        result = await firebase_service.set_user_full_access_by_email(email=email, full_access=bool(fullAccess))
+        result = await firebase_service.set_user_full_access_by_email(
+            email=email, full_access=bool(fullAccess)
+        )
         return {
             "status": "ok",
             "email": result.get("email"),
@@ -2561,7 +2976,9 @@ async def admin_set_user_full_access_basic(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to update user access.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to update user access."
+        ) from None
 
 
 @app.get("/api/admin/quick-approve")
@@ -2575,7 +2992,9 @@ async def admin_quick_approve(
     - Basic Auth prompt: username = target email, password = ADMIN_BASIC_PASSWORD
     """
     try:
-        result = await firebase_service.set_user_full_access_by_email(email=email, full_access=True)
+        result = await firebase_service.set_user_full_access_by_email(
+            email=email, full_access=True
+        )
         return {
             "status": "ok",
             "email": result.get("email"),
@@ -2586,7 +3005,9 @@ async def admin_quick_approve(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to update user access.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to update user access."
+        ) from None
 
 
 @app.get("/api/admin/quick-revoke")
@@ -2600,7 +3021,9 @@ async def admin_quick_revoke(
     - Basic Auth prompt: username = target email, password = ADMIN_BASIC_PASSWORD
     """
     try:
-        result = await firebase_service.set_user_full_access_by_email(email=email, full_access=False)
+        result = await firebase_service.set_user_full_access_by_email(
+            email=email, full_access=False
+        )
         return {
             "status": "ok",
             "email": result.get("email"),
@@ -2611,7 +3034,9 @@ async def admin_quick_revoke(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to update user access.") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to update user access."
+        ) from None
 
 
 @app.get("/approve", response_class=HTMLResponse)
@@ -2641,7 +3066,9 @@ async def approve_page_submit(
     body = (await request.body()).decode("utf-8", errors="ignore")
     params = parse_qs(body)
     email = (params.get("email", [""]) or [""])[0].strip() or None
-    full_access_raw = ((params.get("fullAccess", [""]) or [""])[0] or "").strip().lower()
+    full_access_raw = (
+        ((params.get("fullAccess", [""]) or [""])[0] or "").strip().lower()
+    )
     approved_raw = ((params.get("approved", [""]) or [""])[0] or "").strip().lower()
     raw = full_access_raw or approved_raw or "true"
     full_access = raw in {"true", "1", "yes", "on"}
@@ -2649,7 +3076,9 @@ async def approve_page_submit(
     message_html = ""
     if email is not None and email.strip():
         try:
-            result = await firebase_service.set_user_full_access_by_email(email=email, full_access=full_access)
+            result = await firebase_service.set_user_full_access_by_email(
+                email=email, full_access=full_access
+            )
             state = "FULL ACCESS" if result.get("fullAccess") else "REVOKED"
             message_html = f"""
               <div class="ok">
@@ -2667,10 +3096,14 @@ async def approve_page_submit(
               </div>
             """
 
-    return _render_approve_page(email=email, full_access=full_access, message_html=message_html)
+    return _render_approve_page(
+        email=email, full_access=full_access, message_html=message_html
+    )
 
 
-def _render_approve_page(email: str | None, full_access: bool, message_html: str) -> HTMLResponse:
+def _render_approve_page(
+    email: str | None, full_access: bool, message_html: str
+) -> HTMLResponse:
     selected_true = "selected" if full_access else ""
     selected_false = "selected" if not full_access else ""
 
@@ -2737,17 +3170,18 @@ async def create_session(request: CreateSessionRequest):
         await firebase_service.verify_token(request.idToken)
 
         # Create session cookie (14 days)
-        session_cookie = await firebase_service.create_session_cookie(request.idToken, expires_in_days=14)
+        session_cookie = await firebase_service.create_session_cookie(
+            request.idToken, expires_in_days=14
+        )
 
         return {
             "sessionCookie": session_cookie,
-            "expiresIn": 14 * 24 * 60 * 60  # 14 days in seconds
+            "expiresIn": 14 * 24 * 60 * 60,  # 14 days in seconds
         }
     except Exception as e:
         logger.error(f"Failed to create session cookie: {str(e)}")
         raise HTTPException(
-            status_code=401,
-            detail=f"Failed to create session: {str(e)}"
+            status_code=401, detail=f"Failed to create session: {str(e)}"
         )
 
 
@@ -2759,10 +3193,10 @@ async def revoke_session(request: RevokeSessionRequest):
     try:
         # Decode session cookie to get user ID (don't verify, just decode)
         # We decode without verification since we just need the UID
-        parts = request.sessionCookie.split('.')
+        parts = request.sessionCookie.split(".")
         if len(parts) >= 2:
-            payload = json.loads(base64.urlsafe_b64decode(parts[1] + '=='))
-            user_id = payload.get('uid')
+            payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=="))
+            user_id = payload.get("uid")
 
             if user_id:
                 # Revoke all refresh tokens for this user
@@ -2773,8 +3207,7 @@ async def revoke_session(request: RevokeSessionRequest):
     except Exception as e:
         logger.error(f"Failed to revoke session: {str(e)}")
         raise HTTPException(
-            status_code=400,
-            detail=f"Failed to revoke session: {str(e)}"
+            status_code=400, detail=f"Failed to revoke session: {str(e)}"
         )
 
 
@@ -2785,10 +3218,7 @@ async def test_auth(user_id: str = Depends(verify_firebase_token)):
 
     Requires Authorization header with Firebase ID token
     """
-    return {
-        "message": "Authentication successful",
-        "user_id": user_id
-    }
+    return {"message": "Authentication successful", "user_id": user_id}
 
 
 @app.get("/api/user/openai-key")
@@ -2834,16 +3264,24 @@ async def process_quelle(
     Returns:
         ProcessQuelleResponse with result details
     """
-    logger.info(f"Processing Quelle {request.quelle_id} for user {user_id} (Kapitel {request.kapitel_id}, run {request.run_id})")
+    logger.info(
+        f"Processing Quelle {request.quelle_id} for user {user_id} (Kapitel {request.kapitel_id}, run {request.run_id})"
+    )
 
     # Block duplicate processing while already running (prevents double charges + weird UI states).
-    existing_result = await firebase_service.get_run_result(user_id, request.kapitel_id, request.run_id, request.quelle_id)
+    existing_result = await firebase_service.get_run_result(
+        user_id, request.kapitel_id, request.run_id, request.quelle_id
+    )
     if existing_result and existing_result.get("status") == "running":
-        raise HTTPException(status_code=400, detail="Diese Quelle wird bereits verarbeitet.")
+        raise HTTPException(
+            status_code=400, detail="Diese Quelle wird bereits verarbeitet."
+        )
 
     await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
-    run_doc = await firebase_service.get_run(user_id, request.kapitel_id, request.run_id)
+    run_doc = await firebase_service.get_run(
+        user_id, request.kapitel_id, request.run_id
+    )
     run_model = (run_doc.get("model") or "").strip() if run_doc else ""
     model_to_use = run_model or request.model
 
@@ -2901,20 +3339,29 @@ async def combine_run(
 
     Requires Authorization header with Firebase ID token.
     """
-    logger.info(f"Combining run {request.run_id} for user {user_id} (Kapitel {request.kapitel_id})")
+    logger.info(
+        f"Combining run {request.run_id} for user {user_id} (Kapitel {request.kapitel_id})"
+    )
 
-    existing_combined = await firebase_service.get_combined_result(user_id, request.kapitel_id, request.run_id)
+    existing_combined = await firebase_service.get_combined_result(
+        user_id, request.kapitel_id, request.run_id
+    )
     if existing_combined:
         existing_status = (existing_combined.get("status") or "").strip()
         existing_content = (existing_combined.get("content") or "").strip()
         if existing_status == "running":
             raise HTTPException(status_code=400, detail="Kombination läuft bereits.")
         if existing_content and (existing_status == "success" or not existing_status):
-            raise HTTPException(status_code=400, detail="Kombinierter Text existiert bereits für diesen Run.")
+            raise HTTPException(
+                status_code=400,
+                detail="Kombinierter Text existiert bereits für diesen Run.",
+            )
 
     await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
-    run_doc = await firebase_service.get_run(user_id, request.kapitel_id, request.run_id)
+    run_doc = await firebase_service.get_run(
+        user_id, request.kapitel_id, request.run_id
+    )
     run_model = (run_doc.get("model") or "").strip() if run_doc else None
 
     # Create/merge placeholder artifact doc immediately so the UI can show running/error state.
@@ -2994,8 +3441,13 @@ async def shorten_kapitel(
         f"with {len(request.context_kapitel_ids)} context Kapitels"
     )
 
-    existing_shortened = await firebase_service.get_shortened_result(user_id, request.kapitel_id, request.run_id)
-    if existing_shortened and (existing_shortened.get("status") or "").strip() == "running":
+    existing_shortened = await firebase_service.get_shortened_result(
+        user_id, request.kapitel_id, request.run_id
+    )
+    if (
+        existing_shortened
+        and (existing_shortened.get("status") or "").strip() == "running"
+    ):
         raise HTTPException(status_code=400, detail="Text wird bereits gekürzt.")
 
     # Create/merge placeholder artifact doc immediately so the UI can show running/error state.
@@ -3064,9 +3516,16 @@ async def improve_lesefluss(
             f"run {request.run_id}, user {user_id}"
         )
 
-        existing_lesefluss = await firebase_service.get_lesefluss_result(user_id, request.kapitel_id, request.run_id)
-        if existing_lesefluss and (existing_lesefluss.get("status") or "").strip() == "running":
-            raise HTTPException(status_code=400, detail="Lesefluss wird bereits erstellt.")
+        existing_lesefluss = await firebase_service.get_lesefluss_result(
+            user_id, request.kapitel_id, request.run_id
+        )
+        if (
+            existing_lesefluss
+            and (existing_lesefluss.get("status") or "").strip() == "running"
+        ):
+            raise HTTPException(
+                status_code=400, detail="Lesefluss wird bereits erstellt."
+            )
 
         await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
@@ -3140,7 +3599,13 @@ async def export_docx(
     Queues a background task and returns immediately. The UI should read export status from
     Firestore (`users/{uid}/exports/{exportId}`).
     """
-    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+    credits_service = get_credits_service(firebase_service)
+    available_credits = float(await credits_service.get_available_credits(user_id))
+    if available_credits <= 0:
+        raise HTTPException(
+            status_code=402,
+            detail="Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
+        )
 
     # Validate that an API key is available (user key or platform key). The export may need LLM fixups.
     await user_key_service.resolve_api_key_for_user(user_id)
@@ -3221,7 +3686,9 @@ async def refine_combined_text(
         raise
     except Exception as exc:
         logger.error(f"Error queueing combined refinement: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to queue refinement request.") from exc
+        raise HTTPException(
+            status_code=500, detail="Failed to queue refinement request."
+        ) from exc
 
     async def _run_refine() -> None:
         await refinement_service.process_combined_refinement(
@@ -3295,7 +3762,9 @@ async def refine_shortened_text(
         raise
     except Exception as exc:
         logger.error(f"Error queueing shortened refinement: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to queue refinement request.") from exc
+        raise HTTPException(
+            status_code=500, detail="Failed to queue refinement request."
+        ) from exc
 
     async def _run_refine() -> None:
         await refinement_service.process_shortened_refinement(
@@ -3369,7 +3838,9 @@ async def refine_lesefluss_text(
         raise
     except Exception as exc:
         logger.error(f"Error queueing lesefluss refinement: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to queue refinement request.") from exc
+        raise HTTPException(
+            status_code=500, detail="Failed to queue refinement request."
+        ) from exc
 
     async def _run_refine() -> None:
         await refinement_service.process_lesefluss_refinement(
@@ -3445,7 +3916,9 @@ async def refine_result_text(
         raise
     except Exception as exc:
         logger.error(f"Error queueing result refinement: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to queue refinement request.") from exc
+        raise HTTPException(
+            status_code=500, detail="Failed to queue refinement request."
+        ) from exc
 
     async def _run_refine() -> None:
         await refinement_service.process_result_refinement(
@@ -3465,6 +3938,7 @@ async def refine_result_text(
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
