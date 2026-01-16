@@ -983,7 +983,20 @@ class ExportService:
             )
             projekt_id = str(export_doc.get("projektId") or "").strip()
 
-            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+            available_credits = float(
+                await get_credits_service(firebase_service).get_available_credits(user_id)
+            )
+            if available_credits <= 0:
+                export_ref.set(
+                    {
+                        "status": "error",
+                        "errorMessage": "Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
+                        "updatedAt": SERVER_TIMESTAMP,
+                        "finishedAt": SERVER_TIMESTAMP,
+                    },
+                    merge=True,
+                )
+                return
 
             api_key, key_source = await user_key_service.resolve_api_key_for_user(
                 user_id
