@@ -113,7 +113,7 @@ class OpenAIEstimationService:
         input_tokens = int(system_tokens + user_tokens + image_tokens)
 
         op_lower = op_type.lower()
-        is_refine = op_lower.startswith("refine_") or op_lower == "refine"
+        is_refine = (op_lower.startswith("refine_") or op_lower == "refine") and op_lower != "refine_result"
 
         source_text = output_source_text if output_source_text is not None else ""
         parent_text = parent_generated_text if parent_generated_text is not None else ""
@@ -131,7 +131,7 @@ class OpenAIEstimationService:
 
             if op_lower == "summary":
                 output_words = _clamp_int(0.35 * float(source_words), 50, 2000)
-            elif op_lower == "process_quelle":
+            elif op_lower in {"process_quelle", "refine_result"}:
                 output_words = _clamp_int(0.50 * float(source_words), 50, 2000)
             elif op_lower in {"combine", "combine_intermediate"}:
                 output_words = _clamp_int(0.70 * float(source_words), 50, 2000)
@@ -190,4 +190,3 @@ def get_openai_estimation_service(firebase_service) -> OpenAIEstimationService:
     if _openai_estimation_service_instance is None:
         _openai_estimation_service_instance = OpenAIEstimationService(firebase_service)
     return _openai_estimation_service_instance
-

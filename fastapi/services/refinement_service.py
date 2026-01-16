@@ -12,6 +12,8 @@ from services.openai_service import openai_service
 from services.prompt_service import prompt_service
 from services.cost_service import get_cost_service, TokenUsage
 from services.credits_service import get_credits_service
+from services.openai_budget_service import get_openai_budget_service
+from services.openai_estimation_service import get_openai_estimation_service
 from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
 from utils.config import config
@@ -1610,28 +1612,132 @@ class RefinementService:
 
             quelle_images = None
             if isinstance(quelle.get("images"), list):
-                urls = [
-                    str(img.get("url") or "").strip()
-                    for img in quelle["images"]
-                    if isinstance(img, dict) and str(img.get("url") or "").strip()
-                ]
+                image_dicts = [img for img in quelle["images"] if isinstance(img, dict)]
+                urls = [str(img.get("url") or "").strip() for img in image_dicts if str(img.get("url") or "").strip()]
                 if urls:
                     quelle_images = urls
+                    quelle_image_meta = image_dicts
+                else:
+                    quelle_image_meta = None
+            else:
+                quelle_image_meta = None
 
             debug_dump_path = self._get_prompt_dump_path("refine_result", version_id)
 
-            await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+            quelle_text = quelle_content_doc.get("text") or ""
+            prompt_text = (refined_user_input or "").replace("{BILDINHALT_ODER_LEER}", "")
+            has_quelltext_placeholder = "{QUELLTEXT}" in prompt_text
+            has_basic_info_placeholder = "{OPTIONAL_GRUNDLEGENDE_INFOS}" in prompt_text
 
-            openai_result = await openai_service.process_quelle(
-                quelle_content_doc.get("text") or "",
-                refined_user_input,
-                model,
-                grundlegende_informationen,
-                api_key=api_key,
-                quelle_images=quelle_images,
-                debug_prompt_dump_path=debug_dump_path,
-                system_prompt=REFINEMENT_SYSTEM_PROMPT,
+            if has_basic_info_placeholder:
+                prompt_text = prompt_text.replace(
+                    "{OPTIONAL_GRUNDLEGENDE_INFOS}",
+                    (grundlegende_informationen or "").strip(),
+                )
+
+            if has_quelltext_placeholder:
+                prompt_text = prompt_text.replace("{QUELLTEXT}", quelle_text)
+            else:
+                if grundlegende_informationen and grundlegende_informationen.strip() and not has_basic_info_placeholder:
+                    prompt_text = f"""{quelle_text}
+
+### Grundlegende Informationen
+{grundlegende_informationen}
+
+{prompt_text}"""
+                else:
+                    prompt_text = f"""{quelle_text}
+
+{prompt_text}"""
+
+            estimation_service = get_openai_estimation_service(firebase_service)
+            estimate_obj = await estimation_service.estimate_operation(
+                user_id=user_id,
+                operation_type="refine_result",
+                model=model,
+                system_text=REFINEMENT_SYSTEM_PROMPT,
+                user_text=prompt_text,
+                output_source_text=quelle_text,
+                images=quelle_image_meta,
             )
+
+            budget_service = get_openai_budget_service(firebase_service)
+            operation_id = str(version_id or "").strip()
+            reservation_released = False
+
+            reservation = await budget_service.reserve_operation(
+                user_id=user_id,
+                operation_id=operation_id,
+                operation_type="refine_result",
+                user_action_id=version_id,
+                estimate=estimate_obj.to_dict(),
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                quelle_id=quelle_id,
+                operation_details={
+                    "versionId": version_id,
+                    "parentVersionId": parent_version_id,
+                    "hasUserMessage": bool((user_message or "").strip()),
+                    "quelleHasImages": bool(quelle_images),
+                },
+            )
+
+            if reservation.result == "blocked":
+                await firebase_service.update_result_refinement_version(
+                    user_id,
+                    kapitel_id,
+                    run_id,
+                    quelle_id,
+                    version_id,
+                    {
+                        "status": "blocked",
+                        "errorMessage": "Kein Guthaben verfügbar. Bitte lade Credits im Profil unter Billing auf.",
+                        "updatedAt": SERVER_TIMESTAMP,
+                    },
+                )
+                return
+            if reservation.result in {"already_reserved", "finalized"}:
+                await firebase_service.update_result_refinement_version(
+                    user_id,
+                    kapitel_id,
+                    run_id,
+                    quelle_id,
+                    version_id,
+                    {
+                        "status": "error",
+                        "errorMessage": "Operation already exists. Please retry later.",
+                        "updatedAt": SERVER_TIMESTAMP,
+                    },
+                )
+                return
+
+            await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
+
+            try:
+                openai_result = await openai_service.process_quelle(
+                    quelle_text,
+                    refined_user_input,
+                    model,
+                    grundlegende_informationen,
+                    api_key=api_key,
+                    quelle_images=quelle_images,
+                    debug_prompt_dump_path=debug_dump_path,
+                    system_prompt=REFINEMENT_SYSTEM_PROMPT,
+                )
+            except Exception as exc:
+                await budget_service.mark_status(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    status="error",
+                    error_message=str(exc),
+                )
+                await budget_service.release_reservation(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    reason="error",
+                )
+                reservation_released = True
+                raise
 
             cost_service = get_cost_service(firebase_service)
             usage_obj = TokenUsage.from_any(
@@ -1680,6 +1786,7 @@ class RefinementService:
             }
 
             await cost_service.log_operation(
+                operation_id=operation_id,
                 operation_type="refine_result",
                 user_id=user_id,
                 user_action_id=version_id,
@@ -1706,6 +1813,12 @@ class RefinementService:
             )
 
             cost = float(cost_breakdown.total_cost_usd)
+            await budget_service.release_reservation(
+                user_id=user_id,
+                operation_id=operation_id,
+                reason="success",
+            )
+            reservation_released = True
 
             version_update = {
                 "assistantText": openai_result["content"],
@@ -1739,6 +1852,15 @@ class RefinementService:
                 f"Result refinement failed for kapitel {kapitel_id}, run {run_id}, quelle {quelle_id}, version {version_id}: {e}",
                 exc_info=True,
             )
+            try:
+                if "budget_service" in locals() and "operation_id" in locals() and not locals().get("reservation_released"):
+                    await budget_service.release_reservation(
+                        user_id=user_id,
+                        operation_id=operation_id,
+                        reason="error",
+                    )
+            except Exception:
+                pass
             try:
                 await firebase_service.update_result_refinement_version(
                     user_id,
