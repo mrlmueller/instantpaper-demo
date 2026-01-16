@@ -121,6 +121,12 @@ class AdminCreateCreditAdjustmentRequest(BaseModel):
     note: str | None = None
 
 
+class AdminAdjustReservedCreditsRequest(BaseModel):
+    mode: str  # "set" | "delta"
+    amount: float
+    note: str | None = None
+
+
 class RedeemAccessCodeRequest(BaseModel):
     code: str
 
@@ -1452,6 +1458,94 @@ async def admin_set_user_spend_rate(
     }
 
 
+@app.get("/api/admin/users/{uid}/openai/operations")
+async def admin_get_user_openai_operations(
+    uid: str,
+    limit: int = 50,
+    cursor: str | None = None,
+    status: str | None = None,
+    _: str = Depends(verify_admin_user),
+):
+    """Return OpenAI operations for a user (paginated, newest first; admin-only)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    limit = max(1, min(int(limit or 50), 200))
+    status_norm = str(status or "").strip().lower() or None
+
+    ops_ref = (
+        firebase_service.db.collection("users")
+        .document(uid_norm)
+        .collection("costMetrics")
+        .document("v1")
+        .collection("operations")
+    )
+    base = ops_ref.order_by("timestamp", direction=firestore.Query.DESCENDING)
+    if status_norm:
+        base = base.where("status", "==", status_norm)
+
+    if cursor:
+        try:
+            cursor_snap = ops_ref.document(str(cursor)).get()
+            if cursor_snap.exists:
+                base = base.start_after(cursor_snap)
+        except Exception:
+            pass
+
+    docs = list(base.limit(limit).stream())
+    out = []
+    for snap in docs:
+        data = snap.to_dict() or {}
+        estimate = _as_record(data.get("estimate"))
+        costs = _as_record(data.get("costs"))
+        reservation = _as_record(data.get("reservation"))
+
+        actual_credits = None
+        if estimate and costs:
+            try:
+                spend_rate = float(estimate.get("spendRate") or 0.0)
+                cost_usd = float(costs.get("totalCostUsd") or 0.0)
+                if spend_rate > 0 and cost_usd > 0:
+                    actual_credits = float(cost_usd * spend_rate)
+            except Exception:
+                actual_credits = None
+
+        reservation_out = None
+        if reservation:
+            reservation_out = dict(reservation)
+            reservation_out["reservedAt"] = _ts_to_iso(reservation.get("reservedAt"))
+            reservation_out["releasedAt"] = _ts_to_iso(reservation.get("releasedAt"))
+
+        out.append(
+            {
+                "id": snap.id,
+                "operationId": str(data.get("operationId") or snap.id),
+                "timestamp": _ts_to_iso(data.get("timestamp")),
+                "runningAt": _ts_to_iso(data.get("runningAt")),
+                "status": str(data.get("status") or ""),
+                "errorMessage": str(data.get("errorMessage") or "") or None,
+                "operationType": str(data.get("operationType") or ""),
+                "operationDetails": data.get("operationDetails"),
+                "userActionId": str(data.get("userActionId") or "") or None,
+                "model": str(data.get("modelNormalized") or data.get("model") or "") or None,
+                "keySource": str(data.get("keySource") or "") or None,
+                "projektId": str(data.get("projektId") or "") or None,
+                "kapitelId": str(data.get("kapitelId") or "") or None,
+                "runId": str(data.get("runId") or "") or None,
+                "quelleId": str(data.get("quelleId") or "") or None,
+                "tokens": _as_record(data.get("tokens")),
+                "costs": costs,
+                "estimate": estimate,
+                "reservation": reservation_out,
+                "actualCredits": actual_credits,
+            }
+        )
+
+    next_cursor = docs[-1].id if len(docs) == limit else None
+    return {"operations": out, "nextCursor": next_cursor}
+
+
 @app.get("/api/admin/users/{uid}/billing/ledger")
 async def admin_get_user_credit_ledger(
     uid: str,
@@ -1505,6 +1599,97 @@ async def admin_get_user_credit_ledger(
 
     next_cursor = docs[-1].id if len(docs) == limit else None
     return {"entries": out, "nextCursor": next_cursor}
+
+
+@app.post("/api/admin/users/{uid}/billing/reserved-credits")
+async def admin_adjust_reserved_credits(
+    uid: str,
+    payload: AdminAdjustReservedCreditsRequest,
+    admin_uid: str = Depends(verify_admin_user),
+):
+    """Set or delta-adjust a user's reservedCredits (admin-only)."""
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        raise HTTPException(status_code=400, detail="uid is required.")
+
+    mode = str(payload.mode or "").strip().lower()
+    if mode not in {"set", "delta"}:
+        raise HTTPException(status_code=400, detail="mode must be 'set' or 'delta'.")
+
+    try:
+        amount = float(payload.amount)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid amount.") from None
+
+    note = _clamp_str(payload.note, 500)
+
+    balance_ref = (
+        firebase_service.db.collection("users")
+        .document(uid_norm)
+        .collection("billing")
+        .document("balance")
+    )
+    audit_id = f"reserved_adj_{secrets.token_hex(12)}"
+    audit_ref = (
+        firebase_service.db.collection("users")
+        .document(uid_norm)
+        .collection("billing")
+        .document("audit")
+        .collection("reservedCredits")
+        .document(audit_id)
+    )
+
+    transaction = firebase_service.db.transaction()
+
+    @firestore.transactional
+    def txn(transaction):
+        bal_snap = balance_ref.get(transaction=transaction)
+        bal = bal_snap.to_dict() if bal_snap.exists else {}
+
+        prev_reserved = _as_float(bal.get("reservedCredits"), 0.0)
+        if mode == "set":
+            next_reserved = float(max(0.0, float(amount)))
+        else:
+            next_reserved = float(max(0.0, float(prev_reserved) + float(amount)))
+
+        transaction.set(
+            balance_ref,
+            {
+                "reservedCredits": float(next_reserved),
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+
+        transaction.set(
+            audit_ref,
+            {
+                "id": audit_id,
+                "userId": uid_norm,
+                "adminUid": str(admin_uid),
+                "mode": mode,
+                "amount": float(amount),
+                "previousReservedCredits": float(prev_reserved),
+                "newReservedCredits": float(next_reserved),
+                "note": note,
+                "createdAt": SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+
+        return float(prev_reserved), float(next_reserved)
+
+    prev, new = txn(transaction)
+    return {
+        "status": "ok",
+        "uid": uid_norm,
+        "mode": mode,
+        "amount": float(amount),
+        "previousReservedCredits": float(prev),
+        "reservedCredits": float(new),
+        "deltaApplied": float(new - prev),
+        "auditId": audit_id,
+    }
 
 
 @app.post("/api/admin/users/{uid}/billing/adjustments")
