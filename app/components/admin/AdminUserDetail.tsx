@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 
 import { AdminUserPromptManager } from '@/app/components/admin/AdminUserPromptManager';
+import { AdminUserOpenAIOperationsPanel } from '@/app/components/admin/AdminUserOpenAIOperationsPanel';
 import { AdminUserProjectsPanel } from '@/app/components/admin/AdminUserProjectsPanel';
 import { AdminUserStatsPanel } from '@/app/components/admin/AdminUserStatsPanel';
 import { Badge } from '@/components/ui/badge';
@@ -107,7 +108,7 @@ export function AdminUserDetail({ uid }: { uid: string }) {
   const [loading, setLoading] = useState(true);
   const [reloading, setReloading] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
-  const [tab, setTab] = useState<'prompts' | 'billing' | 'stats' | 'projects'>('prompts');
+  const [tab, setTab] = useState<'prompts' | 'billing' | 'openai' | 'stats' | 'projects'>('prompts');
 
   const [spendRateInput, setSpendRateInput] = useState('');
   const [savingSpendRate, setSavingSpendRate] = useState(false);
@@ -335,6 +336,7 @@ export function AdminUserDetail({ uid }: { uid: string }) {
             [
               { id: 'prompts', label: 'Prompts' },
               { id: 'billing', label: 'Billing' },
+              { id: 'openai', label: 'OpenAI' },
               { id: 'stats', label: 'Stats' },
               { id: 'projects', label: 'Projects' },
             ] as const
@@ -674,6 +676,24 @@ export function AdminUserDetail({ uid }: { uid: string }) {
             ) : null}
           </div>
         </div>
+      ) : null}
+      {tab === 'openai' ? (
+        <AdminUserOpenAIOperationsPanel
+          uid={user.uid}
+          balance={
+            billing?.balance || {
+              totalCredits: 0,
+              subscriptionCredits: 0,
+              subscriptionExpiresAt: null,
+              topupCredits: 0,
+              reservedCredits: 0,
+              availableCredits: 0,
+              isNegative: false,
+            }
+          }
+          refreshNonce={refreshNonce}
+          onRefresh={handleRefresh}
+        />
       ) : null}
       {tab === 'stats' ? <AdminUserStatsPanel uid={user.uid} refreshNonce={refreshNonce} /> : null}
       {tab === 'projects' ? <AdminUserProjectsPanel uid={user.uid} refreshNonce={refreshNonce} /> : null}
