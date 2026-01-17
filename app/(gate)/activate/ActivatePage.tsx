@@ -241,25 +241,6 @@ export function ActivatePage() {
               </Button>
             </div>
 
-            <div className="border-t pt-4 space-y-2">
-              <p className="text-sm text-muted-foreground">Kein Code? Du kannst auch Credits kaufen.</p>
-              <Button
-                onClick={() => startCheckout('subscription')}
-                disabled={Boolean(checkoutLoading) || submitting || refreshing || effectiveBlocked || meLoading}
-              >
-                {checkoutLoading === 'subscription' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                Abo starten ($25/Monat)
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => startCheckout('topup')}
-                disabled={Boolean(checkoutLoading) || submitting || refreshing || effectiveBlocked || meLoading}
-              >
-                {checkoutLoading === 'topup' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                Credits aufladen
-              </Button>
-            </div>
-
             {me && (me.accountStatus === 'blocked' || me.accountStatus === 'pending') ? (
               <p className="text-xs text-muted-foreground">
                 Status: <span className="font-medium">{me.accountStatus}</span>
