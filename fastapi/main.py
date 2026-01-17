@@ -3309,11 +3309,15 @@ async def process_quelle(
                 f"(Kapitel {request.kapitel_id}, run {request.run_id}, user {user_id}): {e}",
                 exc_info=True,
             )
+            error_message = None
+            if isinstance(e, HTTPException) and e.status_code == 402:
+                error_message = str(e.detail)
             await firebase_service.mark_result_error(
                 user_id=user_id,
                 kapitel_id=request.kapitel_id,
                 run_id=request.run_id,
                 quelle_id=request.quelle_id,
+                error_message=error_message,
             )
 
     # Process Quelle in the background to return immediately
@@ -3386,11 +3390,15 @@ async def combine_run(
                 f"(Kapitel {request.kapitel_id}, user {user_id}): {e}",
                 exc_info=True,
             )
+            error_message = None
+            if isinstance(e, HTTPException) and e.status_code == 402:
+                error_message = str(e.detail)
             await firebase_service.mark_artifact_error(
                 user_id=user_id,
                 kapitel_id=request.kapitel_id,
                 run_id=request.run_id,
                 artifact_id="combined",
+                error_message=error_message,
             )
 
     background_tasks.add_task(_run_combine_run_results)
@@ -3477,11 +3485,15 @@ async def shorten_kapitel(
                 f"(run {request.run_id}, user {user_id}): {e}",
                 exc_info=True,
             )
+            error_message = None
+            if isinstance(e, HTTPException) and e.status_code == 402:
+                error_message = str(e.detail)
             await firebase_service.mark_artifact_error(
                 user_id=user_id,
                 kapitel_id=request.kapitel_id,
                 run_id=request.run_id,
                 artifact_id="shortened",
+                error_message=error_message,
             )
 
     background_tasks.add_task(_run_shorten_process)
@@ -3562,12 +3574,16 @@ async def improve_lesefluss(
                     f"(run {request.run_id}, user {user_id}): {e}",
                     exc_info=True,
                 )
+                error_message = None
+                if isinstance(e, HTTPException) and e.status_code == 402:
+                    error_message = str(e.detail)
                 await firebase_service.mark_artifact_error(
                     user_id=user_id,
                     kapitel_id=request.kapitel_id,
                     run_id=request.run_id,
                     artifact_id="lesefluss",
                     key_source=key_source,
+                    error_message=error_message,
                 )
 
         background_tasks.add_task(_run_lesefluss_process)

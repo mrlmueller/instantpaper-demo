@@ -603,7 +603,7 @@ class CreditsService:
         if total < 0:
             raise HTTPException(
                 status_code=402,
-                detail="Kein Guthaben verfügbar. Bitte lade Credits im Profil unter Billing auf.",
+                detail="Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
             )
 
     async def debit_openai_operation(

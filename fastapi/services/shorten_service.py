@@ -200,7 +200,7 @@ class ShortenService:
         if reservation.result == "blocked":
             raise HTTPException(
                 status_code=402,
-                detail="Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
+                detail="Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
             )
         if reservation.result in {"already_reserved", "finalized"}:
             raise HTTPException(
@@ -662,7 +662,7 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
             if reservation.result == "blocked":
                 raise HTTPException(
                     status_code=402,
-                    detail="Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
+                    detail="Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
                 )
             if reservation.result in {"already_reserved", "finalized"}:
                 raise HTTPException(
@@ -1050,7 +1050,7 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
                 if blocked_for_credits:
                     raise HTTPException(
                         status_code=402,
-                        detail="Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
+                        detail="Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
                     )
                 raise ValueError("No valid summaries could be generated for context Kapitels")
 
@@ -1151,7 +1151,7 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
             if reservation.result == "blocked":
                 raise HTTPException(
                     status_code=402,
-                    detail="Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
+                    detail="Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
                 )
             if reservation.result in {"already_reserved", "finalized"}:
                 raise HTTPException(

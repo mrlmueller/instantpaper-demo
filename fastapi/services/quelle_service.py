@@ -223,7 +223,7 @@ class QuelleService:
             if reservation.result == "blocked":
                 raise HTTPException(
                     status_code=402,
-                    detail="Kein Guthaben verfügbar. Bitte lade Credits im Profil unter Billing auf.",
+                    detail="Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
                 )
             if reservation.result in {"already_reserved", "finalized"}:
                 raise HTTPException(
@@ -749,7 +749,7 @@ class QuelleService:
             if reservation.result == "blocked":
                 raise HTTPException(
                     status_code=402,
-                    detail="Kein Guthaben verfügbar. Bitte lade Credits im Profil unter Billing auf.",
+                    detail="Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
                 )
             if reservation.result in {"already_reserved", "finalized"}:
                 raise HTTPException(
@@ -900,6 +900,7 @@ class QuelleService:
                         run_id=run_id,
                         artifact_id="combined",
                         key_source=key_source,
+                        error_message=str(exc.detail) if exc.status_code == 402 else None,
                     )
                 except Exception:
                     pass
@@ -1048,7 +1049,7 @@ class QuelleService:
             if reservation.result == "blocked":
                 raise HTTPException(
                     status_code=402,
-                    detail="Kein Guthaben verfügbar. Bitte lade Credits im Profil unter Billing auf.",
+                    detail="Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
                 )
             if reservation.result in {"already_reserved", "finalized"}:
                 raise HTTPException(
@@ -1221,7 +1222,7 @@ class QuelleService:
         if reservation.result == "blocked":
             raise HTTPException(
                 status_code=402,
-                detail="Kein Guthaben verfügbar. Bitte lade Credits im Profil unter Billing auf.",
+                detail="Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
             )
         if reservation.result in {"already_reserved", "finalized"}:
             raise HTTPException(

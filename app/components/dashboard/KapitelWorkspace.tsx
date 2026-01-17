@@ -947,7 +947,7 @@ export function KapitelWorkspace({
               </div>
               <div className="flex items-center gap-2 text-destructive">
                 <AlertCircle className="h-4 w-4" />
-                <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
+                <span className="text-sm">{selectedRun.leseflussErrorMessage ?? AI_GENERIC_ERROR_MESSAGE}</span>
               </div>
             </div>
           </Card>
@@ -1109,7 +1109,7 @@ export function KapitelWorkspace({
               </div>
               <div className="flex items-center gap-2 text-destructive">
                 <AlertCircle className="h-4 w-4" />
-                <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
+                <span className="text-sm">{selectedRun.shortenedErrorMessage ?? AI_GENERIC_ERROR_MESSAGE}</span>
               </div>
             </div>
           </Card>
@@ -1395,7 +1395,7 @@ export function KapitelWorkspace({
               </div>
               <div className="flex items-center gap-2 text-destructive">
                 <AlertCircle className="h-4 w-4" />
-                <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
+                <span className="text-sm">{selectedRun.combinedErrorMessage ?? AI_GENERIC_ERROR_MESSAGE}</span>
               </div>
             </div>
           </Card>
@@ -1730,7 +1730,7 @@ export function KapitelWorkspace({
                         {ergebnis.status === "error" && (
                           <div className={cn("flex items-center gap-2 text-destructive", ENTER_ANIM)}>
                             <AlertCircle className="h-4 w-4" />
-                            <span className="text-sm">{AI_GENERIC_ERROR_MESSAGE}</span>
+                            <span className="text-sm">{ergebnis.errorMessage ?? AI_GENERIC_ERROR_MESSAGE}</span>
                           </div>
                         )}
                         {ergebnis.status === "success" && ergebnis.text && (

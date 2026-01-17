@@ -102,6 +102,7 @@ export function transformResultToUI(
     quelleName,
     text: fbResult.content || "",
     status,
+    errorMessage: fbResult.errorMessage,
     cost: costInCents,
     costUsd,
   };
@@ -181,6 +182,7 @@ export function transformRunToUI(
     combinedCost,
     combinedCostUsd,
     combinedStatus,
+    combinedErrorMessage: combined?.errorMessage,
     combinedRefinementCost,
     combinedRefinementCostUsd,
     shortenedRefinementCost,
@@ -189,6 +191,7 @@ export function transformRunToUI(
     shortenedCost,
     shortenedCostUsd,
     shortenedStatus,
+    shortenedErrorMessage: shortened?.errorMessage,
     shortenedOriginalLength: shortened?.originalLength,
     shortenedLength: shortened?.shortenedLength,
     leseflussText: lesefluss?.content || null,
@@ -198,6 +201,7 @@ export function transformRunToUI(
     leseflussCost,
     leseflussCostUsd,
     leseflussStatus,
+    leseflussErrorMessage: lesefluss?.errorMessage,
     leseflussRefinementCost,
     leseflussRefinementCostUsd,
   };

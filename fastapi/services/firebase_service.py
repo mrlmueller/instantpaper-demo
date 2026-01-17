@@ -653,9 +653,15 @@ class FirebaseService:
         quelle_id: str,
         *,
         key_source: Optional[str] = None,
+        error_message: Optional[str] = None,
     ) -> None:
-        """Mark a result doc as errored (status=error) with a generic message."""
+        """Mark a result doc as errored (status=error) with a user-safe message."""
         try:
+            msg = str(error_message or "").strip()
+            if not msg:
+                msg = AI_GENERIC_ERROR_MESSAGE
+            msg = msg[:1000]
+
             result_ref = self._run_result_ref(user_id, kapitel_id, run_id, quelle_id)
             existing = result_ref.get()
             existing_data = existing.to_dict() if existing.exists else {}
@@ -675,7 +681,7 @@ class FirebaseService:
                 "content": "",
                 "hasContent": True,
                 "status": "error",
-                "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                "errorMessage": msg,
                 "errorAt": SERVER_TIMESTAMP,
                 "keySource": key_source,
                 "createdAt": created_at_value,
@@ -1082,9 +1088,15 @@ class FirebaseService:
         artifact_id: str,
         *,
         key_source: Optional[str] = None,
+        error_message: Optional[str] = None,
     ) -> None:
-        """Mark an artifact doc as errored (status=error) with a generic message."""
+        """Mark an artifact doc as errored (status=error) with a user-safe message."""
         try:
+            msg = str(error_message or "").strip()
+            if not msg:
+                msg = AI_GENERIC_ERROR_MESSAGE
+            msg = msg[:1000]
+
             doc_ref = (
                 self.db.collection('users')
                 .document(user_id)
@@ -1110,7 +1122,7 @@ class FirebaseService:
             update = {
                 "artifactId": artifact_id,
                 "status": "error",
-                "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                "errorMessage": msg,
                 "errorAt": SERVER_TIMESTAMP,
                 "keySource": key_source,
                 "createdAt": created_at_value,

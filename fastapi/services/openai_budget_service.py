@@ -142,7 +142,7 @@ class OpenAIBudgetService:
                         "operationType": str(operation_type or "").strip(),
                         "operationDetails": operation_details,
                         "status": "blocked",
-                        "errorMessage": "Insufficient available credits for estimate.",
+                        "errorMessage": "Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
                         "timestamp": SERVER_TIMESTAMP,
                         "projektId": projekt_id,
                         "kapitelId": kapitel_id,
