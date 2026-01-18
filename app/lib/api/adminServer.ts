@@ -40,6 +40,21 @@ export type AdminUserRow = {
   accountStatus: string | null;
   disabled: boolean;
   canDuplicateSystemPrompts: boolean;
+  billingBalance?: {
+    totalCredits: number;
+    subscriptionCredits: number;
+    subscriptionExpiresAt: string | null;
+    topupCredits: number;
+    reservedCredits: number;
+    availableCredits: number;
+    isNegative: boolean;
+  } | null;
+  billingSubscription?: {
+    id: string | null;
+    status: string | null;
+    cancelAtPeriodEnd: boolean;
+    currentPeriodEnd: string | null;
+  } | null;
   createdAt: string | null;
   lastSignInAt: string | null;
 };
@@ -84,6 +99,36 @@ export async function listAdminUsers(params?: {
           accountStatus: typeof u.accountStatus === 'string' ? u.accountStatus : null,
           disabled: u.disabled === true,
           canDuplicateSystemPrompts: u.canDuplicateSystemPrompts === true,
+          billingBalance:
+            u.billingBalance && typeof u.billingBalance === 'object'
+              ? {
+                  totalCredits: Number((u.billingBalance as any).totalCredits ?? 0),
+                  subscriptionCredits: Number((u.billingBalance as any).subscriptionCredits ?? 0),
+                  subscriptionExpiresAt:
+                    typeof (u.billingBalance as any).subscriptionExpiresAt === 'string'
+                      ? ((u.billingBalance as any).subscriptionExpiresAt as string)
+                      : null,
+                  topupCredits: Number((u.billingBalance as any).topupCredits ?? 0),
+                  reservedCredits: Number((u.billingBalance as any).reservedCredits ?? 0),
+                  availableCredits: Number((u.billingBalance as any).availableCredits ?? 0),
+                  isNegative: (u.billingBalance as any).isNegative === true,
+                }
+              : null,
+          billingSubscription:
+            u.billingSubscription && typeof u.billingSubscription === 'object'
+              ? {
+                  id: typeof (u.billingSubscription as any).id === 'string' ? ((u.billingSubscription as any).id as string) : null,
+                  status:
+                    typeof (u.billingSubscription as any).status === 'string'
+                      ? ((u.billingSubscription as any).status as string)
+                      : null,
+                  cancelAtPeriodEnd: (u.billingSubscription as any).cancelAtPeriodEnd === true,
+                  currentPeriodEnd:
+                    typeof (u.billingSubscription as any).currentPeriodEnd === 'string'
+                      ? ((u.billingSubscription as any).currentPeriodEnd as string)
+                      : null,
+                }
+              : null,
           createdAt: typeof u.createdAt === 'string' ? u.createdAt : null,
           lastSignInAt: typeof u.lastSignInAt === 'string' ? u.lastSignInAt : null,
         }))

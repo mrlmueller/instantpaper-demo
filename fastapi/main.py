@@ -914,6 +914,8 @@ async def admin_list_users(
             can_duplicate_system_prompts = False
             blocked = False
             account_status = None
+            billing_balance = None
+            billing_subscription = None
             try:
                 user_doc = await firebase_service.get_user_doc(user.uid)
                 can_duplicate_system_prompts = bool(
@@ -928,6 +930,25 @@ async def admin_list_users(
                 can_duplicate_system_prompts = False
                 blocked = False
                 account_status = None
+
+            try:
+                bal_ref = (
+                    firebase_service.db.collection("users")
+                    .document(user.uid)
+                    .collection("billing")
+                    .document("balance")
+                )
+                bal_snap = bal_ref.get()
+                balance_data = bal_snap.to_dict() if bal_snap.exists else {}
+                billing_balance = _compute_balance_summary(balance_data)
+            except Exception:
+                billing_balance = None
+
+            if has_access or blocked:
+                try:
+                    billing_subscription = await _read_subscription_summary_for_user(user.uid)
+                except Exception:
+                    billing_subscription = None
 
             users_out.append(
                 {
@@ -946,6 +967,8 @@ async def admin_list_users(
                     "approved": has_access,
                     "canDuplicateSystemPrompts": can_duplicate_system_prompts,
                     "disabled": bool(user.disabled),
+                    "billingBalance": billing_balance,
+                    "billingSubscription": billing_subscription,
                     "createdAt": _ms_to_iso(
                         getattr(user.user_metadata, "creation_timestamp", None)
                     ),
@@ -1271,6 +1294,25 @@ async def admin_update_access_code(
         update["note"] = _clamp_str(payload.note, 500)
 
     ref.set(update, merge=True)
+    return {"status": "ok"}
+
+
+@app.delete("/api/admin/access-codes/{code}")
+async def admin_delete_access_code(code: str, _: str = Depends(verify_admin_user)):
+    code_norm = _normalize_access_code(code)
+    if not code_norm or not ACCESS_CODE_RE.match(code_norm):
+        raise HTTPException(status_code=400, detail="Invalid code.")
+
+    ref = _access_code_ref(code_norm)
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Access code not found.")
+
+    try:
+        ref.delete()
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to delete access code.") from None
+
     return {"status": "ok"}
 
 

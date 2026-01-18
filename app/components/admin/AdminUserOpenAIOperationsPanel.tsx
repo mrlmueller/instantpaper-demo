@@ -3,9 +3,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { Pencil } from 'lucide-react';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -76,8 +87,10 @@ type ReservedCreditsMode = 'delta' | 'set';
 
 function formatCredits(value: number | null | undefined): string {
   const n = Number(value ?? 0);
-  if (!Number.isFinite(n)) return '0.00';
-  return n.toFixed(2);
+  if (!Number.isFinite(n)) return '-';
+  const abs = Math.abs(n);
+  const maximumFractionDigits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
+  return n.toLocaleString('de-DE', { maximumFractionDigits });
 }
 
 function formatIso(value: string | null | undefined): string {
@@ -105,6 +118,28 @@ function statusBadgeClass(status: string): string {
   return 'bg-muted text-foreground border-transparent';
 }
 
+function statusLabel(status: string): string {
+  const s = String(status || '').toLowerCase();
+  if (s === 'success') return 'Erfolg';
+  if (s === 'running' || s === 'reserved') return 'Läuft';
+  if (s === 'blocked') return 'Blockiert';
+  if (s === 'skipped') return 'Übersprungen';
+  if (s === 'error') return 'Fehler';
+  return status || 'Unbekannt';
+}
+
+function formatTokens(value: number | null | undefined): string {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return '0';
+  return Math.max(0, Math.round(n)).toLocaleString('de-DE');
+}
+
+function humanizeOperationType(value: string | null | undefined): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '-';
+  return raw.replace(/_/g, ' ');
+}
+
 function formatUsd(value: number | null | undefined): string | null {
   const n = Number(value ?? 0);
   if (!Number.isFinite(n) || n <= 0) return null;
@@ -127,9 +162,12 @@ export function AdminUserOpenAIOperationsPanel({
   const [loading, setLoading] = useState(false);
   const [moreLoading, setMoreLoading] = useState(false);
 
-  const [reservedMode, setReservedMode] = useState<ReservedCreditsMode>('delta');
+  const [reservedMode, setReservedMode] = useState<ReservedCreditsMode>('set');
   const [reservedAmount, setReservedAmount] = useState('');
   const [reservedNote, setReservedNote] = useState('');
+  const [reservedDialogOpen, setReservedDialogOpen] = useState(false);
+  const [reservedStep, setReservedStep] = useState<1 | 2 | 3>(1);
+  const [reservedVerify, setReservedVerify] = useState('');
   const [savingReserved, setSavingReserved] = useState(false);
 
   const headline = useMemo(() => {
@@ -184,11 +222,24 @@ export function AdminUserOpenAIOperationsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid, refreshNonce]);
 
+  const openReservedDialog = () => {
+    setReservedMode('set');
+    setReservedAmount('');
+    setReservedNote('');
+    setReservedVerify('');
+    setReservedStep(1);
+    setReservedDialogOpen(true);
+  };
+
   const handleAdjustReserved = async () => {
     if (savingReserved) return;
-    const amountNum = Number(reservedAmount);
+    const amountNum = Number(reservedAmount.trim().replace(',', '.'));
     if (!Number.isFinite(amountNum)) {
       toast.error('Reserved Credits', { description: 'Bitte eine gültige Zahl eingeben.' });
+      return;
+    }
+    if (reservedMode === 'set' && amountNum < 0) {
+      toast.error('Reserved Credits', { description: 'Set muss >= 0 sein.' });
       return;
     }
 
@@ -205,6 +256,9 @@ export function AdminUserOpenAIOperationsPanel({
       toast.success('Reserved Credits angepasst');
       setReservedAmount('');
       setReservedNote('');
+      setReservedVerify('');
+      setReservedStep(1);
+      setReservedDialogOpen(false);
       onRefresh?.();
       await reload();
     } catch (err: any) {
@@ -216,192 +270,133 @@ export function AdminUserOpenAIOperationsPanel({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border p-6">
-        <h2 className="text-sm font-semibold text-foreground">Balance</h2>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border p-4">
-            <p className="text-xs text-muted-foreground">Credits</p>
-            <p className="text-2xl font-semibold text-foreground mt-1">{headline.total} Credits</p>
-            <div className="mt-2 text-sm text-muted-foreground grid gap-1">
-              <div>
-                Available: <span className="text-foreground">{headline.available}</span>
-              </div>
-              <div>
-                Reserved: <span className="text-foreground">{headline.reserved}</span>
-              </div>
-              <div>
-                Abo: <span className="text-foreground">{headline.subscription}</span>
-              </div>
-              <div>
-                Top-up: <span className="text-foreground">{headline.topup}</span>
-              </div>
-              {headline.expires ? <div>Abo bis: {headline.expires}</div> : null}
-            </div>
-          </div>
-          <div className="rounded-lg border p-4">
-            <p className="text-xs text-muted-foreground">Reserved Credits</p>
-            <p className="text-lg font-medium text-foreground mt-1">Manuelle Korrektur</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Für den Fall, dass ein Crash reservedCredits hängen lässt.
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-foreground">Credit-Status</h2>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-xl border bg-background shadow-sm p-5">
+            <p className="text-xs text-muted-foreground">Gesamt Credits</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{headline.total}</p>
+            <p className="mt-4 text-xs text-muted-foreground">
+              Abo: <span className="text-foreground">{headline.subscription}</span> · Top-Up:{' '}
+              <span className="text-foreground">{headline.topup}</span>
             </p>
-            <div className="mt-4 grid gap-3">
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant={reservedMode === 'delta' ? 'default' : 'outline'}
-                  onClick={() => setReservedMode('delta')}
-                  disabled={savingReserved}
-                >
-                  Delta
-                </Button>
-                <Button
-                  type="button"
-                  variant={reservedMode === 'set' ? 'default' : 'outline'}
-                  onClick={() => setReservedMode('set')}
-                  disabled={savingReserved}
-                >
-                  Set
-                </Button>
+          </div>
+
+          <div className="rounded-xl border bg-background shadow-sm p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Verfügbar / Reserviert</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  <span className="text-emerald-700">{headline.available}</span>{' '}
+                  <span className="text-muted-foreground">/</span>{' '}
+                  <span className="text-amber-600">{headline.reserved}</span>
+                </p>
               </div>
-              <div className="grid gap-1.5">
-                <label className="text-xs font-medium text-muted-foreground" htmlFor="reserved-amount">
-                  Betrag ({reservedMode})
-                </label>
-                <Input
-                  id="reserved-amount"
-                  type="number"
-                  step="0.01"
-                  value={reservedAmount}
-                  onChange={(e) => setReservedAmount(e.target.value)}
-                  placeholder={reservedMode === 'delta' ? '-10 oder +10' : 'z.B. 0'}
-                  disabled={savingReserved}
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <label className="text-xs font-medium text-muted-foreground" htmlFor="reserved-note">
-                  Notiz (optional)
-                </label>
-                <Textarea
-                  id="reserved-note"
-                  value={reservedNote}
-                  onChange={(e) => setReservedNote(e.target.value)}
-                  placeholder="z.B. stuck reservations nach Crash"
-                  disabled={savingReserved}
-                />
-              </div>
-              <Button type="button" onClick={handleAdjustReserved} disabled={savingReserved}>
-                {savingReserved ? 'Speichern…' : 'Anwenden'}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="h-8 w-8"
+                onClick={openReservedDialog}
+                title="Reservierte Credits anpassen"
+                aria-label="Reservierte Credits anpassen"
+              >
+                <Pencil className="h-4 w-4" />
               </Button>
             </div>
+            {headline.expires ? <p className="mt-4 text-xs text-muted-foreground">Abo bis: {headline.expires}</p> : null}
           </div>
         </div>
-      </div>
+      </section>
 
-      <div className="rounded-lg border p-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">OpenAI Operationen</h2>
-            <p className="text-xs text-muted-foreground mt-1">Estimate vs Actual (Tokens + Credits)</p>
-          </div>
-          <Button variant="outline" onClick={reload} disabled={loading}>
-            Reload
-          </Button>
-        </div>
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-foreground">Operations-Verlauf</h2>
 
         {loading ? (
-          <div className="mt-4 space-y-3">
-            {[...Array(4)].map((_, i) => (
-              <Skeleton key={i} className="h-14 w-full" />
+          <div className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-24 w-full" />
             ))}
           </div>
         ) : operations.length === 0 ? (
-          <p className="mt-4 text-sm text-muted-foreground">Keine Operationen gefunden.</p>
+          <div className="rounded-xl border bg-background shadow-sm p-5 text-sm text-muted-foreground">
+            Keine Operationen gefunden.
+          </div>
         ) : (
-          <div className="mt-4 divide-y">
+          <div className="space-y-3">
             {operations.map((op) => {
               const status = String(op.status || 'unknown');
+              const statusLower = status.toLowerCase();
               const est = op.estimate || {};
               const tok = op.tokens || {};
               const costs = op.costs || {};
-              const estCredits = Number(est.credits ?? 0);
-              const actCredits = op.actualCredits ?? null;
+              const reservation = op.reservation || {};
               const costUsd = formatUsd(Number(costs.totalCostUsd ?? 0));
 
+              const estCredits = Number(est.credits ?? 0);
+              const actCredits = op.actualCredits ?? null;
+              const creditsDisplay = formatCredits(actCredits == null ? estCredits : Number(actCredits));
+
+              const cardClass = cn(
+                'rounded-xl border bg-background shadow-sm px-5 py-4',
+                (statusLower === 'running' || statusLower === 'reserved') && 'border-amber-500/20 bg-amber-500/5',
+                (statusLower === 'blocked' || statusLower === 'error') && 'border-destructive/20 bg-destructive/5'
+              );
+
               return (
-                <div key={op.operationId || op.id} className="py-3">
+                <div key={op.operationId || op.id} className={cardClass}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Badge className={cn('rounded-md px-2 py-0.5 text-[11px] font-semibold', statusBadgeClass(status))}>
-                          {status}
-                        </Badge>
-                        <p className="text-sm font-medium text-foreground truncate max-w-[520px]">
-                          {op.operationType || '-'}
+                        <p className="text-sm font-semibold text-foreground truncate max-w-[360px]">
+                          {humanizeOperationType(op.operationType)}
                         </p>
                         {op.model ? (
                           <Badge variant="secondary" className="rounded-md px-2 py-0.5 text-[11px] font-semibold">
                             {op.model}
                           </Badge>
                         ) : null}
-                        {op.keySource ? (
-                          <span className="text-[11px] text-muted-foreground uppercase">{op.keySource}</span>
-                        ) : null}
+                        <Badge className={cn('rounded-md px-2 py-0.5 text-[11px] font-semibold', statusBadgeClass(status))}>
+                          {statusLabel(status)}
+                        </Badge>
                       </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {formatIso(op.timestamp || null)} • opId: <span className="font-mono">{op.operationId}</span>
+                      <p className="mt-1 text-xs text-muted-foreground">{formatIso(op.timestamp || null)}</p>
+                    </div>
+
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-semibold text-foreground">{creditsDisplay} Credits</p>
+                      <p className="text-xs text-muted-foreground">{costUsd ?? '\u00A0'}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div className="text-xs">
+                      <p className="text-xs text-muted-foreground">Geschätzte Tokens</p>
+                      <p className="mt-1 text-foreground">
+                        {formatTokens(Number(est.inputTokens ?? 0))} in / {formatTokens(Number(est.outputTokens ?? 0))} out
                       </p>
-                      {op.errorMessage ? (
-                        <p className="mt-2 text-xs text-destructive">{op.errorMessage}</p>
-                      ) : null}
                     </div>
-
-                    <div className="shrink-0 text-right text-xs text-muted-foreground">
-                      <div>
-                        Est: <span className="text-foreground">{formatCredits(estCredits)}</span> cr
-                      </div>
-                      <div>
-                        Act:{' '}
-                        <span className="text-foreground">
-                          {actCredits == null ? '-' : formatCredits(Number(actCredits))}
-                        </span>{' '}
-                        cr
-                      </div>
-                      <div>{costUsd ? `USD: ${costUsd}` : null}</div>
+                    <div className="text-xs">
+                      <p className="text-xs text-muted-foreground">Tatsächliche Tokens</p>
+                      <p className="mt-1 text-foreground">
+                        {formatTokens(Number(tok.inputTokens ?? 0))} in / {formatTokens(Number(tok.outputTokens ?? 0))} out
+                        {tok.cachedInputTokens ? ` / ${formatTokens(Number(tok.cachedInputTokens ?? 0))} cached` : ''}
+                      </p>
                     </div>
                   </div>
 
-                  <div className="mt-3 grid gap-2 md:grid-cols-2 text-xs">
-                    <div className="rounded-md border p-3">
-                      <p className="text-xs text-muted-foreground">Tokens</p>
-                      <div className="mt-1 text-muted-foreground">
-                        <div>
-                          Est in/out:{' '}
-                          <span className="text-foreground">
-                            {Number(est.inputTokens ?? 0)}/{Number(est.outputTokens ?? 0)}
-                          </span>
-                        </div>
-                        <div>
-                          Act in/out:{' '}
-                          <span className="text-foreground">
-                            {Number(tok.inputTokens ?? 0)}/{Number(tok.outputTokens ?? 0)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-3">
-                      <p className="text-xs text-muted-foreground">Reservation</p>
-                      <div className="mt-1 text-muted-foreground">
-                        <div>
-                          Reserved:{' '}
-                          <span className="text-foreground">
-                            {formatCredits(Number(op.reservation?.reservedCredits ?? 0))}
-                          </span>
-                        </div>
-                        <div>ReservedAt: {formatIso(op.reservation?.reservedAt ?? null)}</div>
-                        <div>ReleasedAt: {formatIso(op.reservation?.releasedAt ?? null)}</div>
-                      </div>
-                    </div>
+                  <div className="mt-4 border-t pt-4 text-xs text-muted-foreground space-y-1">
+                    <p>
+                      Reserviert:{' '}
+                      <span className="text-foreground">{formatCredits(Number(reservation.reservedCredits ?? 0))}</span>{' '}
+                      Credits{reservation.reservedAt ? ` um ${formatIso(reservation.reservedAt)}` : ''}
+                    </p>
+                    {reservation.releasedAt ? <p>Freigegeben um {formatIso(reservation.releasedAt)}</p> : null}
                   </div>
+
+                  {op.errorMessage ? (
+                    <p className="mt-4 text-xs text-destructive">{op.errorMessage}</p>
+                  ) : null}
                 </div>
               );
             })}
@@ -409,7 +404,7 @@ export function AdminUserOpenAIOperationsPanel({
         )}
 
         {nextCursor ? (
-          <div className="mt-4">
+          <div>
             <Button
               variant="outline"
               onClick={() => {
@@ -431,7 +426,187 @@ export function AdminUserOpenAIOperationsPanel({
             </Button>
           </div>
         ) : null}
-      </div>
+      </section>
+
+      <Dialog
+        open={reservedDialogOpen}
+        onOpenChange={(open) => {
+          setReservedDialogOpen(open);
+          if (!open) {
+            setReservedStep(1);
+            setReservedVerify('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[620px]">
+          {(() => {
+            const amountTrim = reservedAmount.trim();
+            const amountNum = Number(amountTrim.replace(',', '.'));
+            const amountOk =
+              Number.isFinite(amountNum) && (reservedMode === 'set' ? amountNum >= 0 : amountNum !== 0);
+
+            const verifyTrim = reservedVerify.trim();
+            const verifyNum = Number(verifyTrim.replace(',', '.'));
+            const verifyMatches = amountOk && Number.isFinite(verifyNum) && Math.abs(amountNum - verifyNum) < 1e-9;
+
+            const noteLabel = reservedNote.trim() ? reservedNote.trim() : 'Keine Notiz angegeben';
+
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>
+                    {reservedStep === 1
+                      ? 'Reservierte Credits anpassen'
+                      : reservedStep === 2
+                        ? 'Reservierte Credits bestätigen'
+                        : 'Reservierte Credits bestätigen'}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {reservedStep === 1
+                      ? 'Ändern Sie die Anzahl der reservierten Credits. Nur verwenden, wenn Credits fälschlicherweise reserviert bleiben.'
+                      : reservedStep === 2
+                        ? 'Bitte bestätige die Änderung.'
+                        : 'Bitte gib den Wert erneut ein, um die Änderung zu bestätigen.'}
+                  </DialogDescription>
+                </DialogHeader>
+
+                {reservedStep === 1 ? (
+                  <div className="grid gap-4 py-2">
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant={reservedMode === 'set' ? 'default' : 'outline'}
+                        onClick={() => setReservedMode('set')}
+                        disabled={savingReserved}
+                      >
+                        Set
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={reservedMode === 'delta' ? 'default' : 'outline'}
+                        onClick={() => setReservedMode('delta')}
+                        disabled={savingReserved}
+                      >
+                        Delta
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="reserved-amount">Neue Anzahl reservierter Credits</Label>
+                      <Input
+                        id="reserved-amount"
+                        type="number"
+                        step="0.01"
+                        value={reservedAmount}
+                        onChange={(e) => setReservedAmount(e.target.value)}
+                        placeholder={reservedMode === 'delta' ? 'z.B. -10 oder +10' : 'z.B. 0'}
+                        disabled={savingReserved}
+                      />
+                      <div className="rounded-md border bg-amber-500/10 text-amber-900 border-amber-500/20 px-3 py-2 text-sm">
+                        Aktuell reserviert: {headline.reserved} Credits
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="reserved-note">Notiz / Grund</Label>
+                      <Textarea
+                        id="reserved-note"
+                        value={reservedNote}
+                        onChange={(e) => setReservedNote(e.target.value)}
+                        placeholder="Grund für die Anpassung…"
+                        disabled={savingReserved}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                {reservedStep === 2 ? (
+                  <div className="py-2 space-y-3">
+                    <div className="rounded-md border bg-amber-500/10 text-amber-900 border-amber-500/20 px-3 py-2 text-sm">
+                      Modus: {reservedMode.toUpperCase()} · Wert: {formatCredits(amountNum)} · Grund: {noteLabel}
+                    </div>
+                  </div>
+                ) : null}
+
+                {reservedStep === 3 ? (
+                  <div className="grid gap-3 py-2">
+                    <div className="grid gap-2">
+                      <Label htmlFor="reserved-verify">Wert erneut eingeben</Label>
+                      <Input
+                        id="reserved-verify"
+                        type="number"
+                        step="0.01"
+                        value={reservedVerify}
+                        onChange={(e) => setReservedVerify(e.target.value)}
+                        placeholder={amountTrim || '0'}
+                        disabled={savingReserved}
+                      />
+                      {!verifyMatches ? <p className="text-xs text-destructive">Die Werte stimmen nicht überein</p> : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (reservedStep === 1) {
+                        setReservedDialogOpen(false);
+                        return;
+                      }
+                      if (reservedStep === 2) setReservedStep(1);
+                      if (reservedStep === 3) setReservedStep(2);
+                    }}
+                    disabled={savingReserved}
+                  >
+                    {reservedStep === 1 ? 'Abbrechen' : 'Zurück'}
+                  </Button>
+
+                  {reservedStep === 1 ? (
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        if (!amountOk) {
+                          toast.error('Reserved Credits', { description: 'Bitte einen gültigen Wert eingeben.' });
+                          return;
+                        }
+                        setReservedStep(2);
+                      }}
+                      disabled={savingReserved}
+                    >
+                      Weiter
+                    </Button>
+                  ) : null}
+
+                  {reservedStep === 2 ? (
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        setReservedVerify('');
+                        setReservedStep(3);
+                      }}
+                      disabled={savingReserved}
+                    >
+                      Bestätigen
+                    </Button>
+                  ) : null}
+
+                  {reservedStep === 3 ? (
+                    <Button
+                      type="button"
+                      onClick={handleAdjustReserved}
+                      disabled={!verifyMatches || savingReserved}
+                    >
+                      Anwenden
+                    </Button>
+                  ) : null}
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
