@@ -2,10 +2,11 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { ArrowUpRight, Ban, Check, Copy, UserX } from 'lucide-react';
+import { ArrowUpRight, Ban, BarChart3, Check, Copy, UserX } from 'lucide-react';
 
 import {
   adminSetCanDuplicateSystemPrompts,
+  adminSetCanViewUsageInsights,
   adminSetUserBlocked,
   adminSetUserFullAccess,
 } from '@/app/actions/admin';
@@ -159,6 +160,36 @@ function PromptCopyButton({ user, formKey }: { user: AdminUserRow; formKey: stri
         enabled
           ? `Soll ${user.email} keine System-Prompts mehr duplizieren können?`
           : `Soll ${user.email} System-Prompts in die eigene Prompt-Bibliothek duplizieren dürfen?`
+      }
+      confirmLabel={enabled ? 'Deaktivieren' : 'Aktivieren'}
+      confirmVariant={enabled ? 'outline' : 'default'}
+      confirmSize="sm"
+    />
+  );
+}
+
+function UsageInsightsButton({ user, formKey }: { user: AdminUserRow; formKey: string }) {
+  const enabled = user.canViewUsageInsights === true;
+  return (
+    <ActionForm
+      formId={`usage-insights-${formKey}`}
+      action={adminSetCanViewUsageInsights}
+      email={user.email}
+      hiddenInputs={[{ name: 'canViewUsageInsights', value: enabled ? 'false' : 'true' }]}
+      triggerLabel="Usage Insights"
+      triggerAriaLabel={enabled ? 'Usage Insights deaktivieren' : 'Usage Insights aktivieren'}
+      triggerChildren={<BarChart3 className="h-4 w-4" />}
+      triggerVariant="ghost"
+      triggerSize="icon-sm"
+      triggerClassName={cn(
+        'h-8 w-8',
+        enabled ? 'text-primary hover:bg-primary/10' : 'text-muted-foreground hover:text-foreground'
+      )}
+      title={enabled ? 'Usage Insights deaktivieren?' : 'Usage Insights aktivieren?'}
+      description={
+        enabled
+          ? `Soll ${user.email} die Dashboard/Profil Statistiken nicht mehr sehen können?`
+          : `Soll ${user.email} die Dashboard/Profil Statistiken sehen können?`
       }
       confirmLabel={enabled ? 'Deaktivieren' : 'Aktivieren'}
       confirmVariant={enabled ? 'outline' : 'default'}
@@ -329,6 +360,7 @@ function UserCard({ user }: { user: AdminUserRow }) {
             ) : (
               <>
                 <PromptCopyButton user={user} formKey={formKey} />
+                <UsageInsightsButton user={user} formKey={formKey} />
                 {user.fullAccess ? <FullAccessButton user={user} formKey={formKey} /> : null}
                 <BlockButton user={user} formKey={formKey} />
                 {uid ? (

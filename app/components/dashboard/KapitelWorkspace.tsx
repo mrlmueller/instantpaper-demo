@@ -56,6 +56,7 @@ import { Label } from "@/components/ui/label";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Kapitel, Quelle, Run, IntermediateGroup } from "@/app/types/ui";
+import { useAuth } from "@/app/components/providers/AuthProvider";
 import {
   getCombinedGroups,
   getSummaries,
@@ -67,6 +68,23 @@ import {
 import { AI_GENERIC_ERROR_MESSAGE } from "@/app/lib/ai/messages";
 import { ProcessingStepper } from "./ProcessingStepper";
 import { toast } from "sonner";
+import Cookies from "js-cookie";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
+
+type RunUsageSummary = {
+  runId: string;
+  totalCredits: number;
+  byOperationType: Array<{ operationType: string; count: number; credits: number }>;
+};
+
+function formatCredits(value: number): string {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "0";
+  const abs = Math.abs(n);
+  const maximumFractionDigits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
+  return n.toLocaleString("de-DE", { maximumFractionDigits });
+}
 
 interface KapitelWorkspaceProps {
   loading: boolean;
@@ -118,10 +136,14 @@ export function KapitelWorkspace({
   const ENTER_ANIM = "motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200 motion-safe:ease-out";
   const ENTER_UP_ANIM = `${ENTER_ANIM} motion-safe:slide-in-from-bottom-1`;
 
+  const { canViewUsageInsights } = useAuth();
+
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showFullAnweisung, setShowFullAnweisung] = useState(false);
-  const [costPopoverOpen, setCostPopoverOpen] = useState(false);
-  const costPopoverCloseTimer = useRef<number | null>(null);
+  const [usagePopoverOpen, setUsagePopoverOpen] = useState(false);
+  const usagePopoverCloseTimer = useRef<number | null>(null);
+  const [runUsage, setRunUsage] = useState<RunUsageSummary | null>(null);
+  const [runUsageLoading, setRunUsageLoading] = useState(false);
   const [hasIntermediateGroups, setHasIntermediateGroups] = useState<boolean | null>(null);
   const [hasIntermediateGroupsLoading, setHasIntermediateGroupsLoading] = useState(false);
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] =
@@ -377,134 +399,125 @@ export function KapitelWorkspace({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Calculate total cost in USD (high precision); formatting handles tiny values.
-  const summariesCostUsd = summaries.reduce((sum, summary) => sum + Number(summary.costUsd ?? 0), 0);
-  const totalCostUsd = selectedRun
-    ? Number(selectedRun.quellenCostUsd ?? selectedRun.quellenCost / 100) +
-      Number(selectedRun.combinedCostUsd ?? selectedRun.combinedCost / 100) +
-      Number(selectedRun.combinedRefinementCostUsd ?? (selectedRun.combinedRefinementCost || 0) / 100) +
-      Number(selectedRun.shortenedCostUsd ?? (selectedRun.shortenedCost || 0) / 100) +
-      Number(selectedRun.shortenedRefinementCostUsd ?? (selectedRun.shortenedRefinementCost || 0) / 100) +
-      Number(selectedRun.leseflussCostUsd ?? (selectedRun.leseflussCost || 0) / 100) +
-      Number(selectedRun.leseflussRefinementCostUsd ?? (selectedRun.leseflussRefinementCost || 0) / 100) +
-      summariesCostUsd
-    : 0;
+  useEffect(() => {
+    if (!canViewUsageInsights) {
+      setRunUsage(null);
+      setRunUsageLoading(false);
+      setUsagePopoverOpen(false);
+      return;
+    }
 
-  const formatUsd = (usd: number) => {
-    const value = Number(usd || 0);
-    if (!Number.isFinite(value) || value <= 0) return "$0.00";
-    if (value < 0.01) return "<$0.01";
-    return `$${value.toFixed(2)}`;
+    if (!selectedRun?.id) {
+      setRunUsage(null);
+      setRunUsageLoading(false);
+      return;
+    }
+
+    const token = Cookies.get("__session");
+    if (!token) {
+      setRunUsage(null);
+      setRunUsageLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRunUsageLoading(true);
+    fetch(`${API_BASE_URL}/api/usage-insights/run/${encodeURIComponent(selectedRun.id)}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (res) => {
+        if (res.status === 401 || res.status === 403) return null;
+        if (!res.ok) {
+          const detail = (await res.json().catch(() => ({})))?.detail;
+          throw new Error(typeof detail === "string" ? detail : "Konnte Usage Insights nicht laden.");
+        }
+        return (await res.json()) as RunUsageSummary;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        if (!data) {
+          setRunUsage(null);
+          return;
+        }
+        const items = Array.isArray((data as any).byOperationType) ? (data as any).byOperationType : [];
+        setRunUsage({
+          runId: String((data as any).runId || selectedRun.id),
+          totalCredits: Number((data as any).totalCredits ?? 0),
+          byOperationType: items
+            .map((x: any) => ({
+              operationType: String(x?.operationType || ""),
+              count: Number(x?.count ?? 0),
+              credits: Number(x?.credits ?? 0),
+            }))
+            .filter((x: any) => x.operationType),
+        });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Failed to load run usage:", err);
+        setRunUsage(null);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setRunUsageLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewUsageInsights, selectedRun?.id]);
+
+  const openUsagePopover = () => {
+    if (usagePopoverCloseTimer.current) {
+      window.clearTimeout(usagePopoverCloseTimer.current);
+      usagePopoverCloseTimer.current = null;
+    }
+    setUsagePopoverOpen(true);
   };
 
-  const openCostPopover = () => {
-    if (costPopoverCloseTimer.current) {
-      window.clearTimeout(costPopoverCloseTimer.current);
-      costPopoverCloseTimer.current = null;
+  const scheduleCloseUsagePopover = () => {
+    const CLOSE_DELAY_MS = 250;
+    if (usagePopoverCloseTimer.current) {
+      window.clearTimeout(usagePopoverCloseTimer.current);
     }
-    setCostPopoverOpen(true);
+    usagePopoverCloseTimer.current = window.setTimeout(() => {
+      setUsagePopoverOpen(false);
+      usagePopoverCloseTimer.current = null;
+    }, CLOSE_DELAY_MS);
   };
 
-  const scheduleCloseCostPopover = () => {
-    if (costPopoverCloseTimer.current) {
-      window.clearTimeout(costPopoverCloseTimer.current);
-    }
-    costPopoverCloseTimer.current = window.setTimeout(() => {
-      setCostPopoverOpen(false);
-      costPopoverCloseTimer.current = null;
-    }, 120);
-  };
+  const runUsageRows = (() => {
+    if (!runUsage?.byOperationType?.length) return [];
+    const metaByType: Record<string, { label: string; unitSingular: string; unitPlural: string }> = {
+      process_quelle: { label: "Quellen verarbeiten", unitSingular: "Quelle", unitPlural: "Quellen" },
+      combine: { label: "Text kombinieren", unitSingular: "Run", unitPlural: "Runs" },
+      combine_intermediate: { label: "Text kombinieren", unitSingular: "Gruppe", unitPlural: "Gruppen" },
+      shorten: { label: "Text kürzen", unitSingular: "Run", unitPlural: "Runs" },
+      lesefluss: { label: "Lesefluss verbessern", unitSingular: "Run", unitPlural: "Runs" },
+      summary: { label: "Kontext-Summaries", unitSingular: "Kapitel", unitPlural: "Kapitel" },
+      refine_combined: { label: "Verfeinerung (Kombiniert)", unitSingular: "Version", unitPlural: "Versionen" },
+      refine_shortened: { label: "Verfeinerung (Gekürzt)", unitSingular: "Version", unitPlural: "Versionen" },
+      refine_lesefluss: { label: "Verfeinerung (Lesefluss)", unitSingular: "Version", unitPlural: "Versionen" },
+      refine_result: { label: "Verfeinerung (Quelle)", unitSingular: "Version", unitPlural: "Versionen" },
+      export_docx: { label: "Export (DOCX)", unitSingular: "Export", unitPlural: "Exporte" },
+    };
 
-  const costBreakdownItems: Array<{
-    key: string;
-    label: string;
-    hint?: string;
-    usd: number;
-  }> = (() => {
-    if (!selectedRun) return [];
-
-    const items: Array<{
-      key: string;
-      label: string;
-      hint?: string;
-      usd: number;
-    }> = [];
-
-    const results = selectedRun.quellenErgebnisse || [];
-    const resultsSuccess = results.filter((r) => r.status === "success").length;
-    const resultsNoContent = results.filter((r) => r.status === "no-content").length;
-
-    if (results.length > 0) {
-      const hintParts: string[] = [];
-      if (results.length > 0) hintParts.push(`${resultsSuccess}/${results.length} Quellen`);
-      if (resultsNoContent > 0) hintParts.push(`${resultsNoContent} ohne Inhalt`);
-      items.push({
-        key: "results",
-        label: "Ergebnisse pro Quelle",
-        hint: hintParts.length > 0 ? hintParts.join(" · ") : undefined,
-        usd: Number(selectedRun.quellenCostUsd ?? selectedRun.quellenCost / 100),
-      });
-    }
-
-    if (Boolean(selectedRun.combinedText && selectedRun.combinedText.trim().length > 0)) {
-      items.push({
-        key: "combined",
-        label: "Kombiniert",
-        hint: hasIntermediateGroups === true ? "inkl. Zwischengruppen" : undefined,
-        usd: Number(selectedRun.combinedCostUsd ?? selectedRun.combinedCost / 100),
-      });
-    }
-
-    if (Number(selectedRun.combinedRefinementCostUsd ?? (selectedRun.combinedRefinementCost || 0) / 100) > 0) {
-      items.push({
-        key: "combinedRefine",
-        label: "Verfeinerung (Kombiniert)",
-        usd: Number(selectedRun.combinedRefinementCostUsd ?? (selectedRun.combinedRefinementCost || 0) / 100),
-      });
-    }
-
-    if (Boolean(selectedRun.shortenedText && selectedRun.shortenedText.trim().length > 0)) {
-      items.push({
-        key: "shorten",
-        label: "Text kürzen",
-        usd: Number(selectedRun.shortenedCostUsd ?? (selectedRun.shortenedCost || 0) / 100),
-      });
-    }
-
-    if (Number(selectedRun.shortenedRefinementCostUsd ?? (selectedRun.shortenedRefinementCost || 0) / 100) > 0) {
-      items.push({
-        key: "shortenRefine",
-        label: "Verfeinerung (Gekürzt)",
-        usd: Number(selectedRun.shortenedRefinementCostUsd ?? (selectedRun.shortenedRefinementCost || 0) / 100),
-      });
-    }
-
-    if (Boolean(selectedRun.leseflussText && selectedRun.leseflussText.trim().length > 0)) {
-      items.push({
-        key: "lesefluss",
-        label: "Lesefluss verbessern",
-        usd: Number(selectedRun.leseflussCostUsd ?? (selectedRun.leseflussCost || 0) / 100),
-      });
-    }
-
-    if (Number(selectedRun.leseflussRefinementCostUsd ?? (selectedRun.leseflussRefinementCost || 0) / 100) > 0) {
-      items.push({
-        key: "leseflussRefine",
-        label: "Verfeinerung (Lesefluss)",
-        usd: Number(selectedRun.leseflussRefinementCostUsd ?? (selectedRun.leseflussRefinementCost || 0) / 100),
-      });
-    }
-
-    if (summariesLoading || summariesCostUsd > 0 || summaries.length > 0) {
-      items.push({
-        key: "summaries",
-        label: "Kapitel-Summaries (Kontext)",
-        hint: summariesLoading ? "lädt…" : `${summaries.length} Kapitel`,
-        usd: summariesCostUsd,
-      });
-    }
-
-    return items;
+    return runUsage.byOperationType
+      .map((item) => {
+        const type = String(item.operationType || "");
+        const meta = metaByType[type];
+        const count = Number(item.count ?? 0);
+        const credits = Number(item.credits ?? 0);
+        const unit = count === 1 ? meta?.unitSingular : meta?.unitPlural;
+        return {
+          key: type || "unknown",
+          label: meta?.label || type || "Unbekannt",
+          hint: count > 0 ? `${count} ${unit || "×"}` : undefined,
+          credits,
+        };
+      })
+      .filter((row) => row.key);
   })();
 
   const themaIsLong = selectedRun?.thema && selectedRun.thema.length > 80;
@@ -670,54 +683,66 @@ export function KapitelWorkspace({
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground">{selectedRun.model}</span>
-              <Popover open={costPopoverOpen} onOpenChange={setCostPopoverOpen}>
-                <PopoverTrigger asChild>
-                  <span
-                    className="text-sm font-medium px-2.5 py-1 bg-background border border-border shadow-sm rounded-md cursor-default select-none"
-                    onMouseEnter={openCostPopover}
-                    onMouseLeave={scheduleCloseCostPopover}
-                    onFocus={openCostPopover}
-                    onBlur={scheduleCloseCostPopover}
+              {canViewUsageInsights ? (
+                <Popover open={usagePopoverOpen} onOpenChange={setUsagePopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex items-center rounded-md border border-border bg-background shadow-sm select-none"
+                      onMouseEnter={openUsagePopover}
+                      onMouseLeave={scheduleCloseUsagePopover}
+                      onFocus={openUsagePopover}
+                      onBlur={scheduleCloseUsagePopover}
+                    >
+                      <span className="px-2.5 py-1 text-sm text-muted-foreground">{selectedRun.model}</span>
+                      <span className="border-l border-border px-2.5 py-1 text-sm font-medium tabular-nums">
+                        {runUsageLoading ? "…" : `${formatCredits(runUsage?.totalCredits ?? 0)} Credits`}
+                      </span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="bottom"
+                    align="end"
+                    sideOffset={0}
+                    className="w-[340px] p-3"
+                    onMouseEnter={openUsagePopover}
+                    onMouseLeave={scheduleCloseUsagePopover}
+                    onOpenAutoFocus={(e) => e.preventDefault()}
+                    onCloseAutoFocus={(e) => e.preventDefault()}
                   >
-                    Kosten: {formatUsd(totalCostUsd)}
-                  </span>
-                </PopoverTrigger>
-                <PopoverContent
-                  side="bottom"
-                  align="end"
-                  className="w-[340px] p-3"
-                  onMouseEnter={openCostPopover}
-                  onMouseLeave={scheduleCloseCostPopover}
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-medium">Kostenübersicht</span>
-                      <span className="text-xs font-medium tabular-nums">{formatUsd(totalCostUsd)}</span>
-                    </div>
-
-                    <Separator />
-
-                    {costBreakdownItems.length > 0 ? (
-                      <div className="space-y-1">
-                        {costBreakdownItems.map((item) => (
-                          <div key={item.key} className="flex items-start justify-between gap-3 text-xs">
-                            <div className="min-w-0">
-                              <div className="text-muted-foreground">{item.label}</div>
-                              {item.hint && (
-                                <div className="text-muted-foreground/70">{item.hint}</div>
-                              )}
-                            </div>
-                            <span className="tabular-nums">{formatUsd(item.usd)}</span>
-                          </div>
-                        ))}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-medium">Credit-Verbrauch (Run)</span>
+                        <span className="text-xs font-medium tabular-nums">
+                          {formatCredits(runUsage?.totalCredits ?? 0)} Credits
+                        </span>
                       </div>
-                    ) : (
-                      <div className="text-xs text-muted-foreground">Noch keine Kosten erfasst.</div>
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
+
+                      <Separator />
+
+                      {runUsageRows.length > 0 ? (
+                        <div className="space-y-1">
+                          {runUsageRows.map((row) => (
+                            <div key={row.key} className="flex items-start justify-between gap-3 text-xs">
+                              <div className="min-w-0">
+                                <div className="text-muted-foreground">{row.label}</div>
+                                {row.hint ? <div className="text-muted-foreground/70">{row.hint}</div> : null}
+                              </div>
+                              <span className="tabular-nums">{formatCredits(row.credits)} Credits</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : runUsageLoading ? (
+                        <div className="text-xs text-muted-foreground">Lädt…</div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground">Noch keine Credits erfasst.</div>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              ) : (
+                <span className="text-sm text-muted-foreground">{selectedRun.model}</span>
+              )}
             </div>
           </div>
         )}
@@ -1359,10 +1384,12 @@ export function KapitelWorkspace({
                       </p>
                       <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-3 text-xs text-muted-foreground">
                         <span>{group.modelUsed}</span>
-                        <span>•</span>
-                        <span>{group.tokensUsed.toLocaleString()} tokens</span>
-                        <span>•</span>
-                        <span>{formatUsd(group.costUsd ?? group.cost / 100)}</span>
+                        {canViewUsageInsights ? (
+                          <>
+                            <span>•</span>
+                            <span>{group.tokensUsed.toLocaleString()} tokens</span>
+                          </>
+                        ) : null}
                       </div>
                     </Card>
                   ))}
@@ -1566,10 +1593,12 @@ export function KapitelWorkspace({
                       <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">{group.combinedContent}</p>
                       <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-3 text-xs text-muted-foreground">
                         <span>{group.modelUsed}</span>
-                        <span>·</span>
-                        <span>{group.tokensUsed.toLocaleString()} tokens</span>
-                        <span>·</span>
-                        <span>{formatUsd(group.costUsd ?? group.cost / 100)}</span>
+                        {canViewUsageInsights ? (
+                          <>
+                            <span>·</span>
+                            <span>{group.tokensUsed.toLocaleString()} tokens</span>
+                          </>
+                        ) : null}
                       </div>
                     </Card>
                   ))}

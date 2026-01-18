@@ -9,6 +9,9 @@ type StageConfig = {
   tooltip?: string;
 };
 
+export const LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY = "default";
+export const DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY = "default_v2";
+
 const DEFAULT_PROMPT_STUB = ``;
 
 export const STAGE_CONFIG: Record<PromptStage, StageConfig> = {

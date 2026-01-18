@@ -11,7 +11,14 @@ import type {
   SystemPromptPermissions,
   SystemPromptTemplateMeta,
 } from '@/app/types/prompts';
-import { STAGE_CONFIG, MAX_TEMPLATES_PER_STAGE, MAX_NAME_LENGTH, MIN_NAME_LENGTH } from '@/app/lib/prompts/promptConfig';
+import {
+  DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
+  LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY,
+  STAGE_CONFIG,
+  MAX_TEMPLATES_PER_STAGE,
+  MAX_NAME_LENGTH,
+  MIN_NAME_LENGTH,
+} from '@/app/lib/prompts/promptConfig';
 import { cookies } from 'next/headers';
 import {
   collection,
@@ -39,6 +46,7 @@ function validatePlaceholders(stage: PromptStage, instructions: string): string 
 }
 
 const SYSTEM_STAGES: PromptStage[] = ['process_quelle', 'combine', 'shorten', 'lesefluss', 'summary'];
+const PROMPT_DEFAULTS_VERSION = 2;
 
 function fallbackSystemTemplates(): SystemPromptTemplateMeta[] {
   // Fail closed: if we can't reach the backend, don't guess which system templates exist
@@ -200,29 +208,46 @@ export async function listPromptTemplates(): Promise<{
 
   const activeTemplates = (activeDoc.activeTemplates || {}) as ActivePromptSelections;
   let returnedActive: ActivePromptSelections = activeTemplates;
+  let defaultsVersion = Number(activeDoc.promptDefaultsVersion || 0);
 
   if (source === 'backend') {
     const sanitizedActive: ActivePromptSelections = { ...activeTemplates };
     let changed = false;
 
     for (const stage of SYSTEM_STAGES) {
-      const selected = (sanitizedActive[stage] as string | 'default' | undefined) || 'default';
+      const selected =
+        (sanitizedActive[stage] as string | undefined) || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
       const userIds = userTemplateIdsByStage.get(stage) || new Set<string>();
       const systemKeys = systemKeysByStage.get(stage) || new Set<string>();
 
+      // One-time migration: move legacy v1 defaults ("default" or missing) to v2.
+      if (defaultsVersion < PROMPT_DEFAULTS_VERSION) {
+        if (!sanitizedActive[stage] || selected === LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY) {
+          sanitizedActive[stage] = DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
+          changed = true;
+        }
+      }
+
       // Keep valid user templates.
-      if (selected && selected !== 'default' && userIds.has(selected)) {
+      if (selected && selected !== LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY && userIds.has(selected)) {
         continue;
       }
 
       // System selection (or unknown) must be currently selectable; otherwise fall back to newest.
       if (!systemKeys.has(selected)) {
-        const fallbackKey = pickNewestSystemTemplateKeyForStage(stage, systemTemplates) || 'default';
+        const fallbackKey =
+          pickNewestSystemTemplateKeyForStage(stage, systemTemplates) ||
+          DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
         if (fallbackKey !== selected) {
           sanitizedActive[stage] = fallbackKey;
           changed = true;
         }
       }
+    }
+
+    if (defaultsVersion < PROMPT_DEFAULTS_VERSION) {
+      defaultsVersion = PROMPT_DEFAULTS_VERSION;
+      changed = true;
     }
 
     if (changed) {
@@ -231,6 +256,7 @@ export async function listPromptTemplates(): Promise<{
         settingsRef,
         {
           activeTemplates: sanitizedActive,
+          promptDefaultsVersion: defaultsVersion,
           updatedAt: serverTimestamp(),
         },
         { merge: true }
@@ -238,6 +264,35 @@ export async function listPromptTemplates(): Promise<{
     }
 
     returnedActive = sanitizedActive;
+  } else if (defaultsVersion < PROMPT_DEFAULTS_VERSION) {
+    const nextActive: ActivePromptSelections = { ...activeTemplates };
+    let changed = false;
+
+    for (const stage of SYSTEM_STAGES) {
+      const selected = (nextActive[stage] as string | undefined) || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
+      if (!nextActive[stage] || selected === LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY) {
+        nextActive[stage] = DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
+        changed = true;
+      }
+    }
+
+    defaultsVersion = PROMPT_DEFAULTS_VERSION;
+    changed = true;
+
+    if (changed) {
+      const settingsRef = doc(db, 'users', user.uid, 'promptSettings', 'active');
+      await setDoc(
+        settingsRef,
+        {
+          activeTemplates: nextActive,
+          promptDefaultsVersion: defaultsVersion,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    returnedActive = nextActive;
   }
 
   return {
@@ -329,7 +384,7 @@ export async function deletePromptTemplate(id: string) {
       await setDoc(
         settingsRef,
         {
-          activeTemplates: { ...active, [stage]: 'default' },
+          activeTemplates: { ...active, [stage]: DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY },
           updatedAt: serverTimestamp(),
         },
         { merge: true }

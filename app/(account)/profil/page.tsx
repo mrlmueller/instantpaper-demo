@@ -19,6 +19,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import Cookies from "js-cookie";
 
 import { useAuth } from "@/app/components/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
@@ -29,9 +30,25 @@ import { cn } from "@/lib/utils";
 import { BillingTab } from "@/app/components/profile/BillingTab";
 import { PromptManager } from "@/app/components/profile/PromptManager";
 import { ExportsTab } from "@/app/components/profile/ExportsTab";
-import { getLiveUserStats, type LiveUserStats } from "@/app/actions/stats";
 
 type ProfileTab = "einstellungen" | "billing" | "statistiken" | "exporte";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
+
+type UsageInsightsStats = {
+  creditsTotal: number;
+  runsTotal: number;
+  exportCount: number;
+  totalProjects: number;
+  totalKapitel: number;
+  totalQuellen: number;
+  totalWords: number;
+  runsByMonth: Array<{ key: string; count: number; credits: number }>;
+  creditsByProject: Array<{ projektId: string; projektName: string; credits: number }>;
+  modelUsage: Array<{ model: string; count: number }>;
+  memberSince?: string;
+  usd?: { totalCostUsd: number; exportCostUsd: number };
+};
 
 function StatCard({
   icon: Icon,
@@ -163,14 +180,14 @@ function ProfilePageSkeleton() {
 }
 
 export default function ProfilPage() {
-  const { user: authUser, effectiveBlocked, loading: authLoading } = useAuth();
+  const { user: authUser, effectiveBlocked, loading: authLoading, canViewUsageInsights } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<ProfileTab>("einstellungen");
-  const [stats, setStats] = useState<LiveUserStats | null>(null);
+  const [stats, setStats] = useState<UsageInsightsStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [backLoading, setBackLoading] = useState(false);
-  const displayedTab: ProfileTab = effectiveBlocked ? "billing" : activeTab;
+  const displayedTab: ProfileTab = effectiveBlocked ? "billing" : !canViewUsageInsights && activeTab === "statistiken" ? "billing" : activeTab;
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -184,7 +201,7 @@ export default function ProfilPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!authUser?.uid) return;
-    if (effectiveBlocked) {
+    if (effectiveBlocked || !canViewUsageInsights) {
       setStats(null);
       setStatsLoading(false);
       return;
@@ -193,16 +210,35 @@ export default function ProfilPage() {
     let cancelled = false;
     setStatsLoading(true);
 
-    getLiveUserStats()
-      .then((live) => {
+    const token = Cookies.get("__session");
+    if (!token) {
+      setStats(null);
+      setStatsLoading(false);
+      return;
+    }
+
+    fetch(`${API_BASE_URL}/api/usage-insights/stats`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (res) => {
+        if (res.status === 401) throw new Error("Sitzung abgelaufen. Bitte melde dich erneut an.");
+        if (res.status === 403) return null;
+        if (!res.ok) {
+          const detail = (await res.json().catch(() => ({})))?.detail;
+          throw new Error(typeof detail === "string" ? detail : "Statistiken konnten nicht geladen werden.");
+        }
+        return (await res.json()) as UsageInsightsStats;
+      })
+      .then((payload) => {
         if (cancelled) return;
-        setStats(live);
+        setStats(payload);
       })
       .catch((err: unknown) => {
-        console.error("Failed to load live stats:", err);
+        console.error("Failed to load usage insights stats:", err);
         if (cancelled) return;
         toast.error("Statistiken", {
-          description: "Statistiken konnten nicht geladen werden.",
+          description: err instanceof Error ? err.message : "Statistiken konnten nicht geladen werden.",
         });
         setStats(null);
       })
@@ -214,7 +250,7 @@ export default function ProfilPage() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, authUser?.uid, effectiveBlocked]);
+  }, [authLoading, authUser?.uid, effectiveBlocked, canViewUsageInsights]);
 
   const isLoading = authLoading || !authUser;
   const userName = authUser?.displayName || authUser?.email || "Benutzer";
@@ -227,10 +263,12 @@ export default function ProfilPage() {
     .toUpperCase()
     .slice(0, 2);
 
-  const formatCost = (cents: number) => `$${(cents / 100).toFixed(2)}`;
   const formatNumber = (num: number) => num.toLocaleString("de-DE");
-  const maxMonthlyRuns = Math.max(1, ...(stats?.runsByMonth ?? []).map((m) => m.runs));
-  const maxProjektCost = Math.max(1, ...(stats?.costByProjekt ?? []).map((p) => p.cost));
+  const formatCredits = (value: number) =>
+    `${Number(value || 0).toLocaleString("de-DE", { maximumFractionDigits: 2 })} Credits`;
+  const formatUsd = (value: number) => `$${Number(value || 0).toFixed(2)}`;
+  const maxMonthlyRuns = Math.max(1, ...(stats?.runsByMonth ?? []).map((m) => m.count));
+  const maxProjektCredits = Math.max(1, ...(stats?.creditsByProject ?? []).map((p) => p.credits));
 
   const handleBack = () => {
     if (effectiveBlocked) return;
@@ -321,7 +359,7 @@ export default function ProfilPage() {
                 <Coins className="h-4 w-4" />
                 Billing
               </button>
-              {!effectiveBlocked ? (
+              {!effectiveBlocked && canViewUsageInsights ? (
                 <button
                   onClick={() => setActiveTab("statistiken")}
                   className={cn(
@@ -373,7 +411,7 @@ export default function ProfilPage() {
                 <BillingTab active={displayedTab === "billing"} />
               </TabsContent>
 
-              {!effectiveBlocked ? (
+              {!effectiveBlocked && canViewUsageInsights ? (
                 <TabsContent value="statistiken">
                 <h2 className="text-lg font-semibold text-foreground mb-4">Übersicht</h2>
 
@@ -413,18 +451,14 @@ export default function ProfilPage() {
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                       <StatCard
                         icon={Coins}
-                        label="Gesamtkosten"
-                        value={formatCost(stats.totalCost)}
-                        subtext={`${stats.totalRuns} Verarbeitungen${
-                          stats.exportCount > 0 || stats.exportCost > 0
-                            ? ` • Exporte: ${stats.exportCount} (${formatCost(stats.exportCost)})`
-                            : ""
-                        }`}
+                        label="Credits verbraucht"
+                        value={formatCredits(stats.creditsTotal)}
+                        subtext={`${stats.runsTotal} Verarbeitungen${stats.exportCount > 0 ? ` • Exporte: ${stats.exportCount}` : ""}`}
                       />
                       <StatCard
                         icon={FileText}
                         label="Projekte"
-                        value={String(stats.totalProjekte)}
+                        value={String(stats.totalProjects)}
                         subtext={`${stats.totalKapitel} Kapitel`}
                       />
                       <StatCard icon={BookOpen} label="Quellen" value={String(stats.totalQuellen)} subtext="Hochgeladen" />
@@ -444,15 +478,17 @@ export default function ProfilPage() {
                         </h3>
                         <div className="space-y-4">
                           {stats.runsByMonth.map((month) => (
-                            <div key={month.month} className="flex items-center gap-3">
-                              <span className="text-sm text-muted-foreground w-20 shrink-0">{month.month.slice(0, 3)}</span>
+                            <div key={month.key} className="flex items-center gap-3">
+                              <span className="text-sm text-muted-foreground w-20 shrink-0">
+                                {new Date(`${month.key}-01`).toLocaleDateString("de-DE", { month: "long" }).slice(0, 3)}
+                              </span>
                               <div className="flex-1 h-6 bg-muted/30 rounded overflow-hidden">
                                 <div
                                   className="h-full bg-primary/70 rounded transition-all"
-                                  style={{ width: `${(month.runs / maxMonthlyRuns) * 100}%` }}
+                                  style={{ width: `${(month.count / maxMonthlyRuns) * 100}%` }}
                                 />
                               </div>
-                              <span className="text-sm text-muted-foreground w-16 text-right">{month.runs} Runs</span>
+                              <span className="text-sm text-muted-foreground w-16 text-right">{month.count} Runs</span>
                             </div>
                           ))}
                         </div>
@@ -461,19 +497,19 @@ export default function ProfilPage() {
                       <Card className="p-6">
                         <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
                           <Coins className="h-4 w-4 text-muted-foreground" />
-                          Kosten pro Projekt
+                          Credits pro Projekt
                         </h3>
                         <div className="space-y-4">
-                          {stats.costByProjekt.map((projekt) => (
+                          {stats.creditsByProject.map((projekt) => (
                             <div key={projekt.projektId}>
                               <div className="flex items-center justify-between mb-1.5">
                                 <span className="text-sm text-foreground truncate max-w-[200px]">{projekt.projektName}</span>
-                                <span className="text-sm font-medium text-foreground">{formatCost(projekt.cost)}</span>
+                                <span className="text-sm font-medium text-foreground">{formatCredits(projekt.credits)}</span>
                               </div>
                               <div className="h-2 bg-muted/30 rounded overflow-hidden">
                                 <div
                                   className="h-full bg-primary/70 rounded transition-all"
-                                  style={{ width: `${(projekt.cost / maxProjektCost) * 100}%` }}
+                                  style={{ width: `${(projekt.credits / maxProjektCredits) * 100}%` }}
                                 />
                               </div>
                             </div>
@@ -499,6 +535,32 @@ export default function ProfilPage() {
                         ))}
                       </div>
                     </Card>
+
+                    {stats.usd ? (
+                      <Card className="p-6 mt-6">
+                        <h3 className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
+                          <Coins className="h-4 w-4 text-muted-foreground" />
+                          Interne Kosten (USD)
+                        </h3>
+                        <p className="text-xs text-muted-foreground">
+                          Nur sichtbar für ausgewählte Accounts.
+                        </p>
+                        <div className="mt-4 grid grid-cols-2 gap-4">
+                          <div className="rounded-lg border bg-muted/10 p-4">
+                            <p className="text-xs text-muted-foreground">Gesamt</p>
+                            <p className="mt-2 text-lg font-semibold text-foreground tabular-nums">
+                              {formatUsd(stats.usd.totalCostUsd)}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border bg-muted/10 p-4">
+                            <p className="text-xs text-muted-foreground">Exporte</p>
+                            <p className="mt-2 text-lg font-semibold text-foreground tabular-nums">
+                              {formatUsd(stats.usd.exportCostUsd)}
+                            </p>
+                          </div>
+                        </div>
+                      </Card>
+                    ) : null}
                   </>
                 )}
                 </TabsContent>

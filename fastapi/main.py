@@ -150,6 +150,11 @@ class AdminSetSystemPromptExportRequest(BaseModel):
     canDuplicateSystemPrompts: bool
 
 
+class AdminSetUsageInsightsRequest(BaseModel):
+    email: str
+    canViewUsageInsights: bool
+
+
 class AdminUpsertSystemPromptTemplateRequest(BaseModel):
     stage: str
     templateKey: str
@@ -399,6 +404,17 @@ async def _is_user_blocked(uid: str) -> bool:
     return str(doc.get("accountStatus") or "").strip().lower() == "blocked"
 
 
+async def _can_user_view_usage_insights(uid: str) -> bool:
+    uid_norm = (uid or "").strip()
+    if not uid_norm:
+        return False
+    try:
+        doc = await firebase_service.get_user_doc(uid_norm)
+    except Exception:
+        return False
+    return bool((doc or {}).get("canViewUsageInsights") is True)
+
+
 @app.get("/api/me")
 async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any_user)):
     uid = str(decoded_token.get("uid") or "").strip()
@@ -427,6 +443,8 @@ async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any
     if not status:
         status = "active" if full_access else "pending"
 
+    can_view_usage_insights = bool((user_doc or {}).get("canViewUsageInsights") is True)
+
     return {
         "uid": uid,
         "email": email,
@@ -434,6 +452,7 @@ async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any
         "blocked": blocked,
         "fullAccess": full_access,
         "legacyApproved": legacy_approved,
+        "canViewUsageInsights": can_view_usage_insights,
     }
 
 
@@ -641,6 +660,261 @@ async def billing_get_status(user_id: str = Depends(verify_firebase_token)):
     Data comes from the Firebase Stripe Extension synced collection: customers/{uid}/subscriptions/*.
     """
     return {"subscription": await _read_subscription_summary_for_user(user_id)}
+
+
+@app.get("/api/usage-insights/run/{run_id}")
+async def usage_insights_run_summary(
+    run_id: str,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Return a credits-only summary for a single run (grouped by operationType).
+
+    This is gated via `users/{uid}.canViewUsageInsights`.
+    """
+    run_id_norm = str(run_id or "").strip()
+    if not run_id_norm:
+        raise HTTPException(status_code=400, detail="run_id is required.")
+
+    if not await _can_user_view_usage_insights(user_id):
+        raise HTTPException(status_code=403, detail="Usage insights not enabled for this user.")
+
+    ops_ref = (
+        firebase_service.db.collection("users")
+        .document(user_id)
+        .collection("costMetrics")
+        .document("v1")
+        .collection("operations")
+    )
+
+    by_type: dict[str, dict] = {}
+    try:
+        docs = list(ops_ref.where("runId", "==", run_id_norm).stream())
+    except Exception:
+        docs = []
+
+    for snap in docs:
+        data = snap.to_dict() or {}
+        op_type = str(data.get("operationType") or "").strip() or "unknown"
+
+        credits = _as_float(data.get("creditsDebited"), 0.0)
+        if credits <= 0:
+            spend_rate = _as_float(data.get("spendRate"), 0.0)
+            costs = data.get("costs") if isinstance(data.get("costs"), dict) else {}
+            cost_usd = _as_float((costs or {}).get("totalCostUsd"), 0.0)
+            if spend_rate > 0 and cost_usd > 0:
+                credits = float(cost_usd * spend_rate)
+
+        entry = by_type.get(op_type)
+        if not entry:
+            entry = {"operationType": op_type, "count": 0, "credits": 0.0}
+            by_type[op_type] = entry
+
+        entry["count"] = int(entry.get("count") or 0) + 1
+        entry["credits"] = float(entry.get("credits") or 0.0) + float(max(credits, 0.0))
+
+    items = list(by_type.values())
+    items.sort(
+        key=lambda x: (
+            -_as_float(x.get("credits"), 0.0),
+            -int(x.get("count") or 0),
+            str(x.get("operationType") or ""),
+        )
+    )
+    total = sum(_as_float(item.get("credits"), 0.0) for item in items)
+
+    return {"runId": run_id_norm, "totalCredits": float(total), "byOperationType": items}
+
+
+@app.get("/api/usage-insights/stats")
+async def usage_insights_stats(user_id: str = Depends(verify_firebase_token)):
+    """
+    Usage insights (credits-first) for the current user.
+
+    This is gated via `users/{uid}.canViewUsageInsights`.
+    """
+    if not await _can_user_view_usage_insights(user_id):
+        raise HTTPException(status_code=403, detail="Usage insights not enabled for this user.")
+
+    # Counts (best-effort)
+    def _count(col_ref) -> int:
+        try:
+            return len(list(col_ref.stream()))
+        except Exception:
+            return 0
+
+    total_projects = _count(firebase_service.db.collection("users").document(user_id).collection("projects"))
+    total_kapitel = _count(firebase_service.db.collection("users").document(user_id).collection("kapitels"))
+    total_quellen = _count(firebase_service.db.collection("users").document(user_id).collection("quellen"))
+
+    # USD aggregates (optional, for internal reference)
+    agg = {}
+    try:
+        agg_ref = (
+            firebase_service.db.collection("users")
+            .document(user_id)
+            .collection("costMetrics")
+            .document("v1")
+            .collection("aggregatesByUser")
+            .document("lifetime")
+        )
+        snap = agg_ref.get()
+        agg = snap.to_dict() if snap.exists else {}
+    except Exception:
+        agg = {}
+
+    total_runs = int((agg or {}).get("operationCount") or 0)
+    total_cost_usd = _as_float((agg or {}).get("totalCostUsd"), 0.0)
+    total_output_tokens = int((agg or {}).get("totalOutputTokens") or 0)
+    total_words = max(0, int(round(total_output_tokens * 0.75)))
+
+    by_op = (agg or {}).get("byOperationType") if isinstance((agg or {}).get("byOperationType"), dict) else {}
+    export_agg = by_op.get("export_docx") if isinstance(by_op.get("export_docx"), dict) else {}
+    export_cost_usd = _as_float((export_agg or {}).get("totalCostUsd"), 0.0)
+    export_count = int((export_agg or {}).get("count") or 0)
+
+    spend_rate_fallback = 6.0
+    try:
+        spend_rate_fallback = float(await get_credits_service(firebase_service).get_spend_rate_for_user(user_id))
+        if spend_rate_fallback <= 0:
+            spend_rate_fallback = 6.0
+    except Exception:
+        spend_rate_fallback = 6.0
+
+    # Scan operations (bounded) to compute credits-based breakdowns.
+    ops_ref = (
+        firebase_service.db.collection("users")
+        .document(user_id)
+        .collection("costMetrics")
+        .document("v1")
+        .collection("operations")
+        .order_by("timestamp", direction=firestore.Query.DESCENDING)
+    )
+
+    by_month: dict[str, dict] = {}
+    by_project: dict[str, dict] = {}
+    by_model: dict[str, int] = {}
+    credits_total = 0.0
+
+    batch_size = 500
+    max_docs = 5000
+    cursor = None
+    scanned = 0
+
+    while scanned < max_docs:
+        q = ops_ref
+        if cursor is not None:
+            q = q.start_after(cursor)
+        batch = list(q.limit(batch_size).stream())
+        if not batch:
+            break
+
+        for snap in batch:
+            data = snap.to_dict() or {}
+
+            op_type = str(data.get("operationType") or "").strip() or "unknown"
+            credits = _as_float(data.get("creditsDebited"), 0.0)
+            if credits <= 0:
+                spend_rate = _as_float(data.get("spendRate"), 0.0)
+                costs = data.get("costs") if isinstance(data.get("costs"), dict) else {}
+                cost_usd = _as_float((costs or {}).get("totalCostUsd"), 0.0)
+                if cost_usd > 0:
+                    rate = spend_rate if spend_rate > 0 else spend_rate_fallback
+                    credits = float(cost_usd * rate)
+
+            credits = float(max(credits, 0.0))
+            credits_total += credits
+
+            year_month = str(data.get("yearMonth") or "").strip()
+            if year_month:
+                entry = by_month.get(year_month)
+                if not entry:
+                    entry = {"key": year_month, "count": 0, "credits": 0.0}
+                    by_month[year_month] = entry
+                entry["count"] = int(entry.get("count") or 0) + 1
+                entry["credits"] = float(entry.get("credits") or 0.0) + credits
+
+            projekt_id = str(data.get("projektId") or "").strip() or "unknown"
+            proj_entry = by_project.get(projekt_id)
+            if not proj_entry:
+                proj_name = None
+                snapshots = data.get("snapshots") if isinstance(data.get("snapshots"), dict) else {}
+                proj_snap = snapshots.get("projekt") if isinstance(snapshots.get("projekt"), dict) else {}
+                if proj_snap:
+                    proj_name = (proj_snap.get("name") or "").strip() or None
+                proj_entry = {"projektId": projekt_id, "projektName": proj_name or projekt_id, "credits": 0.0}
+                by_project[projekt_id] = proj_entry
+            proj_entry["credits"] = float(proj_entry.get("credits") or 0.0) + credits
+
+            model_key = str(data.get("modelNormalized") or data.get("model") or "unknown").strip() or "unknown"
+            by_model[model_key] = int(by_model.get(model_key) or 0) + 1
+
+            # Keep op_type counts for future UI (not returned yet).
+            _ = op_type
+
+        scanned += len(batch)
+        cursor = batch[-1]
+        if len(batch) < batch_size:
+            break
+
+    # Last 6 months including current (chronological)
+    month_keys = []
+    current = datetime.utcnow().replace(day=1)
+    for i in range(5, -1, -1):
+        m = current.month - i
+        y = current.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        month_keys.append(f"{y:04d}-{m:02d}")
+
+    runs_by_month = []
+    for key in month_keys:
+        entry = by_month.get(key) or {}
+        runs_by_month.append(
+            {
+                "key": key,
+                "count": int(entry.get("count") or 0),
+                "credits": _as_float(entry.get("credits"), 0.0),
+            }
+        )
+
+    credits_by_project = list(by_project.values())
+    credits_by_project.sort(key=lambda x: -_as_float(x.get("credits"), 0.0))
+    credits_by_project = credits_by_project[:10]
+
+    model_usage = [{"model": k, "count": int(v)} for k, v in by_model.items()]
+    model_usage.sort(key=lambda x: -int(x.get("count") or 0))
+    if not model_usage:
+        model_usage = [{"model": "-", "count": 0}]
+
+    member_since = None
+    try:
+        user_doc = await firebase_service.get_user_doc(user_id)
+        member_since = _ts_to_iso((user_doc or {}).get("createdAt"))
+    except Exception:
+        member_since = None
+    if not member_since:
+        member_since = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+    return {
+        "creditsTotal": float(credits_total),
+        "runsTotal": int(total_runs),
+        "exportCount": int(export_count),
+        "totalProjects": int(total_projects),
+        "totalKapitel": int(total_kapitel),
+        "totalQuellen": int(total_quellen),
+        "totalWords": int(total_words),
+        "runsByMonth": runs_by_month,
+        "creditsByProject": credits_by_project,
+        "modelUsage": model_usage,
+        "memberSince": member_since,
+        "usd": {
+            "totalCostUsd": float(total_cost_usd),
+            "exportCostUsd": float(export_cost_usd),
+        },
+        "limits": {"maxOperationsScanned": int(max_docs), "operationsScanned": int(scanned)},
+    }
 
 
 @app.post("/api/access-codes/redeem")
@@ -912,6 +1186,7 @@ async def admin_list_users(
                 continue
 
             can_duplicate_system_prompts = False
+            can_view_usage_insights = False
             blocked = False
             account_status = None
             billing_balance = None
@@ -921,6 +1196,9 @@ async def admin_list_users(
                 can_duplicate_system_prompts = bool(
                     (user_doc or {}).get("canDuplicateSystemPrompts") is True
                 )
+                can_view_usage_insights = bool(
+                    (user_doc or {}).get("canViewUsageInsights") is True
+                )
                 account_status = (
                     str((user_doc or {}).get("accountStatus") or "").strip().lower()
                     or None
@@ -928,6 +1206,7 @@ async def admin_list_users(
                 blocked = account_status == "blocked"
             except Exception:
                 can_duplicate_system_prompts = False
+                can_view_usage_insights = False
                 blocked = False
                 account_status = None
 
@@ -966,6 +1245,7 @@ async def admin_list_users(
                     # Legacy field (kept temporarily for older clients)
                     "approved": has_access,
                     "canDuplicateSystemPrompts": can_duplicate_system_prompts,
+                    "canViewUsageInsights": can_view_usage_insights,
                     "disabled": bool(user.disabled),
                     "billingBalance": billing_balance,
                     "billingSubscription": billing_subscription,
@@ -1345,6 +1625,35 @@ async def admin_set_system_prompt_export(
         ) from None
 
 
+@app.post("/api/admin/users/usage-insights")
+async def admin_set_usage_insights(
+    payload: AdminSetUsageInsightsRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Allow or block a user from seeing usage insights (dashboard + profile statistics)."""
+    email = (payload.email or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required.")
+
+    try:
+        result = await firebase_service.set_user_can_view_usage_insights_by_email(
+            email=email,
+            allowed=bool(payload.canViewUsageInsights),
+        )
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "canViewUsageInsights": result.get("canViewUsageInsights"),
+            "note": "Takes effect immediately (user may need to refresh the page).",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(
+            status_code=500, detail="Failed to update usage insights permission."
+        ) from None
+
+
 def _validate_prompt_stage(stage: str) -> str:
     stage_norm = (stage or "").strip()
     if stage_norm not in ALLOWED_PROMPT_STAGES:
@@ -1442,6 +1751,7 @@ async def admin_get_user_detail(
     blocked_claim = bool(claims.get("blocked") is True)
 
     can_duplicate_system_prompts = False
+    can_view_usage_insights = False
     account_status = None
     blocked = False
     activated_by_code = None
@@ -1451,6 +1761,9 @@ async def admin_get_user_detail(
         user_doc = await firebase_service.get_user_doc(user.uid)
         can_duplicate_system_prompts = bool(
             (user_doc or {}).get("canDuplicateSystemPrompts") is True
+        )
+        can_view_usage_insights = bool(
+            (user_doc or {}).get("canViewUsageInsights") is True
         )
         account_status = (
             str((user_doc or {}).get("accountStatus") or "").strip().lower() or None
@@ -1463,6 +1776,7 @@ async def admin_get_user_detail(
             spend_rate_override = float(spend_rate_raw)
     except Exception:
         can_duplicate_system_prompts = False
+        can_view_usage_insights = False
         account_status = None
         blocked = False
         activated_by_code = None
@@ -1515,6 +1829,7 @@ async def admin_get_user_detail(
             "accountStatus": account_status,
             "disabled": bool(user.disabled),
             "canDuplicateSystemPrompts": can_duplicate_system_prompts,
+            "canViewUsageInsights": can_view_usage_insights,
             "spendRate": spend_rate_override,
             "effectiveSpendRate": float(effective_spend_rate),
             "activatedByCode": activated_by_code,
@@ -2159,7 +2474,7 @@ async def admin_delete_user_prompt_template(
             settings = settings_snap.to_dict() or {}
             active = settings.get("activeTemplates", {}) or {}
             if isinstance(active, dict) and active.get(stage_norm) == tpl_id:
-                active_next = {**active, stage_norm: "default"}
+                active_next = {**active, stage_norm: "default_v2"}
                 settings_ref.set(
                     {"activeTemplates": active_next, "updatedAt": SERVER_TIMESTAMP},
                     merge=True,

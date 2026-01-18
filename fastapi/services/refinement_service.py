@@ -1845,7 +1845,7 @@ class RefinementService:
             # Prompts are no longer stored on result docs (hidden from user). Reconstruct from run settings.
             prompt_template_id = (
                 (run or {}).get("promptTemplateId") or ""
-            ).strip() or "default"
+            ).strip() or "default_v2"
 
             if not base_user_input:
 

@@ -40,6 +40,7 @@ export type AdminUserRow = {
   accountStatus: string | null;
   disabled: boolean;
   canDuplicateSystemPrompts: boolean;
+  canViewUsageInsights: boolean;
   billingBalance?: {
     totalCredits: number;
     subscriptionCredits: number;
@@ -99,6 +100,7 @@ export async function listAdminUsers(params?: {
           accountStatus: typeof u.accountStatus === 'string' ? u.accountStatus : null,
           disabled: u.disabled === true,
           canDuplicateSystemPrompts: u.canDuplicateSystemPrompts === true,
+          canViewUsageInsights: u.canViewUsageInsights === true,
           billingBalance:
             u.billingBalance && typeof u.billingBalance === 'object'
               ? {
@@ -197,6 +199,29 @@ export async function setUserCanDuplicateSystemPromptsByEmail(
   if (!res.ok) {
     const detail = await readErrorDetail(res);
     throw new Error(detail || 'Failed to update system prompt copy permission.');
+  }
+}
+
+export async function setUserCanViewUsageInsightsByEmail(
+  email: string,
+  canViewUsageInsights: boolean
+): Promise<void> {
+  const token = await getAuthTokenOrNullAsync();
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${API_BASE_URL}/api/admin/users/usage-insights`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, canViewUsageInsights }),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const detail = await readErrorDetail(res);
+    throw new Error(detail || 'Failed to update usage insights permission.');
   }
 }
 

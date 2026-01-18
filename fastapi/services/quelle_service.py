@@ -117,7 +117,7 @@ class QuelleService:
 
             # Resolve and render the prompt server-side (prompts are not sent from the client).
             prompt_template_id = (run.get("promptTemplateId") or "").strip() if run else ""
-            prompt_template_id = prompt_template_id or "default"
+            prompt_template_id = prompt_template_id or "default_v2"
 
             payload: dict = {}
             raw_payload = (run.get("promptPayload") or run.get("prompt_payload")) if run else None
@@ -652,7 +652,7 @@ class QuelleService:
                 {"KAPITEL_TITEL": heading, "KAPITEL_BESCHREIBUNG": topic},
             )
             combine_template_id = await self.firebase.get_active_prompt_id(user_id, "combine")
-            combine_template_id = (combine_template_id or "").strip() or "default"
+            combine_template_id = (combine_template_id or "").strip() or "default_v2"
             combine_system_prompt = await prompt_service.get_system_prompt_for_template(
                 stage="combine",
                 template_id=combine_template_id,

@@ -155,7 +155,7 @@ class ShortenService:
             user_id, "summary", {"KAPITELTEXT": source_text}
         )
         summary_template_id = await firebase_service.get_active_prompt_id(user_id, "summary")
-        summary_template_id = (summary_template_id or "").strip() or "default"
+        summary_template_id = (summary_template_id or "").strip() or "default_v2"
         summary_system_prompt = await prompt_service.get_system_prompt_for_template(
             stage="summary",
             template_id=summary_template_id,

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import {
   setUserBlockedByEmail,
   setUserCanDuplicateSystemPromptsByEmail,
+  setUserCanViewUsageInsightsByEmail,
   setUserFullAccessByEmail,
 } from '@/app/lib/api/adminServer';
 
@@ -48,6 +49,19 @@ export async function adminSetCanDuplicateSystemPrompts(formData: FormData) {
   }
 
   await setUserCanDuplicateSystemPromptsByEmail(email, allow);
+  revalidatePath('/admin');
+}
+
+export async function adminSetCanViewUsageInsights(formData: FormData) {
+  const email = normalizeEmail(formData.get('email'));
+  const allowRaw = String(formData.get('canViewUsageInsights') ?? 'false').trim().toLowerCase();
+  const allow = allowRaw === 'true' || allowRaw === '1' || allowRaw === 'yes' || allowRaw === 'on';
+
+  if (!email || !email.includes('@')) {
+    throw new Error('Bitte eine gültige E-Mail angeben.');
+  }
+
+  await setUserCanViewUsageInsightsByEmail(email, allow);
   revalidatePath('/admin');
 }
 

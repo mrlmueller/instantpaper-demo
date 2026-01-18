@@ -370,7 +370,7 @@ class PromptService:
         - any other existing system templateKey: server-only, stored in Firestore
         - any other string: user-owned promptTemplates/{templateId}
         """
-        tid = (template_id or "").strip() or "default"
+        tid = (template_id or "").strip() or "default_v2"
 
         sys_tpl = await firebase_service.get_system_prompt_template(stage, tid)
         if sys_tpl:
@@ -406,16 +406,13 @@ class PromptService:
         if tpl and (tpl.get("instructions") or "").strip():
             return tpl["instructions"]
 
-        # Unknown template id → safe fallback.
-        sys_tpl = await firebase_service.get_system_prompt_template(stage, "default")
-        if sys_tpl and self._is_system_template_usable(sys_tpl) and (sys_tpl.get("instructions") or "").strip():
-            return sys_tpl["instructions"]
-        return DEFAULT_INSTRUCTIONS.get(stage, "")
+        # Unknown template id -> safe fallback to the current system default (v2).
+        return await self.get_instructions_for_template(user_id, stage, "default_v2")
 
     async def get_instructions(self, user_id: str, stage: str) -> str:
         """Return active instructions for a stage or default."""
-        active_id = (await firebase_service.get_active_prompt_id(user_id, stage)) or "default"
-        active_id = (active_id or "").strip() or "default"
+        active_id = (await firebase_service.get_active_prompt_id(user_id, stage)) or "default_v2"
+        active_id = (active_id or "").strip() or "default_v2"
 
         # If the user selected an archived/unpublished system template, auto-migrate them to the newest one.
         sys_tpl = await firebase_service.get_system_prompt_template(stage, active_id)
@@ -423,7 +420,7 @@ class PromptService:
             not self._is_system_template_usable(sys_tpl) or not (sys_tpl.get("instructions") or "").strip()
         ):
             fallback_key = await self._get_newest_system_template_key(stage)
-            next_id = fallback_key or "default"
+            next_id = fallback_key or "default_v2"
             if next_id and next_id != active_id:
                 try:
                     await firebase_service.set_active_prompt_id(user_id, stage, next_id)
@@ -446,7 +443,7 @@ class PromptService:
         For now, only server-only system templates can define a system prompt.
         User templates use the stage's built-in system prompt in code.
         """
-        tid = (template_id or "").strip() or "default"
+        tid = (template_id or "").strip() or "default_v2"
 
         sys_tpl = await firebase_service.get_system_prompt_template(stage, tid)
         if sys_tpl and not self._is_system_template_usable(sys_tpl):

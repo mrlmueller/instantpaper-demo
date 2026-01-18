@@ -32,7 +32,11 @@ import type {
   ActivePromptSelections,
   SystemPromptTemplateMeta,
 } from '@/app/types/prompts';
-import { STAGE_CONFIG } from '@/app/lib/prompts/promptConfig';
+import {
+  DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
+  LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY,
+  STAGE_CONFIG,
+} from '@/app/lib/prompts/promptConfig';
 
 import type { Quelle, Kapitel, Run, ProcessingSettings, Projekt } from '@/app/types/ui';
 import {
@@ -115,7 +119,7 @@ function PromptSelectDialog({
   const [choices, setChoices] = useState<Record<PromptStage, string | 'default'>>(() => {
     const initial = {} as Record<PromptStage, string | 'default'>;
     stages.forEach((s) => {
-      initial[s] = (active[s] as string | 'default') || 'default';
+      initial[s] = (active[s] as string | 'default') || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
     });
     return initial;
   });
@@ -123,7 +127,7 @@ function PromptSelectDialog({
   useEffect(() => {
     const init = {} as Record<PromptStage, string | 'default'>;
     stages.forEach((s) => {
-      init[s] = (active[s] as string | 'default') || 'default';
+      init[s] = (active[s] as string | 'default') || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
     });
     setChoices(init);
   }, [stages, active, open]);
@@ -141,7 +145,8 @@ function PromptSelectDialog({
               .filter((t) => t.stage === stage)
               .slice()
               .sort((a, b) => {
-                const rank = (key: string) => (key === 'default' ? 0 : key === 'default_v2' ? 1 : 2);
+                const rank = (key: string) =>
+                  key === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY ? 0 : key === LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY ? 1 : 2;
                 const ra = rank(a.templateKey);
                 const rb = rank(b.templateKey);
                 if (ra !== rb) return ra - rb;
@@ -158,7 +163,7 @@ function PromptSelectDialog({
                     </p>
                   </div>
                   <Select
-                    value={choices[stage] || 'default'}
+                    value={choices[stage] || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY}
                     onValueChange={(val) => setChoices((prev) => ({ ...prev, [stage]: val as string | 'default' }))}
                   >
                      <SelectTrigger className="w-64">
@@ -2095,12 +2100,12 @@ export function Dashboard({
         providedChoices?.process_quelle ??
         choices?.process_quelle ??
         (activeSnapshot.process_quelle as string | 'default') ??
-        'default';
+        DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
       const combineChoice = settings.directCombine
         ? providedChoices?.combine ??
           choices?.combine ??
           (activeSnapshot.combine as string | 'default') ??
-          'default'
+          DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
         : undefined;
 
       const shouldApplyChoice = Boolean(providedChoices || choices);
@@ -2334,7 +2339,7 @@ export function Dashboard({
         setIsCombining(false);
         return;
       }
-      await applyActivePrompt('combine', choice.combine ?? 'default');
+      await applyActivePrompt('combine', choice.combine ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
     }
 
     const combineToastId = toast.loading('Texte kombinieren', {
@@ -2574,12 +2579,12 @@ export function Dashboard({
           setIsShortening(false);
           return;
         }
-        await applyActivePrompt('shorten', choice.shorten ?? 'default');
-        await applyActivePrompt('summary', choice.summary ?? 'default');
+        await applyActivePrompt('shorten', choice.shorten ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+        await applyActivePrompt('summary', choice.summary ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
       }
       if (providedChoices) {
-        await applyActivePrompt('shorten', providedChoices.shorten ?? 'default');
-        await applyActivePrompt('summary', providedChoices.summary ?? 'default');
+        await applyActivePrompt('shorten', providedChoices.shorten ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+        await applyActivePrompt('summary', providedChoices.summary ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
       }
 
       const shortenToastId = toast.loading('Text wird gekürzt', {
@@ -2706,12 +2711,12 @@ export function Dashboard({
           setIsImprovingLesefluss(false);
           return;
         }
-        await applyActivePrompt('lesefluss', choice.lesefluss ?? 'default');
-        await applyActivePrompt('summary', choice.summary ?? 'default');
+        await applyActivePrompt('lesefluss', choice.lesefluss ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+        await applyActivePrompt('summary', choice.summary ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
       }
       if (providedChoices) {
-        await applyActivePrompt('lesefluss', providedChoices.lesefluss ?? 'default');
-        await applyActivePrompt('summary', providedChoices.summary ?? 'default');
+        await applyActivePrompt('lesefluss', providedChoices.lesefluss ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+        await applyActivePrompt('summary', providedChoices.summary ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
       }
 
       const leseflussToastId = toast.loading('Lese Fluss wird verbessert', {

@@ -262,6 +262,18 @@ class CostService:
         model_key = _sanitize_map_key(matched_model_key)
         projekt_key = _sanitize_map_key(projekt_id or "unknown")
 
+        cost_usd = float(cost_breakdown.total_cost_usd)
+        credits_service = get_credits_service(self.firebase)
+        spend_rate_value: float | None = None
+        try:
+            spend_rate_value = float(await credits_service.get_spend_rate_for_user(user_id))
+            if spend_rate_value <= 0:
+                spend_rate_value = None
+        except Exception:
+            spend_rate_value = None
+
+        credits_debited = float(cost_usd * spend_rate_value) if spend_rate_value is not None else 0.0
+
         operation_data = {
             "operationId": operation_id,
             "userId": user_id,
@@ -298,6 +310,8 @@ class CostService:
                 "output": float(pricing[2]),
             },
             "costs": cost_breakdown.to_firestore(),
+            "creditsDebited": float(credits_debited),
+            "spendRate": float(spend_rate_value) if spend_rate_value is not None else None,
             "yearMonth": year_month,
         }
 
@@ -313,8 +327,6 @@ class CostService:
         op_ref.set(operation_data, merge=bool(operation_id_in))
 
         # 2) Aggregates (best-effort)
-        cost_usd = float(cost_breakdown.total_cost_usd)
-
         try:
             user_ref = (
                 self.firebase.db.collection("users")
@@ -385,12 +397,12 @@ class CostService:
                 logger.error(f"Non-critical: failed to update project cost aggregate: {exc}")
 
         # Credits debit: append-only ledger entry + cached balance update (critical).
-        credits_service = get_credits_service(self.firebase)
         await credits_service.debit_openai_operation(
             user_id=user_id,
             operation_id=operation_id,
             operation_type=operation_type,
             cost_usd=cost_usd,
+            spend_rate=spend_rate_value,
         )
 
         return operation_id

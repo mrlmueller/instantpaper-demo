@@ -32,7 +32,11 @@ import {
 } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { STAGE_CONFIG } from "@/app/lib/prompts/promptConfig";
+import {
+  DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
+  LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY,
+  STAGE_CONFIG,
+} from "@/app/lib/prompts/promptConfig";
 import type {
   ActivePromptSelections,
   PromptStage,
@@ -372,7 +376,11 @@ export function PromptManager() {
             .slice()
             .sort((a, b) => {
               const rank = (key: string) =>
-                key === "default" ? 0 : key === "default_v2" ? 1 : 2;
+                key === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+                  ? 0
+                  : key === LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY
+                    ? 1
+                    : 2;
               const ra = rank(a.templateKey);
               const rb = rank(b.templateKey);
               if (ra !== rb) return ra - rb;
@@ -409,8 +417,8 @@ export function PromptManager() {
               <div className="space-y-3">
                 {stageSystemTemplates.map((sys) => {
                   const isActive =
-                    sys.templateKey === "default"
-                      ? !activeId || activeId === "default"
+                    sys.templateKey === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+                      ? !activeId || activeId === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
                       : activeId === sys.templateKey;
                   return (
                     <Card

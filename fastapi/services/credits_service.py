@@ -613,6 +613,7 @@ class CreditsService:
         operation_id: str,
         operation_type: str,
         cost_usd: float,
+        spend_rate: float | None = None,
     ) -> None:
         """
         Create exactly one debit ledger entry for a costed OpenAI operation and update cached balance.
@@ -627,11 +628,11 @@ class CreditsService:
         if cost <= 0:
             return
 
-        spend_rate = await self.get_spend_rate_for_user(user_id)
-        if spend_rate <= 0:
+        spend_rate_value = float(spend_rate) if spend_rate is not None else await self.get_spend_rate_for_user(user_id)
+        if spend_rate_value <= 0:
             return
 
-        debit_credits = float(cost * spend_rate)
+        debit_credits = float(cost * spend_rate_value)
         if not debit_credits:
             return
 
@@ -707,7 +708,7 @@ class CreditsService:
                         "operationId": op_id,
                         "operationType": str(operation_type or ""),
                         "costUsd": float(cost),
-                        "spendRate": float(spend_rate),
+                        "spendRate": float(spend_rate_value),
                         "deducted": {
                             "subscription": float(from_sub),
                             "topup": float(remaining),

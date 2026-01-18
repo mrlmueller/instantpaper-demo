@@ -22,6 +22,12 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function canViewUsageInsights(userId) {
+      return isOwner(userId)
+        && exists(/databases/$(database)/documents/users/$(userId))
+        && get(/databases/$(database)/documents/users/$(userId)).data.canViewUsageInsights == true;
+    }
+
     function isTs(x) {
       return x is timestamp;
     }
@@ -154,7 +160,7 @@ service cloud.firestore {
 
       // Cost metrics are server-written and immutable from the client.
       match /costMetrics/{doc=**} {
-        allow read: if isOwner(userId);
+        allow read: if canViewUsageInsights(userId);
         allow write: if false;
       }
 
