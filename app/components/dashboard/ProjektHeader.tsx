@@ -51,7 +51,7 @@ export function ProjektHeader({
   const [newProjektName, setNewProjektName] = useState("")
   const [localCreateLoading, setLocalCreateLoading] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [creditsAvailable, setCreditsAvailable] = useState<number | null>(null)
+  const [totalCredits, setTotalCredits] = useState<number | null>(null)
   const [creditsLoading, setCreditsLoading] = useState(false)
   const lastCreditsFetchRef = useRef<number>(0)
 
@@ -61,7 +61,7 @@ export function ProjektHeader({
   const userName = user?.displayName || user?.email || "User"
 
   const creditsLabel = (() => {
-    const n = Number(creditsAvailable ?? 0)
+    const n = Number(totalCredits ?? 0)
     if (!Number.isFinite(n)) return "-"
     const abs = Math.abs(n)
     const maximumFractionDigits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2
@@ -73,7 +73,7 @@ export function ProjektHeader({
     if (!user?.uid) return
 
     const now = Date.now()
-    if (creditsAvailable != null && now - lastCreditsFetchRef.current < 15_000) return
+    if (totalCredits != null && now - lastCreditsFetchRef.current < 15_000) return
 
     const token = Cookies.get("__session")
     if (!token) return
@@ -81,15 +81,16 @@ export function ProjektHeader({
     setCreditsLoading(true)
     fetchBillingBalance(token)
       .then((bal) => {
-        setCreditsAvailable(Number(bal.availableCredits ?? bal.totalCredits ?? 0))
+        // Always show Gesamt-Credits (do not subtract reserved credits).
+        setTotalCredits(Number(bal.totalCredits ?? 0))
         lastCreditsFetchRef.current = now
       })
       .catch((err) => {
         console.error("Failed to load billing balance:", err)
-        setCreditsAvailable(null)
+        setTotalCredits(null)
       })
       .finally(() => setCreditsLoading(false))
-  }, [userMenuOpen, user?.uid, creditsAvailable])
+  }, [userMenuOpen, user?.uid, totalCredits])
   const handleCreateProjekt = async () => {
     if (!newProjektName.trim() || localCreateLoading || isCreatingProjekt) return
 
@@ -161,7 +162,7 @@ export function ProjektHeader({
                   <div className="flex items-center justify-between rounded-md bg-muted/40 px-2 py-1">
                     <span className="text-xs text-muted-foreground">Credits</span>
                     <span className="text-xs font-semibold tabular-nums">
-                      {creditsLoading ? "…" : creditsAvailable == null ? "-" : creditsLabel}
+                      {creditsLoading ? "…" : totalCredits == null ? "-" : creditsLabel}
                     </span>
                   </div>
                 </div>

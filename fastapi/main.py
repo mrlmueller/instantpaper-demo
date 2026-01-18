@@ -697,21 +697,23 @@ async def usage_insights_run_summary(
         data = snap.to_dict() or {}
         op_type = str(data.get("operationType") or "").strip() or "unknown"
 
+        costs = data.get("costs") if isinstance(data.get("costs"), dict) else {}
+        cost_usd = _as_float((costs or {}).get("totalCostUsd"), 0.0)
+
         credits = _as_float(data.get("creditsDebited"), 0.0)
         if credits <= 0:
             spend_rate = _as_float(data.get("spendRate"), 0.0)
-            costs = data.get("costs") if isinstance(data.get("costs"), dict) else {}
-            cost_usd = _as_float((costs or {}).get("totalCostUsd"), 0.0)
             if spend_rate > 0 and cost_usd > 0:
                 credits = float(cost_usd * spend_rate)
 
         entry = by_type.get(op_type)
         if not entry:
-            entry = {"operationType": op_type, "count": 0, "credits": 0.0}
+            entry = {"operationType": op_type, "count": 0, "credits": 0.0, "costUsd": 0.0}
             by_type[op_type] = entry
 
         entry["count"] = int(entry.get("count") or 0) + 1
         entry["credits"] = float(entry.get("credits") or 0.0) + float(max(credits, 0.0))
+        entry["costUsd"] = float(entry.get("costUsd") or 0.0) + float(max(cost_usd, 0.0))
 
     items = list(by_type.values())
     items.sort(
@@ -721,9 +723,15 @@ async def usage_insights_run_summary(
             str(x.get("operationType") or ""),
         )
     )
-    total = sum(_as_float(item.get("credits"), 0.0) for item in items)
+    total_credits = sum(_as_float(item.get("credits"), 0.0) for item in items)
+    total_cost_usd = sum(_as_float(item.get("costUsd"), 0.0) for item in items)
 
-    return {"runId": run_id_norm, "totalCredits": float(total), "byOperationType": items}
+    return {
+        "runId": run_id_norm,
+        "totalCredits": float(total_credits),
+        "totalCostUsd": float(total_cost_usd),
+        "byOperationType": items,
+    }
 
 
 @app.get("/api/usage-insights/stats")
@@ -793,7 +801,8 @@ async def usage_insights_stats(user_id: str = Depends(verify_firebase_token)):
 
     by_month: dict[str, dict] = {}
     by_project: dict[str, dict] = {}
-    by_model: dict[str, int] = {}
+    by_model: dict[str, dict] = {}
+    by_operation_type: dict[str, dict] = {}
     credits_total = 0.0
 
     batch_size = 500
@@ -825,6 +834,13 @@ async def usage_insights_stats(user_id: str = Depends(verify_firebase_token)):
             credits = float(max(credits, 0.0))
             credits_total += credits
 
+            op_entry = by_operation_type.get(op_type)
+            if not op_entry:
+                op_entry = {"operationType": op_type, "count": 0, "credits": 0.0}
+                by_operation_type[op_type] = op_entry
+            op_entry["count"] = int(op_entry.get("count") or 0) + 1
+            op_entry["credits"] = float(op_entry.get("credits") or 0.0) + credits
+
             year_month = str(data.get("yearMonth") or "").strip()
             if year_month:
                 entry = by_month.get(year_month)
@@ -847,10 +863,12 @@ async def usage_insights_stats(user_id: str = Depends(verify_firebase_token)):
             proj_entry["credits"] = float(proj_entry.get("credits") or 0.0) + credits
 
             model_key = str(data.get("modelNormalized") or data.get("model") or "unknown").strip() or "unknown"
-            by_model[model_key] = int(by_model.get(model_key) or 0) + 1
-
-            # Keep op_type counts for future UI (not returned yet).
-            _ = op_type
+            model_entry = by_model.get(model_key)
+            if not model_entry:
+                model_entry = {"model": model_key, "count": 0, "credits": 0.0}
+                by_model[model_key] = model_entry
+            model_entry["count"] = int(model_entry.get("count") or 0) + 1
+            model_entry["credits"] = float(model_entry.get("credits") or 0.0) + credits
 
         scanned += len(batch)
         cursor = batch[-1]
@@ -883,10 +901,22 @@ async def usage_insights_stats(user_id: str = Depends(verify_firebase_token)):
     credits_by_project.sort(key=lambda x: -_as_float(x.get("credits"), 0.0))
     credits_by_project = credits_by_project[:10]
 
-    model_usage = [{"model": k, "count": int(v)} for k, v in by_model.items()]
-    model_usage.sort(key=lambda x: -int(x.get("count") or 0))
+    model_usage = list(by_model.values())
+    model_usage.sort(key=lambda x: (-int(x.get("count") or 0), -_as_float(x.get("credits"), 0.0)))
     if not model_usage:
-        model_usage = [{"model": "-", "count": 0}]
+        model_usage = [{"model": "-", "count": 0, "credits": 0.0}]
+
+    op_breakdown = list(by_operation_type.values())
+    op_breakdown.sort(
+        key=lambda x: (
+            -_as_float(x.get("credits"), 0.0),
+            -int(x.get("count") or 0),
+            str(x.get("operationType") or ""),
+        )
+    )
+
+    effective_spend_rate = float(spend_rate_fallback if spend_rate_fallback > 0 else 6.0)
+    estimated_cost_usd = float(credits_total / effective_spend_rate) if effective_spend_rate > 0 else 0.0
 
     member_since = None
     try:
@@ -899,6 +929,8 @@ async def usage_insights_stats(user_id: str = Depends(verify_firebase_token)):
 
     return {
         "creditsTotal": float(credits_total),
+        "spendRate": float(effective_spend_rate),
+        "estimatedCostUsd": float(estimated_cost_usd),
         "runsTotal": int(total_runs),
         "exportCount": int(export_count),
         "totalProjects": int(total_projects),
@@ -907,6 +939,7 @@ async def usage_insights_stats(user_id: str = Depends(verify_firebase_token)):
         "totalWords": int(total_words),
         "runsByMonth": runs_by_month,
         "creditsByProject": credits_by_project,
+        "byOperationType": op_breakdown[:25],
         "modelUsage": model_usage,
         "memberSince": member_since,
         "usd": {

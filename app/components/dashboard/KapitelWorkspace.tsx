@@ -69,13 +69,15 @@ import { AI_GENERIC_ERROR_MESSAGE } from "@/app/lib/ai/messages";
 import { ProcessingStepper } from "./ProcessingStepper";
 import { toast } from "sonner";
 import Cookies from "js-cookie";
+import { fetchBillingBalance } from "@/app/lib/api/billingClient";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
 
 type RunUsageSummary = {
   runId: string;
   totalCredits: number;
-  byOperationType: Array<{ operationType: string; count: number; credits: number }>;
+  totalCostUsd?: number;
+  byOperationType: Array<{ operationType: string; count: number; credits: number; costUsd?: number }>;
 };
 
 function formatCredits(value: number): string {
@@ -144,6 +146,9 @@ export function KapitelWorkspace({
   const usagePopoverCloseTimer = useRef<number | null>(null);
   const [runUsage, setRunUsage] = useState<RunUsageSummary | null>(null);
   const [runUsageLoading, setRunUsageLoading] = useState(false);
+  const [balanceTotalCredits, setBalanceTotalCredits] = useState<number | null>(null);
+  const [balanceTotalCreditsLoading, setBalanceTotalCreditsLoading] = useState(false);
+  const lastBalanceFetchRef = useRef<number>(0);
   const [hasIntermediateGroups, setHasIntermediateGroups] = useState<boolean | null>(null);
   const [hasIntermediateGroupsLoading, setHasIntermediateGroupsLoading] = useState(false);
   const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] =
@@ -404,6 +409,8 @@ export function KapitelWorkspace({
       setRunUsage(null);
       setRunUsageLoading(false);
       setUsagePopoverOpen(false);
+      setBalanceTotalCredits(null);
+      setBalanceTotalCreditsLoading(false);
       return;
     }
 
@@ -421,6 +428,7 @@ export function KapitelWorkspace({
     }
 
     let cancelled = false;
+
     setRunUsageLoading(true);
     fetch(`${API_BASE_URL}/api/usage-insights/run/${encodeURIComponent(selectedRun.id)}`, {
       method: "GET",
@@ -444,11 +452,13 @@ export function KapitelWorkspace({
         setRunUsage({
           runId: String((data as any).runId || selectedRun.id),
           totalCredits: Number((data as any).totalCredits ?? 0),
+          totalCostUsd: Number((data as any).totalCostUsd ?? 0),
           byOperationType: items
             .map((x: any) => ({
               operationType: String(x?.operationType || ""),
               count: Number(x?.count ?? 0),
               credits: Number(x?.credits ?? 0),
+              costUsd: typeof x?.costUsd === "number" ? Number(x.costUsd) : undefined,
             }))
             .filter((x: any) => x.operationType),
         });
@@ -467,6 +477,44 @@ export function KapitelWorkspace({
       cancelled = true;
     };
   }, [canViewUsageInsights, selectedRun?.id]);
+
+  useEffect(() => {
+    if (!canViewUsageInsights || !usagePopoverOpen) return;
+
+    const token = Cookies.get("__session");
+    if (!token) {
+      setBalanceTotalCredits(null);
+      setBalanceTotalCreditsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const now = Date.now();
+
+    // Fetch Gesamt-Credits (do not subtract reserved credits). Cache for 15s.
+    if (balanceTotalCredits != null && now - lastBalanceFetchRef.current < 15_000) return;
+
+    setBalanceTotalCreditsLoading(true);
+    fetchBillingBalance(token)
+      .then((bal) => {
+        if (cancelled) return;
+        setBalanceTotalCredits(Number(bal.totalCredits ?? 0));
+        lastBalanceFetchRef.current = now;
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Failed to load billing balance:", err);
+        setBalanceTotalCredits(null);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setBalanceTotalCreditsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewUsageInsights, usagePopoverOpen, balanceTotalCredits]);
 
   const openUsagePopover = () => {
     if (usagePopoverCloseTimer.current) {
@@ -489,35 +537,145 @@ export function KapitelWorkspace({
 
   const runUsageRows = (() => {
     if (!runUsage?.byOperationType?.length) return [];
-    const metaByType: Record<string, { label: string; unitSingular: string; unitPlural: string }> = {
-      process_quelle: { label: "Quellen verarbeiten", unitSingular: "Quelle", unitPlural: "Quellen" },
-      combine: { label: "Text kombinieren", unitSingular: "Run", unitPlural: "Runs" },
-      combine_intermediate: { label: "Text kombinieren", unitSingular: "Gruppe", unitPlural: "Gruppen" },
-      shorten: { label: "Text kürzen", unitSingular: "Run", unitPlural: "Runs" },
-      lesefluss: { label: "Lesefluss verbessern", unitSingular: "Run", unitPlural: "Runs" },
-      summary: { label: "Kontext-Summaries", unitSingular: "Kapitel", unitPlural: "Kapitel" },
-      refine_combined: { label: "Verfeinerung (Kombiniert)", unitSingular: "Version", unitPlural: "Versionen" },
-      refine_shortened: { label: "Verfeinerung (Gekürzt)", unitSingular: "Version", unitPlural: "Versionen" },
-      refine_lesefluss: { label: "Verfeinerung (Lesefluss)", unitSingular: "Version", unitPlural: "Versionen" },
-      refine_result: { label: "Verfeinerung (Quelle)", unitSingular: "Version", unitPlural: "Versionen" },
-      export_docx: { label: "Export (DOCX)", unitSingular: "Export", unitPlural: "Exporte" },
+
+    type OpAgg = { count: number; credits: number };
+    const byType = new Map<string, OpAgg>();
+    for (const item of runUsage.byOperationType) {
+      const key = String(item.operationType || "").trim();
+      if (!key) continue;
+      const prev = byType.get(key) || { count: 0, credits: 0 };
+      byType.set(key, {
+        count: prev.count + Number(item.count ?? 0),
+        credits: prev.credits + Number(item.credits ?? 0),
+      });
+    }
+
+    const sum = (keys: string[]) =>
+      keys.reduce(
+        (acc, key) => {
+          const v = byType.get(key);
+          if (!v) return acc;
+          return { count: acc.count + v.count, credits: acc.credits + v.credits };
+        },
+        { count: 0, credits: 0 } as OpAgg
+      );
+
+    const formatHint = (count: number, unitSingular: string, unitPlural: string) => {
+      if (!count) return undefined;
+      return `${count} ${count === 1 ? unitSingular : unitPlural}`;
     };
 
-    return runUsage.byOperationType
-      .map((item) => {
-        const type = String(item.operationType || "");
-        const meta = metaByType[type];
-        const count = Number(item.count ?? 0);
-        const credits = Number(item.credits ?? 0);
-        const unit = count === 1 ? meta?.unitSingular : meta?.unitPlural;
-        return {
-          key: type || "unknown",
-          label: meta?.label || type || "Unbekannt",
-          hint: count > 0 ? `${count} ${unit || "×"}` : undefined,
-          credits,
-        };
-      })
-      .filter((row) => row.key);
+    const row = (key: string, label: string, agg: OpAgg, hint?: string, indent = 0) => ({
+      key,
+      label,
+      hint,
+      credits: agg.credits,
+      count: agg.count,
+      indent,
+    });
+
+    // Pipeline order (top -> bottom), matching the requested bottom-to-top sequence:
+    // Quellen verarbeiten -> Text kombinieren -> Text kürzen -> Lesefluss verbessern.
+    const groups = [
+      {
+        key: "lesefluss",
+        label: "Lesefluss verbessern",
+        base: sum(["lesefluss"]),
+        hint: formatHint(sum(["lesefluss"]).count, "Run", "Runs"),
+        children: [
+          { key: "refine_lesefluss", label: "Verfeinerung (Lesefluss)", unit: ["Version", "Versionen"] as const },
+        ],
+      },
+      {
+        key: "summary",
+        label: "Kontext-Summaries",
+        base: sum(["summary"]),
+        hint: formatHint(sum(["summary"]).count, "Kapitel", "Kapitel"),
+        children: [],
+      },
+      {
+        key: "shorten",
+        label: "Text kürzen",
+        base: sum(["shorten"]),
+        hint: formatHint(sum(["shorten"]).count, "Run", "Runs"),
+        children: [
+          { key: "refine_shortened", label: "Verfeinerung (Gekürzt)", unit: ["Version", "Versionen"] as const },
+        ],
+      },
+      {
+        key: "combine",
+        label: "Text kombinieren",
+        base: sum(["combine", "combine_intermediate"]),
+        hint: (() => {
+          const agg = sum(["combine", "combine_intermediate"]);
+          return formatHint(agg.count, "Run", "Runs");
+        })(),
+        children: [
+          { key: "refine_combined", label: "Verfeinerung (Kombiniert)", unit: ["Version", "Versionen"] as const },
+        ],
+      },
+      {
+        key: "process_quelle",
+        label: "Quellen verarbeiten",
+        base: sum(["process_quelle"]),
+        hint: formatHint(sum(["process_quelle"]).count, "Quelle", "Quellen"),
+        children: [
+          { key: "refine_result", label: "Verfeinerung (Quelle)", unit: ["Version", "Versionen"] as const },
+        ],
+      },
+    ];
+
+    const knownKeys = new Set<string>([
+      "lesefluss",
+      "summary",
+      "shorten",
+      "combine",
+      "process_quelle",
+      "combine_intermediate",
+      "refine_combined",
+      "refine_shortened",
+      "refine_lesefluss",
+      "refine_result",
+      "export_docx",
+    ]);
+
+    const out: Array<{ key: string; label: string; hint?: string; credits: number; count: number; indent: number }> = [];
+
+    for (const g of groups) {
+      const baseAgg = g.base;
+      const hasAny = baseAgg.count > 0 || baseAgg.credits > 0 || g.children.some((c) => (byType.get(c.key)?.count ?? 0) > 0);
+      if (!hasAny) continue;
+
+      out.push(row(g.key, g.label, baseAgg, g.hint, 0));
+
+      for (const child of g.children) {
+        const agg = byType.get(child.key);
+        if (!agg || (agg.count <= 0 && agg.credits <= 0)) continue;
+        out.push(
+          row(
+            child.key,
+            child.label,
+            agg,
+            formatHint(agg.count, child.unit[0], child.unit[1]),
+            1
+          )
+        );
+      }
+    }
+
+    // Add remaining operation types (if any) so we never "hide" usage.
+    const extras: Array<{ key: string; agg: OpAgg }> = [];
+    for (const [key, agg] of byType.entries()) {
+      if (knownKeys.has(key)) continue;
+      if (agg.count <= 0 && agg.credits <= 0) continue;
+      extras.push({ key, agg });
+    }
+    extras.sort((a, b) => b.agg.credits - a.agg.credits);
+    for (const extra of extras) {
+      out.push(row(extra.key, extra.key, extra.agg, formatHint(extra.agg.count, "×", "×"), 0));
+    }
+
+    return out;
   })();
 
   const themaIsLong = selectedRun?.thema && selectedRun.thema.length > 80;
@@ -710,28 +868,56 @@ export function KapitelWorkspace({
                     onOpenAutoFocus={(e) => e.preventDefault()}
                     onCloseAutoFocus={(e) => e.preventDefault()}
                   >
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-xs font-medium">Credit-Verbrauch (Run)</span>
-                        <span className="text-xs font-medium tabular-nums">
-                          {formatCredits(runUsage?.totalCredits ?? 0)} Credits
-                        </span>
-                      </div>
-
-                      <Separator />
-
-                      {runUsageRows.length > 0 ? (
-                        <div className="space-y-1">
-                          {runUsageRows.map((row) => (
-                            <div key={row.key} className="flex items-start justify-between gap-3 text-xs">
-                              <div className="min-w-0">
-                                <div className="text-muted-foreground">{row.label}</div>
-                                {row.hint ? <div className="text-muted-foreground/70">{row.hint}</div> : null}
-                              </div>
-                              <span className="tabular-nums">{formatCredits(row.credits)} Credits</span>
-                            </div>
-                          ))}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-medium">Kostenübersicht (Run)</span>
+                          <span className="text-xs font-medium tabular-nums">
+                            {formatCredits(runUsage?.totalCredits ?? 0)} Credits
+                          </span>
                         </div>
+
+                        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                          <span>Guthaben (Gesamt)</span>
+                          <span className="tabular-nums">
+                            {balanceTotalCreditsLoading
+                              ? "…"
+                              : balanceTotalCredits == null
+                                ? "-"
+                                : `${formatCredits(balanceTotalCredits)} Credits`}
+                          </span>
+                        </div>
+
+                        <Separator />
+
+                        {runUsageRows.length > 0 ? (
+                          <div className="space-y-1">
+                            {runUsageRows.map((row) => (
+                              <div
+                                key={row.key}
+                                className={cn(
+                                  "flex items-start justify-between gap-3 text-xs",
+                                  row.indent ? "pl-3 border-l border-border/60" : ""
+                                )}
+                              >
+                                <div className="min-w-0">
+                                  <div
+                                    className={cn(
+                                      "truncate",
+                                      row.indent ? "text-muted-foreground" : "text-foreground"
+                                    )}
+                                  >
+                                    {row.label}
+                                  </div>
+                                  {row.hint ? (
+                                    <div className={cn(row.indent ? "text-muted-foreground/70" : "text-muted-foreground")}>
+                                      {row.hint}
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <span className="tabular-nums">{formatCredits(row.credits)} Credits</span>
+                              </div>
+                            ))}
+                          </div>
                       ) : runUsageLoading ? (
                         <div className="text-xs text-muted-foreground">Lädt…</div>
                       ) : (
