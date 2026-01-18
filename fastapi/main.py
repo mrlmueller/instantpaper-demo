@@ -1689,6 +1689,7 @@ async def admin_get_user_credit_ledger(
     uid: str,
     limit: int = 50,
     cursor: str | None = None,
+    includeUsage: bool = True,
     _: str = Depends(verify_admin_user),
 ):
     """Return credit ledger entries for a user (paginated, newest first; admin-only)."""
@@ -1719,23 +1720,76 @@ async def admin_get_user_credit_ledger(
         except Exception:
             pass
 
-    docs = list(base.limit(limit).stream())
-    out = []
-    for snap in docs:
-        data = snap.to_dict() or {}
-        out.append(
-            {
-                "id": snap.id,
-                "type": str(data.get("type") or ""),
-                "source": str(data.get("source") or ""),
-                "credits": _as_float(data.get("credits"), 0.0),
-                "createdAt": _ts_to_iso(data.get("createdAt")),
-                "expiresAt": _ts_to_iso(data.get("expiresAt")),
-                "note": str(data.get("note") or "") or None,
-            }
-        )
+    include_usage = bool(includeUsage)
 
-    next_cursor = docs[-1].id if len(docs) == limit else None
+    out = []
+    last_processed_id = None
+
+    if include_usage:
+        docs = list(base.limit(limit).stream())
+        for snap in docs:
+            data = snap.to_dict() or {}
+            out.append(
+                {
+                    "id": snap.id,
+                    "type": str(data.get("type") or ""),
+                    "source": str(data.get("source") or ""),
+                    "credits": _as_float(data.get("credits"), 0.0),
+                    "createdAt": _ts_to_iso(data.get("createdAt")),
+                    "expiresAt": _ts_to_iso(data.get("expiresAt")),
+                    "note": str(data.get("note") or "") or None,
+                }
+            )
+        next_cursor = docs[-1].id if len(docs) == limit else None
+        return {"entries": out, "nextCursor": next_cursor}
+
+    # Non-usage view: filter out OpenAI debits (source=openai).
+    batch_size = max(50, min(200, limit * 6))
+    has_more_docs = True
+
+    while len(out) < limit and has_more_docs:
+        docs = list(base.limit(batch_size).stream())
+        if not docs:
+            has_more_docs = False
+            break
+
+        for snap in docs:
+            last_processed_id = snap.id
+            data = snap.to_dict() or {}
+            source = str(data.get("source") or "")
+            if source == "openai":
+                continue
+            out.append(
+                {
+                    "id": snap.id,
+                    "type": str(data.get("type") or ""),
+                    "source": source,
+                    "credits": _as_float(data.get("credits"), 0.0),
+                    "createdAt": _ts_to_iso(data.get("createdAt")),
+                    "expiresAt": _ts_to_iso(data.get("expiresAt")),
+                    "note": str(data.get("note") or "") or None,
+                }
+            )
+            if len(out) >= limit:
+                break
+
+        if len(out) >= limit:
+            # We can continue from the last processed document to pick up further non-usage entries.
+            has_more_docs = True
+            break
+
+        if len(docs) < batch_size:
+            has_more_docs = False
+            break
+
+        # Continue scanning after the last document in this batch.
+        try:
+            base = base.start_after(docs[-1])
+        except Exception:
+            has_more_docs = False
+            break
+
+    next_cursor = last_processed_id if (last_processed_id and has_more_docs) else None
     return {"entries": out, "nextCursor": next_cursor}
 
 

@@ -159,8 +159,11 @@ export function AdminUserOpenAIOperationsPanel({
 }) {
   const [operations, setOperations] = useState<OpenAIOperationRow[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
+  const [pageIndex, setPageIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [moreLoading, setMoreLoading] = useState(false);
+  const [pageNav, setPageNav] = useState<'prev' | 'next' | null>(null);
 
   const [reservedMode, setReservedMode] = useState<ReservedCreditsMode>('set');
   const [reservedAmount, setReservedAmount] = useState('');
@@ -181,9 +184,11 @@ export function AdminUserOpenAIOperationsPanel({
     };
   }, [balance]);
 
+  const pageSize = 10;
+
   const loadOps = async (cursor: string | null) => {
     const qs = new URLSearchParams();
-    qs.set('limit', '30');
+    qs.set('limit', String(pageSize));
     if (cursor) qs.set('cursor', cursor);
     const url = `/api/admin/users/${encodeURIComponent(uid)}/openai/operations?${qs.toString()}`;
 
@@ -198,6 +203,9 @@ export function AdminUserOpenAIOperationsPanel({
 
   const reload = async () => {
     setLoading(true);
+    setPageIndex(0);
+    setCursorStack([null]);
+    setPageNav(null);
     try {
       const { operations, nextCursor } = await loadOps(null);
       setOperations(operations);
@@ -214,6 +222,10 @@ export function AdminUserOpenAIOperationsPanel({
   useEffect(() => {
     setOperations([]);
     setNextCursor(null);
+    setCursorStack([null]);
+    setPageIndex(0);
+    setMoreLoading(false);
+    setPageNav(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid]);
 
@@ -403,29 +415,72 @@ export function AdminUserOpenAIOperationsPanel({
           </div>
         )}
 
-        {nextCursor ? (
-          <div>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">Seite {pageIndex + 1}</p>
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
+              size="sm"
               onClick={() => {
-                if (!nextCursor || moreLoading) return;
+                if (moreLoading) return;
+                if (pageIndex <= 0) return;
+                const prevIndex = pageIndex - 1;
+                const cursor = cursorStack[prevIndex] ?? null;
                 setMoreLoading(true);
-                loadOps(nextCursor)
+                setPageNav('prev');
+                loadOps(cursor)
                   .then(({ operations, nextCursor }) => {
-                    setOperations((prev) => [...prev, ...operations]);
+                    setOperations(operations);
                     setNextCursor(nextCursor);
+                    setPageIndex(prevIndex);
                   })
                   .catch((err: any) => {
                     toast.error('OpenAI', { description: err?.message || 'OpenAI Operationen konnten nicht geladen werden.' });
                   })
-                  .finally(() => setMoreLoading(false));
+                  .finally(() => {
+                    setMoreLoading(false);
+                    setPageNav(null);
+                  });
               }}
-              disabled={moreLoading}
+              disabled={moreLoading || pageIndex <= 0}
             >
-              {moreLoading ? 'Laden…' : 'Mehr laden'}
+              {pageNav === 'prev' ? 'Laden…' : 'Neuere'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (moreLoading) return;
+                if (!nextCursor) return;
+                const cursor = nextCursor;
+                const nextIndex = pageIndex + 1;
+                setMoreLoading(true);
+                setPageNav('next');
+                loadOps(cursor)
+                  .then(({ operations, nextCursor }) => {
+                    setOperations(operations);
+                    setNextCursor(nextCursor);
+                    setCursorStack((prev) => {
+                      const out = prev.slice(0, nextIndex);
+                      out[nextIndex] = cursor;
+                      return out;
+                    });
+                    setPageIndex(nextIndex);
+                  })
+                  .catch((err: any) => {
+                    toast.error('OpenAI', { description: err?.message || 'OpenAI Operationen konnten nicht geladen werden.' });
+                  })
+                  .finally(() => {
+                    setMoreLoading(false);
+                    setPageNav(null);
+                  });
+              }}
+              disabled={moreLoading || !nextCursor}
+            >
+              {pageNav === 'next' ? 'Laden…' : 'Ältere'}
             </Button>
           </div>
-        ) : null}
+        </div>
       </section>
 
       <Dialog

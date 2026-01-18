@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import { ArrowLeft, Minus, Pencil, Plus, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Calculator, Minus, Pencil, Plus, RefreshCw } from 'lucide-react';
 
 import { AdminUserPromptManager } from '@/app/components/admin/AdminUserPromptManager';
 import { AdminUserOpenAIOperationsPanel } from '@/app/components/admin/AdminUserOpenAIOperationsPanel';
@@ -84,10 +84,10 @@ type AdminUserDetailResponse = {
 
 function ledgerLabel(entry: AdminBillingLedgerEntry): string {
   const source = String(entry.source || '').trim();
-  if (source === 'stripe_subscription') return 'Abo (Stripe)';
-  if (source === 'stripe_topup') return 'Top-up (Stripe)';
+  if (source === 'stripe_subscription') return 'Monatliche Credits';
+  if (source === 'stripe_topup') return 'Credits gekauft';
   if (source === 'openai') return 'Verbrauch (OpenAI)';
-  if (source === 'admin_adjustment') return 'Admin Adjustment';
+  if (source === 'admin_adjustment') return entry.credits >= 0 ? 'Admin: Credits hinzugefügt' : 'Admin: Credits abgezogen';
   return source || entry.type || 'Ledger';
 }
 
@@ -120,7 +120,24 @@ function formatIso(value: string | null): string {
   }
 }
 
-const BREAK_EVEN_CREDITS_PER_USD_OPENAI = 3.19;
+const PURCHASE_CREDITS_PER_USD = 3;
+const DEFAULT_SPEND_RATE = 6;
+const STRIPE_FEE_PCT = 0.029;
+const STRIPE_FEE_FIXED_USD = 0.3;
+const STRIPE_AVG_PURCHASE_USD = 10;
+
+const STRIPE_AVG_FEE_USD = STRIPE_AVG_PURCHASE_USD * STRIPE_FEE_PCT + STRIPE_FEE_FIXED_USD;
+const STRIPE_AVG_NET_USD = STRIPE_AVG_PURCHASE_USD - STRIPE_AVG_FEE_USD;
+const STRIPE_AVG_CREDITS_ISSUED = STRIPE_AVG_PURCHASE_USD * PURCHASE_CREDITS_PER_USD;
+
+const BREAK_EVEN_CREDITS_PER_USD_OPENAI =
+  STRIPE_AVG_NET_USD > 0 ? STRIPE_AVG_CREDITS_ISSUED / STRIPE_AVG_NET_USD : Number.POSITIVE_INFINITY;
+
+function formatUsd2(value: number): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '$0.00';
+  return `$${n.toFixed(2)}`;
+}
 
 export function AdminUserDetail({ uid }: { uid: string }) {
   const [detail, setDetail] = useState<AdminUserDetailResponse | null>(null);
@@ -176,6 +193,7 @@ export function AdminUserDetail({ uid }: { uid: string }) {
   const loadLedger = async (cursor: string | null) => {
     const qs = new URLSearchParams();
     qs.set('limit', '30');
+    qs.set('includeUsage', 'false');
     if (cursor) qs.set('cursor', cursor);
     const url = `/api/admin/users/${encodeURIComponent(uid)}/billing/ledger?${qs.toString()}`;
 
@@ -642,6 +660,21 @@ export function AdminUserDetail({ uid }: { uid: string }) {
             const draftNum = draftTrim ? Number(draftTrim.replace(',', '.')) : null;
             const isValid = draftTrim === '' || (Number.isFinite(draftNum) && (draftNum as number) > 0);
 
+            const calcSpendRate =
+              draftTrim === ''
+                ? DEFAULT_SPEND_RATE
+                : Number.isFinite(draftNum) && (draftNum as number) > 0
+                  ? (draftNum as number)
+                  : effectiveSpendRate;
+            const calcSpendRateLabel = formatCreditsShort(calcSpendRate);
+            const calcMarginPct = Number.isFinite(calcSpendRate)
+              ? (calcSpendRate / BREAK_EVEN_CREDITS_PER_USD_OPENAI - 1) * 100
+              : Number.NaN;
+            const calcMarginLabel = Number.isFinite(calcMarginPct)
+              ? `${calcMarginPct.toLocaleString('de-DE', { maximumFractionDigits: 1 })}%`
+              : '-';
+            const calcExampleCreditsLabel = formatCreditsShort(calcSpendRate * 10);
+
             const verifyTrim = spendRateVerify.trim();
             const verifyNum = verifyTrim ? Number(verifyTrim.replace(',', '.')) : null;
             const verifyMatches =
@@ -669,7 +702,7 @@ export function AdminUserDetail({ uid }: { uid: string }) {
                 {spendRateStep === 1 ? (
                   <div className="grid gap-4 py-2">
                     <div className="grid gap-2">
-                      <Label htmlFor="spend-rate-draft">Neue Spend Rate</Label>
+                      <Label htmlFor="spend-rate-draft">Credits pro $1 OpenAI-Kosten</Label>
                       <Input
                         id="spend-rate-draft"
                         type="number"
@@ -681,7 +714,45 @@ export function AdminUserDetail({ uid }: { uid: string }) {
                         disabled={savingSpendRate}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Aktuell effektiv: <span className="text-foreground">{effectiveSpendRateLabel}</span> · Break-Even: ~{breakEvenLabel}
+                        Aktuell effektiv: <span className="text-foreground">{effectiveSpendRateLabel}</span> · Break-Even: ~{breakEvenLabel} Credits/$1
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border bg-background shadow-sm p-5">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                        <Calculator className="h-4 w-4 text-muted-foreground" />
+                        Wirtschaftlichkeits-Rechner
+                      </div>
+                      <div className="mt-4 space-y-2 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted-foreground">Break-Even Rate:</span>
+                          <span className="font-medium text-foreground">~{breakEvenLabel} Credits/$1</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted-foreground">Aktuelle Rate:</span>
+                          <span className="font-medium text-foreground">{calcSpendRateLabel} Credits/$1</span>
+                        </div>
+                        <div className="h-px bg-border" />
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-muted-foreground">Gewinnmarge:</span>
+                          <span className={cn('font-medium', calcMarginPct >= 0 ? 'text-emerald-700' : 'text-destructive')}>
+                            {calcMarginLabel}
+                          </span>
+                        </div>
+                        <p className="pt-2 text-xs text-muted-foreground">
+                          Bei einem durchschnittlichen ${STRIPE_AVG_PURCHASE_USD} Kauf erhält der User{' '}
+                          {Math.round(STRIPE_AVG_CREDITS_ISSUED).toLocaleString('de-DE')} Credits. Nach Stripe-Gebühren (~
+                          {formatUsd2(STRIPE_AVG_FEE_USD)}) bleiben {formatUsd2(STRIPE_AVG_NET_USD)} Netto.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border bg-background shadow-sm p-5">
+                      <p className="text-sm font-semibold text-foreground">Beispiel-Auswirkung:</p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Bei <span className="text-foreground font-medium">{calcSpendRateLabel} Credits/$1</span> kostet eine{' '}
+                        <span className="text-foreground font-medium">$10</span> OpenAI-Operation{' '}
+                        <span className="text-foreground font-medium">{calcExampleCreditsLabel} Credits</span>.
                       </p>
                     </div>
                   </div>
@@ -689,13 +760,13 @@ export function AdminUserDetail({ uid }: { uid: string }) {
 
                 {spendRateStep === 2 ? (
                   <div className="py-2">
-                    <div className="rounded-md border bg-amber-500/10 text-amber-900 border-amber-500/20 px-3 py-2 text-sm">
-                      {draftTrim === '' ? (
-                        <span>Reset auf Default (6 Credits pro $1 OpenAI-Kosten)</span>
-                      ) : (
-                        <span>Neue Spend Rate: {formatCreditsShort(draftNum ?? 0)} Credits pro $1 OpenAI-Kosten</span>
-                      )}
-                    </div>
+                      <div className="rounded-md border bg-amber-500/10 text-amber-900 border-amber-500/20 px-3 py-2 text-sm">
+                        {draftTrim === '' ? (
+                        <span>Reset auf Default ({DEFAULT_SPEND_RATE} Credits pro $1 OpenAI-Kosten)</span>
+                        ) : (
+                          <span>Neue Spend Rate: {formatCreditsShort(draftNum ?? 0)} Credits pro $1 OpenAI-Kosten</span>
+                        )}
+                      </div>
                   </div>
                 ) : null}
 
