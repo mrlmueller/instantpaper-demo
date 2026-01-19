@@ -2,9 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import {
-  setUserAllowPlatformKeyByEmail,
   setUserBlockedByEmail,
   setUserCanDuplicateSystemPromptsByEmail,
+  setUserCanViewUsageInsightsByEmail,
   setUserFullAccessByEmail,
 } from '@/app/lib/api/adminServer';
 
@@ -39,19 +39,6 @@ export async function adminSetUserBlocked(formData: FormData) {
   revalidatePath('/admin');
 }
 
-export async function adminSetAllowPlatformKey(formData: FormData) {
-  const email = normalizeEmail(formData.get('email'));
-  const allowRaw = String(formData.get('allowPlatformKey') ?? 'false').trim().toLowerCase();
-  const allow = allowRaw === 'true' || allowRaw === '1' || allowRaw === 'yes' || allowRaw === 'on';
-
-  if (!email || !email.includes('@')) {
-    throw new Error('Bitte eine g〕tige E-Mail angeben.');
-  }
-
-  await setUserAllowPlatformKeyByEmail(email, allow);
-  revalidatePath('/admin');
-}
-
 export async function adminSetCanDuplicateSystemPrompts(formData: FormData) {
   const email = normalizeEmail(formData.get('email'));
   const allowRaw = String(formData.get('canDuplicateSystemPrompts') ?? 'false').trim().toLowerCase();
@@ -62,6 +49,19 @@ export async function adminSetCanDuplicateSystemPrompts(formData: FormData) {
   }
 
   await setUserCanDuplicateSystemPromptsByEmail(email, allow);
+  revalidatePath('/admin');
+}
+
+export async function adminSetCanViewUsageInsights(formData: FormData) {
+  const email = normalizeEmail(formData.get('email'));
+  const allowRaw = String(formData.get('canViewUsageInsights') ?? 'false').trim().toLowerCase();
+  const allow = allowRaw === 'true' || allowRaw === '1' || allowRaw === 'yes' || allowRaw === 'on';
+
+  if (!email || !email.includes('@')) {
+    throw new Error('Bitte eine gültige E-Mail angeben.');
+  }
+
+  await setUserCanViewUsageInsightsByEmail(email, allow);
   revalidatePath('/admin');
 }
 

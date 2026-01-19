@@ -11,5 +11,7 @@ export interface User {
 export interface AuthContextType {
   user: User | null;
   access: AccessState;
+  effectiveBlocked: boolean;
+  canViewUsageInsights: boolean;
   loading: boolean;
 }

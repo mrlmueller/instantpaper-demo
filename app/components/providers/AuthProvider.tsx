@@ -11,9 +11,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [access, setAccess] = useState<AccessState>({ fullAccess: false, legacyApproved: false, blocked: false });
   const [serverBlocked, setServerBlocked] = useState(false);
+  const [canViewUsageInsights, setCanViewUsageInsights] = useState(false);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
+  const effectiveBlocked = access.blocked || serverBlocked;
 
   useEffect(() => {
     const unsubscribe = onAuthStateChange((firebaseUser, nextAccess) => {
@@ -30,6 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setAccess({ fullAccess: false, legacyApproved: false, blocked: false });
         setServerBlocked(false);
+        setCanViewUsageInsights(false);
       }
       setLoading(false);
     });
@@ -49,6 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (cancelled || !ok) return;
           const blocked = data.blocked === true || String(data.accountStatus || '').toLowerCase() === 'blocked';
           setServerBlocked(blocked);
+          setCanViewUsageInsights(data.canViewUsageInsights === true);
         })
         .catch(() => {
           // ignore
@@ -61,13 +65,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (loading) return;
-
-    const effectiveBlocked = access.blocked || serverBlocked;
     const hasAccess = hasFullAccess(access) && !effectiveBlocked;
 
     // Redirect authenticated users away from login page
     if (user && pathname === '/login') {
-      router.replace(hasAccess ? '/dashboard' : '/activate');
+      router.replace(effectiveBlocked ? '/profil' : hasAccess ? '/dashboard' : '/activate');
+      return;
+    }
+
+    // Blocked users should always land on /profil (but still be able to manage Stripe).
+    if (user && effectiveBlocked) {
+      const isAllowed = pathname === '/profil' || pathname === '/login' || pathname.startsWith('/admin');
+      if (!isAllowed) {
+        router.replace('/profil');
+      }
       return;
     }
 
@@ -88,7 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loading, user, access, serverBlocked, pathname, router]);
 
   return (
-    <AuthContext.Provider value={{ user, access, loading }}>
+    <AuthContext.Provider value={{ user, access, effectiveBlocked, canViewUsageInsights, loading }}>
       {children}
     </AuthContext.Provider>
   );

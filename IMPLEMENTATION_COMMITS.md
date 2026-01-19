@@ -16,10 +16,11 @@ Constraints:
 
 Diese Zahlen sind ab jetzt „Source of Truth“ für alle folgenden Schritte:
 
-- **Purchase‑Rate (Kauf)**: `$1 bezahlt -> 3 Credits`
-- **Spend‑Rate (Verbrauch, Default)**: `OpenAI $1 Kosten -> 6 Credits`
-- **Folge (Default)**: `$1 bezahlt -> $0.50 OpenAI‑Budget`
-- Beispiel: `$10` bezahlt -> `30 Credits` -> entspricht `$5` OpenAI‑Budget -> wenn OpenAI‑Kosten `$5`, werden `30 Credits` verbraucht.
+- **Purchase-Rate (Kauf)**: `$1 bezahlt -> 3 Credits`
+- **Spend-Rate (Verbrauch, Default)**: `OpenAI $1 Kosten -> 6 Credits`
+- **Subscription Bonus (Abo)**: +`10 Credits` pro bezahlter Periode (damit `$25` Abo -> `85 Credits` statt `75`)
+- **Folge (Default)**: `$1 bezahlt -> $0.50 OpenAI-Budget`
+- Beispiel: `$10` bezahlt -> `30 Credits` -> entspricht `$5` OpenAI-Budget -> wenn OpenAI-Kosten `$5`, werden `30 Credits` verbraucht.
 
 Wichtig:
 
@@ -253,8 +254,9 @@ Dieser Branch ist groß: arbeite in kleinen „vertikalen“ Commits und teste n
 - In `PLAN_PUBLIC_BETA.md` prüfen/ergänzen:
   - Kauf: `$1 bezahlt -> 3 Credits`
   - Verbrauch Default: `OpenAI $1 -> 6 Credits`
-  - Abo‑Credits expiren am period end; Top‑up nicht.
-  - Ledger zeigt Admin‑Adjustments als Gutschrift/Belastung.
+  - Subscription Bonus: +`10 Credits` pro bezahlter Periode (Abo `$25` -> `85 Credits`)
+  - Abo-Credits expiren am period end; Top-up nicht.
+  - Ledger zeigt Admin-Adjustments als Gutschrift/Belastung.
   **Akzeptanzkriterien**:
 - Keine Interpretationsfragen mehr.
 
@@ -265,12 +267,18 @@ Dieser Branch ist groß: arbeite in kleinen „vertikalen“ Commits und teste n
 
 - Datenmodell festlegen für:
   - Stripe Customer/Subscription State (pro User)
-  - Credit Ledger (append‑only, pro User)
+  - Credit Ledger (append-only, pro User)
   - Credit Balances (entweder berechnet oder gecached)
-  - Per‑User Spend‑Rate Override
+  - Per-User Spend-Rate Override
+  - Firestore-Pfade (konkret):
+    - Stripe (Firebase Extension): `/customers/{uid}` (read), `/customers/{uid}/checkout_sessions/*` (user write), `/customers/{uid}/subscriptions/*` + `/customers/{uid}/payments/*` (read)
+    - Stripe Catalog: `/products/*` + `/products/*/prices/*` (read)
+    - Credits Ledger: `users/{uid}/creditLedger/*` (server-only writes, user read)
+    - Credits Balance Cache: `users/{uid}/billing/balance` (server-only writes, user read)
+    - Spend-Rate Override: `users/{uid}.spendRate` (server/admin setzt; Default 6.0)
 - Firestore Rules erweitern:
   - Neue Collections: User darf lesen, aber nicht schreiben.
-  - Server‑only Writes sind der Standard.
+  - Server-only Writes sind der Standard.
   **Externe Schritte (direkt nach dem Commit)**:
 - Deploy Firestore Rules in Staging/Test (oder Production, wenn du keine Staging hast).
   **Akzeptanzkriterien**:
@@ -307,6 +315,7 @@ Dieser Branch ist groß: arbeite in kleinen „vertikalen“ Commits und teste n
 **Kontext**: User müssen Credits kaufen können (auch wenn sie aktuell auf `/activate` hängen).
 **Änderungen (im Repo)**:
 
+- Stripe integration: Firebase Extension (firestore-stripe-payments) + Firestore `/customers/{uid}/checkout_sessions/*` (no FastAPI Stripe secrets/webhooks).
 - Checkout Session Creation:
   - Subscription: $25/Monat (Price ID aus Stripe)
   - Top‑up: custom amount (>= $5)
@@ -314,6 +323,7 @@ Dieser Branch ist groß: arbeite in kleinen „vertikalen“ Commits und teste n
 - Portal Session Creation (Customer Portal)
   **Externe Schritte (vor dem Test dieses Commits)**:
 
+NOTE: With Firebase Stripe Extension, you do NOT configure Stripe keys/webhooks in FastAPI; only Price IDs + success/cancel URLs matter.
 1. Stripe Test Mode: Produkt/Price existiert, Price ID bekannt.
 2. Backend Env Vars setzen (Test):
    - Stripe Secret Key (Test)
@@ -325,7 +335,8 @@ Dieser Branch ist groß: arbeite in kleinen „vertikalen“ Commits und teste n
 - Checkout startet und kehrt sauber zurück.
 - Customer Portal öffnet.
 
-### Commit B6 — „Stripe Webhooks: Credits Grants (Abo expiring, Top‑up non‑expiring)“
+### Commit B6 - "Stripe Webhooks: Credits Grants (Abo expiring, Top-up non-expiring)"
+NOTE: Repo implementation uses Firebase Cloud Functions (Firestore triggers on Stripe Extension collections), not a FastAPI Stripe webhook endpoint.
 
 **Kontext**: Webhooks sind die Wahrheit. Credits dürfen nicht über Client‑Events vergeben werden.
 **Änderungen (im Repo)**:
@@ -336,7 +347,8 @@ Dieser Branch ist groß: arbeite in kleinen „vertikalen“ Commits und teste n
   - Payment failed/canceled -> Billing State update (keine Grants)
   - Erster erfolgreicher Payment‑Event -> falls User noch kein `fullAccess`: `fullAccess = true` setzen (damit er aus `/activate` rauskommt).
 - Grant Regel fixieren:
-  - `credits_granted = paid_usd * 3`
+  - Top-up: `credits_granted = paid_usd * 3`
+  - Abo: `credits_granted = paid_usd * 3 + 10` (bei `$25` -> `85 Credits`)
   - Expiry nur für Abo‑Grants (period end)
   - `fullAccess` nicht automatisch entziehen bei Kündigung/0 Credits (User muss sonst nicht mehr nachkaufen können); Sperre bleibt Admin‑Tool.
   **Externe Schritte (vor dem Test dieses Commits)**:

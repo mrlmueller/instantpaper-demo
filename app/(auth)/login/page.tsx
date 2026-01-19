@@ -57,7 +57,7 @@ export default function LoginPage() {
       // Ensure the server can immediately authenticate Server Components/Actions on the next navigation.
       setSessionCookie(tokenResult.token);
 
-      router.replace(hasFullAccess(access) && !access.blocked ? '/dashboard' : '/activate');
+      router.replace(access.blocked ? '/profil' : hasFullAccess(access) ? '/dashboard' : '/activate');
     } catch (err: unknown) {
       console.error('Login failed:', err);
       setError(readErrorMessage(err));

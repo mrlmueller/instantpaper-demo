@@ -11,6 +11,9 @@ export default async function GateLayout({ children }: { children: React.ReactNo
   if (user) {
     const access = await getAuthAccess();
     const hasAccess = Boolean(access?.fullAccess || access?.legacyApproved);
+    if (access?.blocked) {
+      redirect('/profil');
+    }
     if (hasAccess && !access?.blocked) {
       redirect('/dashboard');
     }

@@ -359,6 +359,43 @@ class FirebaseService:
             "canDuplicateSystemPrompts": bool(allowed),
         }
 
+    async def set_user_can_view_usage_insights_by_email(self, email: str, allowed: bool) -> dict:
+        """
+        Allow or block a user from seeing usage insights (credits-based dashboard + profile statistics).
+
+        Stored in Firestore under `users/{uid}.canViewUsageInsights` so changes take effect immediately
+        without relying on token refresh/custom-claim propagation.
+        """
+        self._ensure_initialized()
+        email_norm = (email or "").strip()
+        if not email_norm:
+            raise ValueError("email is required")
+
+        try:
+            user = auth.get_user_by_email(email_norm)
+        except auth.UserNotFoundError as exc:
+            raise ValueError("User not found. Ask the user to sign in once, then try again.") from exc
+
+        user_ref = self.db.collection("users").document(user.uid)
+        existing = user_ref.get()
+
+        payload = {
+            "uid": user.uid,
+            "email": (user.email or "").strip() or email_norm,
+            "canViewUsageInsights": bool(allowed),
+            "updatedAt": SERVER_TIMESTAMP,
+        }
+        if not existing.exists:
+            payload["createdAt"] = SERVER_TIMESTAMP
+
+        user_ref.set(payload, merge=True)
+
+        return {
+            "uid": user.uid,
+            "email": (user.email or "").strip() or email_norm,
+            "canViewUsageInsights": bool(allowed),
+        }
+
     async def get_quelle_meta(self, user_id: str, quelle_id: str) -> Optional[dict]:
         """Fetch a Quelle metadata doc (`users/{uid}/quellen/{quelleId}`)."""
         try:
@@ -653,9 +690,15 @@ class FirebaseService:
         quelle_id: str,
         *,
         key_source: Optional[str] = None,
+        error_message: Optional[str] = None,
     ) -> None:
-        """Mark a result doc as errored (status=error) with a generic message."""
+        """Mark a result doc as errored (status=error) with a user-safe message."""
         try:
+            msg = str(error_message or "").strip()
+            if not msg:
+                msg = AI_GENERIC_ERROR_MESSAGE
+            msg = msg[:1000]
+
             result_ref = self._run_result_ref(user_id, kapitel_id, run_id, quelle_id)
             existing = result_ref.get()
             existing_data = existing.to_dict() if existing.exists else {}
@@ -675,7 +718,7 @@ class FirebaseService:
                 "content": "",
                 "hasContent": True,
                 "status": "error",
-                "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                "errorMessage": msg,
                 "errorAt": SERVER_TIMESTAMP,
                 "keySource": key_source,
                 "createdAt": created_at_value,
@@ -1082,9 +1125,15 @@ class FirebaseService:
         artifact_id: str,
         *,
         key_source: Optional[str] = None,
+        error_message: Optional[str] = None,
     ) -> None:
-        """Mark an artifact doc as errored (status=error) with a generic message."""
+        """Mark an artifact doc as errored (status=error) with a user-safe message."""
         try:
+            msg = str(error_message or "").strip()
+            if not msg:
+                msg = AI_GENERIC_ERROR_MESSAGE
+            msg = msg[:1000]
+
             doc_ref = (
                 self.db.collection('users')
                 .document(user_id)
@@ -1110,7 +1159,7 @@ class FirebaseService:
             update = {
                 "artifactId": artifact_id,
                 "status": "error",
-                "errorMessage": AI_GENERIC_ERROR_MESSAGE,
+                "errorMessage": msg,
                 "errorAt": SERVER_TIMESTAMP,
                 "keySource": key_source,
                 "createdAt": created_at_value,

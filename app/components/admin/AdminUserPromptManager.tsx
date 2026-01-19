@@ -6,7 +6,11 @@ import { toast } from 'sonner';
 
 import { Check, Copy, Pencil, Plus, Star, StarOff, Trash2 } from 'lucide-react';
 
-import { STAGE_CONFIG } from '@/app/lib/prompts/promptConfig';
+import {
+  DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
+  LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY,
+  STAGE_CONFIG,
+} from '@/app/lib/prompts/promptConfig';
 import type { PromptStage, PromptTemplate } from '@/app/types/prompts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -164,7 +168,7 @@ export function AdminUserPromptManager({ uid, refreshNonce }: { uid: string; ref
     return list.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   }, [templates, stage]);
 
-  const activeId = (active[stage] as string | undefined) || 'default';
+  const activeId = (active[stage] as string | undefined) || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
 
   const systemOptionsForStage = useMemo(() => {
     const base: AdminSystemPromptTemplate[] = [
@@ -195,7 +199,8 @@ export function AdminUserPromptManager({ uid, refreshNonce }: { uid: string; ref
     for (const tpl of systemTemplates.filter((t) => t.stage === stage)) byKey.set(tpl.templateKey, tpl);
 
     const merged = Array.from(byKey.values());
-    const priority = (key: string) => (key === 'default' ? 0 : key === 'default_v2' ? 1 : 2);
+    const priority = (key: string) =>
+      key === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY ? 0 : key === LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY ? 1 : 2;
     merged.sort((a, b) => priority(a.templateKey) - priority(b.templateKey) || a.name.localeCompare(b.name, 'de'));
     return merged;
   }, [stage, systemTemplates]);
@@ -544,7 +549,11 @@ export function AdminUserPromptManager({ uid, refreshNonce }: { uid: string; ref
                           size="icon"
                           className="h-8 w-8"
                           onClick={() =>
-                            setConfirm({ kind: 'setActive', stage: tpl.stage, templateId: isActive ? 'default' : tpl.id })
+                            setConfirm({
+                              kind: 'setActive',
+                              stage: tpl.stage,
+                              templateId: isActive ? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY : tpl.id,
+                            })
                           }
                           disabled={saving}
                           title={isActive ? 'Standard entfernen' : 'Als Standard setzen'}

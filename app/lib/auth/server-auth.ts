@@ -85,7 +85,10 @@ export async function requireFullAccess(): Promise<AuthUser | null> {
 
   const { user, access } = await getAuthSession();
   if (user) {
-    if (!hasFullAccess(access) || access?.blocked) {
+    if (access?.blocked) {
+      redirect('/profil');
+    }
+    if (!hasFullAccess(access)) {
       redirect('/activate');
     }
     return user;

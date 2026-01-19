@@ -47,6 +47,7 @@ export interface QuellenErgebnis {
   quelleName: string;
   text: string;
   status: "pending" | "waiting" | "success" | "no-content" | "error" | "not-in-run";
+  errorMessage?: string;
   cost: number; // Cost in cents (USD)
   costUsd?: number; // Cost in USD (high precision, for display/aggregation)
 }
@@ -83,6 +84,7 @@ export interface Run {
   combinedCost: number; // Cost for combining in cents
   combinedCostUsd?: number; // Cost for combining in USD (high precision)
   combinedStatus?: "empty" | "running" | "success" | "error";
+  combinedErrorMessage?: string;
   combinedRefinementCost?: number; // Total cost for combined text refinements (in cents)
   combinedRefinementCostUsd?: number; // Total cost for combined text refinements (USD, high precision)
   shortenedRefinementCost?: number; // Total cost for shortened text refinements (in cents)
@@ -92,6 +94,7 @@ export interface Run {
   shortenedCost?: number; // Cost for shortening in cents
   shortenedCostUsd?: number; // Cost for shortening in USD (high precision)
   shortenedStatus?: "empty" | "running" | "success" | "error";
+  shortenedErrorMessage?: string;
   shortenedOriginalLength?: number; // Original word count before shortening
   shortenedLength?: number; // Word count after shortening
   leseflussText?: string | null;
@@ -101,6 +104,7 @@ export interface Run {
   leseflussCost?: number;
   leseflussCostUsd?: number; // Cost for lesefluss in USD (high precision)
   leseflussStatus?: "empty" | "running" | "success" | "error";
+  leseflussErrorMessage?: string;
   leseflussRefinementCost?: number; // Total cost for lesefluss text refinements (in cents)
   leseflussRefinementCostUsd?: number; // Total cost for lesefluss text refinements (USD, high precision)
 }

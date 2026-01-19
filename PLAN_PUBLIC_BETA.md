@@ -61,17 +61,18 @@ Für „100+ Studenten, deutschsprachig, Google‑Login“ soll gelten:
 ### 3.3 Billing / Produkte
 
 - **Subscription**: 1 Plan, **$25/Monat**.
-- **Top‑up**: frei wählbarer Betrag, Minimum **$5**.
+- **Top-up**: frei wählbarer Betrag, Minimum **$5**.
 - **Checkout**: Stripe Checkout + Customer Portal.
 
 ### 3.4 Credits (finales Modell)
 
-Diese Zahlen sind ab jetzt „Source of Truth“:
+Diese Zahlen sind ab jetzt "Source of Truth":
 
-- **Purchase‑Rate (Kauf)**: `$1 bezahlt -> 3 Credits`
-- **Spend‑Rate (Verbrauch, Default)**: `OpenAI $1 Kosten -> 6 Credits`
-- **Folge (Default)**: `$1 bezahlt -> $0.50 OpenAI‑Budget`
-- Beispiel: `$10` bezahlt -> `30 Credits` -> entspricht `$5` OpenAI‑Budget -> wenn OpenAI‑Kosten `$5`, werden `30 Credits` verbraucht.
+- **Purchase-Rate (Kauf)**: `$1 bezahlt -> 3 Credits`
+- **Spend-Rate (Verbrauch, Default)**: `OpenAI $1 Kosten -> 6 Credits`
+- **Subscription Bonus (Abo)**: +`10 Credits` pro bezahlter Periode (damit `$25` Abo -> `85 Credits` statt `75`)
+- **Folge (Default)**: `$1 bezahlt -> $0.50 OpenAI-Budget`
+- Beispiel: `$10` bezahlt -> `30 Credits` -> entspricht `$5` OpenAI-Budget -> wenn OpenAI-Kosten `$5`, werden `30 Credits` verbraucht.
 
 Weitere Regeln:
 
@@ -87,14 +88,15 @@ Weitere Regeln:
 
 ---
 
-## 4) Parameter, die „leicht änderbar“ bleiben sollen
+## 4) Parameter, die "leicht änderbar" bleiben sollen
 
 Diese Werte sollten so geplant werden, dass du sie später ohne Umbau anpassen kannst:
 
 1. Credits pro $ bezahlt (Startwert 3.0).
-2. Default Spend‑Rate (Startwert 6.0).
-3. Per‑User Override der Spend‑Rate.
-4. Plan‑Preis ($25) und Mindest‑Top‑up ($5).
+2. Default Spend-Rate (Startwert 6.0).
+3. Per-User Override der Spend-Rate.
+4. Plan-Preis ($25) und Mindest-Top-up ($5).
+5. Subscription Bonus pro Periode (Startwert +10 Credits).
 
 ---
 

@@ -55,6 +55,7 @@ export type KapitelRunResult = {
   content: string;
   hasContent: boolean;
   status?: 'running' | 'success' | 'error' | 'no-content';
+  errorMessage?: string;
   model: string;
   usage: Usage;
   costUsd: number;
@@ -67,6 +68,7 @@ export type CombinedResult = {
   id: 'combined';
   content: string;
   status?: 'running' | 'success' | 'error';
+  errorMessage?: string;
   sourceQuelleIds: string[];
   heading: string;
   topic: string;
@@ -96,6 +98,7 @@ export type ShortenedResult = {
   id: 'shortened';
   content: string;
   status?: 'running' | 'success' | 'error';
+  errorMessage?: string;
   originalLength: number;
   shortenedLength: number;
   usedKapitelIds: string[];
@@ -125,6 +128,7 @@ export type LeseflussResult = {
   id: 'lesefluss';
   content: string;
   status?: 'running' | 'success' | 'error';
+  errorMessage?: string;
   aufgabenstellung: string;
   originalLength?: number;
   leseflussLength: number;
@@ -287,8 +291,20 @@ async function fetchFastApi(path: string, payload: unknown) {
     return { success: false, error: 'FastAPI-Server antwortet gerade nicht. Das liegt nicht an dir - versuche es später erneut.' };
 
   if (!response.ok) {
-    const errorText = await response.text();
-    return { success: false, error: errorText || 'Request fehlgeschlagen.' };
+    const errorText = await response.text().catch(() => '');
+    const trimmed = errorText.trim();
+    let message = trimmed || 'Request fehlgeschlagen.';
+
+    try {
+      const parsed = JSON.parse(trimmed) as { detail?: unknown };
+      if (typeof parsed?.detail === 'string' && parsed.detail.trim()) {
+        message = parsed.detail.trim();
+      }
+    } catch {
+      // ignore
+    }
+
+    return { success: false, error: message };
   }
 
   const data = await response.json().catch(() => null);
@@ -587,6 +603,7 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10, ctx?: Act
             content: String(r.content ?? ''),
             hasContent: Boolean(r.hasContent),
             status: normalizeResultDocStatus(r.status),
+            errorMessage: typeof r.errorMessage === 'string' ? r.errorMessage : undefined,
             model: String(r.model ?? ''),
             usage: normalizeUsage(r.usage),
             costUsd: Number(r.costUsd ?? 0),
@@ -608,6 +625,7 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10, ctx?: Act
                id: 'combined',
                content: String(a.content ?? ''),
                status: normalizeArtifactDocStatus(a.status),
+               errorMessage: typeof a.errorMessage === 'string' ? a.errorMessage : undefined,
                sourceQuelleIds: Array.isArray(a.sourceQuelleIds) ? a.sourceQuelleIds : [],
                heading: String(a.heading ?? ''),
                topic: String(a.topic ?? ''),
@@ -623,6 +641,7 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10, ctx?: Act
                 id: 'shortened',
                 content: String(a.content ?? ''),
                 status: normalizeArtifactDocStatus(a.status),
+                errorMessage: typeof a.errorMessage === 'string' ? a.errorMessage : undefined,
                originalLength: Number(a.originalLength ?? 0),
                shortenedLength: Number(a.shortenedLength ?? 0),
                usedKapitelIds: Array.isArray(a.usedKapitelIds) ? a.usedKapitelIds : [],
@@ -638,6 +657,7 @@ export async function getKapitelRuns(kapitelId: string, runLimit = 10, ctx?: Act
                 id: 'lesefluss',
                 content: String(a.content ?? ''),
                 status: normalizeArtifactDocStatus(a.status),
+                errorMessage: typeof a.errorMessage === 'string' ? a.errorMessage : undefined,
                 aufgabenstellung: String(a.aufgabenstellung ?? ''),
                 originalLength: typeof a.originalLength === 'number' ? a.originalLength : undefined,
                 leseflussLength: Number(a.leseflussLength ?? 0),

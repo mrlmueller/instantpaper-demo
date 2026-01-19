@@ -6,6 +6,11 @@ import { Loader2, LogOut, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { hasFullAccess, refreshIdTokenAndCookie, signOut } from '@/app/lib/firebase/auth';
+import {
+  STRIPE_SUBSCRIPTION_PRICE_ID,
+  STRIPE_TOPUP_PRICE_ID,
+  createCheckoutSessionUrl,
+} from '@/app/lib/firebase/stripeCheckout';
 import { useAuth } from '@/app/components/providers/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,6 +41,7 @@ export function ActivatePage() {
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState<'subscription' | 'topup' | null>(null);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [meLoading, setMeLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -147,6 +153,37 @@ export function ActivatePage() {
       // ignore
     } finally {
       router.replace('/login');
+    }
+  };
+
+  const startCheckout = async (kind: 'subscription' | 'topup') => {
+    setError(null);
+
+    if (!user) return;
+    if (effectiveBlocked) {
+      setError('Dein Account ist gesperrt. Bitte kontaktiere den Admin.');
+      return;
+    }
+
+    setCheckoutLoading(kind);
+    try {
+      const mode = kind === 'subscription' ? 'subscription' : 'payment';
+      const priceId = kind === 'subscription' ? STRIPE_SUBSCRIPTION_PRICE_ID : STRIPE_TOPUP_PRICE_ID;
+      const returnBase = `${window.location.origin}/activate`;
+      const url = await createCheckoutSessionUrl({
+        uid: user.uid,
+        mode,
+        priceId,
+        successUrl: `${returnBase}?checkout=success`,
+        cancelUrl: `${returnBase}?checkout=cancel`,
+      });
+      window.location.assign(url);
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err, 'Checkout konnte nicht gestartet werden.');
+      setError(msg);
+      toast.error('Checkout', { description: msg });
+    } finally {
+      setCheckoutLoading(null);
     }
   };
 

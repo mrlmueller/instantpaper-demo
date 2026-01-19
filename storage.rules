@@ -3,12 +3,14 @@ service firebase.storage {
   match /b/{bucket}/o {
     function hasFullAccess() {
       return request.auth != null
-        && (request.auth.token.fullAccess == true || request.auth.token.approved == true);
+        && (request.auth.token.fullAccess == true);
     }
 
     function isNotBlocked() {
       // Storage rules cannot read Firestore; rely on the `blocked` claim (stale tokens up to ~1h are acceptable).
-      return request.auth != null && request.auth.token.blocked != true;
+      // IMPORTANT: In Storage rules, reading a missing token field can throw (and deny the request).
+      // Use `get(.., ..)` so users without the claim are treated as "not blocked".
+      return request.auth != null && request.auth.token.get('blocked', false) != true;
     }
 
     // User-scoped image access for Quellen
@@ -17,13 +19,14 @@ service firebase.storage {
       allow read: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked();
 
       // Allow authenticated users to upload their own images
-      // Enforce file size (5MB max) and type restrictions
+      // NOTE: `request.resource.contentType` appears unreliable for some clients (resulting in false denies).
+      // Use filename extension checks as a baseline; enforce stricter checks server-side if needed.
       allow write: if request.auth != null
                    && request.auth.uid == userId
                    && hasFullAccess()
                    && isNotBlocked()
                    && request.resource.size < 5 * 1024 * 1024  // 5MB limit
-                   && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
+                   && imageName.matches('.*\\.(jpg|jpeg|png|webp|gif)$');
 
       // Allow deletion by owner
       allow delete: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked();

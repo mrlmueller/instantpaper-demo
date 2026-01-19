@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { ChevronDown, FolderOpen, Plus, LogOut, User, Loader2, BookOpen, RotateCcw, FileDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { useAuth } from "@/app/components/providers/AuthProvider"
 import { signOut as signOutUser } from "@/app/lib/firebase/auth"
+import Cookies from "js-cookie"
+import { fetchBillingBalance } from "@/app/lib/api/billingClient"
 import type { Projekt } from "@/app/types/ui"
 
 interface ProjektHeaderProps {
@@ -48,11 +50,47 @@ export function ProjektHeader({
   const [switchDialogOpen, setSwitchDialogOpen] = useState(false)
   const [newProjektName, setNewProjektName] = useState("")
   const [localCreateLoading, setLocalCreateLoading] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [totalCredits, setTotalCredits] = useState<number | null>(null)
+  const [creditsLoading, setCreditsLoading] = useState(false)
+  const lastCreditsFetchRef = useRef<number>(0)
 
   const activeProjekte = projekte.filter((p) => p.archived !== true)
   const archivedProjekte = projekte.filter((p) => p.archived === true)
 
   const userName = user?.displayName || user?.email || "User"
+
+  const creditsLabel = (() => {
+    const n = Number(totalCredits ?? 0)
+    if (!Number.isFinite(n)) return "-"
+    const abs = Math.abs(n)
+    const maximumFractionDigits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2
+    return n.toLocaleString("de-DE", { maximumFractionDigits })
+  })()
+
+  useEffect(() => {
+    if (!userMenuOpen) return
+    if (!user?.uid) return
+
+    const now = Date.now()
+    if (totalCredits != null && now - lastCreditsFetchRef.current < 15_000) return
+
+    const token = Cookies.get("__session")
+    if (!token) return
+
+    setCreditsLoading(true)
+    fetchBillingBalance(token)
+      .then((bal) => {
+        // Always show Gesamt-Credits (do not subtract reserved credits).
+        setTotalCredits(Number(bal.totalCredits ?? 0))
+        lastCreditsFetchRef.current = now
+      })
+      .catch((err) => {
+        console.error("Failed to load billing balance:", err)
+        setTotalCredits(null)
+      })
+      .finally(() => setCreditsLoading(false))
+  }, [userMenuOpen, user?.uid, totalCredits])
   const handleCreateProjekt = async () => {
     if (!newProjektName.trim() || localCreateLoading || isCreatingProjekt) return
 
@@ -112,7 +150,7 @@ export function ProjektHeader({
             </Button>
 
             {/* User avatar with dropdown */}
-            <DropdownMenu>
+            <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <button className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground hover:bg-muted/80 transition-colors">
                   {initials}
@@ -120,6 +158,14 @@ export function ProjektHeader({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <div className="px-2 py-1.5 text-sm font-medium">{userName}</div>
+                <div className="px-2 pb-2">
+                  <div className="flex items-center justify-between rounded-md bg-muted/40 px-2 py-1">
+                    <span className="text-xs text-muted-foreground">Credits</span>
+                    <span className="text-xs font-semibold tabular-nums">
+                      {creditsLoading ? "…" : totalCredits == null ? "-" : creditsLabel}
+                    </span>
+                  </div>
+                </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
                   <Link href="/profil" className="flex items-center cursor-pointer">

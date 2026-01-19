@@ -39,8 +39,23 @@ export type AdminUserRow = {
   isAdmin: boolean;
   accountStatus: string | null;
   disabled: boolean;
-  allowPlatformKey: boolean;
   canDuplicateSystemPrompts: boolean;
+  canViewUsageInsights: boolean;
+  billingBalance?: {
+    totalCredits: number;
+    subscriptionCredits: number;
+    subscriptionExpiresAt: string | null;
+    topupCredits: number;
+    reservedCredits: number;
+    availableCredits: number;
+    isNegative: boolean;
+  } | null;
+  billingSubscription?: {
+    id: string | null;
+    status: string | null;
+    cancelAtPeriodEnd: boolean;
+    currentPeriodEnd: string | null;
+  } | null;
   createdAt: string | null;
   lastSignInAt: string | null;
 };
@@ -84,8 +99,38 @@ export async function listAdminUsers(params?: {
           isAdmin: u.isAdmin === true,
           accountStatus: typeof u.accountStatus === 'string' ? u.accountStatus : null,
           disabled: u.disabled === true,
-          allowPlatformKey: u.allowPlatformKey === true,
           canDuplicateSystemPrompts: u.canDuplicateSystemPrompts === true,
+          canViewUsageInsights: u.canViewUsageInsights === true,
+          billingBalance:
+            u.billingBalance && typeof u.billingBalance === 'object'
+              ? {
+                  totalCredits: Number((u.billingBalance as any).totalCredits ?? 0),
+                  subscriptionCredits: Number((u.billingBalance as any).subscriptionCredits ?? 0),
+                  subscriptionExpiresAt:
+                    typeof (u.billingBalance as any).subscriptionExpiresAt === 'string'
+                      ? ((u.billingBalance as any).subscriptionExpiresAt as string)
+                      : null,
+                  topupCredits: Number((u.billingBalance as any).topupCredits ?? 0),
+                  reservedCredits: Number((u.billingBalance as any).reservedCredits ?? 0),
+                  availableCredits: Number((u.billingBalance as any).availableCredits ?? 0),
+                  isNegative: (u.billingBalance as any).isNegative === true,
+                }
+              : null,
+          billingSubscription:
+            u.billingSubscription && typeof u.billingSubscription === 'object'
+              ? {
+                  id: typeof (u.billingSubscription as any).id === 'string' ? ((u.billingSubscription as any).id as string) : null,
+                  status:
+                    typeof (u.billingSubscription as any).status === 'string'
+                      ? ((u.billingSubscription as any).status as string)
+                      : null,
+                  cancelAtPeriodEnd: (u.billingSubscription as any).cancelAtPeriodEnd === true,
+                  currentPeriodEnd:
+                    typeof (u.billingSubscription as any).currentPeriodEnd === 'string'
+                      ? ((u.billingSubscription as any).currentPeriodEnd as string)
+                      : null,
+                }
+              : null,
           createdAt: typeof u.createdAt === 'string' ? u.createdAt : null,
           lastSignInAt: typeof u.lastSignInAt === 'string' ? u.lastSignInAt : null,
         }))
@@ -134,29 +179,6 @@ export async function setUserBlockedByEmail(email: string, blocked: boolean): Pr
   }
 }
 
-export async function setUserAllowPlatformKeyByEmail(
-  email: string,
-  allowPlatformKey: boolean
-): Promise<void> {
-  const token = await getAuthTokenOrNullAsync();
-  if (!token) throw new Error('Not authenticated');
-
-  const res = await fetch(`${API_BASE_URL}/api/admin/users/platform-key`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email, allowPlatformKey }),
-    cache: 'no-store',
-  });
-
-  if (!res.ok) {
-    const detail = await readErrorDetail(res);
-    throw new Error(detail || 'Failed to update platform-key permission.');
-  }
-}
-
 export async function setUserCanDuplicateSystemPromptsByEmail(
   email: string,
   canDuplicateSystemPrompts: boolean
@@ -177,6 +199,29 @@ export async function setUserCanDuplicateSystemPromptsByEmail(
   if (!res.ok) {
     const detail = await readErrorDetail(res);
     throw new Error(detail || 'Failed to update system prompt copy permission.');
+  }
+}
+
+export async function setUserCanViewUsageInsightsByEmail(
+  email: string,
+  canViewUsageInsights: boolean
+): Promise<void> {
+  const token = await getAuthTokenOrNullAsync();
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${API_BASE_URL}/api/admin/users/usage-insights`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, canViewUsageInsights }),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const detail = await readErrorDetail(res);
+    throw new Error(detail || 'Failed to update usage insights permission.');
   }
 }
 

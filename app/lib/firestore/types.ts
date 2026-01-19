@@ -42,6 +42,8 @@ export type QuelleImageMetadata = {
   filename: string;
   size: number;
   contentType: string;
+  widthPx?: number;
+  heightPx?: number;
 };
 
 export type QuelleDoc = ArchiveFields & {

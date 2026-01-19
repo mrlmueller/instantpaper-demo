@@ -32,7 +32,11 @@ import type {
   ActivePromptSelections,
   SystemPromptTemplateMeta,
 } from '@/app/types/prompts';
-import { STAGE_CONFIG } from '@/app/lib/prompts/promptConfig';
+import {
+  DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
+  LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY,
+  STAGE_CONFIG,
+} from '@/app/lib/prompts/promptConfig';
 
 import type { Quelle, Kapitel, Run, ProcessingSettings, Projekt } from '@/app/types/ui';
 import {
@@ -84,7 +88,6 @@ import {
   addDoc,
 } from 'firebase/firestore';
 import Cookies from 'js-cookie';
-import { fetchOpenAIKeyStatus, type OpenAIKeyStatus } from '@/app/lib/api/openaiKeyClient';
 import { getQuellenPanelState, setQuellenPanelState, STORAGE_KEYS } from '@/app/lib/storage/preferences';
 import { getActiveKapitelCookieName } from '@/app/lib/ui/kapitelSelection';
 import { getActiveProjektCookieName } from '@/app/lib/ui/projektSelection';
@@ -116,7 +119,7 @@ function PromptSelectDialog({
   const [choices, setChoices] = useState<Record<PromptStage, string | 'default'>>(() => {
     const initial = {} as Record<PromptStage, string | 'default'>;
     stages.forEach((s) => {
-      initial[s] = (active[s] as string | 'default') || 'default';
+      initial[s] = (active[s] as string | 'default') || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
     });
     return initial;
   });
@@ -124,7 +127,7 @@ function PromptSelectDialog({
   useEffect(() => {
     const init = {} as Record<PromptStage, string | 'default'>;
     stages.forEach((s) => {
-      init[s] = (active[s] as string | 'default') || 'default';
+      init[s] = (active[s] as string | 'default') || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
     });
     setChoices(init);
   }, [stages, active, open]);
@@ -142,7 +145,8 @@ function PromptSelectDialog({
               .filter((t) => t.stage === stage)
               .slice()
               .sort((a, b) => {
-                const rank = (key: string) => (key === 'default' ? 0 : key === 'default_v2' ? 1 : 2);
+                const rank = (key: string) =>
+                  key === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY ? 0 : key === LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY ? 1 : 2;
                 const ra = rank(a.templateKey);
                 const rb = rank(b.templateKey);
                 if (ra !== rb) return ra - rb;
@@ -159,7 +163,7 @@ function PromptSelectDialog({
                     </p>
                   </div>
                   <Select
-                    value={choices[stage] || 'default'}
+                    value={choices[stage] || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY}
                     onValueChange={(val) => setChoices((prev) => ({ ...prev, [stage]: val as string | 'default' }))}
                   >
                      <SelectTrigger className="w-64">
@@ -287,9 +291,6 @@ export function Dashboard({
   const userSelectedRunRef = useRef(false);
   const selectedRun = runs.find((r) => r.id === selectedRunId);
   const hasShownNoticeRef = useRef(false);
-  const [keyStatus, setKeyStatus] = useState<OpenAIKeyStatus | null>(null);
-  const [keyStatusLoading, setKeyStatusLoading] = useState(false);
-  const keyNoticeShownRef = useRef(false);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [systemPromptTemplates, setSystemPromptTemplates] = useState<SystemPromptTemplateMeta[]>([]);
   const [promptActive, setPromptActive] = useState<ActivePromptSelections>({});
@@ -341,61 +342,72 @@ export function Dashboard({
     router.replace('/login?reason=unauthenticated');
   }, [router]);
 
+  const negativeBalanceGateRef = useRef<{ isNegative: boolean; checkedAt: number } | null>(null);
+
+  const showNoCreditsToast = useCallback((toastId: string | number = 'no-credits') => {
+    toast.error('Kein Guthaben', {
+      id: toastId,
+      description: (
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs text-muted-foreground">Bitte lade Credits im Profil unter Billing auf.</span>
+          <Button asChild size="sm">
+            <a href="/profil?tab=billing">Billing öffnen</a>
+          </Button>
+        </div>
+      ),
+    });
+  }, []);
+
   const ensureOpenAIAccess = useCallback(async (): Promise<boolean> => {
-    if (keyStatusLoading) {
-      toast.info('Bitte warten', {
-        description: 'Wir prüfen deinen OpenAI-Key...',
-        id: 'openai-key-loading',
-      });
+    const token = Cookies.get('__session');
+    if (!token) {
+      handleAuthFailure();
       return false;
     }
 
-    let status = keyStatus;
+    const cached = negativeBalanceGateRef.current;
+    const now = Date.now();
+    if (cached?.isNegative && now - cached.checkedAt <= 15_000) {
+      showNoCreditsToast();
+      return false;
+    }
 
-    if (!status) {
-      const token = Cookies.get('__session');
-      if (!token) {
-        handleAuthFailure();
-        return false;
-      }
-
+    if (!cached || now - cached.checkedAt > 15_000) {
       try {
-        setKeyStatusLoading(true);
-        status = await fetchOpenAIKeyStatus(token);
-        setKeyStatus(status);
-      } catch (err) {
-        console.error('OpenAI key status failed', err);
-        if (!keyNoticeShownRef.current) {
-          keyNoticeShownRef.current = true;
-          toast.error('OpenAI Key erforderlich', {
-            description: 'Bitte hinterlege deinen OpenAI Key im Profil, sonst können keine Läufe gestartet werden.',
-            id: 'openai-key-missing',
-          });
-        }
-        return false;
-      } finally {
-        setKeyStatusLoading(false);
-      }
-    }
-
-    if (!status) {
-      return false;
-    }
-
-    if (!status.hasKey && !status.allowPlatformKey) {
-      if (!keyNoticeShownRef.current) {
-        keyNoticeShownRef.current = true;
-        toast.error('OpenAI Key erforderlich', {
-          description: 'Füge deinen OpenAI Key im Profil hinzu, um weiterzumachen.',
-          id: 'openai-key-missing',
+        const res = await fetch(`${API_BASE_URL}/api/billing/balance`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
         });
+
+        if (res.status === 401) {
+          handleAuthFailure();
+          return false;
+        }
+
+        if (res.status === 402) {
+          negativeBalanceGateRef.current = { isNegative: true, checkedAt: now };
+          showNoCreditsToast();
+          return false;
+        }
+
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          const isNegative = Boolean(
+            (data as any)?.balance?.isNegative ?? (data as any)?.isNegative
+          );
+          negativeBalanceGateRef.current = { isNegative, checkedAt: now };
+          if (isNegative) {
+            showNoCreditsToast();
+            return false;
+          }
+        }
+      } catch {
+        // ignore (fail open; backend enforces)
       }
-      router.push('/profil');
-      return false;
     }
 
     return true;
-  }, [handleAuthFailure, keyStatus, keyStatusLoading, router]);
+  }, [handleAuthFailure, showNoCreditsToast]);
 
   const notifyServerDown = useCallback(
     (toastId: string | number = 'fastapi-down') => {
@@ -1017,6 +1029,7 @@ export function Dashboard({
               id: 'combined',
               content: data.content ?? '',
               status: data.status,
+              errorMessage: typeof data.errorMessage === 'string' ? data.errorMessage : undefined,
               sourceQuelleIds: data.sourceQuelleIds ?? [],
               heading: data.heading ?? '',
               topic: data.topic ?? '',
@@ -1032,6 +1045,7 @@ export function Dashboard({
               id: 'shortened',
               content: data.content ?? '',
               status: data.status,
+              errorMessage: typeof data.errorMessage === 'string' ? data.errorMessage : undefined,
               originalLength: data.originalLength ?? 0,
               shortenedLength: data.shortenedLength ?? 0,
               usedKapitelIds: data.usedKapitelIds ?? [],
@@ -1047,6 +1061,7 @@ export function Dashboard({
               id: 'lesefluss',
               content: data.content ?? '',
               status: data.status,
+              errorMessage: typeof data.errorMessage === 'string' ? data.errorMessage : undefined,
               aufgabenstellung: data.aufgabenstellung ?? '',
               originalLength: data.originalLength,
               leseflussLength: data.leseflussLength ?? 0,
@@ -1084,6 +1099,7 @@ export function Dashboard({
             content: resData.content ?? '',
             hasContent: typeof resData.hasContent === 'boolean' ? resData.hasContent : true,
             status: resData.status,
+            errorMessage: typeof resData.errorMessage === 'string' ? resData.errorMessage : undefined,
             model: resData.model ?? '',
             usage: normalizeUsage(resData.usage),
             costUsd: resData.costUsd ?? 0,
@@ -2084,12 +2100,12 @@ export function Dashboard({
         providedChoices?.process_quelle ??
         choices?.process_quelle ??
         (activeSnapshot.process_quelle as string | 'default') ??
-        'default';
+        DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
       const combineChoice = settings.directCombine
         ? providedChoices?.combine ??
           choices?.combine ??
           (activeSnapshot.combine as string | 'default') ??
-          'default'
+          DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
         : undefined;
 
       const shouldApplyChoice = Boolean(providedChoices || choices);
@@ -2170,9 +2186,10 @@ export function Dashboard({
 
         let authFailed = false;
         let serverUnavailable = false;
+        let creditsExhausted = false;
 
         const worker = async () => {
-          while (queue.length > 0 && !authFailed && !serverUnavailable) {
+          while (queue.length > 0 && !authFailed && !serverUnavailable && !creditsExhausted) {
             const nextQuelle = queue.shift();
             if (!nextQuelle) return;
             try {
@@ -2190,25 +2207,25 @@ export function Dashboard({
                 }),
               });
 
-              if (!response.ok) {
-                if (response.status === 401) {
-                  authFailed = true;
-                  queue.length = 0;
-                  toast.error('Verarbeitung abgebrochen', {
+                if (!response.ok) {
+                  if (response.status === 401) {
+                    authFailed = true;
+                    queue.length = 0;
+                    toast.error('Verarbeitung abgebrochen', {
                     description: 'Bitte melde dich erneut an.',
                     id: processingToastId,
                   });
-                  handleAuthFailure();
-                  return;
-                }
+                    handleAuthFailure();
+                    return;
+                  }
 
-                const errorBody = await response.json().catch(() => ({}));
-                const error: any = new Error(errorBody.detail || 'Fehler beim Verarbeiten');
-                error.status = response.status;
-                throw error;
-              }
+                  const errorBody = await response.json().catch(() => ({}));
+                  const error: any = new Error(errorBody.detail || 'Fehler beim Verarbeiten');
+                  error.status = response.status;
+                  throw error;
+                }
             } catch (err: any) {
-              if (authFailed || serverUnavailable) return;
+              if (authFailed || serverUnavailable || creditsExhausted) return;
 
               const status = err?.status;
               if (status === 401) {
@@ -2219,6 +2236,14 @@ export function Dashboard({
                   id: processingToastId,
                 });
                 handleAuthFailure();
+                return;
+              }
+
+              if (status === 402) {
+                creditsExhausted = true;
+                queue.length = 0;
+                negativeBalanceGateRef.current = { isNegative: true, checkedAt: Date.now() };
+                showNoCreditsToast(processingToastId);
                 return;
               }
 
@@ -2240,7 +2265,7 @@ export function Dashboard({
 
         await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
-        if (authFailed || serverUnavailable) {
+        if (authFailed || serverUnavailable || creditsExhausted) {
           return;
         }
 
@@ -2270,6 +2295,7 @@ export function Dashboard({
       askOnEachProcess,
       promptActive,
       applyActivePrompt,
+      showNoCreditsToast,
       isProcessingRun,
     ]
   );
@@ -2313,7 +2339,7 @@ export function Dashboard({
         setIsCombining(false);
         return;
       }
-      await applyActivePrompt('combine', choice.combine ?? 'default');
+      await applyActivePrompt('combine', choice.combine ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
     }
 
     const combineToastId = toast.loading('Texte kombinieren', {
@@ -2343,6 +2369,12 @@ export function Dashboard({
           return;
         }
 
+        if (response.status === 402) {
+          negativeBalanceGateRef.current = { isNegative: true, checkedAt: Date.now() };
+          showNoCreditsToast(combineToastId);
+          return;
+        }
+
         if (response.status >= 500) {
           notifyServerDown(combineToastId);
           return;
@@ -2365,9 +2397,16 @@ export function Dashboard({
           return;
         }
 
-        if (err?.status === 401) {
-          handleAuthFailure();
-          setIsCombining(false);
+      if (err?.status === 401) {
+        handleAuthFailure();
+        setIsCombining(false);
+        return;
+      }
+
+      if (err?.status === 402) {
+        negativeBalanceGateRef.current = { isNegative: true, checkedAt: Date.now() };
+        showNoCreditsToast(combineToastId);
+        setIsCombining(false);
         return;
       }
 
@@ -2388,6 +2427,7 @@ export function Dashboard({
     askOnEachProcess,
     requestPromptChoice,
     applyActivePrompt,
+    showNoCreditsToast,
     isCombining,
   ]);
 
@@ -2458,6 +2498,12 @@ export function Dashboard({
             return;
           }
 
+          if (response.status === 402) {
+            negativeBalanceGateRef.current = { isNegative: true, checkedAt: Date.now() };
+            showNoCreditsToast(adoptToastId);
+            return;
+          }
+
           if (response.status >= 500) {
             notifyServerDown(adoptToastId);
             return;
@@ -2484,6 +2530,12 @@ export function Dashboard({
           return;
         }
 
+        if (err?.status === 402) {
+          negativeBalanceGateRef.current = { isNegative: true, checkedAt: Date.now() };
+          showNoCreditsToast(adoptToastId);
+          return;
+        }
+
         console.error('Fehler beim Uebernehmen:', err);
         toast.error('Uebernehmen fehlgeschlagen', {
           description: err.message || 'Unbekannter Fehler beim Uebernehmen',
@@ -2493,7 +2545,7 @@ export function Dashboard({
         setIsCombining(false);
       }
     },
-    [activeKapitelId, handleAuthFailure, isCombining, notifyServerDown, selectedRun]
+    [activeKapitelId, handleAuthFailure, isCombining, notifyServerDown, selectedRun, showNoCreditsToast]
   );
 
   const handleShorten = useCallback(
@@ -2527,12 +2579,12 @@ export function Dashboard({
           setIsShortening(false);
           return;
         }
-        await applyActivePrompt('shorten', choice.shorten ?? 'default');
-        await applyActivePrompt('summary', choice.summary ?? 'default');
+        await applyActivePrompt('shorten', choice.shorten ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+        await applyActivePrompt('summary', choice.summary ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
       }
       if (providedChoices) {
-        await applyActivePrompt('shorten', providedChoices.shorten ?? 'default');
-        await applyActivePrompt('summary', providedChoices.summary ?? 'default');
+        await applyActivePrompt('shorten', providedChoices.shorten ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+        await applyActivePrompt('summary', providedChoices.summary ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
       }
 
       const shortenToastId = toast.loading('Text wird gekürzt', {
@@ -2545,6 +2597,12 @@ export function Dashboard({
         if (!result?.success) {
           const message = result?.error || 'Kürzung konnte nicht gestartet werden.';
           const lower = message.toLowerCase();
+
+          if (lower.includes('guthaben')) {
+            negativeBalanceGateRef.current = { isNegative: true, checkedAt: Date.now() };
+            showNoCreditsToast(shortenToastId);
+            return;
+          }
 
           if (lower.includes('sitzung')) {
             toast.error('Kürzung abgebrochen', {
@@ -2584,6 +2642,12 @@ export function Dashboard({
           return;
         }
 
+        if (message.toLowerCase().includes('guthaben')) {
+          negativeBalanceGateRef.current = { isNegative: true, checkedAt: Date.now() };
+          showNoCreditsToast(shortenToastId);
+          return;
+        }
+
         if (message.toLowerCase().includes('fastapi-server')) {
           notifyServerDown(shortenToastId);
           return;
@@ -2607,6 +2671,7 @@ export function Dashboard({
       askOnEachProcess,
       requestPromptChoice,
       applyActivePrompt,
+      showNoCreditsToast,
       isShortening,
     ]
   );
@@ -2646,12 +2711,12 @@ export function Dashboard({
           setIsImprovingLesefluss(false);
           return;
         }
-        await applyActivePrompt('lesefluss', choice.lesefluss ?? 'default');
-        await applyActivePrompt('summary', choice.summary ?? 'default');
+        await applyActivePrompt('lesefluss', choice.lesefluss ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+        await applyActivePrompt('summary', choice.summary ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
       }
       if (providedChoices) {
-        await applyActivePrompt('lesefluss', providedChoices.lesefluss ?? 'default');
-        await applyActivePrompt('summary', providedChoices.summary ?? 'default');
+        await applyActivePrompt('lesefluss', providedChoices.lesefluss ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+        await applyActivePrompt('summary', providedChoices.summary ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
       }
 
       const leseflussToastId = toast.loading('Lese Fluss wird verbessert', {
@@ -2664,6 +2729,12 @@ export function Dashboard({
         if (!result?.success) {
           const message = result?.error || 'Lese Fluss verbessern konnte nicht gestartet werden.';
           const lower = message.toLowerCase();
+
+          if (lower.includes('guthaben')) {
+            negativeBalanceGateRef.current = { isNegative: true, checkedAt: Date.now() };
+            showNoCreditsToast(leseflussToastId);
+            return;
+          }
 
           if (lower.includes('sitzung')) {
             toast.error('Lese Fluss abgebrochen', {
@@ -2703,6 +2774,12 @@ export function Dashboard({
           return;
         }
 
+        if (message.toLowerCase().includes('guthaben')) {
+          negativeBalanceGateRef.current = { isNegative: true, checkedAt: Date.now() };
+          showNoCreditsToast(leseflussToastId);
+          return;
+        }
+
         if (message.toLowerCase().includes('fastapi-server')) {
           notifyServerDown(leseflussToastId);
           return;
@@ -2726,6 +2803,7 @@ export function Dashboard({
       askOnEachProcess,
       requestPromptChoice,
       applyActivePrompt,
+      showNoCreditsToast,
       isImprovingLesefluss,
     ]
   );
@@ -2769,6 +2847,13 @@ export function Dashboard({
         if (!result?.success) {
           const message = result?.error || 'Export konnte nicht gestartet werden.';
           const lower = message.toLowerCase();
+
+          if (lower.includes('guthaben')) {
+            negativeBalanceGateRef.current = { isNegative: true, checkedAt: Date.now() };
+            showNoCreditsToast(exportToastId);
+            setIsExportingDocx(false);
+            return;
+          }
 
           if (lower.includes('sitzung')) {
             toast.error('Export abgebrochen', { description: message, id: exportToastId });
@@ -2873,10 +2958,16 @@ export function Dashboard({
       } catch (err: any) {
         console.error('Export error:', err);
         cleanupExportWatcher();
-        toast.error('Export fehlgeschlagen', {
-          id: exportToastId,
-          description: err?.message || 'Unbekannter Fehler',
-        });
+        const message = err?.message || 'Unbekannter Fehler';
+        if (message.toLowerCase().includes('guthaben')) {
+          negativeBalanceGateRef.current = { isNegative: true, checkedAt: Date.now() };
+          showNoCreditsToast(exportToastId);
+        } else {
+          toast.error('Export fehlgeschlagen', {
+            id: exportToastId,
+            description: message,
+          });
+        }
         setIsExportingDocx(false);
       }
     },
@@ -2886,6 +2977,7 @@ export function Dashboard({
       handleAuthFailure,
       isExportingDocx,
       notifyServerDown,
+      showNoCreditsToast,
       projekt?.id,
       user?.uid,
     ]

@@ -13,3 +13,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   return proxyAdminJson(request, `/api/admin/access-codes/${encodeURIComponent(code)}`, { method: 'PATCH' });
 }
 
+export async function DELETE(request: NextRequest, { params }: RouteContext) {
+  const { code } = await params;
+  return proxyAdminJson(request, `/api/admin/access-codes/${encodeURIComponent(code)}`, { method: 'DELETE' });
+}
