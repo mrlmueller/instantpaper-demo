@@ -16,7 +16,6 @@ import {
   Loader2,
   Star,
   Expand,
-  Zap,
   CheckCircle2,
   Edit2,
 } from "lucide-react";
@@ -32,8 +31,6 @@ import { AI_GENERIC_ERROR_MESSAGE } from "@/app/lib/ai/messages";
 import { firestoreClient } from "@/app/lib/firebase/firestoreClient";
 import { collection, doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
 import { createCombinedRefinement, initCombinedRefinement } from "@/app/actions/kapitels";
-
-type ModelChoice = "gpt-5-nano" | "gpt-5-mini" | "gpt-5.2";
 
 type RefinementVersion = {
   id: string;
@@ -54,36 +51,6 @@ type RefinementVersion = {
   createdAt?: unknown;
   errorMessage?: string;
 };
-
-const MODEL_PRICING_USD_PER_MILLION: Record<ModelChoice, { input: number; cached_input: number; output: number }> = {
-  "gpt-5.2": { input: 1.75, cached_input: 0.175, output: 14.0 },
-  "gpt-5-mini": { input: 0.25, cached_input: 0.025, output: 2.0 },
-  "gpt-5-nano": { input: 0.05, cached_input: 0.005, output: 0.4 },
-};
-
-function isModelChoice(model: string): model is ModelChoice {
-  return model === "gpt-5-nano" || model === "gpt-5-mini" || model === "gpt-5.2";
-}
-
-function estimateCostUsd(
-  model: string,
-  inputTokens: number,
-  cachedInputTokens: number,
-  outputTokens: number,
-  reasoningTokens: number
-) {
-  if (!isModelChoice(model)) return null;
-  const pricing = MODEL_PRICING_USD_PER_MILLION[model];
-  const nonCached = Math.max(0, inputTokens - cachedInputTokens);
-  const nonCachedCost = (nonCached / 1_000_000) * pricing.input;
-  const cachedCost = (cachedInputTokens / 1_000_000) * pricing.cached_input;
-  const outputCost = ((outputTokens + reasoningTokens) / 1_000_000) * pricing.output;
-  return nonCachedCost + cachedCost + outputCost;
-}
-
-function formatUsd(usd: number) {
-  return `$${usd.toFixed(2)}`;
-}
 
 function toDate(value: unknown): Date {
   if (!value) return new Date(0);
@@ -112,7 +79,6 @@ export function CombinedRefinementDialog({
   onOpenChange,
   kapitelId,
   runId,
-  runModel,
   kapitelLabel,
   ensureOpenAIAccess,
   onAuthFailure,
@@ -323,27 +289,6 @@ export function CombinedRefinementDialog({
 
   const isSelectedBranchRunning = parentForNext?.status === "running" || isOptimisticallyWaitingOnSelectedPath;
 
-  const estimate = useMemo(() => {
-    const usage = parentForNext?.usage;
-    if (!usage) return null;
-    const prevInput = Number(usage.inputTokens ?? 0);
-    const prevOutputTotal = Number(usage.outputTokens ?? 0) + Number(usage.reasoningTokens ?? 0);
-
-    // Heuristic requested by you:
-    // input: previous input + previous output, output: previous output
-    // TODO(text-refinement): incorporate cachedInputTokens into estimate carefully (range/upper bound).
-    const estInput = prevInput + prevOutputTotal;
-    const estOutput = prevOutputTotal;
-    const estUsd = estimateCostUsd(runModel, estInput, 0, estOutput, 0);
-    if (estUsd === null) return null;
-
-    return {
-      estUsd,
-      estInput,
-      estOutput,
-    };
-  }, [parentForNext?.usage, runModel]);
-
   useEffect(() => {
     if (!open) return;
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -534,7 +479,6 @@ export function CombinedRefinementDialog({
     setTimeout(() => setCopiedId(null), 2000);
   }, []);
 
-  const formatCost = (cents: number) => `$${(cents / 100).toFixed(2)}`;
   const PREVIEW_LENGTH = 300;
 
   const originalText = (tree.root?.assistantText || "").toString();
@@ -544,7 +488,6 @@ export function CombinedRefinementDialog({
   const canSendMore = userMessageCount < maxDepth;
   const roundsRemaining = Math.max(0, maxDepth - userMessageCount);
 
-  const estimatedCostCents = estimate ? Math.round(estimate.estUsd * 100) : 0;
   const showProcessingIndicator = sending || isSelectedBranchRunning;
 
   const handleKeyDown = useCallback(
@@ -867,15 +810,7 @@ export function CombinedRefinementDialog({
                   {roundsRemaining} {roundsRemaining === 1 ? "Runde" : "Runden"} übrig
                 </div>
               </div>
-              <div className="flex flex-col gap-2 justify-between">
-                <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/40 h-10">
-                  <div className="flex items-center gap-1.5">
-                    <Zap className="h-4 w-4 text-amber-500" />
-                    <span className="text-sm font-medium">{formatCost(estimatedCostCents)}</span>
-                  </div>
-                  <div className="h-4 w-px bg-border" />
-                  <span className="text-xs text-muted-foreground">ca. Kosten</span>
-                </div>
+              <div className="flex flex-col justify-end">
                 <Button
                   onClick={handleSend}
                   disabled={!message.trim() || sending || initLoading || isSelectedBranchRunning || isDepthLimitReached}
