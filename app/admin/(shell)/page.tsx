@@ -341,9 +341,9 @@ function UserCard({ user }: { user: AdminUserRow }) {
           </div>
         ) : null}
 
-        <div className="flex items-center justify-between gap-3 sm:justify-end">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-3">
           <span className="text-xs text-muted-foreground">Login: {lastLogin}</span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
             {isPending ? (
               <>
                 <FullAccessButton user={user} formKey={formKey} />
