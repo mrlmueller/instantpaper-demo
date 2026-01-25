@@ -701,10 +701,11 @@ async def usage_insights_run_summary(
         cost_usd = _as_float((costs or {}).get("totalCostUsd"), 0.0)
 
         credits = _as_float(data.get("creditsDebited"), 0.0)
-        if credits <= 0:
-            spend_rate = _as_float(data.get("spendRate"), 0.0)
-            if spend_rate > 0 and cost_usd > 0:
-                credits = float(cost_usd * spend_rate)
+        spend_rate = _as_float(data.get("spendRate"), 0.0)
+        if credits <= 0 and spend_rate > 0 and cost_usd > 0:
+            credits = float(cost_usd * spend_rate)
+        if cost_usd <= 0 and spend_rate > 0 and credits > 0:
+            cost_usd = float(credits / spend_rate)
 
         entry = by_type.get(op_type)
         if not entry:
@@ -718,7 +719,7 @@ async def usage_insights_run_summary(
     items = list(by_type.values())
     items.sort(
         key=lambda x: (
-            -_as_float(x.get("credits"), 0.0),
+            -_as_float(x.get("costUsd"), 0.0),
             -int(x.get("count") or 0),
             str(x.get("operationType") or ""),
         )

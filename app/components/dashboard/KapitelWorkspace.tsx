@@ -88,6 +88,19 @@ function formatCredits(value: number): string {
   return n.toLocaleString("de-DE", { maximumFractionDigits });
 }
 
+function formatUsd(value: number): string {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "$0,00";
+  const abs = Math.abs(n);
+  const maximumFractionDigits =
+    abs >= 1 ? 2 : abs >= 0.1 ? 3 : abs >= 0.01 ? 4 : abs >= 0.001 ? 5 : 6;
+  const formatted = n.toLocaleString("de-DE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits,
+  });
+  return `$${formatted}`;
+}
+
 interface KapitelWorkspaceProps {
   loading: boolean;
   kapitel: Kapitel;
@@ -538,15 +551,15 @@ export function KapitelWorkspace({
   const runUsageRows = (() => {
     if (!runUsage?.byOperationType?.length) return [];
 
-    type OpAgg = { count: number; credits: number };
+    type OpAgg = { count: number; costUsd: number };
     const byType = new Map<string, OpAgg>();
     for (const item of runUsage.byOperationType) {
       const key = String(item.operationType || "").trim();
       if (!key) continue;
-      const prev = byType.get(key) || { count: 0, credits: 0 };
+      const prev = byType.get(key) || { count: 0, costUsd: 0 };
       byType.set(key, {
         count: prev.count + Number(item.count ?? 0),
-        credits: prev.credits + Number(item.credits ?? 0),
+        costUsd: prev.costUsd + Number(item.costUsd ?? 0),
       });
     }
 
@@ -555,9 +568,9 @@ export function KapitelWorkspace({
         (acc, key) => {
           const v = byType.get(key);
           if (!v) return acc;
-          return { count: acc.count + v.count, credits: acc.credits + v.credits };
+          return { count: acc.count + v.count, costUsd: acc.costUsd + v.costUsd };
         },
-        { count: 0, credits: 0 } as OpAgg
+        { count: 0, costUsd: 0 } as OpAgg
       );
 
     const formatHint = (count: number, unitSingular: string, unitPlural: string) => {
@@ -569,7 +582,7 @@ export function KapitelWorkspace({
       key,
       label,
       hint,
-      credits: agg.credits,
+      costUsd: agg.costUsd,
       count: agg.count,
       indent,
     });
@@ -639,18 +652,21 @@ export function KapitelWorkspace({
       "export_docx",
     ]);
 
-    const out: Array<{ key: string; label: string; hint?: string; credits: number; count: number; indent: number }> = [];
+    const out: Array<{ key: string; label: string; hint?: string; costUsd: number; count: number; indent: number }> = [];
 
     for (const g of groups) {
       const baseAgg = g.base;
-      const hasAny = baseAgg.count > 0 || baseAgg.credits > 0 || g.children.some((c) => (byType.get(c.key)?.count ?? 0) > 0);
+      const hasAny =
+        baseAgg.count > 0 ||
+        baseAgg.costUsd > 0 ||
+        g.children.some((c) => (byType.get(c.key)?.count ?? 0) > 0);
       if (!hasAny) continue;
 
       out.push(row(g.key, g.label, baseAgg, g.hint, 0));
 
       for (const child of g.children) {
         const agg = byType.get(child.key);
-        if (!agg || (agg.count <= 0 && agg.credits <= 0)) continue;
+        if (!agg || (agg.count <= 0 && agg.costUsd <= 0)) continue;
         out.push(
           row(
             child.key,
@@ -667,10 +683,10 @@ export function KapitelWorkspace({
     const extras: Array<{ key: string; agg: OpAgg }> = [];
     for (const [key, agg] of byType.entries()) {
       if (knownKeys.has(key)) continue;
-      if (agg.count <= 0 && agg.credits <= 0) continue;
+      if (agg.count <= 0 && agg.costUsd <= 0) continue;
       extras.push({ key, agg });
     }
-    extras.sort((a, b) => b.agg.credits - a.agg.credits);
+    extras.sort((a, b) => b.agg.costUsd - a.agg.costUsd);
     for (const extra of extras) {
       out.push(row(extra.key, extra.key, extra.agg, formatHint(extra.agg.count, "×", "×"), 0));
     }
@@ -854,7 +870,7 @@ export function KapitelWorkspace({
                     >
                       <span className="px-2.5 py-1 text-sm text-muted-foreground">{selectedRun.model}</span>
                       <span className="border-l border-border px-2.5 py-1 text-sm font-medium tabular-nums">
-                        {runUsageLoading ? "…" : `${formatCredits(runUsage?.totalCredits ?? 0)} Credits`}
+                        {runUsageLoading ? "…" : formatUsd(runUsage?.totalCostUsd ?? 0)}
                       </span>
                     </button>
                   </PopoverTrigger>
@@ -872,7 +888,7 @@ export function KapitelWorkspace({
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-xs font-medium">Kostenübersicht (Run)</span>
                           <span className="text-xs font-medium tabular-nums">
-                            {formatCredits(runUsage?.totalCredits ?? 0)} Credits
+                            {formatUsd(runUsage?.totalCostUsd ?? 0)}
                           </span>
                         </div>
 
@@ -914,14 +930,14 @@ export function KapitelWorkspace({
                                     </div>
                                   ) : null}
                                 </div>
-                                <span className="tabular-nums">{formatCredits(row.credits)} Credits</span>
+                                <span className="tabular-nums">{formatUsd(row.costUsd)}</span>
                               </div>
                             ))}
                           </div>
                       ) : runUsageLoading ? (
                         <div className="text-xs text-muted-foreground">Lädt…</div>
                       ) : (
-                        <div className="text-xs text-muted-foreground">Noch keine Credits erfasst.</div>
+                        <div className="text-xs text-muted-foreground">Noch keine Kosten erfasst.</div>
                       )}
                     </div>
                   </PopoverContent>
