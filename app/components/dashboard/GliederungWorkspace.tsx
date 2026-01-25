@@ -285,25 +285,47 @@ export function GliederungWorkspace({
   }
 
   const header = (
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0">
-        <h2 className="text-xl font-semibold">Gliederung (Entwurf)</h2>
-        <p className="text-sm text-muted-foreground">
-          Erstelle einen Entwurf, prüfe ihn sorgfältig und übernimm ihn erst danach als Kapitel.
-        </p>
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0 flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+          <FileText className="h-5 w-5 text-primary" />
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-xl font-semibold leading-tight">Gliederung (Entwurf)</h2>
+          <p className="text-sm text-muted-foreground mt-1 max-w-prose">
+            Erstelle einen Entwurf, prüfe ihn sorgfältig und übernimm ihn erst danach als Kapitel.
+          </p>
+        </div>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
-        <Button variant="outline" onClick={onOpenCreate}>
-          <Plus className="h-4 w-4 mr-2" />
+
+      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <Button variant="outline" size="sm" onClick={onOpenCreate} className="w-full sm:w-auto">
+          <Plus className="h-4 w-4" />
           Neuer Entwurf
         </Button>
-        <Button variant="outline" onClick={() => setArchiveDialogOpen(true)} disabled={archivedDrafts.length === 0}>
-          Archiv
-        </Button>
-        <Button variant="destructive" onClick={() => setStartOverConfirmOpen(true)} disabled={drafts.length === 0}>
-          <RotateCcw className="h-4 w-4 mr-2" />
-          Von vorne beginnen
-        </Button>
+
+        {archivedDrafts.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setArchiveDialogOpen(true)}
+            className="w-full sm:w-auto"
+          >
+            Archiv
+          </Button>
+        )}
+
+        {activeDrafts.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setStartOverConfirmOpen(true)}
+            className="w-full sm:w-auto border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Von vorne beginnen
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -311,17 +333,61 @@ export function GliederungWorkspace({
   if (activeDrafts.length === 0 && archivedDrafts.length === 0) {
     return (
       <div className="h-full flex items-center justify-center p-6">
-        <div className="max-w-xl w-full">
-          <Card className="p-6">
-            {header}
-            <div className="mt-6 space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Dieses Projekt hat noch keine Kapitel. Du kannst direkt mit einem KI‑Entwurf starten und ihn anschließend
-                in Ruhe prüfen.
-              </p>
-              <Button onClick={onOpenCreate} className="w-full">
+        <div className="max-w-2xl w-full">
+          <Card className="p-8">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <FileText className="h-6 w-6 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-2xl font-semibold leading-tight">Gliederung erstellen</h2>
+                <p className="text-sm text-muted-foreground mt-2 max-w-prose">
+                  Dieses Projekt hat noch keine Kapitel. Erstelle einen KI‑Entwurf und prüfe jeden Punkt sorgfältig,
+                  bevor du ihn übernimmst.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-xl border bg-muted/20 p-4">
+              <div className="text-sm font-medium">So funktioniert’s</div>
+              <ol className="mt-3 grid gap-3 sm:grid-cols-3">
+                <li className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold shrink-0">
+                    1
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    <span className="text-foreground font-medium">Entwurf erstellen</span>
+                    <div className="text-xs text-muted-foreground mt-1">Aufgabenstellung eingeben und Modell wählen.</div>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold shrink-0">
+                    2
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    <span className="text-foreground font-medium">Prüfen & bearbeiten</span>
+                    <div className="text-xs text-muted-foreground mt-1">Nummern, Titel und Anweisungen anpassen.</div>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold shrink-0">
+                    3
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    <span className="text-foreground font-medium">Übernehmen</span>
+                    <div className="text-xs text-muted-foreground mt-1">Erst danach werden Kapitel erstellt.</div>
+                  </div>
+                </li>
+              </ol>
+            </div>
+
+            <div className="mt-6">
+              <Button onClick={onOpenCreate} className="w-full h-11 text-base">
                 Gliederung erstellen
               </Button>
+              <p className="text-xs text-muted-foreground mt-3">
+                Hinweis: Du musst jedes Kapitel als „Gelesen & geprüft“ markieren, bevor du übernehmen kannst.
+              </p>
             </div>
           </Card>
         </div>
