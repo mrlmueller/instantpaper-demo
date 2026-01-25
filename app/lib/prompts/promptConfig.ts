@@ -79,6 +79,24 @@ export const STAGE_CONFIG: Record<PromptStage, StageConfig> = {
     sampleData: { KAPITELTEXT: "Beispieltext der zusammengefasst werden soll." },
     defaultInstructions: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`,
   },
+  gliederung: {
+    label: "Gliederung erstellen",
+    requiredPlaceholders: [
+      "{AUFGABENSTELLUNG}",
+      "{GLIEDERUNG_STUDIENBRIEF_MIT_SEITEN}",
+      "{EXTRA_KONTEXT}",
+    ],
+    tooltip:
+      "Pflicht-Platzhalter: {AUFGABENSTELLUNG}, {GLIEDERUNG_STUDIENBRIEF_MIT_SEITEN}, {EXTRA_KONTEXT}. Output ist serverseitig als JSON-Schema erzwungen.",
+    sampleData: {
+      AUFGABENSTELLUNG:
+        "Untersuche die Auswirkungen von KI auf die Produktivität in KMU und leite Handlungsempfehlungen ab.",
+      GLIEDERUNG_STUDIENBRIEF_MIT_SEITEN: "1 Einführung (S. 1–10)\n2 Grundlagen (S. 11–45)\n3 Methodik (S. 46–70)",
+      EXTRA_KONTEXT:
+        "Schreibe auf Deutsch. Fokus auf wissenschaftliche Argumentation. Keine spezifischen Modelle nennen, außer explizit gefordert.",
+    },
+    defaultInstructions: `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`,
+  },
 };
 
 export const MAX_TEMPLATES_PER_STAGE = 10;

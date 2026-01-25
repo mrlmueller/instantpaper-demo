@@ -45,7 +45,7 @@ service cloud.firestore {
     }
 
     function isValidStage(stage) {
-      return stage in ['process_quelle', 'combine', 'shorten', 'lesefluss', 'summary'];
+      return stage in ['process_quelle', 'combine', 'shorten', 'lesefluss', 'summary', 'gliederung'];
     }
 
     function projectExists(userId, projectId) {
@@ -213,6 +213,103 @@ service cloud.firestore {
       match /promptSettings/{settingsId} {
         allow read: if isOwner(userId);
         allow create, update, delete: if isOwner(userId) && settingsId == 'active';
+      }
+
+      // -------------------------------------------------------------------
+      // Gliederung drafts (per-project outline drafts)
+      // -------------------------------------------------------------------
+
+      match /gliederungDrafts/{draftId} {
+        allow read: if isOwner(userId);
+
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasAll([
+            'projektId', 'status', 'model', 'promptTemplateId', 'inputs', 'createdAt', 'updatedAt', 'archived'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'projektId',
+            'status',
+            'errorMessage',
+            'model',
+            'promptTemplateId',
+            'inputs',
+            'output',
+            'usage',
+            'costUsd',
+            'operationId',
+            'keySource',
+            'appliedAt',
+            'appliedKapitelIds',
+            'createdAt',
+            'updatedAt',
+            'archived',
+            'archivedAt'
+          ])
+          && projectExists(userId, request.resource.data.projektId)
+          && request.resource.data.status in ['running', 'success', 'error']
+          && isNonEmptyString(request.resource.data.model, 100)
+          && isNonEmptyString(request.resource.data.promptTemplateId, 200)
+          && request.resource.data.inputs is map
+          && request.resource.data.inputs.keys().hasAll(['aufgabenstellung', 'gliederungStudienbriefMitSeiten', 'extraKontext'])
+          && request.resource.data.inputs.keys().hasOnly(['aufgabenstellung', 'gliederungStudienbriefMitSeiten', 'extraKontext'])
+          && isString(request.resource.data.inputs.aufgabenstellung, 50000)
+          && isString(request.resource.data.inputs.gliederungStudienbriefMitSeiten, 50000)
+          && isString(request.resource.data.inputs.extraKontext, 50000)
+          && (!request.resource.data.keys().hasAny(['output']) || request.resource.data.output == null || request.resource.data.output is map)
+          && (!request.resource.data.keys().hasAny(['usage']) || request.resource.data.usage is map)
+          && (!request.resource.data.keys().hasAny(['costUsd']) || request.resource.data.costUsd is number)
+          && (!request.resource.data.keys().hasAny(['errorMessage']) || request.resource.data.errorMessage == null || isString(request.resource.data.errorMessage, 2000))
+          && isTs(request.resource.data.createdAt)
+          && isTs(request.resource.data.updatedAt)
+          && isValidArchiveState(request.resource.data)
+          && (!request.resource.data.keys().hasAny(['appliedAt']) || request.resource.data.appliedAt == null || isTs(request.resource.data.appliedAt))
+          && (!request.resource.data.keys().hasAny(['appliedKapitelIds']) || request.resource.data.appliedKapitelIds is list);
+
+        allow update: if isOwner(userId)
+          && request.resource.data.keys().hasAll([
+            'projektId', 'status', 'model', 'promptTemplateId', 'inputs', 'createdAt', 'updatedAt', 'archived'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'projektId',
+            'status',
+            'errorMessage',
+            'model',
+            'promptTemplateId',
+            'inputs',
+            'output',
+            'usage',
+            'costUsd',
+            'operationId',
+            'keySource',
+            'appliedAt',
+            'appliedKapitelIds',
+            'createdAt',
+            'updatedAt',
+            'archived',
+            'archivedAt'
+          ])
+          && request.resource.data.projektId == resource.data.projektId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && projectExists(userId, request.resource.data.projektId)
+          && request.resource.data.status in ['running', 'success', 'error']
+          && isNonEmptyString(request.resource.data.model, 100)
+          && isNonEmptyString(request.resource.data.promptTemplateId, 200)
+          && request.resource.data.inputs is map
+          && request.resource.data.inputs.keys().hasAll(['aufgabenstellung', 'gliederungStudienbriefMitSeiten', 'extraKontext'])
+          && request.resource.data.inputs.keys().hasOnly(['aufgabenstellung', 'gliederungStudienbriefMitSeiten', 'extraKontext'])
+          && isString(request.resource.data.inputs.aufgabenstellung, 50000)
+          && isString(request.resource.data.inputs.gliederungStudienbriefMitSeiten, 50000)
+          && isString(request.resource.data.inputs.extraKontext, 50000)
+          && (!request.resource.data.keys().hasAny(['output']) || request.resource.data.output == null || request.resource.data.output is map)
+          && (!request.resource.data.keys().hasAny(['usage']) || request.resource.data.usage is map)
+          && (!request.resource.data.keys().hasAny(['costUsd']) || request.resource.data.costUsd is number)
+          && (!request.resource.data.keys().hasAny(['errorMessage']) || request.resource.data.errorMessage == null || isString(request.resource.data.errorMessage, 2000))
+          && isTs(request.resource.data.updatedAt)
+          && isValidArchiveState(request.resource.data)
+          && (!request.resource.data.keys().hasAny(['appliedAt']) || request.resource.data.appliedAt == null || isTs(request.resource.data.appliedAt))
+          && (!request.resource.data.keys().hasAny(['appliedKapitelIds']) || request.resource.data.appliedKapitelIds is list);
+
+        allow delete: if false;
       }
 
       // -------------------------------------------------------------------

@@ -8,9 +8,11 @@ import { ProjektHeader } from './ProjektHeader';
 import { QuellenPanel } from './QuellenPanel';
 import { TextViewerModal } from './TextViewerModal';
 import { QuelleViewerModal } from './QuelleViewerModal';
+import { GliederungWorkspace } from './GliederungWorkspace';
 import { ProcessingDialog } from './ProcessingDialog';
 import { ShortenDialog } from './ShortenDialog';
 import { LeseflussDialog } from './LeseflussDialog';
+import { GliederungCreateDialog, type GliederungGenerateSettings } from './GliederungCreateDialog';
 import { ExportDialog } from './ExportDialog';
 import { CombinedRefinementDialog } from './CombinedRefinementDialog';
 import { ShortenedRefinementDialog } from './ShortenedRefinementDialog';
@@ -39,6 +41,7 @@ import {
 } from '@/app/lib/prompts/promptConfig';
 
 import type { Quelle, Kapitel, Run, ProcessingSettings, Projekt } from '@/app/types/ui';
+import type { GliederungDraft, GliederungDraftOutput } from '@/app/types/gliederung';
 import {
   transformQuelleToUI,
   transformKapitelToUI,
@@ -86,6 +89,7 @@ import {
   updateDoc,
   serverTimestamp,
   addDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import Cookies from 'js-cookie';
 import { getQuellenPanelState, setQuellenPanelState, STORAGE_KEYS } from '@/app/lib/storage/preferences';
@@ -295,6 +299,9 @@ export function Dashboard({
   const [systemPromptTemplates, setSystemPromptTemplates] = useState<SystemPromptTemplateMeta[]>([]);
   const [promptActive, setPromptActive] = useState<ActivePromptSelections>({});
   const [askOnEachProcess, setAskOnEachProcess] = useState(false);
+  const [gliederungDrafts, setGliederungDrafts] = useState<GliederungDraft[]>([]);
+  const [selectedGliederungDraftId, setSelectedGliederungDraftId] = useState<string | null>(null);
+  const gliederungDraftWasUserSelectedRef = useRef(false);
   const [promptChooser, setPromptChooser] = useState<{
     stages: PromptStage[];
     resolve: (choices: Record<PromptStage, string | 'default'> | null) => void;
@@ -459,6 +466,7 @@ export function Dashboard({
   const [quelleViewer, setQuelleViewer] = useState<Quelle | null>(null);
   const [quelleViewerLoading, setQuelleViewerLoading] = useState(false);
   const [processingDialogOpen, setProcessingDialogOpen] = useState(false);
+  const [gliederungCreateDialogOpen, setGliederungCreateDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   const exportToastIdRef = useRef<string | number | null>(null);
@@ -514,6 +522,8 @@ export function Dashboard({
   const [isShortening, setIsShortening] = useState(false);
   const [isImprovingLesefluss, setIsImprovingLesefluss] = useState(false);
   const [isExportingDocx, setIsExportingDocx] = useState(false);
+  const [isGeneratingGliederung, setIsGeneratingGliederung] = useState(false);
+  const [isApplyingGliederung, setIsApplyingGliederung] = useState(false);
   const [isCreatingKapitel, setIsCreatingKapitel] = useState(false);
   const [isEditingKapitel, setIsEditingKapitel] = useState(false);
   const [isCreatingProjekt, setIsCreatingProjekt] = useState(false);
@@ -1133,6 +1143,11 @@ export function Dashboard({
     };
   }, [user?.uid, activeKapitelId, selectedRunId]);
 
+  useEffect(() => {
+    gliederungDraftWasUserSelectedRef.current = false;
+    setSelectedGliederungDraftId(null);
+  }, [projekt.id]);
+
   // Realtime Kapitels list for the active project (status comes from denormalized `latestRun`)
   useEffect(() => {
     if (!user?.uid || !projekt?.id) return;
@@ -1194,6 +1209,94 @@ export function Dashboard({
 
     return () => unsub();
   }, [user?.uid, projekt.id]);
+
+  useEffect(() => {
+    if (!user?.uid || !projekt?.id || kapiteln.length > 0) {
+      setGliederungDrafts([]);
+      return;
+    }
+
+    const db = firestoreClient;
+    const draftsRef = collection(db, 'users', user.uid, 'gliederungDrafts');
+    const q = query(draftsRef, where('projektId', '==', projekt.id));
+
+    const toDate = (t: any): Date => {
+      const d = t?.toDate?.();
+      return d instanceof Date && !Number.isNaN(d.valueOf()) ? d : new Date();
+    };
+
+    const toOptDate = (t: any): Date | null => {
+      const d = t?.toDate?.();
+      return d instanceof Date && !Number.isNaN(d.valueOf()) ? d : null;
+    };
+
+    const normalizeStatus = (s: unknown): GliederungDraft['status'] => {
+      return s === 'running' || s === 'success' || s === 'error' ? s : 'running';
+    };
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const drafts = snap.docs.map((d) => {
+          const data: any = d.data();
+          const inputs: any = data.inputs ?? {};
+          const output = data.output && typeof data.output === 'object' ? (data.output as GliederungDraftOutput) : null;
+
+          const draft: GliederungDraft = {
+            id: d.id,
+            projektId: typeof data.projektId === 'string' ? data.projektId : projekt.id,
+            status: normalizeStatus(data.status),
+            errorMessage: typeof data.errorMessage === 'string' ? data.errorMessage : data.errorMessage ?? null,
+            model: typeof data.model === 'string' ? data.model : 'gpt-5-nano',
+            promptTemplateId: typeof data.promptTemplateId === 'string' ? data.promptTemplateId : 'default_v2',
+            inputs: {
+              aufgabenstellung: typeof inputs.aufgabenstellung === 'string' ? inputs.aufgabenstellung : '',
+              gliederungStudienbriefMitSeiten:
+                typeof inputs.gliederungStudienbriefMitSeiten === 'string' ? inputs.gliederungStudienbriefMitSeiten : '',
+              extraKontext: typeof inputs.extraKontext === 'string' ? inputs.extraKontext : '',
+            },
+            output,
+            usage: data.usage && typeof data.usage === 'object' ? data.usage : null,
+            costUsd: typeof data.costUsd === 'number' ? data.costUsd : null,
+            operationId: typeof data.operationId === 'string' ? data.operationId : null,
+            keySource: typeof data.keySource === 'string' ? data.keySource : null,
+            appliedAt: toOptDate(data.appliedAt),
+            appliedKapitelIds: Array.isArray(data.appliedKapitelIds)
+              ? data.appliedKapitelIds.filter((x: unknown) => typeof x === 'string')
+              : null,
+            createdAt: toDate(data.createdAt),
+            updatedAt: toDate(data.updatedAt),
+            archived: Boolean(data.archived),
+            archivedAt: toOptDate(data.archivedAt),
+          };
+          return draft;
+        });
+
+        setGliederungDrafts(drafts);
+      },
+      (err) => {
+        console.error('Error listening to gliederungDrafts:', err);
+      }
+    );
+
+    return () => unsub();
+  }, [user?.uid, projekt.id, kapiteln.length]);
+
+  useEffect(() => {
+    if (kapiteln.length > 0) return;
+
+    const selectedStillExists = selectedGliederungDraftId
+      ? gliederungDrafts.some((d) => d.id === selectedGliederungDraftId)
+      : false;
+    if (gliederungDraftWasUserSelectedRef.current && selectedStillExists) return;
+
+    const active = gliederungDrafts
+      .filter((d) => !d.archived)
+      .slice()
+      .sort((a, b) => (b.updatedAt?.valueOf?.() || 0) - (a.updatedAt?.valueOf?.() || 0));
+
+    setSelectedGliederungDraftId(active[0]?.id ?? null);
+  }, [kapiteln.length, gliederungDrafts, selectedGliederungDraftId]);
 
   useEffect(() => {
     return () => {
@@ -2039,6 +2142,313 @@ export function Dashboard({
       });
     },
     [askOnEachProcess]
+  );
+
+  const handleGenerateGliederung = useCallback(
+    async (settings: GliederungGenerateSettings) => {
+      if (isGeneratingGliederung) return;
+      if (!projekt?.id) return;
+
+      if (!(await ensureOpenAIAccess())) return;
+
+      const token = Cookies.get('__session');
+      if (!token) {
+        handleAuthFailure();
+        return;
+      }
+
+      const toastId = toast.loading('Gliederung wird erstellt...');
+      setIsGeneratingGliederung(true);
+      try {
+        const choice = settings.promptChoice?.gliederung;
+        if (askOnEachProcess && typeof choice === 'string' && choice.trim()) {
+          await applyActivePrompt('gliederung', choice as string | 'default');
+        }
+
+        const response = await fetch(`${API_BASE_URL}/api/gliederung/generate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            projekt_id: projekt.id,
+            aufgabenstellung: settings.aufgabenstellung,
+            gliederung_studienbrief_mit_seiten: settings.gliederungStudienbriefMitSeiten,
+            extra_kontext: settings.extraKontext,
+            model: settings.model,
+          }),
+        });
+
+        if (response.status === 401) {
+          toast.error('Bitte melde dich erneut an.', { id: toastId });
+          handleAuthFailure();
+          return;
+        }
+
+        if (response.status === 402) {
+          showNoCreditsToast(toastId);
+          return;
+        }
+
+        if (!response.ok) {
+          const errorBody = await response.json().catch(() => ({}));
+          const msg = (errorBody as any)?.detail || (errorBody as any)?.error || 'Gliederung konnte nicht erstellt werden.';
+          throw new Error(msg);
+        }
+
+        const data = await response.json().catch(() => ({}));
+        const draftId = (data as any)?.draft_id;
+        if (typeof draftId === 'string' && draftId.trim()) {
+          gliederungDraftWasUserSelectedRef.current = true;
+          setSelectedGliederungDraftId(draftId.trim());
+        }
+
+        toast.success('Entwurf gestartet', {
+          description: 'Der Entwurf erscheint gleich im Review-Editor.',
+          id: toastId,
+        });
+      } catch (err: any) {
+        console.error('Gliederung generation failed', err);
+        if (String(err?.message || '').includes('fetch')) {
+          notifyServerDown(toastId);
+        } else {
+          toast.error('Fehler', { description: err?.message || 'Gliederung konnte nicht erstellt werden.', id: toastId });
+        }
+      } finally {
+        setIsGeneratingGliederung(false);
+      }
+    },
+    [
+      askOnEachProcess,
+      applyActivePrompt,
+      ensureOpenAIAccess,
+      handleAuthFailure,
+      isGeneratingGliederung,
+      notifyServerDown,
+      projekt?.id,
+      showNoCreditsToast,
+    ]
+  );
+
+  const handleSelectGliederungDraft = useCallback((draftId: string) => {
+    gliederungDraftWasUserSelectedRef.current = true;
+    setSelectedGliederungDraftId(draftId);
+  }, []);
+
+  const updateGliederungDraftOutput = useCallback(
+    async (draftId: string, output: GliederungDraftOutput) => {
+      if (!user?.uid) throw new Error('Kein Nutzer angemeldet');
+      const db = firestoreClient;
+      const ref = doc(db, 'users', user.uid, 'gliederungDrafts', draftId);
+      await updateDoc(ref, {
+        output,
+        updatedAt: serverTimestamp(),
+      });
+    },
+    [user?.uid]
+  );
+
+  const restoreGliederungDraft = useCallback(
+    async (draftId: string) => {
+      if (!user?.uid) {
+        toast.error('Kein Nutzer angemeldet');
+        return;
+      }
+      const db = firestoreClient;
+      const ref = doc(db, 'users', user.uid, 'gliederungDrafts', draftId);
+      await updateDoc(ref, {
+        archived: false,
+        archivedAt: null,
+        updatedAt: serverTimestamp(),
+      });
+      gliederungDraftWasUserSelectedRef.current = true;
+      setSelectedGliederungDraftId(draftId);
+    },
+    [user?.uid]
+  );
+
+  const archiveAllGliederungDrafts = useCallback(async () => {
+    if (!user?.uid) {
+      toast.error('Kein Nutzer angemeldet');
+      return;
+    }
+
+    const toArchive = gliederungDrafts.filter((d) => !d.archived);
+    if (toArchive.length === 0) return;
+
+    const toastId = toast.loading('Entwürfe werden archiviert...');
+    try {
+      const db = firestoreClient;
+      await Promise.all(
+        toArchive.map((d) =>
+          updateDoc(doc(db, 'users', user.uid, 'gliederungDrafts', d.id), {
+            archived: true,
+            archivedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        )
+      );
+      gliederungDraftWasUserSelectedRef.current = false;
+      setSelectedGliederungDraftId(null);
+      toast.success('Entwürfe archiviert', { id: toastId });
+    } catch (err: any) {
+      toast.error('Fehler', { description: err?.message || 'Archivieren fehlgeschlagen.', id: toastId });
+    }
+  }, [gliederungDrafts, user?.uid]);
+
+  const applyGliederungDraft = useCallback(
+    async (draftId: string, output: GliederungDraftOutput) => {
+      if (isApplyingGliederung) return;
+      if (!user?.uid) {
+        toast.error('Kein Nutzer angemeldet');
+        return;
+      }
+      if (!projekt?.id) return;
+      if (kapitelnRef.current.length > 0) {
+        toast.error('Nicht möglich', { description: 'Dieses Projekt hat bereits Kapitel.' });
+        return;
+      }
+
+      const chapters = Array.isArray(output?.kapitel) ? output.kapitel : [];
+      if (chapters.length === 0) {
+        toast.error('Keine Kapitel', { description: 'Der Entwurf enthält keine Kapitel.' });
+        return;
+      }
+
+      const normalizeNummer = (n: string) => n.trim();
+      const parseParts = (nummer: string) => normalizeNummer(nummer).split('.').map((p) => Number(p));
+      const isValidNummer = (nummer: string) => {
+        const n = normalizeNummer(nummer);
+        if (!n) return false;
+        const parts = n.split('.');
+        if (parts.length === 0 || parts.length > 3) return false;
+        return parts.every((p) => /^[1-9]\d*$/.test(p));
+      };
+      const compareNummer = (a: string, b: string) => {
+        const pa = parseParts(a);
+        const pb = parseParts(b);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+          const na = pa[i] ?? 0;
+          const nb = pb[i] ?? 0;
+          if (na !== nb) return na - nb;
+        }
+        return 0;
+      };
+
+      const nums = chapters.map((c) => normalizeNummer(c.nummer));
+      const invalid = nums.some((n) => !isValidNummer(n));
+      if (invalid) {
+        toast.error('Ungültige Nummern', { description: 'Bitte prüfe das Format (1, 1.1 oder 1.1.1) und max. Ebene 3.' });
+        return;
+      }
+      const seen = new Set<string>();
+      const dups = new Set<string>();
+      for (const n of nums) {
+        if (seen.has(n)) dups.add(n);
+        else seen.add(n);
+      }
+      if (dups.size > 0) {
+        toast.error('Doppelte Nummern', { description: Array.from(dups).join(', ') });
+        return;
+      }
+
+      const normalizeKontextLine = (s: string) =>
+        s
+          .toLowerCase()
+          .replace(/\s+/g, ' ')
+          .replace(/[.]+$/g, '')
+          .trim();
+      const isNoExtraKontext = (s: string) => {
+        const n = normalizeKontextLine(s);
+        return n === 'kein zusätzlicher kontext nötig' || n === 'kein zusaetzlicher kontext nötig' || n === 'kein zusaetzlicher kontext noetig';
+      };
+
+      const buildThema = (ch: (typeof chapters)[number]) => {
+        const parts: string[] = [];
+        const beschreibung = String(ch.beschreibung ?? '').trim();
+        if (beschreibung) parts.push(beschreibung);
+
+        const seitenumfang = String(ch.seitenumfang ?? '').trim();
+        if (seitenumfang) parts.push(`Seitenumfang: ${seitenumfang}`);
+
+        const kontext = (ch.kontext || []).map((x) => String(x ?? '').trim()).filter(Boolean).filter((x: string) => !isNoExtraKontext(x));
+        if (kontext.length) {
+          parts.push(`Zusätzlicher Kontext:\n- ${kontext.join('\n- ')}`);
+        }
+
+        const refs = (ch.relevanteStudienbriefKapitel || [])
+          .map((k) => {
+            const n = String(k.nummer ?? '').trim();
+            const t = String(k.titel ?? '').trim();
+            const l = String(k.label ?? '').trim();
+            if (!n && !t) return null;
+            const base = `${n ? `${n} ` : ''}${t}`.trim();
+            return l ? `${base} [${l}]` : base;
+          })
+          .filter((x): x is string => Boolean(x));
+        if (refs.length) {
+          parts.push(`Relevante Studienbrief‑Kapitel:\n- ${refs.join('\n- ')}`);
+        }
+
+        const externe = Boolean(ch.externeQuellenErforderlich);
+        parts.push(`Externe Quellen erforderlich: ${externe ? 'ja' : 'nein'}`);
+
+        return parts.join('\n\n').trim();
+      };
+
+      const sorted = chapters.slice().sort((a, b) => compareNummer(normalizeNummer(a.nummer), normalizeNummer(b.nummer)));
+
+      const toastId = toast.loading('Kapitel werden erstellt...');
+      setIsApplyingGliederung(true);
+      try {
+        const db = firestoreClient;
+        const batch = writeBatch(db);
+
+        const kapitelsRef = collection(db, 'users', user.uid, 'kapitels');
+        const baseOrder = Date.now();
+        const createdIds: string[] = [];
+
+        for (let i = 0; i < sorted.length; i++) {
+          const ch = sorted[i];
+          const ref = doc(kapitelsRef);
+          createdIds.push(ref.id);
+
+          const title = String(ch.titel ?? '').trim() || 'Ohne Titel';
+          const nummer = normalizeNummer(ch.nummer);
+          const thema = buildThema(ch);
+
+          batch.set(ref, {
+            title,
+            projektId: projekt.id,
+            nummer,
+            thema: thema ? thema : null,
+            quelleIds: [],
+            parentId: null,
+            order: baseOrder + i,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            archived: false,
+          });
+        }
+
+        const draftRef = doc(db, 'users', user.uid, 'gliederungDrafts', draftId);
+        batch.update(draftRef, {
+          appliedAt: serverTimestamp(),
+          appliedKapitelIds: createdIds,
+          updatedAt: serverTimestamp(),
+        });
+
+        await batch.commit();
+        toast.success('Kapitel erstellt', { id: toastId, description: `${createdIds.length} Kapitel wurden angelegt.` });
+      } catch (err: any) {
+        console.error('Apply gliederung draft failed', err);
+        toast.error('Fehler', { description: err?.message || 'Kapitel konnten nicht erstellt werden.', id: toastId });
+      } finally {
+        setIsApplyingGliederung(false);
+      }
+    },
+    [isApplyingGliederung, projekt?.id, user?.uid]
   );
 
   const handleProcess = useCallback(
@@ -3077,7 +3487,19 @@ export function Dashboard({
               onOpenResultRefinement={(quelleId, quelleName) => {
                 setResultRefinementTarget({ quelleId, quelleName });
                 setResultRefinementDialogOpen(true);
-              }}
+                }}
+            />
+          ) : kapiteln.length === 0 ? (
+            <GliederungWorkspace
+              drafts={gliederungDrafts}
+              selectedDraftId={selectedGliederungDraftId}
+              onSelectDraft={handleSelectGliederungDraft}
+              onOpenCreate={() => setGliederungCreateDialogOpen(true)}
+              onStartOver={archiveAllGliederungDrafts}
+              onRestoreDraft={restoreGliederungDraft}
+              onUpdateDraftOutput={updateGliederungDraftOutput}
+              onApplyDraft={applyGliederungDraft}
+              isApplying={isApplyingGliederung}
             />
           ) : (
             <div className="h-full flex items-center justify-center">
@@ -3144,6 +3566,17 @@ export function Dashboard({
           isProcessing={isProcessingRun}
         />
       )}
+
+      <GliederungCreateDialog
+        open={gliederungCreateDialogOpen}
+        onOpenChange={setGliederungCreateDialogOpen}
+        onGenerate={handleGenerateGliederung}
+        askOnEachProcess={askOnEachProcess}
+        promptTemplates={promptTemplates}
+        systemPromptTemplates={systemPromptTemplates}
+        promptActive={promptActive}
+        isGenerating={isGeneratingGliederung}
+      />
 
       {activeKapitel && selectedRun && (
         <ShortenDialog

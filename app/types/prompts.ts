@@ -3,7 +3,8 @@ export type PromptStage =
   | "combine"
   | "shorten"
   | "lesefluss"
-  | "summary";
+  | "summary"
+  | "gliederung";
 
 export type PromptTemplate = {
   id: string;

@@ -17,6 +17,7 @@ from models.request import (
     AdoptCombinedRequest,
     ShortenKapitelRequest,
     LeseflussKapitelRequest,
+    GenerateGliederungRequest,
     ExportDocxRequest,
     RefineCombinedInitRequest,
     RefineCombinedRequest,
@@ -31,6 +32,7 @@ from models.response import ProcessQuelleResponse
 from services.quelle_service import quelle_service
 from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
+from services.gliederung_service import gliederung_service
 from services.refinement_service import refinement_service
 from services.firebase_service import firebase_service
 from services.credits_service import get_credits_service
@@ -60,7 +62,7 @@ configure_logging()
 logger = logging.getLogger(__name__)
 basic_security = HTTPBasic()
 
-ALLOWED_PROMPT_STAGES = {"process_quelle", "combine", "summary", "shorten", "lesefluss"}
+ALLOWED_PROMPT_STAGES = {"process_quelle", "combine", "summary", "shorten", "lesefluss", "gliederung"}
 SYSTEM_TEMPLATE_KEYS_ALWAYS_AVAILABLE = {"default", "default_v2"}
 TEMPLATE_KEY_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 
@@ -3688,6 +3690,53 @@ async def save_openai_key(
 async def delete_openai_key(user_id: str = Depends(verify_firebase_token)):
     """Delete the stored OpenAI key for the user."""
     return await user_key_service.delete_user_key(user_id)
+
+
+@app.post("/api/gliederung/generate", status_code=status.HTTP_202_ACCEPTED)
+async def generate_gliederung(
+    request: GenerateGliederungRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Generate a Gliederung (outline) draft for a project.
+
+    Returns immediately and writes the draft asynchronously to Firestore:
+      users/{uid}/gliederungDrafts/{draftId}
+    """
+    projekt_id = str(request.projekt_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
+    prompt_template_id = await firebase_service.get_active_prompt_id(user_id, "gliederung")
+    prompt_template_id = (prompt_template_id or "").strip() or "default_v2"
+
+    draft_id = await gliederung_service.create_draft_placeholder(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        model=request.model,
+        prompt_template_id=prompt_template_id,
+        aufgabenstellung=str(request.aufgabenstellung or "").strip(),
+        gliederung_studienbrief_mit_seiten=str(request.gliederung_studienbrief_mit_seiten or "").strip(),
+        extra_kontext=str(request.extra_kontext or "").strip(),
+    )
+
+    background_tasks.add_task(gliederung_service.generate_draft, user_id=user_id, draft_id=draft_id)
+
+    return {
+        "status": "queued",
+        "draft_id": draft_id,
+        "projekt_id": projekt_id,
+        "queued_at": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 @app.post("/api/process", status_code=status.HTTP_202_ACCEPTED)

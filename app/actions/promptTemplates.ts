@@ -45,7 +45,7 @@ function validatePlaceholders(stage: PromptStage, instructions: string): string 
   return null;
 }
 
-const SYSTEM_STAGES: PromptStage[] = ['process_quelle', 'combine', 'shorten', 'lesefluss', 'summary'];
+const SYSTEM_STAGES: PromptStage[] = ['process_quelle', 'combine', 'shorten', 'lesefluss', 'summary', 'gliederung'];
 const PROMPT_DEFAULTS_VERSION = 2;
 
 function fallbackSystemTemplates(): SystemPromptTemplateMeta[] {
