@@ -18,6 +18,7 @@ from models.request import (
     ShortenKapitelRequest,
     LeseflussKapitelRequest,
     GenerateGliederungRequest,
+    RefineGliederungRequest,
     ExportDocxRequest,
     RefineCombinedInitRequest,
     RefineCombinedRequest,
@@ -3730,6 +3731,83 @@ async def generate_gliederung(
     )
 
     background_tasks.add_task(gliederung_service.generate_draft, user_id=user_id, draft_id=draft_id)
+
+    return {
+        "status": "queued",
+        "draft_id": draft_id,
+        "projekt_id": projekt_id,
+        "queued_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@app.post("/api/gliederung/refine", status_code=status.HTTP_202_ACCEPTED)
+async def refine_gliederung(
+    request: RefineGliederungRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Refine an existing Gliederung draft with a user instruction.
+
+    Writes asynchronously to:
+      users/{uid}/gliederungDrafts/{draftId}
+    """
+    draft_id = str(request.draft_id or "").strip()
+    if not draft_id:
+        raise HTTPException(status_code=400, detail="draft_id is required")
+
+    user_message = str(request.message or "").strip()
+    if not user_message:
+        raise HTTPException(status_code=400, detail="message is required")
+
+    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
+    draft_ref = (
+        firebase_service.db.collection("users")
+        .document(user_id)
+        .collection("gliederungDrafts")
+        .document(draft_id)
+    )
+    draft_snap = draft_ref.get()
+    if not draft_snap.exists:
+        raise HTTPException(status_code=404, detail="Draft not found.")
+
+    draft = draft_snap.to_dict() or {}
+    if bool(draft.get("archived") is True):
+        raise HTTPException(status_code=400, detail="Draft is archived.")
+
+    if str(draft.get("status") or "").strip() == "running":
+        raise HTTPException(status_code=400, detail="Draft is currently running.")
+
+    if not isinstance(draft.get("output"), dict):
+        raise HTTPException(status_code=400, detail="Draft has no output to refine.")
+
+    projekt_id = str(draft.get("projektId") or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="Draft is missing projektId.")
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    # Mark draft as running immediately so the UI shows progress.
+    draft_ref.set(
+        {
+            "status": "running",
+            "errorMessage": None,
+            "updatedAt": SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+
+    background_tasks.add_task(
+        gliederung_service.refine_draft,
+        user_id=user_id,
+        draft_id=draft_id,
+        user_message=user_message,
+    )
 
     return {
         "status": "queued",

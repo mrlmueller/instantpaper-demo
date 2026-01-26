@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { AlertTriangle, CheckCircle2, FileText, Loader2, Plus, RotateCcw, Save } from "lucide-react"
+import { AlertTriangle, CheckCircle2, FileText, Loader2, Plus, Save, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -22,16 +22,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import type { GliederungDraft, GliederungDraftOutput } from "@/app/types/gliederung"
 import { cn } from "@/lib/utils"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 type KapitelValidation = {
   duplicateIds: Set<string>
@@ -140,11 +133,11 @@ interface GliederungWorkspaceProps {
   selectedDraftId: string | null
   onSelectDraft: (id: string) => void
   onOpenCreate: () => void
-  onStartOver: () => Promise<void>
-  onRestoreDraft: (id: string) => Promise<void>
   onUpdateDraftOutput: (draftId: string, output: GliederungDraftOutput) => Promise<void>
+  onRefineDraft: (draftId: string, message: string) => Promise<void>
   onApplyDraft: (draftId: string, output: GliederungDraftOutput) => Promise<void>
   isApplying: boolean
+  isRefining: boolean
 }
 
 export function GliederungWorkspace({
@@ -152,24 +145,17 @@ export function GliederungWorkspace({
   selectedDraftId,
   onSelectDraft,
   onOpenCreate,
-  onStartOver,
-  onRestoreDraft,
   onUpdateDraftOutput,
+  onRefineDraft,
   onApplyDraft,
   isApplying,
+  isRefining,
 }: GliederungWorkspaceProps) {
   const activeDrafts = useMemo(() => {
     return drafts
       .filter((d) => !d.archived)
       .slice()
       .sort((a, b) => (b.updatedAt?.valueOf?.() || 0) - (a.updatedAt?.valueOf?.() || 0))
-  }, [drafts])
-
-  const archivedDrafts = useMemo(() => {
-    return drafts
-      .filter((d) => d.archived)
-      .slice()
-      .sort((a, b) => (b.archivedAt?.valueOf?.() || 0) - (a.archivedAt?.valueOf?.() || 0))
   }, [drafts])
 
   const selectedDraft = useMemo(() => {
@@ -183,8 +169,7 @@ export function GliederungWorkspace({
     onSelectDraft(activeDrafts[0].id)
   }, [activeDrafts, onSelectDraft, selectedDraftId])
 
-  const [startOverConfirmOpen, setStartOverConfirmOpen] = useState(false)
-  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
+  const [deleteKapitelId, setDeleteKapitelId] = useState<string | null>(null)
 
   const [output, setOutput] = useState<GliederungDraftOutput | null>(selectedDraft?.output ?? null)
   const [version, setVersion] = useState(0)
@@ -192,6 +177,9 @@ export function GliederungWorkspace({
   const attemptedVersionRef = useRef(0)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [refineMessage, setRefineMessage] = useState("")
+  const [localRefining, setLocalRefining] = useState(false)
+  const isDirty = version !== savedVersionRef.current
 
   useEffect(() => {
     setOutput(null)
@@ -200,14 +188,15 @@ export function GliederungWorkspace({
     attemptedVersionRef.current = 0
     setSaving(false)
     setSaveError(null)
+    setRefineMessage("")
+    setLocalRefining(false)
   }, [selectedDraft?.id])
 
   useEffect(() => {
-    if (output) return
-    if (selectedDraft?.output) {
-      setOutput(selectedDraft.output)
-    }
-  }, [output, selectedDraft?.output])
+    if (!selectedDraft?.output) return
+    if (isDirty) return
+    setOutput(selectedDraft.output)
+  }, [isDirty, selectedDraft?.output])
 
   const validation = useMemo(() => validateKapitel(output), [output])
 
@@ -216,9 +205,10 @@ export function GliederungWorkspace({
   const reviewedCount = chapters.filter((c) => c.reviewed).length
   const reviewProgress = total > 0 ? Math.round((reviewedCount / total) * 100) : 0
 
-  const hasBlockingErrors = validation.duplicateIds.size > 0 || validation.invalidIds.size > 0 || validation.tooDeepIds.size > 0
+  const hasStructuralBlockingErrors = validation.invalidIds.size > 0 || validation.tooDeepIds.size > 0
+  const hasDuplicateWarnings = validation.duplicateIds.size > 0
+  const hasBlockingErrors = hasStructuralBlockingErrors
   const allReviewed = total > 0 && reviewedCount === total
-  const isDirty = version !== savedVersionRef.current
 
   const bumpVersion = () => setVersion((v) => v + 1)
 
@@ -229,6 +219,14 @@ export function GliederungWorkspace({
         ...prev,
         kapitel: prev.kapitel.map((ch) => (ch.id === id ? { ...ch, ...patch } : ch)),
       }
+    })
+    bumpVersion()
+  }
+
+  const deleteKapitel = (id: string) => {
+    setOutput((prev) => {
+      if (!prev) return prev
+      return { ...prev, kapitel: prev.kapitel.filter((ch) => ch.id !== id) }
     })
     bumpVersion()
   }
@@ -275,13 +273,34 @@ export function GliederungWorkspace({
 
   const handleApply = async () => {
     if (!selectedDraft || !output) return
-    if (isApplying || saving) return
+    if (isApplying || saving || isRefining || localRefining) return
     if (!allReviewed || hasBlockingErrors) return
     if (isDirty) {
       await handleSaveNow()
       if (version !== savedVersionRef.current) return
     }
     await onApplyDraft(selectedDraft.id, output)
+  }
+
+  const handleRefine = async () => {
+    if (!selectedDraft || !output) return
+    const msg = refineMessage.trim()
+    if (!msg) return
+    if (localRefining || isRefining) return
+    if (isApplying || saving) return
+
+    if (isDirty) {
+      await handleSaveNow()
+      if (version !== savedVersionRef.current) return
+    }
+
+    setLocalRefining(true)
+    try {
+      await onRefineDraft(selectedDraft.id, msg)
+      setRefineMessage("")
+    } finally {
+      setLocalRefining(false)
+    }
   }
 
   const header = (
@@ -303,34 +322,11 @@ export function GliederungWorkspace({
           <Plus className="h-4 w-4" />
           Neuer Entwurf
         </Button>
-
-        {archivedDrafts.length > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setArchiveDialogOpen(true)}
-            className="w-full sm:w-auto"
-          >
-            Archiv
-          </Button>
-        )}
-
-        {activeDrafts.length > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setStartOverConfirmOpen(true)}
-            className="w-full sm:w-auto border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-          >
-            <RotateCcw className="h-4 w-4" />
-            Von vorne beginnen
-          </Button>
-        )}
       </div>
     </div>
   )
 
-  if (activeDrafts.length === 0 && archivedDrafts.length === 0) {
+  if (activeDrafts.length === 0) {
     return (
       <div className="h-full flex items-center justify-center p-6">
         <div className="max-w-2xl w-full">
@@ -405,11 +401,8 @@ export function GliederungWorkspace({
             {activeDrafts.length > 0 && (
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">Aktiver Entwurf</Label>
-                  <Select
-                    value={selectedDraft?.id || activeDrafts[0]?.id}
-                    onValueChange={(val) => onSelectDraft(val)}
-                  >
+                  <Label className="text-sm font-medium">Entwurf</Label>
+                  <Select value={selectedDraft?.id || activeDrafts[0]?.id} onValueChange={(val) => onSelectDraft(val)}>
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -438,7 +431,13 @@ export function GliederungWorkspace({
                     </span>
                   </div>
                   {(isDirty || saveError) && (
-                    <Button variant="outline" size="sm" className="mt-2" onClick={handleSaveNow} disabled={saving || !isDirty}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={handleSaveNow}
+                      disabled={saving || !isDirty}
+                    >
                       <Save className="h-4 w-4 mr-2" />
                       Speichern
                     </Button>
@@ -448,23 +447,6 @@ export function GliederungWorkspace({
               </div>
             )}
           </Card>
-
-          {activeDrafts.length === 0 && archivedDrafts.length > 0 && (
-            <Card className="p-6">
-              <div className="font-medium">Keine aktiven Entwürfe</div>
-              <p className="text-sm text-muted-foreground mt-1">
-                Erstelle einen neuen Entwurf oder stelle einen Entwurf aus dem Archiv wieder her.
-              </p>
-              <div className="mt-4 flex flex-col sm:flex-row gap-2">
-                <Button onClick={onOpenCreate} className="sm:w-auto w-full">
-                  Neuer Entwurf
-                </Button>
-                <Button variant="outline" onClick={() => setArchiveDialogOpen(true)} className="sm:w-auto w-full">
-                  Archiv öffnen
-                </Button>
-              </div>
-            </Card>
-          )}
 
           {selectedDraft && selectedDraft.status === "running" && (
             <Card className="p-6">
@@ -495,21 +477,31 @@ export function GliederungWorkspace({
 
           {selectedDraft && selectedDraft.status === "success" && output && (
             <>
-              {(hasBlockingErrors || validation.jumpWarnings.length > 0 || validation.missingParentWarnings.length > 0) && (
+              {(hasBlockingErrors ||
+                hasDuplicateWarnings ||
+                validation.jumpWarnings.length > 0 ||
+                validation.missingParentWarnings.length > 0) && (
                 <Card
                   className={cn(
                     "p-4",
-                    hasBlockingErrors ? "border-destructive/40" : "border-yellow-500/30"
+                    hasStructuralBlockingErrors ? "border-destructive/40" : "border-yellow-500/30"
                   )}
                 >
                   <div className="flex items-start gap-3">
-                    <AlertTriangle className={cn("h-5 w-5 mt-0.5", hasBlockingErrors ? "text-destructive" : "text-yellow-600")} />
+                    <AlertTriangle
+                      className={cn(
+                        "h-5 w-5 mt-0.5",
+                        hasStructuralBlockingErrors ? "text-destructive" : "text-yellow-600"
+                      )}
+                    />
                     <div className="space-y-2">
                       <div className="font-medium">
-                        {hasBlockingErrors ? "Bitte Fehler beheben" : "Hinweise zur Nummerierung"}
+                        {hasStructuralBlockingErrors ? "Bitte Fehler beheben" : "Hinweise zur Nummerierung"}
                       </div>
                       {validation.duplicateIds.size > 0 && (
-                        <p className="text-sm text-muted-foreground">Es gibt doppelte Kapitelnummern.</p>
+                        <p className="text-sm text-muted-foreground">
+                          Hinweis: Es gibt doppelte Kapitelnummern. Du kannst trotzdem fortfahren.
+                        </p>
                       )}
                       {validation.invalidIds.size > 0 && (
                         <p className="text-sm text-muted-foreground">Es gibt ungültige Kapitelnummern (Format: 1, 1.1 oder 1.1.1).</p>
@@ -549,16 +541,29 @@ export function GliederungWorkspace({
                       const hasDuplicate = validation.duplicateIds.has(ch.id)
                       const hasInvalid = validation.invalidIds.has(ch.id)
                       const hasError = hasDuplicate || hasInvalid
+                      const isDuplicateOnly = hasDuplicate && !hasInvalid
                       return (
                         <AccordionItem key={ch.id} value={ch.id}>
                           <AccordionTrigger className="hover:no-underline">
                             <div className="flex items-center justify-between gap-3 w-full">
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <span className={cn("font-mono text-xs text-muted-foreground", hasError && "text-destructive")}>
+                                  <span
+                                    className={cn(
+                                      "font-mono text-xs text-muted-foreground",
+                                      hasInvalid && "text-destructive",
+                                      isDuplicateOnly && "text-yellow-700"
+                                    )}
+                                  >
                                     {ch.nummer?.trim() || "—"}
                                   </span>
-                                  <span className={cn("text-sm font-medium truncate", hasError && "text-destructive")}>
+                                  <span
+                                    className={cn(
+                                      "text-sm font-medium truncate",
+                                      hasInvalid && "text-destructive",
+                                      isDuplicateOnly && "text-yellow-800"
+                                    )}
+                                  >
                                     {ch.titel?.trim() || "Ohne Titel"}
                                   </span>
                                 </div>
@@ -566,10 +571,15 @@ export function GliederungWorkspace({
                                   {ch.seitenumfang?.trim() ? `Seiten: ${ch.seitenumfang.trim()}` : "—"}
                                 </div>
                               </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                {hasError && (
+                              <div className="flex items-center gap-2 shrink-0">
+                                {hasInvalid && (
                                   <Badge variant="outline" className="border-destructive/40 text-destructive">
                                     Fehler
+                                  </Badge>
+                                )}
+                                {isDuplicateOnly && (
+                                  <Badge variant="outline" className="border-yellow-500/40 text-yellow-800">
+                                    Prüfen
                                   </Badge>
                                 )}
                                 {ch.reviewed && (
@@ -588,7 +598,7 @@ export function GliederungWorkspace({
                                   <Input
                                     value={ch.nummer}
                                     onChange={(e) => updateKapitel(ch.id, { nummer: e.target.value })}
-                                    className={cn(hasError && "border-destructive")}
+                                    className={cn(hasInvalid && "border-destructive", isDuplicateOnly && "border-yellow-500")}
                                     placeholder="z.B. 1.2"
                                   />
                                 </div>
@@ -658,11 +668,29 @@ export function GliederungWorkspace({
                                     Gelesen & geprüft
                                   </Label>
                                 </div>
-                                {hasError && (
-                                  <span className="text-xs text-destructive">
-                                    {hasDuplicate ? "Doppelte Nummer" : "Ungültige Nummer"}
-                                  </span>
-                                )}
+                                <div className="flex items-center gap-2">
+                                  {hasError && (
+                                    <span
+                                      className={cn(
+                                        "text-xs",
+                                        hasInvalid ? "text-destructive" : hasDuplicate ? "text-yellow-800" : "text-muted-foreground"
+                                      )}
+                                    >
+                                      {hasInvalid ? "Ungültige Nummer" : hasDuplicate ? "Doppelte Nummer" : ""}
+                                    </span>
+                                  )}
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setDeleteKapitelId(ch.id)}
+                                    disabled={saving || isApplying}
+                                    className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    Löschen
+                                  </Button>
+                                </div>
                               </div>
                             </div>
                           </AccordionContent>
@@ -715,21 +743,85 @@ export function GliederungWorkspace({
               </Card>
 
               <Card className="p-6">
+                <div className="font-medium">Änderungen anfordern</div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Beschreibe, was geändert werden soll. Die KI erstellt eine neue Version dieses Entwurfs – danach musst du
+                  erneut prüfen.
+                </p>
+                <div className="mt-4 space-y-3">
+                  <Textarea
+                    value={refineMessage}
+                    onChange={(e) => setRefineMessage(e.target.value)}
+                    placeholder="z.B. Kapitel 2 und 3 vertauschen; Kapitel 3.2 kürzen; neue Überschrift für 1.2…"
+                    className="min-h-[120px] resize-none"
+                    disabled={saving || isApplying || isRefining || localRefining}
+                  />
+                  <div className="flex items-center justify-end gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleRefine}
+                      disabled={
+                        saving ||
+                        isApplying ||
+                        isRefining ||
+                        localRefining ||
+                        refineMessage.trim().length === 0 ||
+                        !selectedDraft
+                      }
+                      className="min-w-[220px]"
+                    >
+                      {isRefining || localRefining ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                      Änderungen anfordern
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-6">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="font-medium">Gliederung übernehmen</div>
                     <p className="text-sm text-muted-foreground">
-                      Erst wenn alles geprüft ist und keine Fehler vorliegen, werden Kapitel erstellt.
+                      Erst wenn alles geprüft ist und keine blockierenden Fehler vorliegen, werden Kapitel erstellt.
                     </p>
                   </div>
-                  <Button
-                    onClick={handleApply}
-                    disabled={isApplying || saving || !allReviewed || hasBlockingErrors || total === 0}
-                    className="min-w-[220px]"
-                  >
-                    {isApplying ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                    Kapitel erstellen
-                  </Button>
+                  {(() => {
+                    const disabled =
+                      isApplying || saving || isRefining || localRefining || !allReviewed || hasBlockingErrors || total === 0
+                    const reasons: string[] = []
+                    if (total === 0) reasons.push("Füge mindestens ein Kapitel hinzu.")
+                    if (!allReviewed) reasons.push(`Markiere alle Kapitel als „Gelesen & geprüft“ (${reviewedCount}/${total}).`)
+                    if (hasBlockingErrors) reasons.push("Behebe ungültige Nummern (Format 1 / 1.1 / 1.1.1) und max. Ebene 3.")
+                    if (saving) reasons.push("Warte, bis der Entwurf gespeichert ist.")
+                    if (isRefining || localRefining) reasons.push("Warte, bis die KI‑Änderungen fertig sind.")
+                    if (isApplying) reasons.push("Kapitel werden gerade erstellt.")
+
+                    return (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span tabIndex={disabled ? 0 : -1} className="inline-flex">
+                            <Button onClick={handleApply} disabled={disabled} className="min-w-[220px]">
+                              {isApplying ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                              Kapitel erstellen
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        {disabled && reasons.length > 0 ? (
+                          <TooltipContent side="top" sideOffset={8} className="max-w-[360px]">
+                            <div className="space-y-1">
+                              <div className="font-medium">Noch nicht möglich</div>
+                              <ul className="list-disc pl-4 space-y-0.5">
+                                {reasons.map((r) => (
+                                  <li key={r}>{r}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </TooltipContent>
+                        ) : null}
+                      </Tooltip>
+                    )
+                  })()}
                 </div>
               </Card>
             </>
@@ -737,65 +829,29 @@ export function GliederungWorkspace({
         </div>
       </div>
 
-      <AlertDialog open={startOverConfirmOpen} onOpenChange={setStartOverConfirmOpen}>
+      <AlertDialog open={!!deleteKapitelId} onOpenChange={(open) => !open && setDeleteKapitelId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Von vorne beginnen?</AlertDialogTitle>
+            <AlertDialogTitle>Kapitel löschen?</AlertDialogTitle>
             <AlertDialogDescription>
-              Alle vorhandenen Entwürfe werden ins Archiv verschoben (nicht gelöscht). Du kannst sie später im Archiv
-              wiederherstellen.
+              Dieses Kapitel wird aus dem Entwurf entfernt. Das kann nicht automatisch rückgängig gemacht werden (du kannst
+              aber jederzeit einen neuen Entwurf erstellen).
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
             <AlertDialogAction
-              onClick={async () => {
-                await onStartOver()
-                setStartOverConfirmOpen(false)
+              onClick={() => {
+                if (!deleteKapitelId) return
+                deleteKapitel(deleteKapitelId)
+                setDeleteKapitelId(null)
               }}
             >
-              Entwürfe archivieren
+              Löschen
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <Dialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
-        <DialogContent className="sm:max-w-[720px]">
-          <DialogHeader>
-            <DialogTitle>Archiv</DialogTitle>
-            <DialogDescription>Archivierte Entwürfe können wiederhergestellt werden.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 max-h-[55vh] overflow-y-auto">
-            {archivedDrafts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Keine archivierten Entwürfe.</p>
-            ) : (
-              archivedDrafts.map((d) => (
-                <Card key={d.id} className="p-4 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium truncate">{formatDraftLabel(d)}</div>
-                    <div className="text-xs text-muted-foreground mt-1">Modell: {d.model || "—"}</div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      await onRestoreDraft(d.id)
-                    }}
-                  >
-                    Wiederherstellen
-                  </Button>
-                </Card>
-              ))
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setArchiveDialogOpen(false)}>
-              Schließen
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

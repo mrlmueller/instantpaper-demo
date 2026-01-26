@@ -115,6 +115,79 @@ def _prompt_cache_kwargs(model: str) -> dict:
     return {}
 
 
+def _output_for_model(output: Any) -> dict:
+    """
+    Convert a stored draft output (UI-normalized) into the schema shape expected by the model.
+    Strips UI-only fields like `id` and `reviewed`.
+    """
+    if not isinstance(output, dict):
+        return {
+            "kapitel": [],
+            "kurzbegruendung": [],
+            "verwendeteStudienbriefKapitelUnique": [],
+            "annahmen": [],
+        }
+
+    chapters_in = output.get("kapitel") or []
+    chapters_out: list[dict] = []
+    if isinstance(chapters_in, list):
+        for ch in chapters_in:
+            if not isinstance(ch, dict):
+                continue
+            chapters_out.append(
+                {
+                    "nummer": str(ch.get("nummer") or "").strip(),
+                    "titel": str(ch.get("titel") or "").strip(),
+                    "beschreibung": str(ch.get("beschreibung") or "").strip(),
+                    "seitenumfang": str(ch.get("seitenumfang") or "").strip(),
+                    "relevanteStudienbriefKapitel": [
+                        {
+                            "nummer": str((k or {}).get("nummer") or "").strip(),
+                            "titel": str((k or {}).get("titel") or "").strip(),
+                            "label": str((k or {}).get("label") or "").strip(),
+                        }
+                        for k in (ch.get("relevanteStudienbriefKapitel") or [])
+                        if isinstance(k, dict)
+                    ],
+                    "externeQuellenErforderlich": bool(
+                        ch.get("externeQuellenErforderlich") is True
+                    ),
+                }
+            )
+
+    kurz = output.get("kurzbegruendung") or []
+    used = output.get("verwendeteStudienbriefKapitelUnique") or []
+    ann = output.get("annahmen") or []
+
+    return {
+        "kapitel": chapters_out,
+        "kurzbegruendung": [str(x).strip() for x in kurz if isinstance(x, str) and x.strip()],
+        "verwendeteStudienbriefKapitelUnique": [
+            {
+                "nummer": str((k or {}).get("nummer") or "").strip(),
+                "titel": str((k or {}).get("titel") or "").strip(),
+            }
+            for k in used
+            if isinstance(k, dict)
+        ],
+        "annahmen": [str(x).strip() for x in ann if isinstance(x, str) and x.strip()],
+    }
+
+
+def _build_refinement_prompt(
+    *, base_user_message: str, current_output: dict, new_user_message: str
+) -> str:
+    blocks: list[str] = []
+    blocks.append("Erste User Message:\n" + (base_user_message or "").strip())
+    blocks.append(
+        "First Generated Text:\n"
+        + json.dumps(current_output or {}, ensure_ascii=False, indent=2).strip()
+    )
+    blocks.append("Aktuelle Nutzeranweisung:\n" + (new_user_message or "").strip())
+    blocks.append("Gib ausschließlich gültiges JSON im vorgegebenen Schema aus.")
+    return ("\n\n".join(blocks)).strip() + "\n"
+
+
 @dataclass(frozen=True)
 class GliederungGenerationResult:
     data: dict
@@ -485,6 +558,256 @@ class GliederungService:
         except Exception as exc:
             logger.error(
                 "Gliederung draft generation failed (user=%s draft=%s): %s",
+                user_id,
+                draft_id,
+                exc,
+                exc_info=True,
+            )
+
+            try:
+                if (
+                    "budget_service" in locals()
+                    and not reservation_released
+                    and "operation_id" in locals()
+                ):
+                    await budget_service.mark_status(
+                        user_id=user_id,
+                        operation_id=operation_id,
+                        status="error",
+                        error_message=str(exc),
+                    )
+                    await budget_service.release_reservation(
+                        user_id=user_id, operation_id=operation_id, reason="error"
+                    )
+            except Exception:
+                pass
+
+            try:
+                draft_ref.set(
+                    {
+                        "status": "error",
+                        "errorMessage": str(exc)[:1000] if exc else "Unbekannter Fehler",
+                        "updatedAt": SERVER_TIMESTAMP,
+                    },
+                    merge=True,
+                )
+            except Exception:
+                pass
+
+    async def refine_draft(self, *, user_id: str, draft_id: str, user_message: str) -> None:
+        """
+        Refine an existing Gliederung draft output using a new user instruction.
+
+        Expects the draft to be marked as status=running before this executes.
+        """
+        draft_ref = self._draft_ref(user_id, draft_id)
+        draft_snap = draft_ref.get()
+        if not draft_snap.exists:
+            return
+
+        draft = draft_snap.to_dict() or {}
+        if (draft.get("status") or "").strip() != "running":
+            return
+
+        projekt_id = str(draft.get("projektId") or "").strip()
+        prompt_template_id = str(draft.get("promptTemplateId") or "").strip() or "default_v2"
+        model = str(draft.get("model") or "").strip() or "gpt-5.2"
+        inputs = draft.get("inputs") if isinstance(draft.get("inputs"), dict) else {}
+        output_saved = draft.get("output") if isinstance(draft.get("output"), dict) else None
+
+        if not projekt_id:
+            draft_ref.set(
+                {
+                    "status": "error",
+                    "errorMessage": "projektId fehlt.",
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            return
+
+        if not isinstance(output_saved, dict):
+            draft_ref.set(
+                {
+                    "status": "error",
+                    "errorMessage": "Entwurf enthält kein Output zum Verfeinern.",
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            return
+
+        aufgabenstellung = str((inputs or {}).get("aufgabenstellung") or "").strip()
+        studienbrief = str((inputs or {}).get("gliederungStudienbriefMitSeiten") or "").strip()
+        extra_kontext = str((inputs or {}).get("extraKontext") or "").strip()
+
+        payload = {
+            "AUFGABENSTELLUNG": aufgabenstellung,
+            "GLIEDERUNG_STUDIENBRIEF_MIT_SEITEN": studienbrief,
+            "EXTRA_KONTEXT": extra_kontext,
+        }
+
+        api_key: Optional[str] = None
+        key_source: Optional[str] = None
+        reservation_released = False
+
+        try:
+            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+
+            base_instructions = await prompt_service.get_rendered_instructions_for_template(
+                user_id,
+                "gliederung",
+                prompt_template_id,
+                payload,
+            )
+            system_prompt = await prompt_service.get_system_prompt_for_template(
+                stage="gliederung",
+                template_id=prompt_template_id,
+            )
+            system_message = (system_prompt or "").strip() or GLIEDERUNG_DEFAULT_V2_SYSTEM_PROMPT
+
+            current_output = _output_for_model(output_saved)
+            refinement_instructions = _build_refinement_prompt(
+                base_user_message=base_instructions,
+                current_output=current_output,
+                new_user_message=user_message,
+            )
+
+            workflow_id = uuid.uuid4().hex
+            operation_id = f"{workflow_id}_refine_gliederung_{draft_id}"
+
+            estimation_service = get_openai_estimation_service(firebase_service)
+            parent_text = json.dumps(current_output or {}, ensure_ascii=False)
+            estimate_obj = await estimation_service.estimate_operation(
+                user_id=user_id,
+                operation_type="refine_gliederung",
+                model=model,
+                system_text=system_message,
+                user_text=refinement_instructions,
+                parent_generated_text=parent_text,
+            )
+
+            budget_service = get_openai_budget_service(firebase_service)
+            reservation = await budget_service.reserve_operation(
+                user_id=user_id,
+                operation_id=operation_id,
+                operation_type="refine_gliederung",
+                user_action_id=draft_id,
+                estimate=estimate_obj.to_dict(),
+                projekt_id=projekt_id,
+                operation_details={"draftId": draft_id},
+            )
+            if reservation.result == "blocked":
+                draft_ref.set(
+                    {
+                        "status": "error",
+                        "errorMessage": "Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
+                        "updatedAt": SERVER_TIMESTAMP,
+                    },
+                    merge=True,
+                )
+                return
+
+            if reservation.result in {"already_reserved", "finalized"}:
+                draft_ref.set(
+                    {
+                        "status": "error",
+                        "errorMessage": "Operation bereits gestartet. Bitte später erneut versuchen.",
+                        "updatedAt": SERVER_TIMESTAMP,
+                    },
+                    merge=True,
+                )
+                return
+
+            await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
+
+            try:
+                openai_result = await self._call_openai(
+                    model=model,
+                    system_message=system_message,
+                    instructions=refinement_instructions,
+                    api_key=api_key,
+                )
+            except Exception as exc:
+                await budget_service.mark_status(
+                    user_id=user_id,
+                    operation_id=operation_id,
+                    status="error",
+                    error_message=str(exc),
+                )
+                await budget_service.release_reservation(
+                    user_id=user_id, operation_id=operation_id, reason="error"
+                )
+                reservation_released = True
+                raise
+
+            normalized = self._normalize_output(openai_result.data)
+
+            cost_service = get_cost_service(firebase_service)
+            usage = TokenUsage.from_any(
+                openai_result.input_tokens,
+                openai_result.cached_input_tokens,
+                openai_result.output_tokens,
+            )
+            cost_breakdown, matched_model, pricing, _match_type = await cost_service.calculate_cost(
+                model=openai_result.model or model,
+                usage=usage,
+            )
+
+            projekt_snapshot = None
+            try:
+                proj = await firebase_service.get_project(user_id, projekt_id)
+                if proj:
+                    projekt_snapshot = {
+                        "id": projekt_id,
+                        "name": proj.get("name"),
+                        "archived": bool(proj.get("archived", False)),
+                    }
+            except Exception:
+                projekt_snapshot = None
+
+            await cost_service.log_operation(
+                operation_id=operation_id,
+                operation_type="refine_gliederung",
+                user_id=user_id,
+                user_action_id=draft_id,
+                operation_details={"draftId": draft_id},
+                model=openai_result.model or model,
+                usage=usage,
+                cost_breakdown=cost_breakdown,
+                matched_model_key=matched_model,
+                pricing=pricing,
+                key_source=key_source or "unknown",
+                projekt_id=projekt_id,
+                projekt_snapshot=projekt_snapshot,
+            )
+
+            await budget_service.release_reservation(
+                user_id=user_id, operation_id=operation_id, reason="success"
+            )
+            reservation_released = True
+
+            draft_ref.set(
+                {
+                    "status": "success",
+                    "errorMessage": None,
+                    "output": normalized,
+                    "usage": {
+                        "inputTokens": int(usage.input_tokens),
+                        "cachedInputTokens": int(usage.cached_input_tokens),
+                        "outputTokens": int(usage.output_tokens),
+                        "totalTokens": int(usage.total_tokens),
+                    },
+                    "costUsd": float(cost_breakdown.total_cost_usd),
+                    "operationId": operation_id,
+                    "keySource": key_source,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+        except Exception as exc:
+            logger.error(
+                "Gliederung draft refinement failed (user=%s draft=%s): %s",
                 user_id,
                 draft_id,
                 exc,

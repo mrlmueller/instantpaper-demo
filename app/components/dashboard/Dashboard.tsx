@@ -524,6 +524,7 @@ export function Dashboard({
   const [isExportingDocx, setIsExportingDocx] = useState(false);
   const [isGeneratingGliederung, setIsGeneratingGliederung] = useState(false);
   const [isApplyingGliederung, setIsApplyingGliederung] = useState(false);
+  const [isRefiningGliederung, setIsRefiningGliederung] = useState(false);
   const [isCreatingKapitel, setIsCreatingKapitel] = useState(false);
   const [isEditingKapitel, setIsEditingKapitel] = useState(false);
   const [isCreatingProjekt, setIsCreatingProjekt] = useState(false);
@@ -2249,53 +2250,68 @@ export function Dashboard({
     [user?.uid]
   );
 
-  const restoreGliederungDraft = useCallback(
-    async (draftId: string) => {
-      if (!user?.uid) {
-        toast.error('Kein Nutzer angemeldet');
+  const refineGliederungDraft = useCallback(
+    async (draftId: string, message: string) => {
+      if (isRefiningGliederung) return;
+      const did = String(draftId || '').trim();
+      const msg = String(message || '').trim();
+      if (!did) return;
+      if (!msg) {
+        toast.error('Bitte gib eine Änderungsanweisung ein.');
         return;
       }
-      const db = firestoreClient;
-      const ref = doc(db, 'users', user.uid, 'gliederungDrafts', draftId);
-      await updateDoc(ref, {
-        archived: false,
-        archivedAt: null,
-        updatedAt: serverTimestamp(),
-      });
-      gliederungDraftWasUserSelectedRef.current = true;
-      setSelectedGliederungDraftId(draftId);
+
+      if (!(await ensureOpenAIAccess())) return;
+
+      const token = Cookies.get('__session');
+      if (!token) {
+        handleAuthFailure();
+        return;
+      }
+
+      const toastId = toast.loading('Gliederung wird angepasst...');
+      setIsRefiningGliederung(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/gliederung/refine`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ draft_id: did, message: msg }),
+        });
+
+        if (response.status === 401) {
+          toast.error('Bitte melde dich erneut an.', { id: toastId });
+          handleAuthFailure();
+          return;
+        }
+
+        if (response.status === 402) {
+          showNoCreditsToast(toastId);
+          return;
+        }
+
+        if (!response.ok) {
+          const errorBody = await response.json().catch(() => ({}));
+          const msgErr = (errorBody as any)?.detail || (errorBody as any)?.error || 'Gliederung konnte nicht angepasst werden.';
+          throw new Error(msgErr);
+        }
+
+        toast.success('Änderungen gestartet', { id: toastId, description: 'Der Entwurf wird gleich aktualisiert.' });
+      } catch (err: any) {
+        console.error('Gliederung refine failed', err);
+        if (String(err?.message || '').includes('fetch')) {
+          notifyServerDown(toastId);
+        } else {
+          toast.error('Fehler', { description: err?.message || 'Gliederung konnte nicht angepasst werden.', id: toastId });
+        }
+      } finally {
+        setIsRefiningGliederung(false);
+      }
     },
-    [user?.uid]
+    [ensureOpenAIAccess, handleAuthFailure, isRefiningGliederung, notifyServerDown, showNoCreditsToast]
   );
-
-  const archiveAllGliederungDrafts = useCallback(async () => {
-    if (!user?.uid) {
-      toast.error('Kein Nutzer angemeldet');
-      return;
-    }
-
-    const toArchive = gliederungDrafts.filter((d) => !d.archived);
-    if (toArchive.length === 0) return;
-
-    const toastId = toast.loading('Entwürfe werden archiviert...');
-    try {
-      const db = firestoreClient;
-      await Promise.all(
-        toArchive.map((d) =>
-          updateDoc(doc(db, 'users', user.uid, 'gliederungDrafts', d.id), {
-            archived: true,
-            archivedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-        )
-      );
-      gliederungDraftWasUserSelectedRef.current = false;
-      setSelectedGliederungDraftId(null);
-      toast.success('Entwürfe archiviert', { id: toastId });
-    } catch (err: any) {
-      toast.error('Fehler', { description: err?.message || 'Archivieren fehlgeschlagen.', id: toastId });
-    }
-  }, [gliederungDrafts, user?.uid]);
 
   const applyGliederungDraft = useCallback(
     async (draftId: string, output: GliederungDraftOutput) => {
@@ -2340,16 +2356,6 @@ export function Dashboard({
       const invalid = nums.some((n) => !isValidNummer(n));
       if (invalid) {
         toast.error('Ungültige Nummern', { description: 'Bitte prüfe das Format (1, 1.1 oder 1.1.1) und max. Ebene 3.' });
-        return;
-      }
-      const seen = new Set<string>();
-      const dups = new Set<string>();
-      for (const n of nums) {
-        if (seen.has(n)) dups.add(n);
-        else seen.add(n);
-      }
-      if (dups.size > 0) {
-        toast.error('Doppelte Nummern', { description: Array.from(dups).join(', ') });
         return;
       }
 
@@ -3479,11 +3485,11 @@ export function Dashboard({
               selectedDraftId={selectedGliederungDraftId}
               onSelectDraft={handleSelectGliederungDraft}
               onOpenCreate={() => setGliederungCreateDialogOpen(true)}
-              onStartOver={archiveAllGliederungDrafts}
-              onRestoreDraft={restoreGliederungDraft}
               onUpdateDraftOutput={updateGliederungDraftOutput}
+              onRefineDraft={refineGliederungDraft}
               onApplyDraft={applyGliederungDraft}
               isApplying={isApplyingGliederung}
+              isRefining={isRefiningGliederung}
             />
           ) : (
             <div className="h-full flex items-center justify-center">

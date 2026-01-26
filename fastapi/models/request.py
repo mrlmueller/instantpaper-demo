@@ -135,6 +135,21 @@ class GenerateGliederungRequest(BaseModel):
         }
 
 
+class RefineGliederungRequest(BaseModel):
+    """Request model for refining an existing Gliederung draft with a user instruction."""
+
+    draft_id: str = Field(..., description="Gliederung draft ID to refine")
+    message: str = Field(..., description="Requested changes / instruction", min_length=1)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "draft_id": "draft123",
+                "message": "Bitte Kapitel 2 und 3 vertauschen und Kapitel 3.2 kürzen.",
+            }
+        }
+
+
 class RefineCombinedInitRequest(BaseModel):
     """Request model for initializing the text refinement flow for a combined text."""
 
