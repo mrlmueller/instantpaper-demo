@@ -2360,31 +2360,7 @@ export function Dashboard({
       }
 
       const buildThema = (ch: (typeof chapters)[number]) => {
-        const parts: string[] = [];
-        const beschreibung = String(ch.beschreibung ?? '').trim();
-        if (beschreibung) parts.push(beschreibung);
-
-        const seitenumfang = String(ch.seitenumfang ?? '').trim();
-        if (seitenumfang) parts.push(`Seitenumfang: ${seitenumfang}`);
-
-        const refs = (ch.relevanteStudienbriefKapitel || [])
-          .map((k) => {
-            const n = String(k.nummer ?? '').trim();
-            const t = String(k.titel ?? '').trim();
-            const l = String(k.label ?? '').trim();
-            if (!n && !t) return null;
-            const base = `${n ? `${n} ` : ''}${t}`.trim();
-            return l ? `${base} [${l}]` : base;
-          })
-          .filter((x): x is string => Boolean(x));
-        if (refs.length) {
-          parts.push(`Relevante Studienbrief‑Kapitel:\n- ${refs.join('\n- ')}`);
-        }
-
-        const externe = Boolean(ch.externeQuellenErforderlich);
-        parts.push(`Externe Quellen erforderlich: ${externe ? 'ja' : 'nein'}`);
-
-        return parts.join('\n\n').trim();
+        return String(ch.beschreibung ?? '').trim();
       };
 
       const sorted = chapters.slice().sort((a, b) => compareNummer(normalizeNummer(a.nummer), normalizeNummer(b.nummer)));

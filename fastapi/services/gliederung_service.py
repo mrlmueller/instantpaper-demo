@@ -17,6 +17,7 @@ from services.openai_estimation_service import get_openai_estimation_service
 from services.openai_service import OpenAIService
 from services.prompt_service import prompt_service, GLIEDERUNG_DEFAULT_V2_SYSTEM_PROMPT
 from services.user_key_service import user_key_service
+from utils.prompt_dumps import dump_prompt_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -250,12 +251,22 @@ class GliederungService:
     async def _call_openai(
         self,
         *,
+        stage: str,
         model: str,
         system_message: str,
         instructions: str,
         api_key: Optional[str],
     ) -> GliederungGenerationResult:
         client = self.openai._get_client(api_key)  # pylint: disable=protected-access
+
+        dump_prompt_markdown(
+            stage=(stage or "gliederung").strip() or "gliederung",
+            model=model,
+            sections=[
+                ("System Prompt", system_message),
+                ("Instructions", instructions),
+            ],
+        )
 
         resp = await client.responses.create(
             model=model,
@@ -470,6 +481,7 @@ class GliederungService:
 
             try:
                 openai_result = await self._call_openai(
+                    stage="gliederung",
                     model=model,
                     system_message=system_message,
                     instructions=instructions,
@@ -723,6 +735,7 @@ class GliederungService:
 
             try:
                 openai_result = await self._call_openai(
+                    stage="gliederung_refine",
                     model=model,
                     system_message=system_message,
                     instructions=refinement_instructions,

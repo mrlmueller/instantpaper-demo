@@ -23,6 +23,7 @@ from services.credits_service import get_credits_service
 from services.firebase_service import AI_GENERIC_ERROR_MESSAGE, firebase_service
 from services.user_key_service import user_key_service
 from utils.config import config
+from utils.prompt_dumps import dump_prompt_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -443,6 +444,15 @@ async def call_llm_fixups(
         "Use previous_in_group when helpful. "
         "If NOT a citation: is_citation=false and authors/year/locator null. "
         "confidence is 0..1."
+    )
+
+    dump_prompt_markdown(
+        stage="export_citation_fixups",
+        model=model,
+        sections=[
+            ("Instructions", instructions),
+            ("Input", json.dumps({"jobs": jobs}, ensure_ascii=False, indent=2)),
+        ],
     )
 
     resp = await client.responses.create(
