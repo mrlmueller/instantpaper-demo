@@ -241,6 +241,8 @@ class GliederungService:
                     "extraKontext": extra_kontext,
                 },
                 "output": None,
+                "rootId": draft_ref.id,
+                "version": 1,
                 "archived": False,
                 "createdAt": SERVER_TIMESTAMP,
                 "updatedAt": SERVER_TIMESTAMP,

@@ -234,6 +234,9 @@ service cloud.firestore {
             'promptTemplateId',
             'inputs',
             'output',
+            'rootId',
+            'version',
+            'parentDraftId',
             'usage',
             'costUsd',
             'operationId',
@@ -249,6 +252,9 @@ service cloud.firestore {
           && request.resource.data.status in ['running', 'success', 'error']
           && isNonEmptyString(request.resource.data.model, 100)
           && isNonEmptyString(request.resource.data.promptTemplateId, 200)
+          && (!request.resource.data.keys().hasAny(['rootId']) || isNonEmptyString(request.resource.data.rootId, 200))
+          && (!request.resource.data.keys().hasAny(['version']) || (request.resource.data.version is int && request.resource.data.version >= 1 && request.resource.data.version <= 999))
+          && (!request.resource.data.keys().hasAny(['parentDraftId']) || request.resource.data.parentDraftId == null || isNonEmptyString(request.resource.data.parentDraftId, 200))
           && request.resource.data.inputs is map
           && request.resource.data.inputs.keys().hasAll(['aufgabenstellung', 'gliederungStudienbriefMitSeiten', 'extraKontext'])
           && request.resource.data.inputs.keys().hasOnly(['aufgabenstellung', 'gliederungStudienbriefMitSeiten', 'extraKontext'])
@@ -277,6 +283,9 @@ service cloud.firestore {
             'promptTemplateId',
             'inputs',
             'output',
+            'rootId',
+            'version',
+            'parentDraftId',
             'usage',
             'costUsd',
             'operationId',
@@ -294,6 +303,12 @@ service cloud.firestore {
           && request.resource.data.status in ['running', 'success', 'error']
           && isNonEmptyString(request.resource.data.model, 100)
           && isNonEmptyString(request.resource.data.promptTemplateId, 200)
+          && (!request.resource.data.keys().hasAny(['rootId']) || isNonEmptyString(request.resource.data.rootId, 200))
+          && (!request.resource.data.keys().hasAny(['version']) || (request.resource.data.version is int && request.resource.data.version >= 1 && request.resource.data.version <= 999))
+          && (!request.resource.data.keys().hasAny(['parentDraftId']) || request.resource.data.parentDraftId == null || isNonEmptyString(request.resource.data.parentDraftId, 200))
+          && (!request.resource.data.keys().hasAny(['rootId']) || request.resource.data.rootId == resource.data.rootId)
+          && (!request.resource.data.keys().hasAny(['version']) || request.resource.data.version == resource.data.version)
+          && (!request.resource.data.keys().hasAny(['parentDraftId']) || request.resource.data.parentDraftId == resource.data.parentDraftId)
           && request.resource.data.inputs is map
           && request.resource.data.inputs.keys().hasAll(['aufgabenstellung', 'gliederungStudienbriefMitSeiten', 'extraKontext'])
           && request.resource.data.inputs.keys().hasOnly(['aufgabenstellung', 'gliederungStudienbriefMitSeiten', 'extraKontext'])

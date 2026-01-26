@@ -3792,26 +3792,91 @@ async def refine_gliederung(
     if bool((projekt or {}).get("archived") is True):
         raise HTTPException(status_code=400, detail="Projekt is archived.")
 
-    # Mark draft as running immediately so the UI shows progress.
-    draft_ref.set(
+    # Create a new version draft (keep the current one intact).
+    root_id = str(draft.get("rootId") or draft.get("rootDraftId") or "").strip()
+    if not root_id:
+        root_id = draft_id
+
+    base_version = 1
+    try:
+        base_version = int(draft.get("version") or 1)
+    except Exception:
+        base_version = 1
+    if base_version < 1:
+        base_version = 1
+
+    # Backfill rootId/version for older drafts (best-effort).
+    try:
+        needs_backfill = not isinstance(draft.get("rootId"), str) or not isinstance(
+            draft.get("version"), int
+        )
+        if needs_backfill:
+            draft_ref.set(
+                {"rootId": root_id, "version": base_version, "updatedAt": SERVER_TIMESTAMP},
+                merge=True,
+            )
+    except Exception:
+        pass
+
+    max_version = base_version
+    try:
+        drafts_coll = (
+            firebase_service.db.collection("users")
+            .document(user_id)
+            .collection("gliederungDrafts")
+        )
+        for snap in drafts_coll.where("rootId", "==", root_id).stream():
+            data = snap.to_dict() or {}
+            v = data.get("version")
+            if isinstance(v, int):
+                max_version = max(max_version, int(v))
+            elif isinstance(v, float):
+                max_version = max(max_version, int(v))
+    except Exception:
+        max_version = base_version
+
+    new_version = max_version + 1
+
+    new_draft_ref = (
+        firebase_service.db.collection("users")
+        .document(user_id)
+        .collection("gliederungDrafts")
+        .document()
+    )
+    new_draft_ref.set(
         {
+            "projektId": projekt_id,
             "status": "running",
             "errorMessage": None,
+            "model": str(draft.get("model") or "gpt-5.2"),
+            "promptTemplateId": str(draft.get("promptTemplateId") or "default_v2"),
+            "inputs": draft.get("inputs") if isinstance(draft.get("inputs"), dict) else {},
+            # Copy current output as the refinement base (will be replaced on success).
+            "output": draft.get("output"),
+            "rootId": root_id,
+            "version": int(new_version),
+            "parentDraftId": draft_id,
+            "archived": False,
+            "createdAt": SERVER_TIMESTAMP,
             "updatedAt": SERVER_TIMESTAMP,
-        },
-        merge=True,
+        }
     )
+
+    new_draft_id = new_draft_ref.id
 
     background_tasks.add_task(
         gliederung_service.refine_draft,
         user_id=user_id,
-        draft_id=draft_id,
+        draft_id=new_draft_id,
         user_message=user_message,
     )
 
     return {
         "status": "queued",
-        "draft_id": draft_id,
+        "draft_id": new_draft_id,
+        "base_draft_id": draft_id,
+        "root_id": root_id,
+        "version": int(new_version),
         "projekt_id": projekt_id,
         "queued_at": datetime.utcnow().isoformat() + "Z",
     }

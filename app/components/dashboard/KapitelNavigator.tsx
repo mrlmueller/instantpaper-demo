@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { Plus, Trash2, MoreVertical, Pencil, Loader2, Check } from "lucide-react"
+import { Plus, Trash2, MoreVertical, Pencil, Loader2, Check, FileText, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -28,6 +28,9 @@ interface KapitelNavigatorProps {
   onEditKapitel: (id: string, title: string, nummer: string, thema: string) => Promise<void>
   addKapitelLoading: boolean
   editKapitelLoading: boolean
+  gliederungMode?: "empty" | "review"
+  onOpenGliederungCreate?: () => void
+  openAddDialogSignal?: number
 }
 
 function KapitelStageIndicator({ stage, isProcessing }: KapitelIndicator) {
@@ -118,6 +121,9 @@ export function KapitelNavigator({
   onEditKapitel,
   addKapitelLoading,
   editKapitelLoading,
+  gliederungMode,
+  onOpenGliederungCreate,
+  openAddDialogSignal,
 }: KapitelNavigatorProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -128,6 +134,15 @@ export function KapitelNavigator({
   const [nummerError, setNummerError] = useState("")
   const [localAddLoading, setLocalAddLoading] = useState(false)
   const [localEditLoading, setLocalEditLoading] = useState(false)
+
+  const prevOpenAddSignalRef = useRef(openAddDialogSignal ?? 0)
+  useEffect(() => {
+    const next = openAddDialogSignal ?? 0
+    const prev = prevOpenAddSignalRef.current
+    if (!next || next === prev) return
+    prevOpenAddSignalRef.current = next
+    setAddDialogOpen(true)
+  }, [openAddDialogSignal])
 
   const sortedKapiteln = [...kapiteln].sort(sortByNummer)
 
@@ -186,6 +201,40 @@ export function KapitelNavigator({
   return (
     <>
       <nav className="flex-1 overflow-y-auto py-2 px-2">
+        {sortedKapiteln.length === 0 && gliederungMode ? (
+          <div className="px-2 pt-4 pb-6">
+            {gliederungMode === "empty" ? (
+              <div className="flex flex-col items-center text-center gap-3">
+                <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div className="text-sm font-medium text-foreground">Noch keine Kapitel vorhanden</div>
+                <Button
+                  variant="outline"
+                  className="h-9"
+                  onClick={() => onOpenGliederungCreate?.()}
+                  disabled={!onOpenGliederungCreate}
+                >
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  Gliederung erstellen
+                </Button>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-left">
+                <div className="flex items-start gap-2">
+                  <Sparkles className="h-4 w-4 text-primary mt-0.5" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-foreground">Gliederung wird überprüft</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      Bestätige die Gliederung um fortzufahren.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+
         <div className="space-y-0.5">
           {sortedKapiteln.map((kapitel) => {
             const isActive = kapitel.id === activeKapitelId

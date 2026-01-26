@@ -467,6 +467,7 @@ export function Dashboard({
   const [quelleViewerLoading, setQuelleViewerLoading] = useState(false);
   const [processingDialogOpen, setProcessingDialogOpen] = useState(false);
   const [gliederungCreateDialogOpen, setGliederungCreateDialogOpen] = useState(false);
+  const [kapitelAddDialogSignal, setKapitelAddDialogSignal] = useState(0);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   const exportToastIdRef = useRef<string | number | null>(null);
@@ -1246,6 +1247,9 @@ export function Dashboard({
           const draft: GliederungDraft = {
             id: d.id,
             projektId: typeof data.projektId === 'string' ? data.projektId : projekt.id,
+            rootId: typeof data.rootId === 'string' ? data.rootId : data.rootId ?? null,
+            version: typeof data.version === 'number' ? data.version : data.version ?? null,
+            parentDraftId: typeof data.parentDraftId === 'string' ? data.parentDraftId : data.parentDraftId ?? null,
             status: normalizeStatus(data.status),
             errorMessage: typeof data.errorMessage === 'string' ? data.errorMessage : data.errorMessage ?? null,
             model: typeof data.model === 'string' ? data.model : 'gpt-5-nano',
@@ -2298,7 +2302,14 @@ export function Dashboard({
           throw new Error(msgErr);
         }
 
-        toast.success('Änderungen gestartet', { id: toastId, description: 'Der Entwurf wird gleich aktualisiert.' });
+        const data = await response.json().catch(() => ({}));
+        const newDraftId = (data as any)?.draft_id;
+        if (typeof newDraftId === 'string' && newDraftId.trim()) {
+          gliederungDraftWasUserSelectedRef.current = true;
+          setSelectedGliederungDraftId(newDraftId.trim());
+        }
+
+        toast.success('Änderungen gestartet', { id: toastId, description: 'Die neue Version erscheint gleich.' });
       } catch (err: any) {
         console.error('Gliederung refine failed', err);
         if (String(err?.message || '').includes('fetch')) {
@@ -3419,6 +3430,15 @@ export function Dashboard({
           onEditKapitel={handleEditKapitel}
           addKapitelLoading={isCreatingKapitel}
           editKapitelLoading={isEditingKapitel}
+          gliederungMode={
+            kapiteln.length === 0
+              ? gliederungDrafts.some((d) => !d.archived)
+                ? 'review'
+                : 'empty'
+              : undefined
+          }
+          onOpenGliederungCreate={() => setGliederungCreateDialogOpen(true)}
+          openAddDialogSignal={kapitelAddDialogSignal}
         />
       </div>
 
@@ -3461,6 +3481,7 @@ export function Dashboard({
               selectedDraftId={selectedGliederungDraftId}
               onSelectDraft={handleSelectGliederungDraft}
               onOpenCreate={() => setGliederungCreateDialogOpen(true)}
+              onOpenManualKapitel={() => setKapitelAddDialogSignal((v) => v + 1)}
               onUpdateDraftOutput={updateGliederungDraftOutput}
               onRefineDraft={refineGliederungDraft}
               onApplyDraft={applyGliederungDraft}

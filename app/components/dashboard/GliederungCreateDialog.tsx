@@ -1,14 +1,11 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { FileText, Loader2, Play, Settings2, Sparkles } from "lucide-react"
+import { ArrowLeft, Loader2, Sparkles, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
@@ -174,130 +171,107 @@ export function GliederungCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[720px] p-0 gap-0 max-h-[85vh] overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b text-left">
-          <DialogTitle className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Sparkles className="h-4 w-4 text-primary" />
+      <DialogContent className="sm:max-w-[720px] p-0 gap-0 max-h-[85vh] overflow-hidden ring-2 ring-primary/40">
+        <DialogTitle className="sr-only">Gliederung generieren</DialogTitle>
+        <div className="px-6 pt-5 pb-4 border-b">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="h-8 w-8 rounded-md hover:bg-muted flex items-center justify-center"
+              aria-label="Zurück"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div className="flex-1 text-left">
+              <div className="text-lg font-semibold text-foreground">Gliederung generieren</div>
             </div>
-            Gliederung erstellen
-          </DialogTitle>
-          <DialogDescription className="pt-1">
-            Erstelle einen Entwurf, den du anschließend Schritt für Schritt prüfst und bearbeitest.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="px-6 py-5 space-y-6 max-h-[65vh] overflow-y-auto">
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>Inputs</span>
-              <span className="text-destructive" aria-hidden="true">
-                *
-              </span>
-            </div>
-
-            <div className="grid gap-4 pl-6">
-              <div className="space-y-2">
-                <Label htmlFor="aufgabenstellung" className="text-sm font-medium">
-                  Aufgabenstellung / Thema
-                </Label>
-                <Textarea
-                  id="aufgabenstellung"
-                  value={settings.aufgabenstellung}
-                  onChange={(e) => setSettings({ ...settings, aufgabenstellung: e.target.value })}
-                  placeholder="Beschreibe, was du in der Arbeit bearbeiten sollst…"
-                  className="min-h-[120px] resize-none"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Mindestens 10 Zeichen erforderlich ({settings.aufgabenstellung.trim().length} / 10)
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="studienbrief" className="text-sm font-medium">
-                  Studienbrief‑Gliederung (mit Seiten)
-                  <span className="text-muted-foreground font-normal ml-1">(optional)</span>
-                </Label>
-                <Textarea
-                  id="studienbrief"
-                  value={settings.gliederungStudienbriefMitSeiten}
-                  onChange={(e) => setSettings({ ...settings, gliederungStudienbriefMitSeiten: e.target.value })}
-                  placeholder="Kapitelnummern, Titel und Seitenangaben…"
-                  className="min-h-[110px] resize-none"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="extra-kontext" className="text-sm font-medium">
-                  Extra‑Kontext
-                  <span className="text-muted-foreground font-normal ml-1">(optional)</span>
-                </Label>
-                <Textarea
-                  id="extra-kontext"
-                  value={settings.extraKontext}
-                  onChange={(e) => setSettings({ ...settings, extraKontext: e.target.value })}
-                  placeholder="Vorgaben, Rahmenbedingungen, Fallbeschreibung…"
-                  className="min-h-[90px] resize-none"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t" />
-
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <Settings2 className="h-4 w-4 text-muted-foreground" />
-              Einstellungen
-            </div>
-
-            <div className="grid gap-4 pl-6">
-              <div>
-                <Label className="text-sm font-medium">KI‑Modell</Label>
-                <div role="radiogroup" aria-label="KI‑Modell" className="mt-2 grid grid-cols-3 gap-3">
-                  {modelOptions.map((opt) => {
-                    const selected = settings.model === opt.value
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        role="radio"
-                        aria-checked={selected}
-                        onClick={() => setSettings({ ...settings, model: opt.value })}
-                        className={cn(
-                          "rounded-lg border px-3 py-2.5 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30",
-                          selected ? "border-primary bg-primary/5" : "border-border bg-background hover:bg-muted/40"
-                        )}
-                      >
-                        <div className="text-sm font-medium leading-tight">{opt.label}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{opt.description}</div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {showPromptSelectors && renderPromptSelect()}
-            </div>
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="h-8 w-8 rounded-md hover:bg-muted flex items-center justify-center"
+              aria-label="Schließen"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
-        <DialogFooter className="px-6 py-4 border-t gap-2 sm:justify-between">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Abbrechen
+        <div className="px-6 py-5 space-y-5 max-h-[65vh] overflow-y-auto">
+          <div className="space-y-2">
+            <Label htmlFor="aufgabenstellung" className="text-sm font-medium">
+              Aufgabenstellung <span className="text-destructive">*</span>
+            </Label>
+            <Textarea
+              id="aufgabenstellung"
+              value={settings.aufgabenstellung}
+              onChange={(e) => setSettings({ ...settings, aufgabenstellung: e.target.value })}
+              placeholder="Füge hier die vollständige Aufgabenstellung deiner Arbeit ein..."
+              className="min-h-[120px] resize-none"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="extra-kontext" className="text-sm font-medium">
+              Zusätzliche Informationen
+            </Label>
+            <Textarea
+              id="extra-kontext"
+              value={settings.extraKontext}
+              onChange={(e) => setSettings({ ...settings, extraKontext: e.target.value })}
+              placeholder="Weitere Hinweise, Anforderungen oder Kontext..."
+              className="min-h-[90px] resize-none"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="studienbrief" className="text-sm font-medium">
+              Gliederung aus Studienbrief
+            </Label>
+            <Textarea
+              id="studienbrief"
+              value={settings.gliederungStudienbriefMitSeiten}
+              onChange={(e) => setSettings({ ...settings, gliederungStudienbriefMitSeiten: e.target.value })}
+              placeholder="Falls vorhanden, füge hier eine vorgegebene Gliederungsstruktur ein..."
+              className="min-h-[90px] resize-none"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">KI‑Modell</Label>
+            <div role="radiogroup" aria-label="KI‑Modell" className="mt-2 grid grid-cols-3 gap-3">
+              {modelOptions.map((opt) => {
+                const selected = settings.model === opt.value
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setSettings({ ...settings, model: opt.value })}
+                    className={cn(
+                      "rounded-lg border px-3 py-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30",
+                      selected ? "border-primary bg-primary/5" : "border-border bg-background hover:bg-muted/40"
+                    )}
+                  >
+                    <div className="text-sm font-medium leading-tight">{opt.label}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{opt.description}</div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {showPromptSelectors ? renderPromptSelect() : null}
+        </div>
+
+        <div className="px-6 py-4 border-t flex items-center justify-end">
+          <Button onClick={handleGenerate} disabled={!canGenerate} className="min-w-[160px]">
+            {localGenerating || isGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+            Generieren
           </Button>
-          <Button onClick={handleGenerate} disabled={!canGenerate} className="min-w-[240px]">
-            {localGenerating || isGenerating ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Play className="h-4 w-4 mr-2" />
-            )}
-            Entwurf erstellen
-          </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )
 }
-

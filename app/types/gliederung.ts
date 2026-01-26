@@ -43,6 +43,9 @@ export type GliederungDraftUsage = Partial<{
 export interface GliederungDraft {
   id: string;
   projektId: string;
+  rootId?: string | null;
+  version?: number | null;
+  parentDraftId?: string | null;
   status: GliederungDraftStatus;
   errorMessage?: string | null;
   model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' | string;
