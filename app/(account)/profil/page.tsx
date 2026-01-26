@@ -665,17 +665,15 @@ export default function ProfilPage() {
               value={displayedTab}
               onValueChange={(v) => setActiveTab(v as ProfileTab)}
             >
-              {!effectiveBlocked ? (
-                <TabsContent value="einstellungen">
-                  <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                    <MessageSquareText className="h-5 w-5 text-muted-foreground" />
-                    Prompt-Bibliothek
-                  </h2>
-                  <Card className="p-4">
+                {!effectiveBlocked ? (
+                  <TabsContent value="einstellungen">
+                    <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                      <MessageSquareText className="h-5 w-5 text-muted-foreground" />
+                      Prompt-Bibliothek
+                    </h2>
                     <PromptManager />
-                  </Card>
-                </TabsContent>
-              ) : null}
+                  </TabsContent>
+                ) : null}
 
               <TabsContent value="billing">
                 <BillingTab active={displayedTab === "billing"} />

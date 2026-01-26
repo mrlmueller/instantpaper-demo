@@ -23,7 +23,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
@@ -74,12 +73,12 @@ type TemplatesResponse = {
 };
 
 const stageOptions: { value: PromptStage; label: string }[] = [
-  { value: "process_quelle", label: STAGE_CONFIG.process_quelle.label },
-  { value: "combine", label: STAGE_CONFIG.combine.label },
-  { value: "shorten", label: STAGE_CONFIG.shorten.label },
-  { value: "lesefluss", label: STAGE_CONFIG.lesefluss.label },
-  { value: "summary", label: STAGE_CONFIG.summary.label },
-  { value: "gliederung", label: STAGE_CONFIG.gliederung.label },
+  { value: "process_quelle", label: "Quelle schreiben" },
+  { value: "combine", label: "Kombinieren" },
+  { value: "summary", label: "Zusammenfassung" },
+  { value: "shorten", label: "Kürzen & Dedup." },
+  { value: "lesefluss", label: "Lesefluss verbessern" },
+  { value: "gliederung", label: "Gliederung" },
 ];
 
 const stubInstructionsByStage: Record<PromptStage, string> = {
@@ -95,6 +94,22 @@ const stubInstructionsByStage: Record<PromptStage, string> = {
   gliederung:
     "<aufgabenstellung>\n{AUFGABENSTELLUNG}\n</aufgabenstellung>\n\n<studienbrief_gliederung>\n{GLIEDERUNG_STUDIENBRIEF_MIT_SEITEN}\n</studienbrief_gliederung>\n\n<extra_kontext_optional>\n{EXTRA_KONTEXT}\n</extra_kontext_optional>",
 };
+
+const stageDescription: Record<PromptStage, string> = {
+  process_quelle: "Generiert Text aus einer einzelnen Quelle für das Kapitel",
+  combine: "Fügt mehrere Entwürfe zu einem zusammenhängenden Kapiteltext zusammen",
+  summary: "Erstellt eine kurze Zusammenfassung für ein Kapitel",
+  shorten: "Kürzt Texte und entfernt Wiederholungen",
+  lesefluss: "Verbessert Lesefluss, Stil und Verständlichkeit",
+  gliederung: "Erstellt eine komplette Gliederung für dein Projekt",
+};
+
+function formatShortDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("de-DE", { day: "numeric", month: "numeric", year: "numeric" });
+}
 
 export function PromptManager() {
   const [stage, setStage] = useState<PromptStage>("process_quelle");
@@ -312,8 +327,8 @@ export function PromptManager() {
 
   return (
     <div className="space-y-6">
-      <Card className="p-5">
-        <div className="flex items-center justify-between">
+      <Card className="py-0 gap-0">
+        <div className="flex items-center justify-between gap-6 px-6 py-5">
           <div>
             <Label
               htmlFor="ask-on-process"
@@ -351,21 +366,21 @@ export function PromptManager() {
       </Card>
 
       <Tabs value={stage} onValueChange={(v) => setStage(v as PromptStage)}>
-        <TabsList className="w-full flex-wrap h-auto gap-1 p-1">
+        <TabsList className="w-full flex flex-wrap items-stretch gap-1 rounded-lg bg-muted/40 p-1">
           {stageOptions.map((opt) => {
             const count = templates.filter((t) => t.stage === opt.value).length;
             return (
               <TabsTrigger
                 key={opt.value}
                 value={opt.value}
-                className="text-xs px-3 py-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                className="flex-1 min-w-[140px] h-9 justify-center gap-2 rounded-md text-xs font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:bg-background/60"
               >
-                {opt.label}
-                {count > 0 && (
-                  <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-[10px]">
+                <span className="truncate">{opt.label}</span>
+                {count > 0 ? (
+                  <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded border bg-background px-1 text-[10px] font-semibold text-foreground">
                     {count}
-                  </Badge>
-                )}
+                  </span>
+                ) : null}
               </TabsTrigger>
             );
           })}
@@ -391,17 +406,75 @@ export function PromptManager() {
             });
           const activeId = active[opt.value];
 
+          const activeUserTemplate = stageTemplates.find((t) => t.id === activeId) || null;
+          const activeSystemKey =
+            !activeId || activeId === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+              ? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+              : stageSystemTemplates.some((t) => t.templateKey === activeId)
+                ? activeId
+                : null;
+
+          const activeSystemTemplate =
+            activeSystemKey ? stageSystemTemplates.find((t) => t.templateKey === activeSystemKey) || null : null;
+
+          const standardName =
+            activeUserTemplate?.name ||
+            activeSystemTemplate?.name ||
+            (opt.value === "process_quelle" ||
+            opt.value === "combine" ||
+            opt.value === "summary" ||
+            opt.value === "shorten" ||
+            opt.value === "lesefluss" ||
+            opt.value === "gliederung"
+              ? "System-Standard"
+              : "System-Standard");
+
+          const shouldOpenSystemTemplates = Boolean(activeSystemTemplate) && !activeUserTemplate;
+
           return (
-            <TabsContent key={opt.value} value={opt.value} className="mt-4 space-y-4">
+            <TabsContent key={opt.value} value={opt.value} className="mt-5 space-y-4">
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">{stageConfig.tooltip}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Pflicht:{" "}
-                    {stageConfig.requiredPlaceholders.length
-                      ? stageConfig.requiredPlaceholders.join(", ")
-                      : "Keine"}
-                  </p>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p className="text-sm text-muted-foreground truncate">
+                      {stageDescription[opt.value] || stageConfig.label}
+                    </p>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label="Prompt-Regeln anzeigen"
+                          >
+                            <Info className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-md text-xs">
+                          <div className="space-y-2">
+                            <p className="font-medium text-foreground">Regeln</p>
+                            {stageConfig.tooltip ? (
+                              <p className="text-muted-foreground">{stageConfig.tooltip}</p>
+                            ) : null}
+                            <div>
+                              <p className="font-medium text-foreground">Pflicht-Platzhalter</p>
+                              <p className="text-muted-foreground">
+                                {stageConfig.requiredPlaceholders.length
+                                  ? stageConfig.requiredPlaceholders.join(", ")
+                                  : "Keine"}
+                              </p>
+                            </div>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <div className="mt-1 text-sm">
+                    <span className="text-muted-foreground">Standard: </span>
+                    <button type="button" className="text-primary font-medium hover:underline">
+                      {standardName}
+                    </button>
+                  </div>
                 </div>
                 <Button
                   size="sm"
@@ -417,71 +490,87 @@ export function PromptManager() {
                 </Button>
               </div>
 
-              <div className="space-y-3">
-                {stageSystemTemplates.map((sys) => {
-                  const isActive =
-                    sys.templateKey === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
-                      ? !activeId || activeId === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
-                      : activeId === sys.templateKey;
-                  return (
-                    <Card
-                      key={`${opt.value}:${sys.templateKey}`}
-                      className={cn(
-                        "p-4 transition-colors",
-                        isActive && "ring-2 ring-primary/50 bg-primary/5"
-                      )}
-                    >
-                      <div className="flex items-start gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-medium text-sm text-foreground">{sys.name}</h4>
-                            <Badge variant="outline" className="font-mono text-[10px]">
-                              {sys.templateKey}
-                            </Badge>
-                            {isActive && (
-                              <Badge variant="default" className="h-5 text-[10px]">
-                                Standard
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {canDuplicateSystemPrompts && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() =>
-                                handleDuplicateSystemTemplate(opt.value, sys.templateKey, sys.name)
-                              }
-                              title="In eigene Prompts kopieren"
-                            >
-                              <Copy className="h-4 w-4" />
-                            </Button>
+              {stageSystemTemplates.length > 0 ? (
+                <details
+                  className="rounded-lg border bg-muted/20"
+                  open={shouldOpenSystemTemplates}
+                >
+                  <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-foreground">
+                    System-Prompts
+                  </summary>
+                  <div className="px-4 pb-4 space-y-3">
+                    {stageSystemTemplates.map((sys) => {
+                      const isActive =
+                        sys.templateKey === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+                          ? !activeId || activeId === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+                          : activeId === sys.templateKey;
+                      const updatedLabel = formatShortDate(sys.updatedAt || sys.createdAt);
+                      return (
+                        <Card
+                          key={`${opt.value}:${sys.templateKey}`}
+                          className={cn(
+                            "py-0 gap-0 border",
+                            isActive ? "border-primary bg-primary/5" : "bg-background"
                           )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => handleSetActive(sys.templateKey, opt.value)}
-                            disabled={isActive}
-                            title={isActive ? "Aktiv" : "Als Standard setzen"}
-                          >
-                            {isActive ? (
-                              <Check className="h-4 w-4 text-primary" />
-                            ) : (
-                              <Star className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
+                        >
+                          <div className="flex items-start justify-between gap-4 px-5 py-4">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <h4 className="font-semibold text-sm text-foreground truncate">{sys.name}</h4>
+                                <span className="rounded-md border bg-background px-2 py-0.5 text-[10px] text-muted-foreground">
+                                  System
+                                </span>
+                                {isActive ? (
+                                  <span className="inline-flex items-center rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                                    Standard
+                                  </span>
+                                ) : null}
+                              </div>
+                              {updatedLabel ? (
+                                <p className="mt-1 text-xs text-muted-foreground">Aktualisiert: {updatedLabel}</p>
+                              ) : null}
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              {canDuplicateSystemPrompts ? (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() =>
+                                    handleDuplicateSystemTemplate(opt.value, sys.templateKey, sys.name)
+                                  }
+                                  title="In eigene Prompts kopieren"
+                                >
+                                  <Copy className="h-4 w-4" />
+                                </Button>
+                              ) : null}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleSetActive(sys.templateKey, opt.value)}
+                                disabled={isActive}
+                                title={isActive ? "Aktiv" : "Als Standard setzen"}
+                              >
+                                {isActive ? (
+                                  <Check className="h-4 w-4 text-primary" />
+                                ) : (
+                                  <Star className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </details>
+              ) : null}
 
               {stageTemplates.length === 0 ? (
-                <Card className="p-6 text-center">
+                <Card className="py-0 gap-0">
+                  <div className="px-6 py-6 text-center">
                   <p className="text-sm text-muted-foreground">
                     Du hast noch keine eigenen Prompts für diese Stufe erstellt.
                   </p>
@@ -498,33 +587,43 @@ export function PromptManager() {
                       Der System-Standard wird automatisch verwendet.
                     </p>
                   )}
+                  </div>
                 </Card>
               ) : (
                 <div className="space-y-3">
                   {stageTemplates.map((tpl) => {
                     const isDefault = activeId === tpl.id;
+                    const updatedLabel = formatShortDate(tpl.updatedAt);
                     return (
                       <Card
                         key={tpl.id}
                         className={cn(
-                          "p-4 transition-colors",
-                          isDefault && "ring-2 ring-primary/50 bg-primary/5"
+                          "py-0 gap-0 border",
+                          isDefault ? "border-primary bg-primary/5" : "bg-background"
                         )}
                       >
-                        <div className="flex items-start gap-4">
+                        <div className="flex items-start justify-between gap-4 px-5 py-4">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <h4 className="font-medium text-sm text-foreground">{tpl.name}</h4>
-                              {isDefault && (
-                                <Badge variant="default" className="h-5 text-[10px]">
+                              <h4 className="font-semibold text-sm text-foreground">{tpl.name}</h4>
+                              {isDefault ? (
+                                <span className="inline-flex items-center rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
                                   Standard
-                                </Badge>
-                              )}
+                                </span>
+                              ) : null}
                             </div>
+
                             <p className="text-xs text-muted-foreground mt-1 line-clamp-2 font-mono">
                               {tpl.instructions.slice(0, 180)}...
                             </p>
+
+                            {updatedLabel ? (
+                              <p className="text-[11px] text-muted-foreground mt-2">
+                                Aktualisiert: {updatedLabel}
+                              </p>
+                            ) : null}
                           </div>
+
                           <div className="flex items-center gap-1 shrink-0">
                             <Button
                               variant="ghost"
