@@ -33,7 +33,6 @@ GLIEDERUNG_JSON_SCHEMA: dict = {
                     "titel": {"type": "string"},
                     "beschreibung": {"type": "string"},
                     "seitenumfang": {"type": "string"},
-                    "kontext": {"type": "array", "items": {"type": "string"}},
                     "relevanteStudienbriefKapitel": {
                         "type": "array",
                         "items": {
@@ -57,7 +56,6 @@ GLIEDERUNG_JSON_SCHEMA: dict = {
                     "titel",
                     "beschreibung",
                     "seitenumfang",
-                    "kontext",
                     "relevanteStudienbriefKapitel",
                     "externeQuellenErforderlich",
                 ],
@@ -250,11 +248,6 @@ class GliederungService:
                     "titel": str(ch.get("titel") or "").strip(),
                     "beschreibung": str(ch.get("beschreibung") or "").strip(),
                     "seitenumfang": str(ch.get("seitenumfang") or "").strip(),
-                    "kontext": [
-                        str(x).strip()
-                        for x in (ch.get("kontext") or [])
-                        if isinstance(x, str) and x.strip()
-                    ],
                     "relevanteStudienbriefKapitel": [
                         {
                             "nummer": str((k or {}).get("nummer") or "").strip(),
@@ -530,4 +523,3 @@ class GliederungService:
 
 
 gliederung_service = GliederungService()
-

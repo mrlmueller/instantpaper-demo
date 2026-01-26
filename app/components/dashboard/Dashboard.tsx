@@ -2353,17 +2353,6 @@ export function Dashboard({
         return;
       }
 
-      const normalizeKontextLine = (s: string) =>
-        s
-          .toLowerCase()
-          .replace(/\s+/g, ' ')
-          .replace(/[.]+$/g, '')
-          .trim();
-      const isNoExtraKontext = (s: string) => {
-        const n = normalizeKontextLine(s);
-        return n === 'kein zusätzlicher kontext nötig' || n === 'kein zusaetzlicher kontext nötig' || n === 'kein zusaetzlicher kontext noetig';
-      };
-
       const buildThema = (ch: (typeof chapters)[number]) => {
         const parts: string[] = [];
         const beschreibung = String(ch.beschreibung ?? '').trim();
@@ -2371,11 +2360,6 @@ export function Dashboard({
 
         const seitenumfang = String(ch.seitenumfang ?? '').trim();
         if (seitenumfang) parts.push(`Seitenumfang: ${seitenumfang}`);
-
-        const kontext = (ch.kontext || []).map((x) => String(x ?? '').trim()).filter(Boolean).filter((x: string) => !isNoExtraKontext(x));
-        if (kontext.length) {
-          parts.push(`Zusätzlicher Kontext:\n- ${kontext.join('\n- ')}`);
-        }
 
         const refs = (ch.relevanteStudienbriefKapitel || [])
           .map((k) => {

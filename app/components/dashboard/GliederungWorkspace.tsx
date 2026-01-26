@@ -632,23 +632,6 @@ export function GliederungWorkspace({
                               </div>
 
                               <div className="space-y-2">
-                                <Label className="text-sm">Zusätzlicher Kontext (für separaten KI‑Chat)</Label>
-                                <Textarea
-                                  value={(ch.kontext || []).join("\n")}
-                                  onChange={(e) =>
-                                    updateKapitel(ch.id, {
-                                      kontext: e.target.value
-                                        .split("\n")
-                                        .map((x) => x.trim())
-                                        .filter(Boolean),
-                                    })
-                                  }
-                                  className="min-h-[90px] resize-none"
-                                  placeholder="Kein zusätzlicher Kontext nötig."
-                                />
-                              </div>
-
-                              <div className="space-y-2">
                                 <Label className="text-sm">Relevante Studienbrief‑Kapitel</Label>
                                 {ch.relevanteStudienbriefKapitel?.length ? (
                                   <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">

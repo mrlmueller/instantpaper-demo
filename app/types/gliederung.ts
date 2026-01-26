@@ -15,7 +15,6 @@ export interface GliederungDraftKapitel {
   titel: string;
   beschreibung: string;
   seitenumfang: string;
-  kontext: string[];
   relevanteStudienbriefKapitel: GliederungStudienbriefKapitelRef[];
   externeQuellenErforderlich: boolean;
 }
@@ -61,4 +60,3 @@ export interface GliederungDraft {
   archived: boolean;
   archivedAt?: Date | null;
 }
-
