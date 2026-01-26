@@ -7,7 +7,7 @@ import {
   Mail,
   Calendar,
   FileText,
-  Download,
+  FileDown,
   Coins,
   BarChart3,
   Zap,
@@ -17,6 +17,7 @@ import {
   Loader2,
   LogOut,
   User,
+  CreditCard,
 } from "lucide-react";
 import { toast } from "sonner";
 import Cookies from "js-cookie";
@@ -503,7 +504,7 @@ export default function ProfilPage() {
                     : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
                 )}
               >
-                <Coins className="h-4 w-4" />
+                <CreditCard className="h-4 w-4" />
                 Billing
               </button>
 
@@ -517,7 +518,7 @@ export default function ProfilPage() {
                       : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
                   )}
                 >
-                  <Download className="h-4 w-4" />
+                  <FileDown className="h-4 w-4" />
                   Exporte
                 </button>
               ) : null}
@@ -555,7 +556,6 @@ export default function ProfilPage() {
                 ) : null}
 
               <TabsContent value="billing">
-                <h2 className="text-lg font-semibold text-foreground mb-4">Billing</h2>
                 <BillingTab active={displayedTab === "billing"} />
               </TabsContent>
 
