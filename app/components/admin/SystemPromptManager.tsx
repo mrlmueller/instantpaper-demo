@@ -67,6 +67,7 @@ const stageOptions: { value: PromptStage; label: string }[] = [
   { value: "shorten", label: STAGE_CONFIG.shorten.label },
   { value: "lesefluss", label: STAGE_CONFIG.lesefluss.label },
   { value: "summary", label: STAGE_CONFIG.summary.label },
+  { value: "gliederung", label: STAGE_CONFIG.gliederung.label },
 ];
 
 const TEMPLATE_KEY_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;

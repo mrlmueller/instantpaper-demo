@@ -17,6 +17,8 @@ from models.request import (
     AdoptCombinedRequest,
     ShortenKapitelRequest,
     LeseflussKapitelRequest,
+    GenerateGliederungRequest,
+    RefineGliederungRequest,
     ExportDocxRequest,
     RefineCombinedInitRequest,
     RefineCombinedRequest,
@@ -31,6 +33,7 @@ from models.response import ProcessQuelleResponse
 from services.quelle_service import quelle_service
 from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
+from services.gliederung_service import gliederung_service
 from services.refinement_service import refinement_service
 from services.firebase_service import firebase_service
 from services.credits_service import get_credits_service
@@ -60,7 +63,7 @@ configure_logging()
 logger = logging.getLogger(__name__)
 basic_security = HTTPBasic()
 
-ALLOWED_PROMPT_STAGES = {"process_quelle", "combine", "summary", "shorten", "lesefluss"}
+ALLOWED_PROMPT_STAGES = {"process_quelle", "combine", "summary", "shorten", "lesefluss", "gliederung"}
 SYSTEM_TEMPLATE_KEYS_ALWAYS_AVAILABLE = {"default", "default_v2"}
 TEMPLATE_KEY_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 
@@ -3688,6 +3691,195 @@ async def save_openai_key(
 async def delete_openai_key(user_id: str = Depends(verify_firebase_token)):
     """Delete the stored OpenAI key for the user."""
     return await user_key_service.delete_user_key(user_id)
+
+
+@app.post("/api/gliederung/generate", status_code=status.HTTP_202_ACCEPTED)
+async def generate_gliederung(
+    request: GenerateGliederungRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Generate a Gliederung (outline) draft for a project.
+
+    Returns immediately and writes the draft asynchronously to Firestore:
+      users/{uid}/gliederungDrafts/{draftId}
+    """
+    projekt_id = str(request.projekt_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
+    prompt_template_id = await firebase_service.get_active_prompt_id(user_id, "gliederung")
+    prompt_template_id = (prompt_template_id or "").strip() or "default_v2"
+
+    draft_id = await gliederung_service.create_draft_placeholder(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        model=request.model,
+        prompt_template_id=prompt_template_id,
+        aufgabenstellung=str(request.aufgabenstellung or "").strip(),
+        gliederung_studienbrief_mit_seiten=str(request.gliederung_studienbrief_mit_seiten or "").strip(),
+        extra_kontext=str(request.extra_kontext or "").strip(),
+    )
+
+    background_tasks.add_task(gliederung_service.generate_draft, user_id=user_id, draft_id=draft_id)
+
+    return {
+        "status": "queued",
+        "draft_id": draft_id,
+        "projekt_id": projekt_id,
+        "queued_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@app.post("/api/gliederung/refine", status_code=status.HTTP_202_ACCEPTED)
+async def refine_gliederung(
+    request: RefineGliederungRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Refine an existing Gliederung draft with a user instruction.
+
+    Writes asynchronously to:
+      users/{uid}/gliederungDrafts/{draftId}
+    """
+    draft_id = str(request.draft_id or "").strip()
+    if not draft_id:
+        raise HTTPException(status_code=400, detail="draft_id is required")
+
+    user_message = str(request.message or "").strip()
+    if not user_message:
+        raise HTTPException(status_code=400, detail="message is required")
+
+    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
+    draft_ref = (
+        firebase_service.db.collection("users")
+        .document(user_id)
+        .collection("gliederungDrafts")
+        .document(draft_id)
+    )
+    draft_snap = draft_ref.get()
+    if not draft_snap.exists:
+        raise HTTPException(status_code=404, detail="Draft not found.")
+
+    draft = draft_snap.to_dict() or {}
+    if bool(draft.get("archived") is True):
+        raise HTTPException(status_code=400, detail="Draft is archived.")
+
+    if str(draft.get("status") or "").strip() == "running":
+        raise HTTPException(status_code=400, detail="Draft is currently running.")
+
+    if not isinstance(draft.get("output"), dict):
+        raise HTTPException(status_code=400, detail="Draft has no output to refine.")
+
+    projekt_id = str(draft.get("projektId") or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="Draft is missing projektId.")
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    # Create a new version draft (keep the current one intact).
+    root_id = str(draft.get("rootId") or draft.get("rootDraftId") or "").strip()
+    if not root_id:
+        root_id = draft_id
+
+    base_version = 1
+    try:
+        base_version = int(draft.get("version") or 1)
+    except Exception:
+        base_version = 1
+    if base_version < 1:
+        base_version = 1
+
+    # Backfill rootId/version for older drafts (best-effort).
+    try:
+        needs_backfill = not isinstance(draft.get("rootId"), str) or not isinstance(
+            draft.get("version"), int
+        )
+        if needs_backfill:
+            draft_ref.set(
+                {"rootId": root_id, "version": base_version, "updatedAt": SERVER_TIMESTAMP},
+                merge=True,
+            )
+    except Exception:
+        pass
+
+    max_version = base_version
+    try:
+        drafts_coll = (
+            firebase_service.db.collection("users")
+            .document(user_id)
+            .collection("gliederungDrafts")
+        )
+        for snap in drafts_coll.where("rootId", "==", root_id).stream():
+            data = snap.to_dict() or {}
+            v = data.get("version")
+            if isinstance(v, int):
+                max_version = max(max_version, int(v))
+            elif isinstance(v, float):
+                max_version = max(max_version, int(v))
+    except Exception:
+        max_version = base_version
+
+    new_version = max_version + 1
+
+    new_draft_ref = (
+        firebase_service.db.collection("users")
+        .document(user_id)
+        .collection("gliederungDrafts")
+        .document()
+    )
+    new_draft_ref.set(
+        {
+            "projektId": projekt_id,
+            "status": "running",
+            "errorMessage": None,
+            "model": str(draft.get("model") or "gpt-5.2"),
+            "promptTemplateId": str(draft.get("promptTemplateId") or "default_v2"),
+            "inputs": draft.get("inputs") if isinstance(draft.get("inputs"), dict) else {},
+            # Copy current output as the refinement base (will be replaced on success).
+            "output": draft.get("output"),
+            "rootId": root_id,
+            "version": int(new_version),
+            "parentDraftId": draft_id,
+            "archived": False,
+            "createdAt": SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP,
+        }
+    )
+
+    new_draft_id = new_draft_ref.id
+
+    background_tasks.add_task(
+        gliederung_service.refine_draft,
+        user_id=user_id,
+        draft_id=new_draft_id,
+        user_message=user_message,
+    )
+
+    return {
+        "status": "queued",
+        "draft_id": new_draft_id,
+        "base_draft_id": draft_id,
+        "root_id": root_id,
+        "version": int(new_version),
+        "projekt_id": projekt_id,
+        "queued_at": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 @app.post("/api/process", status_code=status.HTTP_202_ACCEPTED)

@@ -240,6 +240,92 @@ LESEFLUSS_DEFAULT_V2_INSTRUCTIONS = """# ZIEL
 Gib ausschließlich den final überarbeiteten Kapiteltext aus.
 """
 
+GLIEDERUNG_DEFAULT_V2_SYSTEM_PROMPT = """<Prompt entfernt>"""
+
+GLIEDERUNG_DEFAULT_V2_INSTRUCTIONS = """# AUFGABE
+
+Erstelle eine vollständige Gliederung (max. Gliederungstiefe Ebene 3, z. B. 1.1.1), die eine wissenschaftliche Arbeit strukturiert und schreibbar macht.
+
+Du bekommst dafür:
+
+1) Aufgabenstellung der Arbeit (beliebiges Thema)
+2) Gliederung des Studienbriefs mit Kapitelnummern, Titeln und Seitenangaben (optional)
+3) Optional: Extra-Kontext (z. B. Vorgaben, Fallbeschreibung, Rahmenbedingungen)
+
+Die Gliederung muss immer die Hauptbestandteile enthalten:
+
+- Einleitung
+- Theoretische Fundierung (Theorie/Grundlagen)
+- Anwendungsteil (Übertragung der Theorie auf den Anwendungsfall gemäß Aufgabenstellung)
+- Diskussion
+- Fazit/Ausblick
+
+(Die Namen dürfen variieren, die Funktionen müssen erkennbar sein. KEIN Deckblatt, Literaturverzeichnis oder Anhang.)
+
+# QUALITÄTSKRITERIEN
+
+- Strukturierte, nachvollziehbare Herleitung zur Problemstellung
+- Klare Ziele der Arbeit
+- Logischer Aufbau mit begründeter Argumentation
+- Angemessene Breite und Tiefe
+- Praxisimplikationen im Anwendungsteil und Begründung des Vorgehens
+- Kritische Reflexion/kontroverse Aspekte nur dann, wenn Aufgabenstellung oder Studienbrief dazu Anlass geben
+
+# WICHTIGE REGEL: NICHT ZU STARK SPEZIFIZIEREN
+
+Für die Kapitelbeschreibungen gilt:
+
+- Keine Beispiele aufzählen, wenn die Menge offen ist.
+- Keine konkreten Modelle, Theorien, Tools, Instrumente oder Autoren nennen, außer:
+  1) sie sind in der Aufgabenstellung explizit gefordert oder
+  2) sie sind eindeutig als begrenzte, vollständige Liste gegeben (z. B. genau 4 Kriterien).
+- Wenn die Aufgabenstellung Methode X verlangt, darf Methode X genannt werden.
+
+# SEITENPLANUNG
+
+- Wenn die Aufgabenstellung eine Gesamtseitenzahl oder Seitenvorgaben enthält, nutze diese als Basis.
+- Falls keine Seitenvorgaben vorhanden sind:
+  - Schlage eine plausible Default-Verteilung vor (als Orientierung), z. B.:
+    Einleitung 10–15%, Theorie 35–45%, Anwendung 30–40%, Diskussion 10–15%, Fazit/Ausblick 5–10%.
+  - Leite daraus Seiten-Ranges ab. Wenn keine Gesamtseitenzahl genannt ist, verwende eine plausible Annahme (und markiere diese Annahme am Ende ausdrücklich).
+  - Gib Seiten immer als Range aus (z. B. „1–2 Seiten“), nicht als exakten Wert.
+
+# STUDIENBRIEF-NUTZUNG
+
+Zu jedem Unterkapitel nennst du nur die wichtigsten Studienbrief-Kapitel, die wahrscheinlich relevante Informationen enthalten.
+
+Jede Nennung bekommt ein Label:
+
+- Hauptquelle = zentrale Infos sehr wahrscheinlich dort
+- Ergänzend = sinnvoll zur Vertiefung/Begründung
+- Nur knapp = voraussichtlich vorhanden, aber eher kurz/oberflächlich
+
+Wenn der Studienbrief das Thema nur knapp abdeckt oder ersichtlich Lücken hat, gib zusätzlich an, ob externe Quellen erforderlich sind.
+
+# WICHTIG
+
+Der Output wird serverseitig strikt als JSON (Schema) erzwungen. Fülle alle Felder semantisch korrekt.
+
+# INPUTS
+
+<aufgabenstellung>
+
+{AUFGABENSTELLUNG}
+
+</aufgabenstellung>
+
+<studienbrief_gliederung>
+
+{GLIEDERUNG_STUDIENBRIEF_MIT_SEITEN}
+
+</studienbrief_gliederung>
+
+<extra_kontext_optional>
+
+{EXTRA_KONTEXT}
+
+</extra_kontext_optional>"""
+
 DEFAULT_INSTRUCTIONS = {
     "process_quelle": """<Prompt entfernt>""",
     "combine": """[AUFGABE]
@@ -291,6 +377,7 @@ Komprimiere den folgenden Text zu einer deutlich kürzeren Fassung, ohne neue In
 ### Text
 {KAPITELTEXT}
 """,
+    "gliederung": GLIEDERUNG_DEFAULT_V2_INSTRUCTIONS,
 }
 
 
@@ -312,6 +399,11 @@ class PromptService:
             "{KAPITELTEXT}",
         ],
         "lesefluss": ["{AUFGABENSTELLUNG}", "{GLIEDERUNG_SUMMARY}", "{KAPITELTEXT}"],
+        "gliederung": [
+            "{AUFGABENSTELLUNG}",
+            "{GLIEDERUNG_STUDIENBRIEF_MIT_SEITEN}",
+            "{EXTRA_KONTEXT}",
+        ],
     }
 
     def __init__(self):
@@ -400,6 +492,8 @@ class PromptService:
                 return SHORTEN_DEFAULT_V2_INSTRUCTIONS
             if stage == "lesefluss" and tid == "default_v2":
                 return LESEFLUSS_DEFAULT_V2_INSTRUCTIONS
+            if stage == "gliederung" and tid == "default_v2":
+                return GLIEDERUNG_DEFAULT_V2_INSTRUCTIONS
             return DEFAULT_INSTRUCTIONS.get(stage, "")
 
         tpl = await firebase_service.get_prompt_template(user_id, tid)
@@ -490,6 +584,11 @@ class PromptService:
         if stage == "lesefluss":
             if tid == "default_v2":
                 return LESEFLUSS_DEFAULT_V2_SYSTEM_PROMPT
+            return None
+
+        if stage == "gliederung":
+            if tid == "default_v2":
+                return GLIEDERUNG_DEFAULT_V2_SYSTEM_PROMPT
             return None
 
         return None

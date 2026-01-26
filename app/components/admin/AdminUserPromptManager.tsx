@@ -78,6 +78,7 @@ const stageOptions: { value: PromptStage; label: string }[] = [
   { value: 'shorten', label: STAGE_CONFIG.shorten.label },
   { value: 'lesefluss', label: STAGE_CONFIG.lesefluss.label },
   { value: 'summary', label: STAGE_CONFIG.summary.label },
+  { value: 'gliederung', label: STAGE_CONFIG.gliederung.label },
 ];
 
 function formatIso(iso: string | null): string {

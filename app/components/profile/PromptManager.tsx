@@ -79,6 +79,7 @@ const stageOptions: { value: PromptStage; label: string }[] = [
   { value: "shorten", label: STAGE_CONFIG.shorten.label },
   { value: "lesefluss", label: STAGE_CONFIG.lesefluss.label },
   { value: "summary", label: STAGE_CONFIG.summary.label },
+  { value: "gliederung", label: STAGE_CONFIG.gliederung.label },
 ];
 
 const stubInstructionsByStage: Record<PromptStage, string> = {
@@ -91,6 +92,8 @@ const stubInstructionsByStage: Record<PromptStage, string> = {
   lesefluss:
     "<aufgabenstellung>\n{AUFGABENSTELLUNG}\n</aufgabenstellung>\n\n<gliederung_und_kapitelzusammenfassungen>\n{GLIEDERUNG_SUMMARY}\n</gliederung_und_kapitelzusammenfassungen>\n\n<kapiteltext_zu_ueberarbeiten>\n{KAPITELTEXT}\n</kapiteltext_zu_ueberarbeiten>",
   summary: "### Aufgabe:\nText:\n{KAPITELTEXT}",
+  gliederung:
+    "<aufgabenstellung>\n{AUFGABENSTELLUNG}\n</aufgabenstellung>\n\n<studienbrief_gliederung>\n{GLIEDERUNG_STUDIENBRIEF_MIT_SEITEN}\n</studienbrief_gliederung>\n\n<extra_kontext_optional>\n{EXTRA_KONTEXT}\n</extra_kontext_optional>",
 };
 
 export function PromptManager() {

@@ -7,23 +7,26 @@ import {
   Mail,
   Calendar,
   FileText,
-  Download,
-  BookOpen,
+  FileDown,
   Coins,
   BarChart3,
   Zap,
   PenTool,
-  Settings,
   TrendingUp,
   MessageSquareText,
   Loader2,
+  LogOut,
+  User,
+  CreditCard,
 } from "lucide-react";
 import { toast } from "sonner";
 import Cookies from "js-cookie";
 
 import { useAuth } from "@/app/components/providers/AuthProvider";
+import { signOut } from "@/app/lib/firebase/auth";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -59,14 +62,14 @@ function ProfilePageSkeleton() {
     <div className="min-h-screen bg-background">
       <div className="flex h-screen">
         {/* Left Sidebar skeleton */}
-        <div className="w-72 border-r bg-muted/10 flex flex-col shrink-0">
-          <div className="p-6 border-b">
-            <div className="flex items-center gap-3">
+        <div className="w-64 border-r border-sidebar-border bg-sidebar flex flex-col shrink-0">
+          <div className="p-6 border-b border-sidebar-border">
+            <div className="flex items-center justify-between gap-3">
+              <Skeleton className="h-4 w-24" />
               <Skeleton className="h-9 w-9 rounded-md" />
-              <Skeleton className="h-6 w-16" />
             </div>
           </div>
-          <div className="p-6 border-b">
+          <div className="p-6 border-b border-sidebar-border">
             <div className="flex flex-col items-center text-center">
               <Skeleton className="w-16 h-16 rounded-full mb-3" />
               <Skeleton className="h-5 w-28 mb-2" />
@@ -79,12 +82,16 @@ function ProfilePageSkeleton() {
               <Skeleton className="h-10 w-full rounded-lg" />
               <Skeleton className="h-10 w-full rounded-lg" />
               <Skeleton className="h-10 w-full rounded-lg" />
+              <Skeleton className="h-10 w-full rounded-lg" />
             </div>
+          </div>
+          <div className="p-4 border-t border-sidebar-border">
+            <Skeleton className="h-10 w-full rounded-lg" />
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-5xl mx-auto py-8 px-8">
+          <div className="max-w-6xl mx-auto py-10 px-6 sm:px-10">
             <Skeleton className="h-6 w-40 mb-4" />
             <Card className="p-6 mb-8">
               <div className="flex items-center gap-2 mb-4">
@@ -150,6 +157,7 @@ export default function ProfilPage() {
   const [stats, setStats] = useState<UsageInsightsStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [backLoading, setBackLoading] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
   const displayedTab: ProfileTab = effectiveBlocked ? "billing" : !canViewUsageInsights && activeTab === "statistiken" ? "billing" : activeTab;
 
   useEffect(() => {
@@ -229,8 +237,14 @@ export default function ProfilPage() {
   const formatNumber = (num: number) => num.toLocaleString("de-DE");
   const formatCreditsValue = (value: number) =>
     Number(value || 0).toLocaleString("de-DE", { maximumFractionDigits: 2 });
-  const formatCredits = (value: number) => `${formatCreditsValue(value)} Credits`;
-  const formatUsd = (value: number) => `$${Number(value || 0).toFixed(2)}`;
+  const formatEur = (value: number) =>
+    `${Number(value || 0).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+  const formatCompactNumber = (value: number) => {
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000) return `${(value / 1_000_000).toLocaleString("de-DE", { maximumFractionDigits: 1 })}M`;
+    if (abs >= 1_000) return `${(value / 1_000).toLocaleString("de-DE", { maximumFractionDigits: 1 })}k`;
+    return formatNumber(value);
+  };
   const maxMonthlyCredits = Math.max(1, ...(stats?.runsByMonth ?? []).map((m) => m.credits));
   const maxProjektCredits = Math.max(1, ...(stats?.creditsByProject ?? []).map((p) => p.credits));
 
@@ -375,6 +389,34 @@ export default function ProfilPage() {
     }
   };
 
+  const handleLogout = async () => {
+    if (logoutLoading) return;
+    setLogoutLoading(true);
+    try {
+      const sessionCookie = Cookies.get("__session");
+      if (sessionCookie) {
+        try {
+          await fetch(`${API_BASE_URL}/api/auth/revoke`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionCookie }),
+          });
+        } catch (error) {
+          console.error("Failed to revoke session:", error);
+        }
+      }
+
+      await signOut();
+      window.location.href = "/login";
+    } catch (error) {
+      console.error("Logout failed:", error);
+      toast.error("Abmelden fehlgeschlagen", {
+        description: error instanceof Error ? error.message : "Bitte versuche es erneut.",
+      });
+      setLogoutLoading(false);
+    }
+  };
+
   if (isLoading) {
     return <ProfilePageSkeleton />;
   }
@@ -382,27 +424,24 @@ export default function ProfilPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="flex h-screen">
-        <div className="w-72 border-r bg-muted/10 flex flex-col shrink-0">
-          <div className="p-6 border-b">
-            <div className="flex items-center gap-3">
+        <div className="w-64 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col shrink-0">
+          <div className="p-6 border-b border-sidebar-border">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold text-foreground">InstantPaper</div>
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-9 w-9"
                 onClick={handleBack}
                 disabled={backLoading || effectiveBlocked}
+                aria-label="Zurück"
               >
-                {backLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <ArrowLeft className="h-5 w-5" />
-                )}
+                {backLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowLeft className="h-5 w-5" />}
               </Button>
-              <h1 className="text-lg font-semibold text-foreground">Profil</h1>
             </div>
           </div>
 
-          <div className="p-6 border-b">
+          <div className="p-6 border-b border-sidebar-border">
             <div className="flex flex-col items-center text-center">
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-xl font-semibold text-primary mb-3">
                 {initials}
@@ -410,7 +449,7 @@ export default function ProfilPage() {
               <h2 className="font-semibold text-foreground">{userName}</h2>
               <div className="flex items-center gap-1.5 mt-1 text-muted-foreground text-sm">
                 <Mail className="h-3.5 w-3.5" />
-                <span>{userEmail}</span>
+                <span className="truncate max-w-[220px]">{userEmail}</span>
               </div>
               <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
                 <Calendar className="h-3.5 w-3.5" />
@@ -433,60 +472,76 @@ export default function ProfilPage() {
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                     displayedTab === "einstellungen"
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
                   )}
                 >
-                  <Settings className="h-4 w-4" />
-                  Einstellungen
+                  <User className="h-4 w-4" />
+                  Profil
                 </button>
               ) : null}
+
+              <button
+                onClick={() => setActiveTab("statistiken")}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  displayedTab === "statistiken"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
+                  effectiveBlocked || !canViewUsageInsights ? "hidden" : ""
+                )}
+              >
+                <TrendingUp className="h-4 w-4" />
+                Statistiken
+              </button>
+
               <button
                 onClick={() => setActiveTab("billing")}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                   displayedTab === "billing"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
                 )}
               >
-                <Coins className="h-4 w-4" />
+                <CreditCard className="h-4 w-4" />
                 Billing
               </button>
-              {!effectiveBlocked && canViewUsageInsights ? (
-                <button
-                  onClick={() => setActiveTab("statistiken")}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                    displayedTab === "statistiken"
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  <TrendingUp className="h-4 w-4" />
-                  Statistiken
-                </button>
-              ) : null}
+
               {!effectiveBlocked ? (
                 <button
                   onClick={() => setActiveTab("exporte")}
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                     displayedTab === "exporte"
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
                   )}
                 >
-                  <Download className="h-4 w-4" />
-                  Meine Exporte
+                  <FileDown className="h-4 w-4" />
+                  Exporte
                 </button>
               ) : null}
             </nav>
           </div>
+
+          <div className="p-4 border-t border-sidebar-border">
+            <button
+              onClick={handleLogout}
+              disabled={logoutLoading}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                "text-destructive hover:bg-destructive/10 disabled:opacity-60 disabled:cursor-not-allowed"
+              )}
+            >
+              {logoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+              Abmelden
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-5xl mx-auto py-8 px-8">
+          <div className="max-w-6xl mx-auto py-10 px-6 sm:px-10">
               <Tabs value={displayedTab} onValueChange={(v) => setActiveTab(v as ProfileTab)}>
                 {!effectiveBlocked ? (
                   <TabsContent value="einstellungen">
@@ -501,59 +556,88 @@ export default function ProfilPage() {
                 ) : null}
 
               <TabsContent value="billing">
-                <h2 className="text-lg font-semibold text-foreground mb-4">Billing</h2>
                 <BillingTab active={displayedTab === "billing"} />
               </TabsContent>
 
               {!effectiveBlocked && canViewUsageInsights ? (
                 <TabsContent value="statistiken">
-                <div className="mb-4">
-                  <h2 className="text-lg font-semibold text-foreground">Statistiken</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Credits-first Übersicht. USD-Werte sind nur eine interne Referenz.
-                  </p>
+                <div className="mb-6">
+                  <h2 className="text-xl font-semibold text-foreground">Deine Nutzungsstatistiken</h2>
                 </div>
  
                 {statsLoading ? (
                   <div className="space-y-6">
-                    <Card className="p-6">
-                      <Skeleton className="h-4 w-28 mb-3" />
-                      <Skeleton className="h-10 w-56 mb-4" />
-                      <div className="grid grid-cols-2 gap-3 max-w-sm">
-                        <div className="rounded-lg border bg-muted/10 p-4">
-                          <Skeleton className="h-3 w-24 mb-2" />
-                          <Skeleton className="h-6 w-20" />
-                        </div>
-                        <div className="rounded-lg border bg-muted/10 p-4">
-                          <Skeleton className="h-3 w-20 mb-2" />
-                          <Skeleton className="h-6 w-24" />
-                        </div>
-                        <div className="rounded-lg border bg-muted/10 p-4">
-                          <Skeleton className="h-3 w-16 mb-2" />
-                          <Skeleton className="h-6 w-12" />
-                        </div>
-                        <div className="rounded-lg border bg-muted/10 p-4">
-                          <Skeleton className="h-3 w-24 mb-2" />
-                          <Skeleton className="h-6 w-28" />
-                        </div>
-                      </div>
-                    </Card>
-                    <div className="grid md:grid-cols-2 gap-6">
-                      <Card className="p-6">
-                        <Skeleton className="h-4 w-40 mb-6" />
-                        <div className="space-y-4">
-                          <Skeleton className="h-6 w-full" />
-                          <Skeleton className="h-6 w-full" />
-                          <Skeleton className="h-6 w-full" />
-                        </div>
+                    <div className="grid gap-6 lg:grid-cols-3">
+                      <Card className="lg:col-span-2">
+                        <CardContent className="space-y-4">
+                          <div className="flex items-start justify-between gap-6">
+                            <div className="space-y-2">
+                              <Skeleton className="h-3 w-28" />
+                              <Skeleton className="h-10 w-56" />
+                            </div>
+                            <div className="space-y-2 text-right">
+                              <Skeleton className="h-3 w-16 ml-auto" />
+                              <Skeleton className="h-6 w-24 ml-auto" />
+                            </div>
+                          </div>
+                          <Skeleton className="h-2 w-full max-w-xl" />
+                          <Skeleton className="h-3 w-28" />
+                        </CardContent>
                       </Card>
-                      <Card className="p-6">
-                        <Skeleton className="h-4 w-40 mb-6" />
-                        <div className="space-y-4">
-                          <Skeleton className="h-10 w-full" />
-                          <Skeleton className="h-10 w-full" />
-                          <Skeleton className="h-10 w-full" />
-                        </div>
+                      <Card>
+                        <CardContent className="space-y-4">
+                          <Skeleton className="h-4 w-24" />
+                          <Skeleton className="h-4 w-full" />
+                          <Skeleton className="h-4 w-full" />
+                          <Skeleton className="h-4 w-full" />
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <Card>
+                      <CardHeader className="border-b">
+                        <Skeleton className="h-4 w-44" />
+                      </CardHeader>
+                      <CardContent>
+                        <Skeleton className="h-24 w-full" />
+                      </CardContent>
+                    </Card>
+
+                    <div className="grid gap-6 lg:grid-cols-2">
+                      <Card>
+                        <CardHeader className="border-b">
+                          <Skeleton className="h-4 w-44" />
+                        </CardHeader>
+                        <CardContent>
+                          <Skeleton className="h-48 w-full" />
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="border-b">
+                          <Skeleton className="h-4 w-44" />
+                        </CardHeader>
+                        <CardContent>
+                          <Skeleton className="h-48 w-full" />
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div className="grid gap-6 lg:grid-cols-2">
+                      <Card>
+                        <CardHeader className="border-b">
+                          <Skeleton className="h-4 w-44" />
+                        </CardHeader>
+                        <CardContent>
+                          <Skeleton className="h-56 w-full" />
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="border-b">
+                          <Skeleton className="h-4 w-44" />
+                        </CardHeader>
+                        <CardContent>
+                          <Skeleton className="h-56 w-full" />
+                        </CardContent>
                       </Card>
                     </div>
                   </div>
@@ -563,224 +647,269 @@ export default function ProfilPage() {
                   </Card>
                 ) : (
                   <>
-                    <Card className="p-6 mb-8">
-                      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
-                        <div className="min-w-0">
-                          <p className="text-xs text-muted-foreground">Gesamtverbrauch</p>
-                          <p className="mt-1 text-3xl font-semibold text-foreground tabular-nums">
-                            {formatCredits(stats.creditsTotal)}
-                          </p>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            {formatNumber(stats.runsTotal)} Runs · {formatNumber(stats.totalProjects)} Projekte ·{" "}
-                            {formatNumber(stats.totalKapitel)} Kapitel · {formatNumber(stats.totalQuellen)} Quellen
-                          </p>
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            Interne Kosten (≈ OpenAI):{" "}
-                            <span className="font-medium text-foreground tabular-nums">
-                              {formatUsd(stats.estimatedCostUsd)}
-                            </span>
-                            {stats.runsTotal > 0 ? (
-                              <>
-                                {" "}
-                                · Ø{" "}
-                                <span className="font-medium text-foreground tabular-nums">
-                                  {formatUsd(stats.estimatedCostUsd / stats.runsTotal)}
-                                </span>{" "}
-                                pro Run
-                              </>
-                            ) : null}
-                            {" "}
-                            <span className="text-muted-foreground/70">
-                              (Spend Rate: {formatCreditsValue(stats.spendRate)} Credits/$1)
-                            </span>
-                            {stats.usd ? (
-                              <span className="text-muted-foreground/70">
-                                {" "}
-                                · Log: {formatUsd(stats.usd.totalCostUsd)}
-                              </span>
-                            ) : null}
-                          </p>
-                        </div>
-
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
-                          <div className="rounded-lg border bg-muted/10 p-4">
-                            <p className="text-xs text-muted-foreground">Ø Credits/Run</p>
-                            <p className="mt-1 text-lg font-semibold text-foreground tabular-nums">
-                              {formatCreditsValue(stats.runsTotal > 0 ? stats.creditsTotal / stats.runsTotal : 0)}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border bg-muted/10 p-4">
-                            <p className="text-xs text-muted-foreground">$ pro Credit</p>
-                            <p className="mt-1 text-lg font-semibold text-foreground tabular-nums">
-                              {formatUsd(stats.spendRate > 0 ? 1 / stats.spendRate : 0)}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border bg-muted/10 p-4">
-                            <p className="text-xs text-muted-foreground">Spend Rate</p>
-                            <p className="mt-1 text-lg font-semibold text-foreground tabular-nums">
-                              {formatCreditsValue(stats.spendRate)}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border bg-muted/10 p-4">
-                            <p className="text-xs text-muted-foreground">Wörter (≈)</p>
-                            <p className="mt-1 text-lg font-semibold text-foreground tabular-nums">
-                              {formatNumber(stats.totalWords)}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border bg-muted/10 p-4">
-                            <p className="text-xs text-muted-foreground">Credits / 1k Wörter</p>
-                            <p className="mt-1 text-lg font-semibold text-foreground tabular-nums">
-                              {formatCreditsValue(stats.totalWords > 0 ? stats.creditsTotal / (stats.totalWords / 1000) : 0)}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border bg-muted/10 p-4">
-                            <p className="text-xs text-muted-foreground">Mitglied seit</p>
-                            <p className="mt-1 text-lg font-semibold text-foreground tabular-nums">
-                              {memberSince.toLocaleDateString("de-DE")}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </Card>
-
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                      <Card className="p-6">
-                        <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
-                          <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                          Letzte 6 Monate
-                        </h3>
-                        <div className="space-y-4">
-                          {stats.runsByMonth.map((month) => (
-                            <div key={month.key} className="flex items-center gap-3">
-                              <span className="text-sm text-muted-foreground w-16 shrink-0">
-                                {new Date(`${month.key}-01`)
-                                  .toLocaleDateString("de-DE", { month: "short" })
-                                  .replace(".", "")}
-                              </span>
-                              <div className="flex-1 h-6 bg-muted/30 rounded overflow-hidden">
-                                <div
-                                  className="h-full bg-primary/70 rounded transition-all"
-                                  style={{ width: `${(month.credits / maxMonthlyCredits) * 100}%` }}
-                                />
-                              </div>
-                              <div className="w-28 text-right">
-                                <div className="text-sm text-muted-foreground tabular-nums">
-                                  {formatCreditsValue(month.credits)}
-                                </div>
-                                <div className="text-xs text-muted-foreground">{month.count} Runs</div>
+                    <div className="grid gap-6 lg:grid-cols-3 mb-6">
+                      <Card className="lg:col-span-2">
+                        <CardContent>
+                          <div className="flex items-start justify-between gap-6">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Gesamtverbrauch</p>
+                              <div className="mt-1 flex items-baseline gap-2">
+                                <span className="text-4xl font-semibold text-foreground tabular-nums">
+                                  {formatCreditsValue(stats.creditsTotal)}
+                                </span>
+                                <span className="text-sm text-muted-foreground">Credits</span>
                               </div>
                             </div>
-                          ))}
-                        </div>
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Entspricht</p>
+                              <p className="mt-1 text-lg font-semibold text-foreground tabular-nums">
+                                {formatEur(stats.estimatedCostUsd)}
+                              </p>
+                            </div>
+                          </div>
+
+                          <Progress value={100} className="mt-6 max-w-xl" />
+
+                          <p className="mt-3 text-xs text-muted-foreground">
+                            Seit{" "}
+                            {memberSince.toLocaleDateString("de-DE", {
+                              month: "long",
+                              year: "numeric",
+                            })}
+                          </p>
+                        </CardContent>
                       </Card>
 
-                      <Card className="p-6">
-                        <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
-                          <Coins className="h-4 w-4 text-muted-foreground" />
-                          Top Projekte (Credits)
-                        </h3>
-                        {stats.creditsByProject.length > 0 ? (
-                          <div className="space-y-4">
-                            {stats.creditsByProject.map((projekt) => (
-                              <div key={projekt.projektId}>
-                                <div className="flex items-center justify-between mb-1.5">
-                                  <span className="text-sm text-foreground truncate max-w-[220px]">{projekt.projektName}</span>
-                                  <span className="text-sm font-medium text-foreground tabular-nums">
-                                    {formatCreditsValue(projekt.credits)}
-                                  </span>
-                                </div>
-                                <div className="h-2 bg-muted/30 rounded overflow-hidden">
-                                  <div
-                                    className="h-full bg-primary/70 rounded transition-all"
-                                    style={{ width: `${(projekt.credits / maxProjektCredits) * 100}%` }}
-                                  />
-                                </div>
-                              </div>
-                            ))}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-sm font-medium text-muted-foreground">Aktivität</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-sm text-foreground">Verarbeitungen</span>
+                            <span className="text-sm font-medium text-foreground tabular-nums">
+                              {formatNumber(stats.runsTotal)}
+                            </span>
                           </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">Noch keine Credits erfasst.</p>
-                        )}
-                      </Card>
-
-                      <Card className="p-6 md:col-span-2 lg:col-span-1">
-                        <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
-                          <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                          Verbrauch nach Operation
-                        </h3>
-                        {operationRows.length > 0 ? (
-                          <div className="space-y-3">
-                            {operationRows.map((row) => (
-                              <div
-                                key={`${row.key}-${row.indent}`}
-                                className={cn(
-                                  "space-y-1",
-                                  row.indent ? "pl-3 border-l border-border/60" : ""
-                                )}
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div
-                                      className={cn(
-                                        "truncate",
-                                        row.indent ? "text-muted-foreground text-sm" : "text-foreground text-sm font-medium"
-                                      )}
-                                    >
-                                      {row.label}
-                                    </div>
-                                    {row.hint ? (
-                                      <div className="text-xs text-muted-foreground">{row.hint}</div>
-                                    ) : null}
-                                  </div>
-                                  <div className="text-sm font-medium text-foreground tabular-nums">
-                                    {formatCreditsValue(row.credits)}
-                                  </div>
-                                </div>
-                                {row.key !== "other" ? (
-                                  <div className="h-1.5 bg-muted/30 rounded overflow-hidden">
-                                    <div
-                                      className={cn("h-full rounded", row.indent ? "bg-primary/30" : "bg-primary/70")}
-                                      style={{ width: `${(row.credits / maxOperationCredits) * 100}%` }}
-                                    />
-                                  </div>
-                                ) : null}
-                              </div>
-                            ))}
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-sm text-foreground">Exporte</span>
+                            <span className="text-sm font-medium text-foreground tabular-nums">
+                              {formatNumber(stats.exportCount)}
+                            </span>
                           </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">Noch keine Daten.</p>
-                        )}
-                        <p className="mt-4 text-xs text-muted-foreground">
-                          Basis: {formatNumber(stats.limits?.operationsScanned ?? 0)}
-                          {stats.limits?.maxOperationsScanned ? `/${formatNumber(stats.limits.maxOperationsScanned)}` : ""}{" "}
-                          Operationen (neueste zuerst).
-                        </p>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-sm text-foreground">Quellen</span>
+                            <span className="text-sm font-medium text-foreground tabular-nums">
+                              {formatNumber(stats.totalQuellen)}
+                            </span>
+                          </div>
+                        </CardContent>
                       </Card>
                     </div>
 
-                    <Card className="p-6">
-                      <h3 className="text-sm font-medium text-foreground mb-6 flex items-center gap-2">
-                        <Zap className="h-4 w-4 text-muted-foreground" />
-                        Modellnutzung
-                      </h3>
-                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {stats.modelUsage.map((model) => (
-                          <div key={model.model} className="rounded-lg border bg-muted/10 p-4">
-                            <p className="text-sm font-medium text-foreground truncate">{model.model}</p>
-                            <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                              <span>{formatNumber(model.count)} Ops</span>
-                              <span className="font-medium text-foreground tabular-nums">
-                                {formatCreditsValue(model.credits)} Credits
-                              </span>
+                    <Card className="mb-6">
+                      <CardHeader className="border-b">
+                        <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+                          <PenTool className="h-4 w-4 text-muted-foreground" />
+                          Generierte Inhalte
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+                          <div className="text-center">
+                            <div className="text-3xl font-semibold text-primary tabular-nums">
+                              {formatNumber(stats.totalProjects)}
                             </div>
+                            <div className="text-xs text-muted-foreground">Projekte</div>
                           </div>
-                        ))}
-                      </div>
+                          <div className="text-center">
+                            <div className="text-3xl font-semibold text-primary tabular-nums">
+                              {formatNumber(stats.totalKapitel)}
+                            </div>
+                            <div className="text-xs text-muted-foreground">Kapitel</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-3xl font-semibold text-primary tabular-nums">
+                              {formatCompactNumber(stats.totalWords > 0 ? Math.round(stats.totalWords / 0.75) : 0)}
+                            </div>
+                            <div className="text-xs text-muted-foreground">Tokens generiert</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-3xl font-semibold text-primary tabular-nums">
+                              {formatNumber(stats.totalQuellen)}
+                            </div>
+                            <div className="text-xs text-muted-foreground">Quellen verarbeitet</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-3xl font-semibold text-primary tabular-nums">
+                              {Number(stats.runsTotal > 0 ? stats.creditsTotal / stats.runsTotal : 0).toLocaleString("de-DE", {
+                                maximumFractionDigits: 1,
+                              })}
+                            </div>
+                            <div className="text-xs text-muted-foreground">Ø Credits/Run</div>
+                          </div>
+                        </div>
+                    </CardContent>
                     </Card>
 
-                    <p className="text-xs text-muted-foreground mt-6">
-                      Hinweis: Credits sind die Nutzer-Einheit. USD-Werte sind interne OpenAI-Kosten (kein Abrechnungsbetrag) und werden aus Credits / Spend Rate abgeleitet.
-                    </p>
+                    <div className="grid gap-6 lg:grid-cols-2 mb-6">
+                      <Card>
+                        <CardHeader className="border-b">
+                          <div className="flex items-center justify-between gap-3">
+                            <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+                              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                              Credit-Verbrauch
+                            </CardTitle>
+                            <span className="text-xs text-muted-foreground">Letzte 6 Monate</span>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {stats.runsByMonth.map((month) => (
+                            <div key={month.key} className="flex items-center gap-3">
+                              <span className="text-sm text-muted-foreground w-20 shrink-0">
+                                {new Date(`${month.key}-01`)
+                                  .toLocaleDateString("de-DE", { month: "short", year: "numeric" })
+                                  .replace(".", "")}
+                              </span>
+                              <Progress value={(month.credits / maxMonthlyCredits) * 100} className="h-2 flex-1" />
+                              <div className="w-24 text-right">
+                                <div className="text-sm font-medium text-foreground tabular-nums">{formatCreditsValue(month.credits)}</div>
+                                <div className="text-xs text-muted-foreground tabular-nums">
+                                  {formatEur(stats.spendRate > 0 ? month.credits / stats.spendRate : 0)}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardHeader className="border-b">
+                          <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            Projekt-Statistiken
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {stats.creditsByProject.length > 0 ? (
+                            <div className="space-y-4">
+                              {stats.creditsByProject.map((projekt) => (
+                                <div key={projekt.projektId}>
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-sm text-foreground truncate max-w-[220px]">{projekt.projektName}</span>
+                                    <div className="text-right">
+                                      <div className="text-sm font-medium text-foreground tabular-nums">
+                                        {formatCreditsValue(projekt.credits)}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground tabular-nums">
+                                        {formatEur(stats.spendRate > 0 ? projekt.credits / stats.spendRate : 0)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <Progress value={(projekt.credits / maxProjektCredits) * 100} className="h-2" />
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">Noch keine Credits erfasst.</p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div className="grid gap-6 lg:grid-cols-2">
+                      <Card>
+                        <CardHeader className="border-b">
+                          <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+                            <Coins className="h-4 w-4 text-muted-foreground" />
+                            Verbrauch pro Operation
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {operationRows.length > 0 ? (
+                            <div className="space-y-4">
+                              {operationRows
+                                .filter((row) => row.key !== "other" && row.credits > 0)
+                                .map((row) => (
+                                  <div key={`${row.key}-${row.indent}`} className="space-y-2">
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div className="min-w-0">
+                                        <div
+                                          className={cn(
+                                            "truncate",
+                                            row.indent ? "text-sm text-muted-foreground" : "text-sm font-medium text-foreground"
+                                          )}
+                                        >
+                                          {row.label}
+                                        </div>
+                                      </div>
+                                      <div className="text-right shrink-0">
+                                        <div className="text-sm font-medium text-foreground tabular-nums">
+                                          {formatCreditsValue(row.credits)}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground tabular-nums">
+                                          {formatEur(stats.spendRate > 0 ? row.credits / stats.spendRate : 0)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <Progress
+                                      value={(row.credits / maxOperationCredits) * 100}
+                                      className={cn("h-2", row.indent ? "opacity-60" : "")}
+                                    />
+                                  </div>
+                                ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">Noch keine Daten.</p>
+                          )}
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardHeader className="border-b">
+                          <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+                            <Zap className="h-4 w-4 text-muted-foreground" />
+                            Modellnutzung
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {(() => {
+                            const total = Math.max(1, stats.modelUsage.reduce((acc, m) => acc + (m.count || 0), 0));
+                            return (
+                              <>
+                                {stats.modelUsage.map((model) => {
+                                  const percent = Math.round(((model.count || 0) / total) * 100);
+                                  return (
+                                    <div key={model.model} className="space-y-2">
+                                      <div className="flex items-center justify-between gap-4">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span className="h-2 w-2 rounded-full bg-primary shrink-0" />
+                                          <span className="text-sm font-medium text-foreground truncate">{model.model}</span>
+                                        </div>
+                                        <div className="flex items-center gap-3 text-xs text-muted-foreground tabular-nums shrink-0">
+                                          <span>{formatNumber(model.count)}</span>
+                                          <span>{percent}%</span>
+                                        </div>
+                                      </div>
+                                      <Progress value={percent} className="h-2" />
+                                    </div>
+                                  );
+                                })}
+
+                                <div className="pt-4 border-t border-border">
+                                  <div className="flex items-center justify-between gap-4">
+                                    <span className="text-sm text-muted-foreground">Credits / 1k Wörter</span>
+                                    <span className="text-sm font-medium text-foreground tabular-nums">
+                                      {formatCreditsValue(stats.totalWords > 0 ? stats.creditsTotal / (stats.totalWords / 1000) : 0)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </CardContent>
+                      </Card>
+                    </div>
                   </>
                 )}
                 </TabsContent>

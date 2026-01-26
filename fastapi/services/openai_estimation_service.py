@@ -152,6 +152,10 @@ class OpenAIEstimationService:
                 base_factor = 0.70
             elif op_lower == "lesefluss":
                 base_factor = 1.20
+            elif op_lower == "gliederung":
+                # Gliederung creation usually expands the input into many chapter blocks.
+                # Pick a conservative factor so reservations don't under-estimate too aggressively.
+                base_factor = 5.00
             else:
                 base_factor = None
 

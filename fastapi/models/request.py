@@ -105,6 +105,51 @@ class LeseflussKapitelRequest(BaseModel):
         }
 
 
+class GenerateGliederungRequest(BaseModel):
+    """Request model for creating a Gliederung (outline) draft for a project."""
+
+    projekt_id: str = Field(..., description="Project ID this draft belongs to")
+    aufgabenstellung: str = Field(..., description="Task description for the paper", min_length=10)
+    gliederung_studienbrief_mit_seiten: str = Field(
+        default="",
+        description="Optional: Studienbrief outline with chapter numbers/titles/pages (free text)",
+    )
+    extra_kontext: str = Field(
+        default="",
+        description="Optional: extra context / constraints (free text)",
+    )
+    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
+        default="gpt-5.2",
+        description="OpenAI model to use for generating the outline draft",
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "projekt_id": "proj123",
+                "aufgabenstellung": "Analyse der Auswirkungen von KI auf die Arbeitswelt",
+                "gliederung_studienbrief_mit_seiten": "1 Einführung (S. 1–10)\n2 Grundlagen (S. 11–45)",
+                "extra_kontext": "Schreibe auf Deutsch. Keine konkreten Modelle nennen, außer explizit gefordert.",
+                "model": "gpt-5.2",
+            }
+        }
+
+
+class RefineGliederungRequest(BaseModel):
+    """Request model for refining an existing Gliederung draft with a user instruction."""
+
+    draft_id: str = Field(..., description="Gliederung draft ID to refine")
+    message: str = Field(..., description="Requested changes / instruction", min_length=1)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "draft_id": "draft123",
+                "message": "Bitte Kapitel 2 und 3 vertauschen und Kapitel 3.2 kürzen.",
+            }
+        }
+
+
 class RefineCombinedInitRequest(BaseModel):
     """Request model for initializing the text refinement flow for a combined text."""
 
