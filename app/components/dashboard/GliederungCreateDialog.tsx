@@ -171,7 +171,10 @@ export function GliederungCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[720px] p-0 gap-0 max-h-[85vh] overflow-hidden ring-2 ring-primary/40">
+      <DialogContent
+        showCloseButton={false}
+        className="sm:max-w-[720px] p-0 gap-0 max-h-[85vh] overflow-hidden ring-2 ring-primary/40"
+      >
         <DialogTitle className="sr-only">Gliederung generieren</DialogTitle>
         <div className="px-6 pt-5 pb-4 border-b">
           <div className="flex items-center justify-between gap-3">
