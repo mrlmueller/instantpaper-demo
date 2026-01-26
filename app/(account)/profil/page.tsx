@@ -62,7 +62,7 @@ function ProfilePageSkeleton() {
     <div className="min-h-screen bg-background">
       <div className="flex h-screen">
         {/* Left Sidebar skeleton */}
-        <div className="w-72 border-r border-sidebar-border bg-sidebar flex flex-col shrink-0">
+        <div className="w-64 border-r border-sidebar-border bg-sidebar flex flex-col shrink-0">
           <div className="p-6 border-b border-sidebar-border">
             <div className="flex items-center justify-between gap-3">
               <Skeleton className="h-4 w-24" />
@@ -424,7 +424,7 @@ export default function ProfilPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="flex h-screen">
-        <div className="w-72 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col shrink-0">
+        <div className="w-64 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col shrink-0">
           <div className="p-6 border-b border-sidebar-border">
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-semibold text-foreground">InstantPaper</div>
