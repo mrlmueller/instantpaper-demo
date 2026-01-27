@@ -2765,6 +2765,21 @@ class FirebaseService:
             logger.error(f"Error fetching active prompt for stage {stage}: {e}")
             return None
 
+    async def get_prompt_settings(self, user_id: str) -> dict:
+        """Fetch the user's promptSettings/active doc (may include activeTemplates + migration metadata)."""
+        try:
+            ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("promptSettings")
+                .document("active")
+            )
+            doc = ref.get()
+            return doc.to_dict() if doc.exists else {}
+        except Exception as e:
+            logger.error(f"Error fetching prompt settings for user {user_id}: {e}")
+            return {}
+
     async def set_active_prompt_id(self, user_id: str, stage: str, template_id: str) -> None:
         """Set active prompt id for a stage (server-side override)."""
         try:
@@ -2785,6 +2800,39 @@ class FirebaseService:
             ref.set(payload, merge=True)
         except Exception as e:
             logger.error(f"Error setting active prompt for stage {stage}: {e}")
+            raise
+
+    def _prompt_defaults_ref(self):
+        return self.db.collection("_config").document("promptDefaults")
+
+    async def get_admin_prompt_defaults(self) -> dict:
+        """Return the global admin prompt defaults config stored at `_config/promptDefaults`."""
+        try:
+            doc = self._prompt_defaults_ref().get()
+            return doc.to_dict() if doc.exists else {}
+        except Exception as e:
+            logger.error(f"Error fetching admin prompt defaults: {e}")
+            return {}
+
+    async def set_admin_prompt_default_key(self, stage: str, template_key: Optional[str]) -> None:
+        """
+        Set (or clear) the global admin default system template key for a stage.
+
+        Stored in `_config/promptDefaults.stageDefaults.{stage}`.
+        """
+        stage_norm = str(stage or "").strip()
+        key = str(template_key or "").strip()
+        try:
+            update: dict = {
+                "updatedAt": SERVER_TIMESTAMP,
+            }
+            if key:
+                update[f"stageDefaults.{stage_norm}"] = key
+            else:
+                update[f"stageDefaults.{stage_norm}"] = firestore.DELETE_FIELD
+            self._prompt_defaults_ref().set(update, merge=True)
+        except Exception as e:
+            logger.error(f"Error setting admin prompt default for stage {stage_norm}: {e}")
             raise
 
 

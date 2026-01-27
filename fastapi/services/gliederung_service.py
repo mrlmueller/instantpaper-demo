@@ -382,7 +382,11 @@ class GliederungService:
             return
 
         projekt_id = str(draft.get("projektId") or "").strip()
-        prompt_template_id = str(draft.get("promptTemplateId") or "").strip() or "default_v2"
+        prompt_template_id = str(draft.get("promptTemplateId") or "").strip()
+        if not prompt_template_id:
+            prompt_template_id, _ = await prompt_service.resolve_active_template_id(
+                user_id, "gliederung"
+            )
         model = str(draft.get("model") or "").strip() or "gpt-5.2"
         inputs = draft.get("inputs") if isinstance(draft.get("inputs"), dict) else {}
 
@@ -624,7 +628,11 @@ class GliederungService:
             return
 
         projekt_id = str(draft.get("projektId") or "").strip()
-        prompt_template_id = str(draft.get("promptTemplateId") or "").strip() or "default_v2"
+        prompt_template_id = str(draft.get("promptTemplateId") or "").strip()
+        if not prompt_template_id:
+            prompt_template_id, _ = await prompt_service.resolve_active_template_id(
+                user_id, "gliederung"
+            )
         model = str(draft.get("model") or "").strip() or "gpt-5.2"
         inputs = draft.get("inputs") if isinstance(draft.get("inputs"), dict) else {}
         output_saved = draft.get("output") if isinstance(draft.get("output"), dict) else None

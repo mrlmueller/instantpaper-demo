@@ -6,8 +6,8 @@ import { toast } from "sonner";
 
 import { Archive, Check, Pencil, Plus, RefreshCw, RotateCcw } from "lucide-react";
 
-import { STAGE_CONFIG } from "@/app/lib/prompts/promptConfig";
-import type { PromptStage } from "@/app/types/prompts";
+import { DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY, STAGE_CONFIG } from "@/app/lib/prompts/promptConfig";
+import type { PromptStage, StageDefaultPromptTemplates } from "@/app/types/prompts";
 import { cn } from "@/lib/utils";
 
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -112,25 +113,32 @@ function sortByUpdatedDesc(a: AdminSystemPromptTemplate, b: AdminSystemPromptTem
 export function SystemPromptManager() {
   const [stage, setStage] = useState<PromptStage>("process_quelle");
   const [templates, setTemplates] = useState<AdminSystemPromptTemplate[]>([]);
+  const [stageDefaults, setStageDefaults] = useState<StageDefaultPromptTemplates>({});
   const [isLoading, setIsLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingDefault, setIsSavingDefault] = useState(false);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
 
   const load = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/admin/system-prompt-templates", {
-        cache: "no-store",
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Konnte System-Prompts nicht laden.");
+      const [templatesRes, defaultsRes] = await Promise.all([
+        fetch("/api/admin/system-prompt-templates", { cache: "no-store" }),
+        fetch("/api/admin/prompt-defaults", { cache: "no-store" }),
+      ]);
 
-      const raw = Array.isArray(data?.templates) ? data.templates : [];
-      const normalized = raw
-        .map(normalizeTemplate)
-        .filter(Boolean) as AdminSystemPromptTemplate[];
+      let normalized: AdminSystemPromptTemplate[] = [];
+      let defaults: StageDefaultPromptTemplates = {};
+
+      const templatesData = await templatesRes.json().catch(() => ({}));
+      if (!templatesRes.ok) {
+        throw new Error(templatesData.error || "Konnte System-Prompts nicht laden.");
+      }
+
+      const raw = Array.isArray(templatesData?.templates) ? templatesData.templates : [];
+      normalized = raw.map(normalizeTemplate).filter(Boolean) as AdminSystemPromptTemplate[];
       normalized.sort((a, b) => {
         if (a.stage !== b.stage) return a.stage.localeCompare(b.stage, "de");
         if (a.archived !== b.archived) return a.archived ? 1 : -1;
@@ -138,12 +146,31 @@ export function SystemPromptManager() {
         return sortByUpdatedDesc(a, b);
       });
 
+      const defaultsData = await defaultsRes.json().catch(() => ({}));
+      if (defaultsRes.ok) {
+        const rawDefaults = defaultsData?.stageDefaults;
+        if (rawDefaults && typeof rawDefaults === "object") {
+          const next: StageDefaultPromptTemplates = {};
+          for (const opt of stageOptions) {
+            const value = (rawDefaults as any)[opt.value];
+            if (typeof value === "string" && value.trim()) next[opt.value] = value.trim();
+          }
+          defaults = next;
+        }
+      } else {
+        toast.error("Standard-Prompts", {
+          description: defaultsData.error || "Konnte Standard-Prompts nicht laden.",
+        });
+      }
+
       setTemplates(normalized);
+      setStageDefaults(defaults);
     } catch (err: any) {
       toast.error("System-Prompts", {
         description: err?.message || "Konnte System-Prompts nicht laden.",
       });
       setTemplates([]);
+      setStageDefaults({});
     } finally {
       setIsLoading(false);
     }
@@ -167,6 +194,91 @@ export function SystemPromptManager() {
     () => stageTemplates.filter((t) => t.archived).slice().sort(sortByUpdatedDesc),
     [stageTemplates]
   );
+
+  const defaultOptions = useMemo(() => {
+    const items: { key: string; label: string }[] = [];
+    const seen = new Set<string>();
+
+    const add = (key: string, label: string) => {
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      items.push({ key, label });
+    };
+
+    add(DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY, `<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`);
+
+    const configured = stageDefaults[stage];
+    const configuredTpl = configured ? stageTemplates.find((t) => t.templateKey === configured) : null;
+    const configuredAvailable = configuredTpl ? configuredTpl.published && !configuredTpl.archived : false;
+    if (configured && !configuredAvailable) {
+      add(configured, `${configured} (nicht verfügbar)`);
+    }
+
+    for (const tpl of published) {
+      add(tpl.templateKey, `${tpl.name} (${tpl.templateKey})`);
+    }
+
+    return items;
+  }, [published, stage, stageDefaults, stageTemplates]);
+
+  const effectiveStageDefaultKey = stageDefaults[stage] || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
+  const configuredDefaultKey = stageDefaults[stage];
+  const configuredDefaultTemplate = configuredDefaultKey
+    ? stageTemplates.find((t) => t.templateKey === configuredDefaultKey)
+    : null;
+  const configuredDefaultUnavailable = Boolean(
+    configuredDefaultKey &&
+      configuredDefaultTemplate &&
+      (configuredDefaultTemplate.archived || !configuredDefaultTemplate.published)
+  );
+  const configuredDefaultMissing = Boolean(configuredDefaultKey && !configuredDefaultTemplate);
+
+  const saveStageDefault = async (targetStage: PromptStage, nextKey: string) => {
+    const prevKey = stageDefaults[targetStage];
+
+    setStageDefaults((prev) => {
+      const next = { ...prev };
+      if (nextKey === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY) {
+        delete next[targetStage];
+      } else {
+        next[targetStage] = nextKey;
+      }
+      return next;
+    });
+
+    setIsSavingDefault(true);
+    try {
+      const res = await fetch("/api/admin/prompt-defaults", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stage: targetStage,
+          templateKey: nextKey === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY ? null : nextKey,
+        }),
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Speichern fehlgeschlagen.");
+
+      toast.success("Standard-Prompt gespeichert");
+    } catch (err: any) {
+      setStageDefaults((prev) => {
+        const next = { ...prev };
+        if (typeof prevKey === "string" && prevKey.trim()) {
+          next[targetStage] = prevKey.trim();
+        } else {
+          delete next[targetStage];
+        }
+        return next;
+      });
+
+      toast.error("Standard-Prompt", {
+        description: err?.message || "Speichern fehlgeschlagen.",
+      });
+    } finally {
+      setIsSavingDefault(false);
+    }
+  };
 
   const missingPlaceholders = useMemo(() => {
     if (!editor) return [];
@@ -370,6 +482,78 @@ export function SystemPromptManager() {
         <p className="mt-3 text-xs text-muted-foreground">
           Pflicht-Platzhalter: <span className="font-mono">{requiredPlaceholders}</span>
         </p>
+
+        <div className="mt-4 rounded-lg border bg-background p-4 space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold text-foreground">Fallback-Standard für diese Stage</p>
+              <p className="text-xs text-muted-foreground">
+                Gilt für alle Nutzer ohne eigenen Standard. Reihenfolge: Nutzer &gt; Admin &gt; App-Standard.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <Select
+                value={effectiveStageDefaultKey}
+                onValueChange={(value) => saveStageDefault(stage, value)}
+                disabled={isSavingDefault}
+              >
+                <SelectTrigger className="w-full sm:w-[340px]" size="sm">
+                  <SelectValue placeholder="Standard wählen" />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {defaultOptions.map((opt) => (
+                    <SelectItem key={opt.key} value={opt.key}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => saveStageDefault(stage, DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY)}
+                disabled={!configuredDefaultKey || isSavingDefault}
+              >
+                <RotateCcw className="h-4 w-4" />
+                Zurücksetzen
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="rounded-md px-2 py-0.5 font-mono text-[11px]">
+              Effektiv: {effectiveStageDefaultKey}
+            </Badge>
+            {configuredDefaultKey ? (
+              <Badge variant="secondary" className="rounded-md px-2 py-0.5 text-[11px] font-semibold">
+                Admin-Default gesetzt
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="rounded-md px-2 py-0.5 text-[11px] font-semibold">
+                Kein Admin-Default (App-Standard)
+              </Badge>
+            )}
+
+            {configuredDefaultMissing ? (
+              <Badge
+                variant="secondary"
+                className="rounded-md px-2 py-0.5 text-[11px] font-semibold bg-amber-100 text-amber-800"
+              >
+                Konfiguriert, aber nicht gefunden → Fallback nutzt neuestes Template
+              </Badge>
+            ) : null}
+
+            {configuredDefaultUnavailable ? (
+              <Badge
+                variant="secondary"
+                className="rounded-md px-2 py-0.5 text-[11px] font-semibold bg-amber-100 text-amber-800"
+              >
+                Konfiguriert, aber nicht verfügbar → Fallback nutzt neuestes Template
+              </Badge>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       {isLoading ? (

@@ -117,7 +117,10 @@ class QuelleService:
 
             # Resolve and render the prompt server-side (prompts are not sent from the client).
             prompt_template_id = (run.get("promptTemplateId") or "").strip() if run else ""
-            prompt_template_id = prompt_template_id or "default_v2"
+            if not prompt_template_id:
+                prompt_template_id, _ = await prompt_service.resolve_active_template_id(
+                    user_id, "process_quelle"
+                )
 
             payload: dict = {}
             raw_payload = (run.get("promptPayload") or run.get("prompt_payload")) if run else None
@@ -646,13 +649,13 @@ class QuelleService:
             model = run.get("model") or "gpt-5.2"
 
             results = await self.firebase.get_run_results(user_id, kapitel_id, run_id)
-            combine_instructions = await prompt_service.get_rendered_instructions(
-                user_id,
-                "combine",
-                {"KAPITEL_TITEL": heading, "KAPITEL_BESCHREIBUNG": topic},
+            combine_template_id, _ = await prompt_service.resolve_active_template_id(user_id, "combine")
+            combine_instructions = await prompt_service.get_rendered_instructions_for_template(
+                user_id=user_id,
+                stage="combine",
+                template_id=combine_template_id,
+                payload={"KAPITEL_TITEL": heading, "KAPITEL_BESCHREIBUNG": topic},
             )
-            combine_template_id = await self.firebase.get_active_prompt_id(user_id, "combine")
-            combine_template_id = (combine_template_id or "").strip() or "default_v2"
             combine_system_prompt = await prompt_service.get_system_prompt_for_template(
                 stage="combine",
                 template_id=combine_template_id,

@@ -8,6 +8,7 @@ import type {
   PromptStage,
   PromptTemplate,
   PromptTemplatePayload,
+  StageDefaultPromptTemplates,
   SystemPromptPermissions,
   SystemPromptTemplateMeta,
 } from '@/app/types/prompts';
@@ -32,6 +33,7 @@ import {
   serverTimestamp,
   getDoc,
   setDoc,
+  deleteField,
 } from 'firebase/firestore';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
@@ -46,7 +48,7 @@ function validatePlaceholders(stage: PromptStage, instructions: string): string 
 }
 
 const SYSTEM_STAGES: PromptStage[] = ['process_quelle', 'combine', 'shorten', 'lesefluss', 'summary', 'gliederung'];
-const PROMPT_DEFAULTS_VERSION = 2;
+const PROMPT_DEFAULTS_VERSION = 3;
 
 function fallbackSystemTemplates(): SystemPromptTemplateMeta[] {
   // Fail closed: if we can't reach the backend, don't guess which system templates exist
@@ -57,6 +59,7 @@ function fallbackSystemTemplates(): SystemPromptTemplateMeta[] {
 async function loadSystemTemplates(): Promise<{
   systemTemplates: SystemPromptTemplateMeta[];
   systemPermissions: SystemPromptPermissions;
+  stageDefaults: StageDefaultPromptTemplates;
   source: 'backend' | 'fallback';
 }> {
   const store = await cookies();
@@ -65,6 +68,7 @@ async function loadSystemTemplates(): Promise<{
     return {
       systemTemplates: fallbackSystemTemplates(),
       systemPermissions: { canDuplicateSystemPrompts: false },
+      stageDefaults: {},
       source: 'fallback',
     };
   }
@@ -80,6 +84,7 @@ async function loadSystemTemplates(): Promise<{
       return {
         systemTemplates: fallbackSystemTemplates(),
         systemPermissions: { canDuplicateSystemPrompts: false },
+        stageDefaults: {},
         source: 'fallback',
       };
     }
@@ -105,15 +110,26 @@ async function loadSystemTemplates(): Promise<{
     const perms = (data as any)?.permissions;
     const canDuplicate = perms?.canDuplicateSystemPrompts === true;
 
+    const stageDefaults: StageDefaultPromptTemplates = {};
+    const rawDefaults = (data as any)?.stageDefaults;
+    if (rawDefaults && typeof rawDefaults === 'object') {
+      for (const st of SYSTEM_STAGES) {
+        const key = (rawDefaults as any)[st];
+        if (typeof key === 'string' && key.trim()) stageDefaults[st] = key.trim();
+      }
+    }
+
     return {
       systemTemplates: templates,
       systemPermissions: { canDuplicateSystemPrompts: canDuplicate },
+      stageDefaults,
       source: 'backend',
     };
   } catch {
     return {
       systemTemplates: fallbackSystemTemplates(),
       systemPermissions: { canDuplicateSystemPrompts: false },
+      stageDefaults: {},
       source: 'fallback',
     };
   }
@@ -163,6 +179,7 @@ export async function listPromptTemplates(): Promise<{
   askOnEachProcess: boolean;
   systemTemplates: SystemPromptTemplateMeta[];
   systemPermissions: SystemPromptPermissions;
+  stageDefaults: StageDefaultPromptTemplates;
 }> {
   const user = await requireAuth();
   if (!user) {
@@ -188,7 +205,7 @@ export async function listPromptTemplates(): Promise<{
   const settingsDoc = await getDoc(doc(db, 'users', user.uid, 'promptSettings', 'active'));
   const activeDoc = (settingsDoc.exists() ? settingsDoc.data() : {}) as any;
 
-  const { systemTemplates, systemPermissions, source } = await loadSystemTemplates();
+  const { systemTemplates, systemPermissions, stageDefaults, source } = await loadSystemTemplates();
 
   const userTemplateIdsByStage = new Map<PromptStage, Set<string>>();
   for (const stage of SYSTEM_STAGES) {
@@ -213,65 +230,93 @@ export async function listPromptTemplates(): Promise<{
   if (source === 'backend') {
     const sanitizedActive: ActivePromptSelections = { ...activeTemplates };
     let changed = false;
+    const settingsRef = doc(db, 'users', user.uid, 'promptSettings', 'active');
+    const patch: Record<string, any> = { updatedAt: serverTimestamp() };
 
     for (const stage of SYSTEM_STAGES) {
-      const selected =
-        (sanitizedActive[stage] as string | undefined) || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
       const userIds = userTemplateIdsByStage.get(stage) || new Set<string>();
       const systemKeys = systemKeysByStage.get(stage) || new Set<string>();
 
-      // One-time migration: move legacy v1 defaults ("default" or missing) to v2.
-      if (defaultsVersion < PROMPT_DEFAULTS_VERSION) {
-        if (!sanitizedActive[stage] || selected === LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY) {
-          sanitizedActive[stage] = DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
-          changed = true;
-        }
-      }
+      const raw = sanitizedActive[stage] as unknown;
+      const selected = typeof raw === 'string' ? raw.trim() : raw != null ? String(raw).trim() : '';
 
-      // Keep valid user templates.
-      if (selected && selected !== LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY && userIds.has(selected)) {
+      // One-time migration (v3): clear implicit defaults so admin defaults can apply.
+      if (
+        defaultsVersion < PROMPT_DEFAULTS_VERSION &&
+        selected &&
+        (selected === LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY || selected === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY)
+      ) {
+        delete sanitizedActive[stage];
+        patch[`activeTemplates.${stage}`] = deleteField();
+        changed = true;
         continue;
       }
 
-      // System selection (or unknown) must be currently selectable; otherwise fall back to newest.
-      if (!systemKeys.has(selected)) {
-        const fallbackKey =
-          pickNewestSystemTemplateKeyForStage(stage, systemTemplates) ||
-          DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
-        if (fallbackKey !== selected) {
-          sanitizedActive[stage] = fallbackKey;
-          changed = true;
-        }
+      // Keep empty (unset): fall back to admin/system defaults at runtime.
+      if (!selected) {
+        continue;
+      }
+
+      // Keep valid user templates.
+      if (selected !== LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY && userIds.has(selected)) {
+        continue;
+      }
+
+      // Keep currently selectable system templates.
+      if (systemKeys.has(selected)) {
+        continue;
+      }
+
+      // Invalid selection (deleted template or no longer selectable system key) -> fall back to newest system template.
+      const fallbackKey =
+        pickNewestSystemTemplateKeyForStage(stage, systemTemplates) || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
+      if (fallbackKey !== selected) {
+        sanitizedActive[stage] = fallbackKey;
+        patch[`activeTemplates.${stage}`] = fallbackKey;
+        changed = true;
       }
     }
 
     if (defaultsVersion < PROMPT_DEFAULTS_VERSION) {
       defaultsVersion = PROMPT_DEFAULTS_VERSION;
+      patch.promptDefaultsVersion = defaultsVersion;
       changed = true;
     }
 
     if (changed) {
-      const settingsRef = doc(db, 'users', user.uid, 'promptSettings', 'active');
-      await setDoc(
-        settingsRef,
-        {
-          activeTemplates: sanitizedActive,
-          promptDefaultsVersion: defaultsVersion,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      if (settingsDoc.exists()) {
+        await updateDoc(settingsRef, patch);
+      } else {
+        await setDoc(
+          settingsRef,
+          {
+            activeTemplates: sanitizedActive,
+            promptDefaultsVersion: defaultsVersion,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
     }
 
     returnedActive = sanitizedActive;
   } else if (defaultsVersion < PROMPT_DEFAULTS_VERSION) {
     const nextActive: ActivePromptSelections = { ...activeTemplates };
     let changed = false;
+    const settingsRef = doc(db, 'users', user.uid, 'promptSettings', 'active');
+    const patch: Record<string, any> = {
+      updatedAt: serverTimestamp(),
+      promptDefaultsVersion: PROMPT_DEFAULTS_VERSION,
+    };
 
     for (const stage of SYSTEM_STAGES) {
-      const selected = (nextActive[stage] as string | undefined) || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
-      if (!nextActive[stage] || selected === LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY) {
-        nextActive[stage] = DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
+      const raw = nextActive[stage] as unknown;
+      const selected = typeof raw === 'string' ? raw.trim() : raw != null ? String(raw).trim() : '';
+
+      if (selected && (selected === LEGACY_SYSTEM_PROMPT_TEMPLATE_KEY || selected === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY)) {
+        delete nextActive[stage];
+        patch[`activeTemplates.${stage}`] = deleteField();
         changed = true;
       }
     }
@@ -280,16 +325,20 @@ export async function listPromptTemplates(): Promise<{
     changed = true;
 
     if (changed) {
-      const settingsRef = doc(db, 'users', user.uid, 'promptSettings', 'active');
-      await setDoc(
-        settingsRef,
-        {
-          activeTemplates: nextActive,
-          promptDefaultsVersion: defaultsVersion,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      if (settingsDoc.exists()) {
+        await updateDoc(settingsRef, patch);
+      } else {
+        await setDoc(
+          settingsRef,
+          {
+            activeTemplates: nextActive,
+            promptDefaultsVersion: defaultsVersion,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
     }
 
     returnedActive = nextActive;
@@ -301,6 +350,7 @@ export async function listPromptTemplates(): Promise<{
     askOnEachProcess: Boolean(activeDoc.askOnEachProcess),
     systemTemplates,
     systemPermissions,
+    stageDefaults,
   };
 }
 
@@ -381,14 +431,11 @@ export async function deletePromptTemplate(id: string) {
   if (settingsSnap.exists()) {
     const active = settingsSnap.data()?.activeTemplates || {};
     if (active[stage] === id) {
-      await setDoc(
-        settingsRef,
-        {
-          activeTemplates: { ...active, [stage]: DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY },
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      await updateDoc(settingsRef, {
+        [`activeTemplates.${stage}`]: deleteField(),
+        promptDefaultsVersion: PROMPT_DEFAULTS_VERSION,
+        updatedAt: serverTimestamp(),
+      });
     }
   }
 
@@ -396,7 +443,7 @@ export async function deletePromptTemplate(id: string) {
   revalidatePath('/profil');
 }
 
-export async function setActivePrompt(stage: PromptStage, templateId: string | 'default') {
+export async function setActivePrompt(stage: PromptStage, templateId: string | null) {
   const user = await requireAuth();
   if (!user) {
     throw new Error('Not authenticated');
@@ -405,14 +452,37 @@ export async function setActivePrompt(stage: PromptStage, templateId: string | '
   const settingsRef = doc(db, 'users', user.uid, 'promptSettings', 'active');
   const existing = await getDoc(settingsRef);
   const current = existing.exists() ? existing.data()?.activeTemplates || {} : {};
-  await setDoc(
-    settingsRef,
-    {
-      activeTemplates: { ...current, [stage]: templateId },
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
+
+  if (typeof templateId !== 'string' || !templateId.trim()) {
+    if (existing.exists()) {
+      await updateDoc(settingsRef, {
+        [`activeTemplates.${stage}`]: deleteField(),
+        promptDefaultsVersion: PROMPT_DEFAULTS_VERSION,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(
+        settingsRef,
+        {
+          activeTemplates: {},
+          promptDefaultsVersion: PROMPT_DEFAULTS_VERSION,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+  } else {
+    await setDoc(
+      settingsRef,
+      {
+        activeTemplates: { ...current, [stage]: templateId.trim() },
+        promptDefaultsVersion: PROMPT_DEFAULTS_VERSION,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
 
   revalidatePath('/profil');
 }

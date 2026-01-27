@@ -190,6 +190,11 @@ class AdminSetActiveUserPromptRequest(BaseModel):
     templateId: str
 
 
+class AdminSetStageDefaultPromptRequest(BaseModel):
+    stage: str
+    templateKey: str | None = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown"""
@@ -2511,9 +2516,11 @@ async def admin_delete_user_prompt_template(
             settings = settings_snap.to_dict() or {}
             active = settings.get("activeTemplates", {}) or {}
             if isinstance(active, dict) and active.get(stage_norm) == tpl_id:
-                active_next = {**active, stage_norm: "default_v2"}
                 settings_ref.set(
-                    {"activeTemplates": active_next, "updatedAt": SERVER_TIMESTAMP},
+                    {
+                        f"activeTemplates.{stage_norm}": firestore.DELETE_FIELD,
+                        "updatedAt": SERVER_TIMESTAMP,
+                    },
                     merge=True,
                 )
 
@@ -3181,11 +3188,26 @@ async def list_system_prompt_templates(
                     }
                 )
 
+        cfg = await firebase_service.get_admin_prompt_defaults()
+        stage_defaults_raw = (
+            (cfg or {}).get("stageDefaults") if isinstance(cfg, dict) else None
+        )
+        stage_defaults_out: dict[str, str] = {}
+        if isinstance(stage_defaults_raw, dict):
+            for k, v in stage_defaults_raw.items():
+                st = str(k or "").strip()
+                if st not in ALLOWED_PROMPT_STAGES:
+                    continue
+                key = str(v or "").strip()
+                if key:
+                    stage_defaults_out[st] = key
+
         return {
             "templates": templates_out,
             "permissions": {
                 "canDuplicateSystemPrompts": can_duplicate,
             },
+            "stageDefaults": stage_defaults_out,
         }
     except Exception:
         raise HTTPException(
@@ -3314,6 +3336,62 @@ async def admin_upsert_system_prompt_template(
         raise HTTPException(
             status_code=500, detail="Failed to upsert system prompt template."
         ) from None
+
+
+@app.get("/api/admin/prompt-defaults")
+async def admin_get_prompt_defaults(
+    _: str = Depends(verify_admin_user),
+):
+    """Get global admin per-stage default system templates."""
+    try:
+        cfg = await firebase_service.get_admin_prompt_defaults()
+        raw = (cfg or {}).get("stageDefaults") if isinstance(cfg, dict) else None
+        out: dict[str, str] = {}
+        if isinstance(raw, dict):
+            for stage in sorted(ALLOWED_PROMPT_STAGES):
+                key = raw.get(stage)
+                if isinstance(key, str) and key.strip():
+                    out[stage] = key.strip()
+        return {"stageDefaults": out}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to load prompt defaults.") from None
+
+
+@app.post("/api/admin/prompt-defaults")
+async def admin_set_prompt_default(
+    payload: AdminSetStageDefaultPromptRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Set (or clear) the global admin per-stage default system template."""
+    stage_norm = _validate_prompt_stage(payload.stage)
+    template_key_raw = str(payload.templateKey or "").strip()
+
+    # Clearing reverts to built-in default_v2.
+    if not template_key_raw:
+        try:
+            await firebase_service.set_admin_prompt_default_key(stage_norm, None)
+            prompt_service.invalidate_admin_defaults_cache()
+            return {"status": "ok"}
+        except Exception:
+            raise HTTPException(status_code=500, detail="Failed to save prompt default.") from None
+
+    key_norm = _validate_template_key(template_key_raw)
+
+    if key_norm not in SYSTEM_TEMPLATE_KEYS_ALWAYS_AVAILABLE:
+        sys_tpl = await firebase_service.get_system_prompt_template(stage_norm, key_norm)
+        if not sys_tpl:
+            raise HTTPException(status_code=404, detail="System prompt template not found.")
+        if bool(sys_tpl.get("published", True) is not True) or bool(
+            sys_tpl.get("archived", False) is True
+        ):
+            raise HTTPException(status_code=400, detail="System prompt template not available.")
+
+    try:
+        await firebase_service.set_admin_prompt_default_key(stage_norm, key_norm)
+        prompt_service.invalidate_admin_defaults_cache()
+        return {"status": "ok"}
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to save prompt default.") from None
 
 
 def _require_admin(credentials: HTTPBasicCredentials = Depends(basic_security)) -> None:
@@ -3717,7 +3795,9 @@ async def generate_gliederung(
 
     await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
-    prompt_template_id = await firebase_service.get_active_prompt_id(user_id, "gliederung")
+    prompt_template_id, _ = await prompt_service.resolve_active_template_id(
+        user_id, "gliederung"
+    )
     prompt_template_id = (prompt_template_id or "").strip() or "default_v2"
 
     draft_id = await gliederung_service.create_draft_placeholder(

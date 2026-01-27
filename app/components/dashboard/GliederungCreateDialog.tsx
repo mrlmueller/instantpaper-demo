@@ -11,7 +11,14 @@ import {
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import type { ActivePromptSelections, PromptStage, PromptTemplate, SystemPromptTemplateMeta } from "@/app/types/prompts"
+import type {
+  ActivePromptSelections,
+  PromptStage,
+  PromptTemplate,
+  StageDefaultPromptTemplates,
+  SystemPromptTemplateMeta,
+} from "@/app/types/prompts"
+import { DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY } from "@/app/lib/prompts/promptConfig"
 import { cn } from "@/lib/utils"
 
 export type GliederungModel = "gpt-5-nano" | "gpt-5-mini" | "gpt-5.2"
@@ -21,7 +28,7 @@ export interface GliederungGenerateSettings {
   aufgabenstellung: string
   gliederungStudienbriefMitSeiten: string
   extraKontext: string
-  promptChoice?: Partial<Record<PromptStage, string | "default">>
+  promptChoice?: Partial<Record<PromptStage, string>>
 }
 
 const DEFAULT_GLIEDERUNG_MODEL: GliederungModel = process.env.NODE_ENV === "production" ? "gpt-5.2" : "gpt-5-nano"
@@ -33,6 +40,7 @@ interface GliederungCreateDialogProps {
   askOnEachProcess: boolean
   promptTemplates: PromptTemplate[]
   systemPromptTemplates: SystemPromptTemplateMeta[]
+  stageDefaults: StageDefaultPromptTemplates
   promptActive: ActivePromptSelections
   isGenerating: boolean
 }
@@ -44,6 +52,7 @@ export function GliederungCreateDialog({
   askOnEachProcess,
   promptTemplates,
   systemPromptTemplates,
+  stageDefaults,
   promptActive,
   isGenerating,
 }: GliederungCreateDialogProps) {
@@ -56,8 +65,11 @@ export function GliederungCreateDialog({
   const [localGenerating, setLocalGenerating] = useState(false)
   const prevOpenRef = useRef(open)
 
-  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
-    gliederung: (promptActive?.gliederung as string | "default") || "default",
+  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string>>>({
+    gliederung:
+      (promptActive?.gliederung as string | undefined) ||
+      (stageDefaults?.gliederung as string | undefined) ||
+      DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
   })
   const [hasTouchedPromptChoice, setHasTouchedPromptChoice] = useState(false)
 
@@ -85,9 +97,12 @@ export function GliederungCreateDialog({
     }
     if (hasTouchedPromptChoice) return
     setPromptChoice({
-      gliederung: (promptActive?.gliederung as string | "default") || "default",
+      gliederung:
+        (promptActive?.gliederung as string | undefined) ||
+        (stageDefaults?.gliederung as string | undefined) ||
+        DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
     })
-  }, [open, promptActive?.gliederung, hasTouchedPromptChoice])
+  }, [open, promptActive?.gliederung, stageDefaults?.gliederung, hasTouchedPromptChoice])
 
   useEffect(() => {
     const wasOpen = prevOpenRef.current
@@ -112,7 +127,7 @@ export function GliederungCreateDialog({
         aufgabenstellung: settings.aufgabenstellung.trim(),
         gliederungStudienbriefMitSeiten: settings.gliederungStudienbriefMitSeiten.trim(),
         extraKontext: settings.extraKontext.trim(),
-        promptChoice,
+        ...(showPromptSelectors ? { promptChoice } : {}),
       })
     } finally {
       setLocalGenerating(false)
@@ -134,7 +149,10 @@ export function GliederungCreateDialog({
   const renderPromptSelect = () => {
     const hasSystemOptions = stageSystemTemplates.length > 0
     if (!hasSystemOptions && stageTemplates.length === 0) return null
-    const value = promptChoice.gliederung || "default"
+    const value =
+      promptChoice.gliederung ||
+      (stageDefaults?.gliederung as string | undefined) ||
+      DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
     return (
       <div className="space-y-2">
         <Label className="text-sm font-medium">Prompt‑Vorlage</Label>
@@ -143,7 +161,7 @@ export function GliederungCreateDialog({
           onValueChange={(val) =>
             setPromptChoice((prev) => {
               setHasTouchedPromptChoice(true)
-              return { ...prev, gliederung: val as string | "default" }
+              return { ...prev, gliederung: val }
             })
           }
         >

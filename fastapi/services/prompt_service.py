@@ -1,6 +1,6 @@
 from services.firebase_service import firebase_service
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -382,6 +382,8 @@ Komprimiere den folgenden Text zu einer deutlich kürzeren Fassung, ohne neue In
 
 
 class PromptService:
+    PROMPT_DEFAULTS_VERSION = 3
+
     REQUIRED_PLACEHOLDERS = {
         "process_quelle": [
             "{KAPITEL_TITEL}",
@@ -407,7 +409,102 @@ class PromptService:
     }
 
     def __init__(self):
-        pass
+        self._admin_defaults_cache: dict[str, str] | None = None
+        self._admin_defaults_cache_time: datetime | None = None
+        self._admin_defaults_cache_ttl = timedelta(seconds=60)
+
+    def invalidate_admin_defaults_cache(self) -> None:
+        self._admin_defaults_cache = None
+        self._admin_defaults_cache_time = None
+
+    async def _get_admin_default_map(self) -> dict[str, str]:
+        now = datetime.now(timezone.utc)
+        if (
+            self._admin_defaults_cache is not None
+            and self._admin_defaults_cache_time is not None
+            and now - self._admin_defaults_cache_time < self._admin_defaults_cache_ttl
+        ):
+            return self._admin_defaults_cache
+
+        try:
+            cfg = await firebase_service.get_admin_prompt_defaults()
+        except Exception:
+            cfg = {}
+
+        stage_defaults = (cfg or {}).get("stageDefaults") if isinstance(cfg, dict) else None
+        out: dict[str, str] = {}
+        if isinstance(stage_defaults, dict):
+            for k, v in stage_defaults.items():
+                stage = str(k or "").strip()
+                key = str(v or "").strip()
+                if stage and key:
+                    out[stage] = key
+
+        self._admin_defaults_cache = out
+        self._admin_defaults_cache_time = now
+        return out
+
+    async def get_admin_default_template_key(self, stage: str) -> str | None:
+        stage_norm = (stage or "").strip()
+        if not stage_norm:
+            return None
+        defaults = await self._get_admin_default_map()
+        key = str((defaults or {}).get(stage_norm) or "").strip()
+        return key or None
+
+    async def resolve_stage_default_template_id(self, stage: str) -> tuple[str, str]:
+        """
+        Resolve the default template key for a stage (admin override -> system default).
+
+        Returns: (template_id, source) where source is "admin" or "system".
+        """
+        admin_key = await self.get_admin_default_template_key(stage)
+        if admin_key:
+            return admin_key, "admin"
+        return "default_v2", "system"
+
+    async def resolve_active_template_id(self, user_id: str, stage: str) -> tuple[str, str]:
+        """
+        Resolve the effective template ID for a stage for a user.
+
+        Order:
+          1) user selection (promptSettings/active.activeTemplates[stage])
+          2) admin default for the stage (_config/promptDefaults)
+          3) system default ("default_v2")
+
+        Returns: (template_id, source) where source is "user" | "admin" | "system".
+        """
+        uid = (user_id or "").strip()
+        stage_norm = (stage or "").strip()
+        if not uid or not stage_norm:
+            return "default_v2", "system"
+
+        settings = await firebase_service.get_prompt_settings(uid)
+        active = (settings or {}).get("activeTemplates", {}) if isinstance(settings, dict) else {}
+        defaults_version = 0
+        try:
+            defaults_version = int((settings or {}).get("promptDefaultsVersion") or 0)
+        except Exception:
+            defaults_version = 0
+
+        selected = ""
+        if isinstance(active, dict):
+            raw = active.get(stage_norm)
+            if isinstance(raw, str):
+                selected = raw.strip()
+            elif raw is not None:
+                selected = str(raw).strip()
+
+        # Migration compatibility:
+        # Prior to PROMPT_DEFAULTS_VERSION=3, many users had "default" / "default_v2" stored as an implicit default.
+        # Treat these as "unset" so admin defaults can take effect.
+        if defaults_version < self.PROMPT_DEFAULTS_VERSION and selected in {"default", "default_v2"}:
+            selected = ""
+
+        if selected:
+            return selected, "user"
+
+        return await self.resolve_stage_default_template_id(stage_norm)
 
     def _is_system_template_usable(self, tpl: dict | None) -> bool:
         if not tpl:
@@ -462,7 +559,9 @@ class PromptService:
         - any other existing system templateKey: server-only, stored in Firestore
         - any other string: user-owned promptTemplates/{templateId}
         """
-        tid = (template_id or "").strip() or "default_v2"
+        tid = (template_id or "").strip()
+        if not tid:
+            tid, _ = await self.resolve_stage_default_template_id(stage)
 
         sys_tpl = await firebase_service.get_system_prompt_template(stage, tid)
         if sys_tpl:
@@ -500,28 +599,33 @@ class PromptService:
         if tpl and (tpl.get("instructions") or "").strip():
             return tpl["instructions"]
 
-        # Unknown template id -> safe fallback to the current system default (v2).
-        return await self.get_instructions_for_template(user_id, stage, "default_v2")
+        # Unknown template id -> safe fallback to the configured stage default.
+        fallback_id, _ = await self.resolve_stage_default_template_id(stage)
+        if fallback_id and fallback_id != tid:
+            return await self.get_instructions_for_template(user_id, stage, fallback_id)
+        return DEFAULT_INSTRUCTIONS.get(stage, "")
 
     async def get_instructions(self, user_id: str, stage: str) -> str:
         """Return active instructions for a stage or default."""
-        active_id = (await firebase_service.get_active_prompt_id(user_id, stage)) or "default_v2"
+        active_id, source = await self.resolve_active_template_id(user_id, stage)
         active_id = (active_id or "").strip() or "default_v2"
 
         # If the user selected an archived/unpublished system template, auto-migrate them to the newest one.
-        sys_tpl = await firebase_service.get_system_prompt_template(stage, active_id)
-        if sys_tpl and (
-            not self._is_system_template_usable(sys_tpl) or not (sys_tpl.get("instructions") or "").strip()
-        ):
-            fallback_key = await self._get_newest_system_template_key(stage)
-            next_id = fallback_key or "default_v2"
-            if next_id and next_id != active_id:
-                try:
-                    await firebase_service.set_active_prompt_id(user_id, stage, next_id)
-                    active_id = next_id
-                except Exception:
-                    # Safe fallback: don't block the request if the migration write fails.
-                    active_id = next_id
+        # IMPORTANT: Only migrate user-selected templates; never write per-user overrides for admin/system defaults.
+        if source == "user":
+            sys_tpl = await firebase_service.get_system_prompt_template(stage, active_id)
+            if sys_tpl and (
+                not self._is_system_template_usable(sys_tpl) or not (sys_tpl.get("instructions") or "").strip()
+            ):
+                fallback_key = await self._get_newest_system_template_key(stage)
+                next_id = fallback_key or "default_v2"
+                if next_id and next_id != active_id:
+                    try:
+                        await firebase_service.set_active_prompt_id(user_id, stage, next_id)
+                        active_id = next_id
+                    except Exception:
+                        # Safe fallback: don't block the request if the migration write fails.
+                        active_id = next_id
 
         return await self.get_instructions_for_template(user_id, stage, active_id)
 
@@ -537,7 +641,9 @@ class PromptService:
         For now, only server-only system templates can define a system prompt.
         User templates use the stage's built-in system prompt in code.
         """
-        tid = (template_id or "").strip() or "default_v2"
+        tid = (template_id or "").strip()
+        if not tid:
+            tid, _ = await self.resolve_stage_default_template_id(stage)
 
         sys_tpl = await firebase_service.get_system_prompt_template(stage, tid)
         if sys_tpl and not self._is_system_template_usable(sys_tpl):

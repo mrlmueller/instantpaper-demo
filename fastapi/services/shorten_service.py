@@ -151,11 +151,13 @@ class ShortenService:
             else:
                 logger.info(f"Cached summary invalid for Kapitel {source_kapitel_id}, regenerating")
 
-        instructions = await prompt_service.get_rendered_instructions(
-            user_id, "summary", {"KAPITELTEXT": source_text}
+        summary_template_id, _ = await prompt_service.resolve_active_template_id(user_id, "summary")
+        instructions = await prompt_service.get_rendered_instructions_for_template(
+            user_id=user_id,
+            stage="summary",
+            template_id=summary_template_id,
+            payload={"KAPITELTEXT": source_text},
         )
-        summary_template_id = await firebase_service.get_active_prompt_id(user_id, "summary")
-        summary_template_id = (summary_template_id or "").strip() or "default_v2"
         summary_system_prompt = await prompt_service.get_system_prompt_for_template(
             stage="summary",
             template_id=summary_template_id,
@@ -600,7 +602,7 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
             # Step 3: Shorten the target text
             logger.info("Shortening target Kapitel text")
 
-            active_template_id = await firebase_service.get_active_prompt_id(user_id, "shorten")
+            active_template_id, _ = await prompt_service.resolve_active_template_id(user_id, "shorten")
             template_instructions = await prompt_service.get_instructions_for_template(
                 user_id, "shorten", active_template_id
             )
@@ -1086,7 +1088,7 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
             # Step 4: Call OpenAI to improve reading flow
             logger.info("Improving reading flow for target Kapitel text")
 
-            active_template_id = await firebase_service.get_active_prompt_id(user_id, "lesefluss")
+            active_template_id, _ = await prompt_service.resolve_active_template_id(user_id, "lesefluss")
             template_instructions = await prompt_service.get_instructions_for_template(
                 user_id, "lesefluss", active_template_id
             )

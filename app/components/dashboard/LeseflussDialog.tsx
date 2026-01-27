@@ -17,7 +17,14 @@ import { Sparkles, AlertCircle, MessageSquareText, ChevronRight, Loader2 } from 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import type { Kapitel } from "@/app/types/ui"
-import type { ActivePromptSelections, PromptStage, PromptTemplate, SystemPromptTemplateMeta } from "@/app/types/prompts"
+import type {
+  ActivePromptSelections,
+  PromptStage,
+  PromptTemplate,
+  StageDefaultPromptTemplates,
+  SystemPromptTemplateMeta,
+} from "@/app/types/prompts"
+import { DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY } from "@/app/lib/prompts/promptConfig"
 import { getKapitelsWithShortenedText } from "@/app/actions/kapitels"
 import { getLeseflussAufgabenstellung, setLeseflussAufgabenstellung } from "@/app/lib/storage/preferences"
 
@@ -31,11 +38,12 @@ interface LeseflussDialogProps {
   onLesefluss: (
     contextKapitelIds: string[],
     aufgabenstellung: string,
-    promptChoice?: Partial<Record<PromptStage, string | "default">>
+    promptChoice?: Partial<Record<PromptStage, string>>
   ) => Promise<void>
   askOnEachProcess: boolean
   promptTemplates: PromptTemplate[]
   systemPromptTemplates: SystemPromptTemplateMeta[]
+  stageDefaults: StageDefaultPromptTemplates
   promptActive: ActivePromptSelections
   isLeseflussLoading: boolean
 }
@@ -51,6 +59,7 @@ export function LeseflussDialog({
   askOnEachProcess,
   promptTemplates,
   systemPromptTemplates,
+  stageDefaults,
   promptActive,
   isLeseflussLoading,
 }: LeseflussDialogProps) {
@@ -58,9 +67,15 @@ export function LeseflussDialog({
   const [aufgabenstellung, setAufgabenstellung] = useState("")
   const [shortenedAvailability, setShortenedAvailability] = useState<Record<string, boolean> | null>(null)
   const [shortenedAvailabilityLoading, setShortenedAvailabilityLoading] = useState(false)
-  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
-    summary: (promptActive?.summary as string | "default") || "default",
-    lesefluss: (promptActive?.lesefluss as string | "default") || "default",
+  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string>>>({
+    summary:
+      (promptActive?.summary as string | undefined) ||
+      (stageDefaults?.summary as string | undefined) ||
+      DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
+    lesefluss:
+      (promptActive?.lesefluss as string | undefined) ||
+      (stageDefaults?.lesefluss as string | undefined) ||
+      DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
   })
   const [hasTouchedPromptChoice, setHasTouchedPromptChoice] = useState(false)
   const [localLeseflussLoading, setLocalLeseflussLoading] = useState(false)
@@ -139,13 +154,21 @@ export function LeseflussDialog({
     }
     if (hasTouchedPromptChoice) return
     setPromptChoice({
-      summary: (promptActive?.summary as string | "default") || "default",
-      lesefluss: (promptActive?.lesefluss as string | "default") || "default",
+      summary:
+        (promptActive?.summary as string | undefined) ||
+        (stageDefaults?.summary as string | undefined) ||
+        DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
+      lesefluss:
+        (promptActive?.lesefluss as string | undefined) ||
+        (stageDefaults?.lesefluss as string | undefined) ||
+        DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
     })
   }, [
     open,
     promptActive?.summary,
     promptActive?.lesefluss,
+    stageDefaults?.summary,
+    stageDefaults?.lesefluss,
     hasTouchedPromptChoice,
   ])
 
@@ -162,7 +185,11 @@ export function LeseflussDialog({
     try {
       const trimmedAufgabenstellung = aufgabenstellung.trim()
       setLeseflussAufgabenstellung(projektId, trimmedAufgabenstellung)
-      await onLesefluss(selectedIds, trimmedAufgabenstellung, promptChoice)
+      await onLesefluss(
+        selectedIds,
+        trimmedAufgabenstellung,
+        showPromptSelectors ? promptChoice : undefined
+      )
       setSelectedIds([])
       setAufgabenstellung(trimmedAufgabenstellung)
     } finally {
@@ -196,7 +223,10 @@ export function LeseflussDialog({
     const stageSystemTemplates = systemTemplatesByStage(stage)
     const hasSystemOptions = stageSystemTemplates.length > 0
     if (!hasSystemOptions && stageTemplates.length === 0) return null
-    const value = promptChoice[stage] || "default"
+    const value =
+      promptChoice[stage] ||
+      (stageDefaults?.[stage] as string | undefined) ||
+      DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
     return (
       <div className="space-y-2">
         <Label className="text-sm">Prompt für {label}</Label>
@@ -207,7 +237,7 @@ export function LeseflussDialog({
               setHasTouchedPromptChoice(true)
               return {
                 ...prev,
-                [stage]: val as string | "default",
+                [stage]: val,
               }
             })
           }

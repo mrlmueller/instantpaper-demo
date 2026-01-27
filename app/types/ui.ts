@@ -5,6 +5,7 @@ export interface Projekt {
   id: string;
   name: string;
   createdAt: Date;
+  updatedAt?: Date;
   archived?: boolean;
 }
 
@@ -115,7 +116,7 @@ export interface ProcessingSettings {
   thema: string; // Topic/instruction
   grundlegendeInfos: string; // Basic/contextual information
   directCombine: boolean; // Maps to Firebase 'autoCombine'
-  promptChoice?: Partial<Record<import("./prompts").PromptStage, string | "default">>; // Optional user-selected prompts
+  promptChoice?: Partial<Record<import("./prompts").PromptStage, string>>; // Optional user-selected prompts
 }
 
 // User and stats types for profile page (currently using mock data)

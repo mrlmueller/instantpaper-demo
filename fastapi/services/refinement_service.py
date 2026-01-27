@@ -927,7 +927,7 @@ class RefinementService:
                 user_id, kapitel_id, all_kapitels, summaries
             )
 
-            active_template_id = await firebase_service.get_active_prompt_id(
+            active_template_id, _ = await prompt_service.resolve_active_template_id(
                 user_id, "shorten"
             )
             template_instructions = await prompt_service.get_instructions_for_template(
@@ -1436,7 +1436,7 @@ class RefinementService:
                 user_id, kapitel_id, all_kapitels, summaries
             )
 
-            active_template_id = await firebase_service.get_active_prompt_id(
+            active_template_id, _ = await prompt_service.resolve_active_template_id(
                 user_id, "lesefluss"
             )
             template_instructions = await prompt_service.get_instructions_for_template(
@@ -1843,9 +1843,11 @@ class RefinementService:
 
             base_user_input = (result_doc.get("userInput") or "").strip()
             # Prompts are no longer stored on result docs (hidden from user). Reconstruct from run settings.
-            prompt_template_id = (
-                (run or {}).get("promptTemplateId") or ""
-            ).strip() or "default_v2"
+            prompt_template_id = str(((run or {}).get("promptTemplateId") or "")).strip()
+            if not prompt_template_id:
+                prompt_template_id, _ = await prompt_service.resolve_active_template_id(
+                    user_id, "process_quelle"
+                )
 
             if not base_user_input:
 

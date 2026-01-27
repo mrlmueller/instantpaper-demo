@@ -13,7 +13,14 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import type { Kapitel } from "@/app/types/ui"
-import type { ActivePromptSelections, PromptStage, PromptTemplate, SystemPromptTemplateMeta } from "@/app/types/prompts"
+import type {
+  ActivePromptSelections,
+  PromptStage,
+  PromptTemplate,
+  StageDefaultPromptTemplates,
+  SystemPromptTemplateMeta,
+} from "@/app/types/prompts"
+import { DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY } from "@/app/lib/prompts/promptConfig"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -27,11 +34,12 @@ interface ShortenDialogProps {
   runModel: string
   onShorten: (
     contextKapitelIds: string[],
-    promptChoice?: Partial<Record<PromptStage, string | "default">>
+    promptChoice?: Partial<Record<PromptStage, string>>
   ) => Promise<void>
   askOnEachProcess: boolean
   promptTemplates: PromptTemplate[]
   systemPromptTemplates: SystemPromptTemplateMeta[]
+  stageDefaults: StageDefaultPromptTemplates
   promptActive: ActivePromptSelections
   isShortening: boolean
 }
@@ -46,15 +54,22 @@ export function ShortenDialog({
   askOnEachProcess,
   promptTemplates,
   systemPromptTemplates,
+  stageDefaults,
   promptActive,
   isShortening,
 }: ShortenDialogProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [combinedAvailability, setCombinedAvailability] = useState<Record<string, boolean> | null>(null)
   const [combinedAvailabilityLoading, setCombinedAvailabilityLoading] = useState(false)
-  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
-    summary: (promptActive?.summary as string | "default") || "default",
-    shorten: (promptActive?.shorten as string | "default") || "default",
+  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string>>>({
+    summary:
+      (promptActive?.summary as string | undefined) ||
+      (stageDefaults?.summary as string | undefined) ||
+      DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
+    shorten:
+      (promptActive?.shorten as string | undefined) ||
+      (stageDefaults?.shorten as string | undefined) ||
+      DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
   })
   const [hasTouchedPromptChoice, setHasTouchedPromptChoice] = useState(false)
   const [localShortenLoading, setLocalShortenLoading] = useState(false)
@@ -126,13 +141,21 @@ export function ShortenDialog({
     }
     if (hasTouchedPromptChoice) return
     setPromptChoice({
-      summary: (promptActive?.summary as string | "default") || "default",
-      shorten: (promptActive?.shorten as string | "default") || "default",
+      summary:
+        (promptActive?.summary as string | undefined) ||
+        (stageDefaults?.summary as string | undefined) ||
+        DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
+      shorten:
+        (promptActive?.shorten as string | undefined) ||
+        (stageDefaults?.shorten as string | undefined) ||
+        DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
     })
   }, [
     open,
     promptActive?.summary,
     promptActive?.shorten,
+    stageDefaults?.summary,
+    stageDefaults?.shorten,
     hasTouchedPromptChoice,
   ])
 
@@ -141,7 +164,7 @@ export function ShortenDialog({
     setLocalShortenLoading(true)
     onOpenChange(false)
     try {
-      await onShorten(selectedIds, promptChoice)
+      await onShorten(selectedIds, showPromptSelectors ? promptChoice : undefined)
       setSelectedIds([])
     } finally {
       setLocalShortenLoading(false)
@@ -168,13 +191,17 @@ export function ShortenDialog({
       <div className="space-y-2">
         <Label className="text-sm">{label}</Label>
         <Select
-          value={promptChoice[stage] || "default"}
+          value={
+            promptChoice[stage] ||
+            (stageDefaults?.[stage] as string | undefined) ||
+            DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+          }
           onValueChange={(val) =>
             setPromptChoice((prev) => {
               setHasTouchedPromptChoice(true)
               return {
                 ...prev,
-                [stage]: val as string | "default",
+                [stage]: val,
               }
             })
           }

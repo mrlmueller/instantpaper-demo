@@ -40,6 +40,7 @@ import type {
   ActivePromptSelections,
   PromptStage,
   PromptTemplate,
+  StageDefaultPromptTemplates,
   SystemPromptPermissions,
   SystemPromptTemplateMeta,
 } from "@/app/types/prompts";
@@ -70,6 +71,7 @@ type TemplatesResponse = {
   askOnEachProcess?: boolean;
   systemTemplates?: SystemPromptTemplateMeta[];
   systemPermissions?: SystemPromptPermissions;
+  stageDefaults?: StageDefaultPromptTemplates;
 };
 
 const stageOptions: { value: PromptStage; label: string }[] = [
@@ -117,6 +119,7 @@ export function PromptManager() {
   const [systemTemplates, setSystemTemplates] = useState<
     SystemPromptTemplateMeta[]
   >([]);
+  const [stageDefaults, setStageDefaults] = useState<StageDefaultPromptTemplates>({});
   const [canDuplicateSystemPrompts, setCanDuplicateSystemPrompts] =
     useState(false);
   const [active, setActive] = useState<ActivePromptSelections>({});
@@ -158,6 +161,7 @@ export function PromptManager() {
       );
       setActive(data.active || {});
       setAskOnEachProcess(Boolean(data.askOnEachProcess));
+      setStageDefaults((data.stageDefaults || {}) as StageDefaultPromptTemplates);
     } catch (err: any) {
       toast.error("Prompts konnten nicht geladen werden", {
         description: err?.message,
@@ -227,7 +231,7 @@ export function PromptManager() {
   };
 
   const handleSetActive = async (
-    templateId: string | "default",
+    templateId: string | null,
     targetStage?: PromptStage
   ) => {
     const s = targetStage ?? stage;
@@ -239,10 +243,20 @@ export function PromptManager() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Aktiv setzen fehlgeschlagen.");
-      setActive((prev) => ({ ...prev, [s]: templateId }));
+      setActive((prev) => {
+        const next = { ...prev } as any;
+        if (typeof templateId !== "string" || !templateId.trim()) {
+          delete next[s];
+          return next;
+        }
+        next[s] = templateId;
+        return next;
+      });
       toast.success(
-        templateId === "default"
-          ? "System-Standard verwendet"
+        templateId === null
+          ? "App-Standard verwendet"
+          : templateId === "default"
+            ? "System-Standard verwendet"
           : templateId === "default_v2"
             ? "System-Standard (v2) verwendet"
             : "Aktives Prompt gesetzt"
@@ -405,11 +419,14 @@ export function PromptManager() {
               return a.name.localeCompare(b.name, "de");
             });
           const activeId = active[opt.value];
+          const fallbackSystemKey =
+            (stageDefaults?.[opt.value] as string | undefined) ||
+            DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
 
           const activeUserTemplate = stageTemplates.find((t) => t.id === activeId) || null;
           const activeSystemKey =
-            !activeId || activeId === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
-              ? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+            !activeId
+              ? fallbackSystemKey
               : stageSystemTemplates.some((t) => t.templateKey === activeId)
                 ? activeId
                 : null;
@@ -501,9 +518,9 @@ export function PromptManager() {
                   <div className="px-4 pb-4 space-y-3">
                     {stageSystemTemplates.map((sys) => {
                       const isActive =
-                        sys.templateKey === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
-                          ? !activeId || activeId === DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
-                          : activeId === sys.templateKey;
+                        !activeUserTemplate &&
+                        Boolean(activeSystemKey) &&
+                        sys.templateKey === activeSystemKey;
                       const updatedLabel = formatShortDate(sys.updatedAt || sys.createdAt);
                       return (
                         <Card
@@ -630,7 +647,7 @@ export function PromptManager() {
                               size="icon"
                               className="h-8 w-8"
                               onClick={() =>
-                                handleSetActive(isDefault ? "default" : tpl.id, opt.value)
+                                handleSetActive(isDefault ? null : tpl.id, opt.value)
                               }
                               title={isDefault ? "Standard entfernen" : "Als Standard setzen"}
                             >

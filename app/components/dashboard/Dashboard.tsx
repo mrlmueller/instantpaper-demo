@@ -33,6 +33,7 @@ import type {
   PromptTemplate,
   ActivePromptSelections,
   SystemPromptTemplateMeta,
+  StageDefaultPromptTemplates,
 } from '@/app/types/prompts';
 import {
   DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
@@ -112,8 +113,9 @@ type PromptChoiceDialogProps = {
   stages: PromptStage[];
   templates: PromptTemplate[];
   systemTemplates: SystemPromptTemplateMeta[];
+  stageDefaults: StageDefaultPromptTemplates;
   active: ActivePromptSelections;
-  onConfirm: (choices: Record<PromptStage, string | 'default'>) => void;
+  onConfirm: (choices: Record<PromptStage, string>) => void;
   onCancel: () => void;
 };
 
@@ -122,25 +124,32 @@ function PromptSelectDialog({
   stages,
   templates,
   systemTemplates,
+  stageDefaults,
   active,
   onConfirm,
   onCancel,
 }: PromptChoiceDialogProps) {
-  const [choices, setChoices] = useState<Record<PromptStage, string | 'default'>>(() => {
-    const initial = {} as Record<PromptStage, string | 'default'>;
+  const [choices, setChoices] = useState<Record<PromptStage, string>>(() => {
+    const initial = {} as Record<PromptStage, string>;
     stages.forEach((s) => {
-      initial[s] = (active[s] as string | 'default') || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
+      initial[s] =
+        (active[s] as string | undefined) ||
+        (stageDefaults?.[s] as string | undefined) ||
+        DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
     });
     return initial;
   });
 
   useEffect(() => {
-    const init = {} as Record<PromptStage, string | 'default'>;
+    const init = {} as Record<PromptStage, string>;
     stages.forEach((s) => {
-      init[s] = (active[s] as string | 'default') || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
+      init[s] =
+        (active[s] as string | undefined) ||
+        (stageDefaults?.[s] as string | undefined) ||
+        DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
     });
     setChoices(init);
-  }, [stages, active, open]);
+  }, [stages, active, stageDefaults, open]);
 
   return (
     <Dialog open={open} onOpenChange={(val) => !val && onCancel()}>
@@ -174,7 +183,7 @@ function PromptSelectDialog({
                   </div>
                   <Select
                     value={choices[stage] || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY}
-                    onValueChange={(val) => setChoices((prev) => ({ ...prev, [stage]: val as string | 'default' }))}
+                    onValueChange={(val) => setChoices((prev) => ({ ...prev, [stage]: val }))}
                   >
                      <SelectTrigger className="w-64">
                        <SelectValue />
@@ -305,6 +314,7 @@ export function Dashboard({
   const hasShownNoticeRef = useRef(false);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [systemPromptTemplates, setSystemPromptTemplates] = useState<SystemPromptTemplateMeta[]>([]);
+  const [stageDefaults, setStageDefaults] = useState<StageDefaultPromptTemplates>({});
   const [promptActive, setPromptActive] = useState<ActivePromptSelections>({});
   const [askOnEachProcess, setAskOnEachProcess] = useState(false);
   const [gliederungDrafts, setGliederungDrafts] = useState<GliederungDraft[]>([]);
@@ -312,7 +322,7 @@ export function Dashboard({
   const gliederungDraftWasUserSelectedRef = useRef(false);
   const [promptChooser, setPromptChooser] = useState<{
     stages: PromptStage[];
-    resolve: (choices: Record<PromptStage, string | 'default'> | null) => void;
+    resolve: (choices: Record<PromptStage, string> | null) => void;
   } | null>(null);
 
   const computeKapitelIndicatorFromRunDoc = useCallback((runData: any) => {
@@ -2125,6 +2135,7 @@ export function Dashboard({
         if (!res.ok) throw new Error(data.error || 'Prompts konnten nicht geladen werden.');
         setPromptTemplates(data.templates || []);
         setSystemPromptTemplates(Array.isArray(data.systemTemplates) ? data.systemTemplates : []);
+        setStageDefaults((data.stageDefaults || {}) as StageDefaultPromptTemplates);
         setPromptActive(data.active || {});
         setAskOnEachProcess(Boolean(data.askOnEachProcess));
       } catch (err: any) {
@@ -2135,7 +2146,7 @@ export function Dashboard({
     loadPrompts();
   }, []);
 
-  const applyActivePrompt = useCallback(async (stage: PromptStage, templateId: string | 'default') => {
+  const applyActivePrompt = useCallback(async (stage: PromptStage, templateId: string | null) => {
     setPromptActive((prev) => ({ ...prev, [stage]: templateId }));
     try {
       await fetch('/api/prompt-templates/active', {
@@ -2149,7 +2160,7 @@ export function Dashboard({
   }, []);
 
   const requestPromptChoice = useCallback(
-    async (stages: PromptStage[]): Promise<Record<PromptStage, string | 'default'> | null> => {
+    async (stages: PromptStage[]): Promise<Record<PromptStage, string> | null> => {
       // Ensure we have the freshest askOnEachProcess flag in case the user just toggled it elsewhere.
       let shouldAsk = askOnEachProcess;
       if (!askOnEachProcess) {
@@ -2196,7 +2207,7 @@ export function Dashboard({
       try {
         const choice = settings.promptChoice?.gliederung;
         if (askOnEachProcess && typeof choice === 'string' && choice.trim()) {
-          await applyActivePrompt('gliederung', choice as string | 'default');
+          await applyActivePrompt('gliederung', choice.trim());
         }
 
         const response = await fetch(`${API_BASE_URL}/api/gliederung/generate`, {
@@ -2501,6 +2512,9 @@ export function Dashboard({
           if (res.ok) {
             if (Array.isArray(data.templates)) setPromptTemplates(data.templates);
             if (Array.isArray(data.systemTemplates)) setSystemPromptTemplates(data.systemTemplates);
+            if (data.stageDefaults && typeof data.stageDefaults === 'object') {
+              setStageDefaults(data.stageDefaults as StageDefaultPromptTemplates);
+            }
             if (data.active) {
               setPromptActive(data.active);
               activeSnapshot = data.active;
@@ -2512,16 +2526,21 @@ export function Dashboard({
         }
       }
 
+      const fallbackProcess =
+        (stageDefaults.process_quelle as string | undefined) || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
+      const fallbackCombine =
+        (stageDefaults.combine as string | undefined) || DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
+
       const processChoice =
         providedChoices?.process_quelle ??
         choices?.process_quelle ??
-        (activeSnapshot.process_quelle as string | 'default') ??
-        DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY;
+        (activeSnapshot.process_quelle as string | undefined) ??
+        fallbackProcess;
       const combineChoice = settings.directCombine
         ? providedChoices?.combine ??
           choices?.combine ??
-          (activeSnapshot.combine as string | 'default') ??
-          DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+          (activeSnapshot.combine as string | undefined) ??
+          fallbackCombine
         : undefined;
 
       const shouldApplyChoice = Boolean(providedChoices || choices);
@@ -2755,7 +2774,12 @@ export function Dashboard({
         setIsCombining(false);
         return;
       }
-      await applyActivePrompt('combine', choice.combine ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+      await applyActivePrompt(
+        'combine',
+        choice.combine ??
+          (stageDefaults.combine as string | undefined) ??
+          DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+      );
     }
 
     const combineToastId = toast.loading('Texte kombinieren', {
@@ -2965,7 +2989,7 @@ export function Dashboard({
   );
 
   const handleShorten = useCallback(
-    async (contextKapitelIds: string[], promptChoice?: Partial<Record<PromptStage, string | 'default'>>) => {
+    async (contextKapitelIds: string[], promptChoice?: Partial<Record<PromptStage, string>>) => {
       if (!activeKapitel || !selectedRun) return;
 
       if (selectedRun.shortenedStatus === 'running') {
@@ -2995,12 +3019,32 @@ export function Dashboard({
           setIsShortening(false);
           return;
         }
-        await applyActivePrompt('shorten', choice.shorten ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
-        await applyActivePrompt('summary', choice.summary ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+        await applyActivePrompt(
+          'shorten',
+          choice.shorten ??
+            (stageDefaults.shorten as string | undefined) ??
+            DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+        );
+        await applyActivePrompt(
+          'summary',
+          choice.summary ??
+            (stageDefaults.summary as string | undefined) ??
+            DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+        );
       }
       if (providedChoices) {
-        await applyActivePrompt('shorten', providedChoices.shorten ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
-        await applyActivePrompt('summary', providedChoices.summary ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+        await applyActivePrompt(
+          'shorten',
+          providedChoices.shorten ??
+            (stageDefaults.shorten as string | undefined) ??
+            DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+        );
+        await applyActivePrompt(
+          'summary',
+          providedChoices.summary ??
+            (stageDefaults.summary as string | undefined) ??
+            DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+        );
       }
 
       const shortenToastId = toast.loading('Text wird gekürzt', {
@@ -3096,7 +3140,7 @@ export function Dashboard({
     async (
       contextKapitelIds: string[],
       aufgabenstellung: string,
-      promptChoice?: Partial<Record<PromptStage, string | 'default'>>
+      promptChoice?: Partial<Record<PromptStage, string>>
     ) => {
       if (!activeKapitel || !selectedRun) return;
 
@@ -3127,12 +3171,32 @@ export function Dashboard({
           setIsImprovingLesefluss(false);
           return;
         }
-        await applyActivePrompt('lesefluss', choice.lesefluss ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
-        await applyActivePrompt('summary', choice.summary ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+        await applyActivePrompt(
+          'lesefluss',
+          choice.lesefluss ??
+            (stageDefaults.lesefluss as string | undefined) ??
+            DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+        );
+        await applyActivePrompt(
+          'summary',
+          choice.summary ??
+            (stageDefaults.summary as string | undefined) ??
+            DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+        );
       }
       if (providedChoices) {
-        await applyActivePrompt('lesefluss', providedChoices.lesefluss ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
-        await applyActivePrompt('summary', providedChoices.summary ?? DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY);
+        await applyActivePrompt(
+          'lesefluss',
+          providedChoices.lesefluss ??
+            (stageDefaults.lesefluss as string | undefined) ??
+            DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+        );
+        await applyActivePrompt(
+          'summary',
+          providedChoices.summary ??
+            (stageDefaults.summary as string | undefined) ??
+            DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
+        );
       }
 
       const leseflussToastId = toast.loading('Lese Fluss wird verbessert', {
@@ -3581,6 +3645,7 @@ export function Dashboard({
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
           systemPromptTemplates={systemPromptTemplates}
+          stageDefaults={stageDefaults}
           promptActive={promptActive}
           onProcess={handleProcess}
           isProcessing={isProcessingRun}
@@ -3594,6 +3659,7 @@ export function Dashboard({
         askOnEachProcess={askOnEachProcess}
         promptTemplates={promptTemplates}
         systemPromptTemplates={systemPromptTemplates}
+        stageDefaults={stageDefaults}
         promptActive={promptActive}
         isGenerating={isGeneratingGliederung}
       />
@@ -3609,6 +3675,7 @@ export function Dashboard({
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
           systemPromptTemplates={systemPromptTemplates}
+          stageDefaults={stageDefaults}
           promptActive={promptActive}
           isShortening={isShortening}
         />
@@ -3626,6 +3693,7 @@ export function Dashboard({
           askOnEachProcess={askOnEachProcess}
           promptTemplates={promptTemplates}
           systemPromptTemplates={systemPromptTemplates}
+          stageDefaults={stageDefaults}
           promptActive={promptActive}
           isLeseflussLoading={isImprovingLesefluss}
         />
@@ -3699,6 +3767,7 @@ export function Dashboard({
           stages={promptChooser.stages}
           templates={promptTemplates}
           systemTemplates={systemPromptTemplates}
+          stageDefaults={stageDefaults}
           active={promptActive}
           onConfirm={(choices) => {
             promptChooser.resolve(choices);

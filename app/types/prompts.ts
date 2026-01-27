@@ -16,7 +16,7 @@ export type PromptTemplate = {
   updatedAt: string;
 };
 
-export type ActivePromptSelections = Partial<Record<PromptStage, string | "default">>;
+export type ActivePromptSelections = Partial<Record<PromptStage, string>>;
 
 export type PromptTemplatePayload = {
   stage: PromptStage;
@@ -35,3 +35,6 @@ export type SystemPromptTemplateMeta = {
 export type SystemPromptPermissions = {
   canDuplicateSystemPrompts: boolean;
 };
+
+// Admin-configured per-stage fallback system template keys.
+export type StageDefaultPromptTemplates = Partial<Record<PromptStage, string>>;

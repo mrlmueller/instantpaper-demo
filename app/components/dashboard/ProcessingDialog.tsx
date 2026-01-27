@@ -18,7 +18,14 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { ProcessingSettings } from "@/app/types/ui"
-import type { ActivePromptSelections, PromptStage, PromptTemplate, SystemPromptTemplateMeta } from "@/app/types/prompts"
+import type {
+  ActivePromptSelections,
+  PromptStage,
+  PromptTemplate,
+  StageDefaultPromptTemplates,
+  SystemPromptTemplateMeta,
+} from "@/app/types/prompts"
+import { DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY } from "@/app/lib/prompts/promptConfig"
 import { cn } from "@/lib/utils"
 
 const DEFAULT_PROCESSING_MODEL: ProcessingSettings["model"] =
@@ -34,6 +41,7 @@ interface ProcessingDialogProps {
   askOnEachProcess: boolean
   promptTemplates: PromptTemplate[]
   systemPromptTemplates: SystemPromptTemplateMeta[]
+  stageDefaults: StageDefaultPromptTemplates
   promptActive: ActivePromptSelections
   isProcessing: boolean
 }
@@ -48,6 +56,7 @@ export function ProcessingDialog({
   askOnEachProcess,
   promptTemplates,
   systemPromptTemplates,
+  stageDefaults,
   promptActive,
   isProcessing,
 }: ProcessingDialogProps) {
@@ -60,9 +69,15 @@ export function ProcessingDialog({
   })
   const [additionalOptionsOpen, setAdditionalOptionsOpen] = useState(false)
   const prevOpenRef = useRef(open)
-  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string | "default">>>({
-    process_quelle: (promptActive?.process_quelle as string | "default") || "default",
-    combine: (promptActive?.combine as string | "default") || "default",
+  const [promptChoice, setPromptChoice] = useState<Partial<Record<PromptStage, string>>>({
+    process_quelle:
+      (promptActive?.process_quelle as string | undefined) ||
+      (stageDefaults?.process_quelle as string | undefined) ||
+      DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
+    combine:
+      (promptActive?.combine as string | undefined) ||
+      (stageDefaults?.combine as string | undefined) ||
+      DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
   })
   const [hasTouchedPromptChoice, setHasTouchedPromptChoice] = useState(false)
   const [localProcessing, setLocalProcessing] = useState(false)
@@ -92,13 +107,21 @@ export function ProcessingDialog({
     }
     if (hasTouchedPromptChoice) return
     setPromptChoice({
-      process_quelle: (promptActive?.process_quelle as string | "default") || "default",
-      combine: (promptActive?.combine as string | "default") || "default",
+      process_quelle:
+        (promptActive?.process_quelle as string | undefined) ||
+        (stageDefaults?.process_quelle as string | undefined) ||
+        DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
+      combine:
+        (promptActive?.combine as string | undefined) ||
+        (stageDefaults?.combine as string | undefined) ||
+        DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY,
     })
   }, [
     open,
     promptActive?.process_quelle,
     promptActive?.combine,
+    stageDefaults?.process_quelle,
+    stageDefaults?.combine,
     hasTouchedPromptChoice,
   ])
 
@@ -122,7 +145,7 @@ export function ProcessingDialog({
     setLocalProcessing(true)
     onOpenChange(false)
     try {
-      await onProcess({ ...settings, promptChoice })
+      await onProcess(showPromptSelectors ? { ...settings, promptChoice } : settings)
     } finally {
       setLocalProcessing(false)
     }
@@ -149,7 +172,10 @@ export function ProcessingDialog({
     const stageSystemTemplates = systemTemplatesByStage(stage)
     const hasSystemOptions = stageSystemTemplates.length > 0
     if (!hasSystemOptions && stageTemplates.length === 0) return null
-    const value = promptChoice[stage] || "default"
+    const value =
+      promptChoice[stage] ||
+      (stageDefaults?.[stage] as string | undefined) ||
+      DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY
     return (
       <div className="space-y-2">
         <Label className="text-sm font-medium">{label}</Label>
@@ -160,7 +186,7 @@ export function ProcessingDialog({
               setHasTouchedPromptChoice(true)
               return {
                 ...prev,
-                [stage]: val as string | "default",
+                [stage]: val,
               }
             })
           }
