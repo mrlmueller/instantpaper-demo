@@ -909,6 +909,7 @@ class ExportService:
         *,
         user_id: str,
         projekt_id: str,
+        include_footnotes: bool,
         selection: str,
         kapitel_ids: List[str],
     ) -> str:
@@ -939,6 +940,7 @@ class ExportService:
                 "exportId": export_id,
                 "projektId": projekt_id,
                 "projektSnapshot": projekt_snapshot,
+                "includeFootnotes": bool(include_footnotes),
                 "selection": {
                     "type": selection,
                     "kapitelIds": unique_ids,
@@ -952,7 +954,7 @@ class ExportService:
                 "finishedAt": None,
                 "expiresAt": expires_at,
                 "file": None,
-                "model": CITATION_FIXUP_MODEL,
+                "model": CITATION_FIXUP_MODEL if include_footnotes else None,
                 "keySource": None,
                 "usage": {
                     "inputTokens": 0,
@@ -992,26 +994,32 @@ class ExportService:
                 else []
             )
             projekt_id = str(export_doc.get("projektId") or "").strip()
+            include_footnotes = bool(export_doc.get("includeFootnotes", True))
 
-            available_credits = float(
-                await get_credits_service(firebase_service).get_available_credits(user_id)
-            )
-            if available_credits <= 0:
-                export_ref.set(
-                    {
-                        "status": "error",
-                        "errorMessage": "Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
-                        "updatedAt": SERVER_TIMESTAMP,
-                        "finishedAt": SERVER_TIMESTAMP,
-                    },
-                    merge=True,
+            openai_client: Optional[AsyncOpenAI] = None
+            key_source: Optional[str] = None
+            if include_footnotes:
+                available_credits = float(
+                    await get_credits_service(firebase_service).get_available_credits(
+                        user_id
+                    )
                 )
-                return
+                if available_credits <= 0:
+                    export_ref.set(
+                        {
+                            "status": "error",
+                            "errorMessage": "Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
+                            "updatedAt": SERVER_TIMESTAMP,
+                            "finishedAt": SERVER_TIMESTAMP,
+                        },
+                        merge=True,
+                    )
+                    return
 
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(
-                user_id
-            )
-            openai_client = AsyncOpenAI(api_key=api_key)
+                api_key, key_source = await user_key_service.resolve_api_key_for_user(
+                    user_id
+                )
+                openai_client = AsyncOpenAI(api_key=api_key)
 
             chapters: List[Dict[str, Any]] = []
             for kapitel_id in kapitel_ids:
@@ -1126,18 +1134,22 @@ class ExportService:
                 for para in _split_paragraphs(str(ch["text"])):
                     p = doc.add_paragraph()
                     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-                    await paragraph_to_docx_with_footnotes(
-                        doc_paragraph=p,
-                        para_text=para,
-                        use_llm=True,
-                        openai_client=openai_client,
-                        usage_acc=usage_acc,
-                        model=CITATION_FIXUP_MODEL,
-                    )
+                    if include_footnotes:
+                        await paragraph_to_docx_with_footnotes(
+                            doc_paragraph=p,
+                            para_text=para,
+                            use_llm=True,
+                            openai_client=openai_client,
+                            usage_acc=usage_acc,
+                            model=CITATION_FIXUP_MODEL,
+                        )
+                    else:
+                        p.add_run(normalize_docx_text(para))
 
                 wrote_any = True
 
-            superscript_footnote_numbers_in_footnotes(doc)
+            if include_footnotes:
+                superscript_footnote_numbers_in_footnotes(doc)
 
             buf = BytesIO()
             doc.save(buf)
@@ -1232,7 +1244,7 @@ class ExportService:
                         "totalTokens": int(usage_obj.total_tokens),
                     },
                     "costUsd": float(cost_usd),
-                    "model": CITATION_FIXUP_MODEL,
+                    "model": CITATION_FIXUP_MODEL if include_footnotes else None,
                 },
                 merge=True,
             )

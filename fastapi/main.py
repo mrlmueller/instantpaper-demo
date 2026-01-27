@@ -4252,20 +4252,22 @@ async def export_docx(
     Queues a background task and returns immediately. The UI should read export status from
     Firestore (`users/{uid}/exports/{exportId}`).
     """
-    credits_service = get_credits_service(firebase_service)
-    available_credits = float(await credits_service.get_available_credits(user_id))
-    if available_credits <= 0:
-        raise HTTPException(
-            status_code=402,
-            detail="Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
-        )
+    if request.include_footnotes:
+        credits_service = get_credits_service(firebase_service)
+        available_credits = float(await credits_service.get_available_credits(user_id))
+        if available_credits <= 0:
+            raise HTTPException(
+                status_code=402,
+                detail="Kein Guthaben verf\u00fcgbar. Bitte lade Credits im Profil unter Billing auf.",
+            )
 
-    # Validate that an API key is available (user key or platform key). The export may need LLM fixups.
-    await user_key_service.resolve_api_key_for_user(user_id)
+        # Validate that an API key is available (user key or platform key). The export may need LLM fixups.
+        await user_key_service.resolve_api_key_for_user(user_id)
 
     export_id = await export_service.create_export_job(
         user_id=user_id,
         projekt_id=request.projekt_id,
+        include_footnotes=request.include_footnotes,
         selection=request.selection,
         kapitel_ids=request.kapitel_ids,
     )

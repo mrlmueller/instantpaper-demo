@@ -71,7 +71,13 @@ import {
   type KapitelRun as FirebaseKapitelRun,
   type Kapitel as FirebaseKapitel,
 } from '@/app/actions/kapitels';
-import { archiveProject, createProject, unarchiveProject, type Project as FirebaseProject } from '@/app/actions/projects';
+import {
+  archiveProject,
+  createProject,
+  renameProject,
+  unarchiveProject,
+  type Project as FirebaseProject,
+} from '@/app/actions/projects';
 
 // Firebase real-time
 import { useAuth } from '@/app/components/providers/AuthProvider';
@@ -243,6 +249,7 @@ export function Dashboard({
     id: initialProjekt.id,
     name: initialProjekt.name,
     createdAt: new Date(initialProjekt.createdAt),
+    updatedAt: initialProjekt.updatedAt ? new Date(initialProjekt.updatedAt) : undefined,
     archived: Boolean(initialProjekt.archived),
   });
   const [projekte, setProjekte] = useState<Projekt[]>(
@@ -250,6 +257,7 @@ export function Dashboard({
       id: p.id,
       name: p.name,
       createdAt: new Date(p.createdAt),
+      updatedAt: p.updatedAt ? new Date(p.updatedAt) : undefined,
       archived: Boolean(p.archived),
     }))
   );
@@ -1700,6 +1708,7 @@ export function Dashboard({
           id: result.id,
           name,
           createdAt: new Date(),
+          updatedAt: new Date(),
           archived: false,
         };
         setProjekte((prev) => [newProjekt, ...prev]);
@@ -1718,6 +1727,22 @@ export function Dashboard({
     [loadProjektData, isCreatingProjekt, persistActiveProjektCookie]
   );
 
+  const handleRenameProjekt = useCallback(async (projektId: string, name: string) => {
+    try {
+      const result = await renameProject(projektId, name);
+      if (!result.success) return result;
+
+      const now = new Date();
+      setProjekte((prev) => prev.map((p) => (p.id === projektId ? { ...p, name, updatedAt: now } : p)));
+      setProjekt((prev) => (prev.id === projektId ? { ...prev, name, updatedAt: now } : prev));
+
+      return { success: true } as const;
+    } catch (error: unknown) {
+      console.error('Projekt umbenennen fehlgeschlagen:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' } as const;
+    }
+  }, []);
+
   const handleArchiveProjekt = useCallback(
     async (projektId: string) => {
       if (projektId === 'default') {
@@ -1735,7 +1760,9 @@ export function Dashboard({
         if (!result.success) {
           throw new Error(result.error || 'Projekt konnte nicht archiviert werden.');
         }
-        setProjekte((prev) => prev.map((p) => (p.id === projektId ? { ...p, archived: true } : p)));
+        setProjekte((prev) =>
+          prev.map((p) => (p.id === projektId ? { ...p, archived: true, updatedAt: new Date() } : p))
+        );
         const remainingActive = projekte.filter((p) => p.id !== projektId && p.archived !== true);
         if (projekt.id === projektId && remainingActive.length > 0) {
           persistActiveProjektCookie(remainingActive[0].id);
@@ -1758,7 +1785,9 @@ export function Dashboard({
         throw new Error(result.error || 'Projekt konnte nicht wiederhergestellt werden.');
       }
 
-      setProjekte((prev) => prev.map((p) => (p.id === projektId ? { ...p, archived: false } : p)));
+      setProjekte((prev) =>
+        prev.map((p) => (p.id === projektId ? { ...p, archived: false, updatedAt: new Date() } : p))
+      );
       toast.success('Projekt wiederhergestellt');
     } catch (error: any) {
       console.error('Projekt wiederherstellen fehlgeschlagen:', error);
@@ -3196,12 +3225,15 @@ export function Dashboard({
   );
 
   const handleExportDocx = useCallback(
-    async (selection: 'all' | 'selected', kapitelIds: string[]) => {
+    async (selection: 'all' | 'selected', kapitelIds: string[], includeFootnotes: boolean) => {
       if (!projekt?.id) return;
       if (!user?.uid) return;
 
-      if (!(await ensureOpenAIAccess())) return;
       if (isExportingDocx) return;
+
+      if (includeFootnotes) {
+        if (!(await ensureOpenAIAccess())) return;
+      }
 
       if (kapitelIds.length === 0) {
         toast.error('Keine Kapitel ausgewählt', {
@@ -3229,7 +3261,7 @@ export function Dashboard({
       exportToastIdRef.current = exportToastId;
 
       try {
-        const result = await createDocxExport(projekt.id, selection, kapitelIds);
+        const result = await createDocxExport(projekt.id, selection, kapitelIds, includeFootnotes);
 
         if (!result?.success) {
           const message = result?.error || 'Export konnte nicht gestartet werden.';
@@ -3414,6 +3446,7 @@ export function Dashboard({
           projekte={projekte}
           onSwitchProjekt={handleSwitchProjekt}
           onCreateProjekt={handleCreateProjekt}
+          onRenameProjekt={handleRenameProjekt}
           onArchiveProjekt={(id, name) => setDeleteConfirm({ type: 'projekt', id, name })}
           onUnarchiveProjekt={handleUnarchiveProjekt}
           isCreatingProjekt={isCreatingProjekt}

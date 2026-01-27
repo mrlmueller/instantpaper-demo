@@ -967,11 +967,17 @@ export async function createLeseflussRun(
   });
 }
 
-export async function createDocxExport(projektId: string, selection: 'all' | 'selected', kapitelIds: string[]) {
+export async function createDocxExport(
+  projektId: string,
+  selection: 'all' | 'selected',
+  kapitelIds: string[],
+  includeFootnotes: boolean = true
+) {
   return fetchFastApi('/api/export-docx', {
     projekt_id: projektId,
     selection,
     kapitel_ids: kapitelIds,
+    include_footnotes: includeFootnotes,
   });
 }
 

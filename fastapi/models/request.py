@@ -220,6 +220,10 @@ class ExportDocxRequest(BaseModel):
     """Request model for exporting improved Kapitel texts (lesefluss) to a DOCX."""
 
     projekt_id: str = Field(..., description="Project ID this export belongs to")
+    include_footnotes: bool = Field(
+        default=True,
+        description="Whether citations should be extracted and added as DOCX footnotes",
+    )
     selection: Literal["all", "selected"] = Field(
         default="all",
         description="Whether the export includes all available Kapitels or a selected subset",

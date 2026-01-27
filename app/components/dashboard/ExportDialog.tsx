@@ -11,6 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import type { Kapitel } from "@/app/types/ui"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -23,7 +25,7 @@ interface ExportDialogProps {
   onOpenChange: (open: boolean) => void
   allKapitels: Kapitel[]
   projektId: string
-  onExport: (selection: ExportSelection, kapitelIds: string[]) => Promise<void>
+  onExport: (selection: ExportSelection, kapitelIds: string[], includeFootnotes: boolean) => Promise<void>
   isExporting: boolean
 }
 
@@ -37,6 +39,7 @@ export function ExportDialog({
 }: ExportDialogProps) {
   const [selection, setSelection] = useState<ExportSelection>("all")
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [includeFootnotes, setIncludeFootnotes] = useState(true)
   const [availability, setAvailability] = useState<Record<string, boolean> | null>(null)
   const [availabilityLoading, setAvailabilityLoading] = useState(false)
   const [localExportLoading, setLocalExportLoading] = useState(false)
@@ -61,6 +64,7 @@ export function ExportDialog({
       setAvailabilityLoading(false)
       setSelection("all")
       setSelectedIds([])
+      setIncludeFootnotes(true)
       return
     }
 
@@ -130,7 +134,7 @@ export function ExportDialog({
     setLocalExportLoading(true)
     onOpenChange(false)
     try {
-      await onExport(selection, selectedIds)
+      await onExport(selection, selectedIds, includeFootnotes)
     } finally {
       setLocalExportLoading(false)
     }
@@ -179,6 +183,32 @@ export function ExportDialog({
           <p className="text-sm text-muted-foreground">
             Nur Kapitel mit vorhandenem „Verbesserten Text“ können exportiert werden.
           </p>
+
+          <div className="flex items-center justify-between py-3 px-4 border bg-muted/20 rounded-lg">
+            <div className="flex items-start gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="export-footnotes" className="text-sm font-medium cursor-pointer">
+                    Quellen als Fußnoten einfügen
+                  </Label>
+                  <span
+                    className={cn(
+                      "text-xs font-medium px-2 py-0.5 rounded-md border",
+                      includeFootnotes
+                        ? "border-border bg-muted/40 text-muted-foreground"
+                        : "border-border bg-background text-muted-foreground",
+                    )}
+                  >
+                    {includeFootnotes ? "Aktiviert" : "Deaktiviert"}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Wenn deaktiviert, bleiben Quellen/Zitate im Text und es werden keine Fußnoten erstellt.
+                </p>
+              </div>
+            </div>
+            <Switch id="export-footnotes" checked={includeFootnotes} onCheckedChange={setIncludeFootnotes} />
+          </div>
 
           {selection === "selected" && (
             <div className="border rounded-lg max-h-[320px] overflow-y-auto">
