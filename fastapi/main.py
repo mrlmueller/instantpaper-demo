@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, BackgroundTasks, status, HTTPException, Re
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from utils.config import config
 from middleware.auth import (
     verify_firebase_token,
@@ -39,7 +39,8 @@ from services.firebase_service import firebase_service
 from services.credits_service import get_credits_service
 from services.prompt_service import prompt_service
 from services.export_service import export_service
-from firebase_admin import auth
+from firebase_admin import auth, storage
+from google.api_core.exceptions import NotFound, FailedPrecondition
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 from google.cloud import firestore
 from pydantic import BaseModel
@@ -50,6 +51,7 @@ import secrets
 import hashlib
 import os
 import re
+import unicodedata
 from pathlib import Path
 import html as html_lib
 from urllib.parse import parse_qs
@@ -195,6 +197,14 @@ class AdminSetStageDefaultPromptRequest(BaseModel):
     templateKey: str | None = None
 
 
+class AdminDeleteUserProjectRequest(BaseModel):
+    confirmName: str
+
+
+class DeleteProjectRequest(BaseModel):
+    confirmName: str
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown"""
@@ -297,6 +307,18 @@ def _ts_to_iso(value) -> str | None:
 
 def _normalize_access_code(raw: str) -> str:
     return str(raw or "").strip().upper().replace(" ", "").replace("_", "-")
+
+
+def _normalize_project_name(raw: str) -> str:
+    txt = unicodedata.normalize("NFKC", str(raw or "")).strip()
+    txt = (
+        txt.replace("\u00A0", " ")
+        .replace("\t", " ")
+        .replace("\r", " ")
+        .replace("\n", " ")
+    )
+    txt = " ".join([p for p in txt.split(" ") if p])
+    return txt.lower()
 
 
 ACCESS_CODE_RE = re.compile(r"^[A-Z]{2}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$")
@@ -1303,6 +1325,781 @@ async def admin_list_users(
         return {"users": users_out, "nextPageToken": page.next_page_token}
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to list users.") from None
+
+
+def _parse_month_key_or_400(value: str | None, field_name: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail=f"{field_name} is required.")
+    if not re.match(r"^[0-9]{4}-[0-9]{2}$", raw):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be in YYYY-MM format.")
+
+    try:
+        year = int(raw[:4])
+        month = int(raw[5:7])
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"{field_name} must be in YYYY-MM format.") from None
+
+    if year < 2000 or year > 2100 or month < 1 or month > 12:
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a valid month.")
+
+    return f"{year:04d}-{month:02d}"
+
+
+def _looks_like_month_key(value: str) -> bool:
+    raw = str(value or "").strip()
+    return bool(raw and re.match(r"^[0-9]{4}-[0-9]{2}$", raw))
+
+
+def _looks_like_date_key(value: str) -> bool:
+    raw = str(value or "").strip()
+    return bool(raw and re.match(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", raw))
+
+
+def _datetime_to_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _parse_datetime_or_400(value: str | None, field_name: str) -> datetime:
+    raw = str(value or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail=f"{field_name} is required.")
+    dt = _parse_iso_dt(raw)
+    if dt is None:
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a valid ISO date/time.") from None
+    return _datetime_to_utc(dt)
+
+
+def _parse_date_or_dt_start_utc(value: str | None, field_name: str) -> datetime:
+    raw = str(value or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail=f"{field_name} is required.")
+    if _looks_like_date_key(raw):
+        try:
+            y = int(raw[:4])
+            m = int(raw[5:7])
+            d = int(raw[8:10])
+            return datetime(y, m, d, tzinfo=timezone.utc)
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"{field_name} must be in YYYY-MM-DD format.") from None
+
+    return _parse_datetime_or_400(raw, field_name)
+
+
+def _parse_date_or_dt_end_exclusive_utc(value: str | None, field_name: str) -> datetime:
+    raw = str(value or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail=f"{field_name} is required.")
+    if _looks_like_date_key(raw):
+        try:
+            y = int(raw[:4])
+            m = int(raw[5:7])
+            d = int(raw[8:10])
+            return datetime(y, m, d, tzinfo=timezone.utc) + timedelta(days=1)
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"{field_name} must be in YYYY-MM-DD format.") from None
+
+    return _parse_datetime_or_400(raw, field_name)
+
+
+def _day_key(dt: datetime) -> str:
+    d = _datetime_to_utc(dt)
+    return f"{d.year:04d}-{d.month:02d}-{d.day:02d}"
+
+
+def _day_range_keys(start_dt: datetime, end_excl: datetime) -> list[str]:
+    start_utc = _datetime_to_utc(start_dt)
+    end_utc = _datetime_to_utc(end_excl)
+    if start_utc >= end_utc:
+        raise HTTPException(status_code=400, detail="start must be < end.")
+
+    start_day = datetime(start_utc.year, start_utc.month, start_utc.day, tzinfo=timezone.utc)
+    end_inclusive_dt = end_utc - timedelta(microseconds=1)
+    end_day = datetime(end_inclusive_dt.year, end_inclusive_dt.month, end_inclusive_dt.day, tzinfo=timezone.utc)
+
+    out: list[str] = []
+    cursor = start_day
+    while cursor <= end_day:
+        out.append(_day_key(cursor))
+        cursor = cursor + timedelta(days=1)
+        if len(out) > 3700:
+            # Guard against absurd date ranges in the UI.
+            break
+    return out
+
+
+def _parse_costs_range_or_400(start: str | None, end: str | None) -> dict:
+    s = str(start or "").strip()
+    e = str(end or "").strip()
+    if not s:
+        raise HTTPException(status_code=400, detail="start is required.")
+    if not e:
+        raise HTTPException(status_code=400, detail="end is required.")
+
+    # Month range: start/end are YYYY-MM (inclusive).
+    if _looks_like_month_key(s) and _looks_like_month_key(e):
+        start_month = _parse_month_key_or_400(s, "start")
+        end_month = _parse_month_key_or_400(e, "end")
+        keys = _month_range_keys(start_month, end_month)
+        start_dt = _month_start_utc(start_month)
+        end_excl = _next_month_start_utc(end_month)
+        return {
+            "mode": "month",
+            "bucket": "month",
+            "startKey": start_month,
+            "endKey": end_month,
+            "keys": keys,
+            "startDt": start_dt,
+            "endExclusive": end_excl,
+        }
+
+    # Date range: start/end are YYYY-MM-DD (inclusive) or ISO datetimes (end is exclusive when time is provided).
+    start_dt = _parse_date_or_dt_start_utc(s, "start")
+    end_excl = _parse_date_or_dt_end_exclusive_utc(e, "end")
+    if start_dt >= end_excl:
+        raise HTTPException(status_code=400, detail="start must be < end.")
+
+    day_keys = _day_range_keys(start_dt, end_excl)
+    return {
+        "mode": "date",
+        "bucket": "day",
+        "startKey": s,
+        "endKey": e,
+        "keys": day_keys,
+        "startDt": start_dt,
+        "endExclusive": end_excl,
+    }
+
+
+def _month_start_utc(month_key: str) -> datetime:
+    year = int(month_key[:4])
+    month = int(month_key[5:7])
+    return datetime(year, month, 1, tzinfo=timezone.utc)
+
+
+def _next_month_start_utc(month_key: str) -> datetime:
+    dt = _month_start_utc(month_key)
+    return _add_months(dt, 1)
+
+
+def _month_range_keys(start_month: str, end_month: str) -> list[str]:
+    start_dt = _month_start_utc(start_month)
+    end_excl = _next_month_start_utc(end_month)
+    if start_dt >= end_excl:
+        raise HTTPException(status_code=400, detail="start must be <= end.")
+
+    out: list[str] = []
+    cursor = start_dt
+    while cursor < end_excl:
+        out.append(_month_key(cursor))
+        cursor = _add_months(cursor, 1)
+    return out
+
+
+def _uid_from_doc_path(doc_path: str) -> str | None:
+    # users/{uid}/...
+    parts = [p for p in str(doc_path or "").split("/") if p]
+    if len(parts) >= 2 and parts[0] == "users":
+        return parts[1]
+    return None
+
+
+def _is_missing_ops_timestamp_index(exc: Exception) -> bool:
+    msg = str(exc or "")
+    msg_l = msg.lower()
+    # Firestore often includes a direct Firebase console link for index creation.
+    if "firestore/indexes?create_exemption=" in msg_l or "firestore/indexes?create_composite=" in msg_l:
+        return True
+    return ("collection_group" in msg_l) and ("operations" in msg_l) and ("timestamp" in msg_l) and ("index" in msg_l)
+
+
+def _extract_first_url(text: str) -> str | None:
+    raw = str(text or "")
+    m = re.search(r"https?://\\S+", raw)
+    if not m:
+        return None
+    # Trim common trailing punctuation/brackets.
+    return m.group(0).rstrip(").,;]}>")
+
+
+def _missing_ops_timestamp_index_detail(exc: Exception | None = None) -> str:
+    base = (
+        "Firestore index missing for collection group 'operations' on field 'timestamp'. "
+        "Deploy indexes (firebase deploy --only firestore:indexes) or create the index in Firebase console."
+    )
+    if not exc:
+        return base
+    url = _extract_first_url(str(exc))
+    if not url:
+        return base
+    return f"{base} Create it here: {url}"
+
+
+def _log_admin_error(detail: str) -> None:
+    logger.error(detail)
+    # Ensure the message shows up in the Uvicorn console even if module loggers are filtered.
+    uvicorn_logger = logging.getLogger("uvicorn.error")
+    if uvicorn_logger is not logger:
+        uvicorn_logger.error(detail)
+
+
+async def _hydrate_user_labels(uids: list[str]) -> dict[str, dict[str, str | None]]:
+    out: dict[str, dict[str, str | None]] = {}
+    for uid in uids:
+        uid_norm = str(uid or "").strip()
+        if not uid_norm:
+            continue
+        try:
+            user = auth.get_user(uid_norm)
+            out[uid_norm] = {
+                "email": str(user.email or "").strip() or None,
+                "displayName": str(user.display_name or "").strip() or None,
+            }
+        except Exception:
+            out[uid_norm] = {"email": None, "displayName": None}
+    return out
+
+
+@app.get("/api/admin/costs/summary")
+async def admin_costs_summary(
+    preset: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    scan_limit: int = 0,
+    _: str = Depends(verify_admin_user),
+):
+    """
+    Global costs dashboard (admin-only).
+
+    - `preset=all`: all-time totals (trend shows last 12 months).
+    - `start` / `end`: either month keys in YYYY-MM format (inclusive) OR dates in YYYY-MM-DD format (inclusive).
+    - `scan_limit`: optional number of operations to scan across all users for a range-specific breakdown
+      (0 disables scanning; max 20000).
+
+    Totals by month + top users are computed from per-user aggregates (fast).
+    Breakdowns by operation type/model are computed from an optional bounded scan of operation logs.
+    """
+    preset_norm = str(preset or "").strip().lower() or None
+
+    # Spend rate (for estimated credits display).
+    try:
+        cfg = await get_credits_service(firebase_service).get_config()
+        default_spend_rate = float(cfg.default_spend_rate or 0.0)
+        if default_spend_rate <= 0:
+            default_spend_rate = 6.0
+    except Exception:
+        default_spend_rate = 6.0
+
+    # Determine range mode.
+    if preset_norm == "all":
+        now = datetime.now(timezone.utc)
+        base = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+        month_keys = [_month_key(_add_months(base, -(11 - i))) for i in range(12)]
+        month_key_set = set(month_keys)
+        start_dt = _month_start_utc(month_keys[0])
+        end_excl = _next_month_start_utc(month_keys[-1])
+        range_bucket = "month"
+        range_obj = {
+            "preset": "all",
+            "bucket": range_bucket,
+            "startKey": month_keys[0],
+            "endKey": month_keys[-1],
+            "start": start_dt.isoformat().replace("+00:00", "Z"),
+            "endExclusive": end_excl.isoformat().replace("+00:00", "Z"),
+            "keys": month_keys,
+            "note": "Totals are all-time. Trend shows last 12 months.",
+        }
+    else:
+        parsed = _parse_costs_range_or_400(start, end)
+        range_bucket = str(parsed.get("bucket") or "month")
+        start_dt = parsed["startDt"]
+        end_excl = parsed["endExclusive"]
+        keys = parsed["keys"]
+        range_obj = {
+            "preset": "custom",
+            "bucket": range_bucket,
+            "startKey": str(parsed.get("startKey") or ""),
+            "endKey": str(parsed.get("endKey") or ""),
+            "start": start_dt.isoformat().replace("+00:00", "Z"),
+            "endExclusive": end_excl.isoformat().replace("+00:00", "Z"),
+            "keys": keys,
+        }
+        month_keys = keys if range_bucket == "month" else []
+        month_key_set = set(month_keys)
+
+    # Aggregate totals from per-user lifetime aggregates.
+    by_month: dict[str, dict[str, float | int]] = {k: {"key": k, "costUsd": 0.0, "count": 0} for k in month_keys}
+    by_day: dict[str, dict[str, float | int]] = {}
+    users_rollup: list[dict[str, float | int | str | None]] = []
+    total_cost_usd = 0.0
+    total_count = 0
+    total_credits = None
+
+    try:
+        docs = firebase_service.db.collection_group("aggregatesByUser").stream()
+    except Exception:
+        docs = []
+
+    if preset_norm == "all":
+        # All-time totals (lifetime aggregate), plus month trend for the last 12 months.
+        for snap in docs:
+            if snap.id != "lifetime":
+                continue
+            data = snap.to_dict() or {}
+            uid = str(data.get("userId") or "").strip() or None
+            if not uid:
+                uid = _uid_from_doc_path(getattr(snap.reference, "path", ""))
+            if not uid:
+                continue
+
+            cost_all = _as_float(data.get("totalCostUsd"), 0.0)
+            try:
+                count_all = int(data.get("operationCount", 0) or 0)
+            except Exception:
+                count_all = 0
+
+            if cost_all > 0 or count_all > 0:
+                users_rollup.append({"uid": uid, "costUsd": float(cost_all), "count": int(count_all)})
+                total_cost_usd += float(max(cost_all, 0.0))
+                total_count += int(max(count_all, 0))
+
+            by_time = data.get("byTimePeriod") if isinstance(data.get("byTimePeriod"), dict) else {}
+            # Only loop recent keys (12).
+            for key in month_keys:
+                entry = by_time.get(key) if isinstance(by_time.get(key), dict) else {}
+                cost = _as_float(entry.get("totalCostUsd"), 0.0)
+                try:
+                    count = int(entry.get("count", 0) or 0)
+                except Exception:
+                    count = 0
+
+                if cost > 0:
+                    by_month[key]["costUsd"] = float(by_month[key].get("costUsd", 0.0) or 0.0) + float(cost)
+                if count > 0:
+                    by_month[key]["count"] = int(by_month[key].get("count", 0) or 0) + int(count)
+    elif range_bucket == "month":
+        # Custom month range totals from per-user aggregates (fast).
+        for snap in docs:
+            if snap.id != "lifetime":
+                continue
+            data = snap.to_dict() or {}
+            uid = str(data.get("userId") or "").strip() or None
+            if not uid:
+                uid = _uid_from_doc_path(getattr(snap.reference, "path", ""))
+            if not uid:
+                continue
+
+            by_time = data.get("byTimePeriod") if isinstance(data.get("byTimePeriod"), dict) else {}
+            user_cost = 0.0
+            user_count = 0
+
+            for key, raw_entry in by_time.items():
+                if key not in month_key_set:
+                    continue
+                entry = raw_entry if isinstance(raw_entry, dict) else {}
+                cost = _as_float(entry.get("totalCostUsd"), 0.0)
+                try:
+                    count = int(entry.get("count", 0) or 0)
+                except Exception:
+                    count = 0
+
+                if cost > 0:
+                    user_cost += cost
+                    by_month[key]["costUsd"] = float(by_month[key].get("costUsd", 0.0) or 0.0) + float(cost)
+                if count > 0:
+                    user_count += count
+                    by_month[key]["count"] = int(by_month[key].get("count", 0) or 0) + int(count)
+
+            if user_cost > 0 or user_count > 0:
+                users_rollup.append({"uid": uid, "costUsd": float(user_cost), "count": int(user_count)})
+                total_cost_usd += float(user_cost)
+                total_count += int(user_count)
+    else:
+        # Day/date range totals require scanning operation logs across all users.
+        day_keys = list(range_obj.get("keys") or [])
+        if len(day_keys) > 120:
+            raise HTTPException(
+                status_code=400,
+                detail="Date range too large for daily view. Use month keys (YYYY-MM) for larger ranges.",
+            )
+
+        by_day = {k: {"key": k, "costUsd": 0.0, "count": 0} for k in day_keys}
+        by_day_keys = set(by_day.keys())
+
+        # Scan all ops in range (bounded by date range size).
+        ops_ref = firebase_service.db.collection_group("operations")
+        base = (
+            ops_ref.where(filter=firestore.FieldFilter("timestamp", ">=", start_dt))
+            .where(filter=firestore.FieldFilter("timestamp", "<", end_excl))
+            .order_by("timestamp", direction=firestore.Query.DESCENDING)
+        )
+
+        by_op_type: dict[str, dict] = {}
+        by_model: dict[str, dict] = {}
+        by_status: dict[str, dict] = {}
+        by_key_source: dict[str, dict] = {}
+        user_totals: dict[str, dict] = {}
+        credits_sum = 0.0
+
+        def bump(bucket: dict, key: str, base_fields: dict, cost_usd: float, credits: float):
+            entry = bucket.get(key)
+            if not entry:
+                entry = {**base_fields, "count": 0, "costUsd": 0.0, "credits": 0.0}
+                bucket[key] = entry
+            entry["count"] = int(entry.get("count") or 0) + 1
+            entry["costUsd"] = float(entry.get("costUsd") or 0.0) + float(cost_usd)
+            entry["credits"] = float(entry.get("credits") or 0.0) + float(credits)
+
+        try:
+            for snap in base.stream():
+                path = getattr(snap.reference, "path", "") or ""
+                if "/costMetrics/v1/operations/" not in str(path):
+                    continue
+                data = snap.to_dict() or {}
+
+                costs = data.get("costs") if isinstance(data.get("costs"), dict) else {}
+                cost_usd = _as_float((costs or {}).get("totalCostUsd"), 0.0)
+
+                credits = _as_float(data.get("creditsDebited"), 0.0)
+                spend_rate = _as_float(data.get("spendRate"), 0.0)
+                if credits <= 0 and spend_rate > 0 and cost_usd > 0:
+                    credits = float(cost_usd * spend_rate)
+                if cost_usd <= 0 and spend_rate > 0 and credits > 0:
+                    cost_usd = float(credits / spend_rate)
+
+                cost_usd = float(max(cost_usd, 0.0))
+                credits = float(max(credits, 0.0))
+
+                ts = data.get("timestamp")
+                day = None
+                try:
+                    if hasattr(ts, "to_datetime"):
+                        day = _day_key(ts.to_datetime())
+                except Exception:
+                    day = None
+
+                if day and day in by_day_keys:
+                    by_day[day]["costUsd"] = float(by_day[day].get("costUsd", 0.0) or 0.0) + cost_usd
+                    by_day[day]["count"] = int(by_day[day].get("count", 0) or 0) + 1
+
+                uid = str(data.get("userId") or "").strip() or None
+                if not uid:
+                    uid = _uid_from_doc_path(path)
+                if uid:
+                    entry = user_totals.get(uid)
+                    if not entry:
+                        entry = {"uid": uid, "costUsd": 0.0, "count": 0}
+                        user_totals[uid] = entry
+                    entry["costUsd"] = float(entry.get("costUsd", 0.0) or 0.0) + cost_usd
+                    entry["count"] = int(entry.get("count", 0) or 0) + 1
+
+                # Totals
+                total_cost_usd += cost_usd
+                total_count += 1
+                credits_sum += credits
+
+                # Breakdowns (always exact for day ranges).
+                op_type = str(data.get("operationType") or "").strip() or "unknown"
+                model_raw = str(data.get("modelNormalized") or data.get("model") or "unknown").strip() or "unknown"
+                model = _display_model_key(model_raw)
+                status = str(data.get("status") or "").strip().lower() or "unknown"
+                key_source = str(data.get("keySource") or "").strip().lower() or "unknown"
+
+                bump(by_op_type, op_type, {"operationType": op_type}, cost_usd, credits)
+                bump(by_model, model, {"model": model}, cost_usd, credits)
+                bump(by_status, status, {"status": status}, cost_usd, credits)
+                bump(by_key_source, key_source, {"keySource": key_source}, cost_usd, credits)
+        except FailedPrecondition as exc:
+            if _is_missing_ops_timestamp_index(exc):
+                detail = _missing_ops_timestamp_index_detail(exc)
+                _log_admin_error(detail)
+                raise HTTPException(status_code=503, detail=detail) from None
+            raise
+
+        total_credits = float(credits_sum)
+        users_rollup = list(user_totals.values())
+
+        # Attach exact scan into the response for day ranges (no extra fetch needed).
+        def to_sorted_list(bucket: dict, sort_key: str):
+            items = list(bucket.values())
+            items.sort(
+                key=lambda x: (
+                    -_as_float(x.get(sort_key), 0.0),
+                    -int(x.get("count") or 0),
+                    str(x.get(sort_key) or ""),
+                )
+            )
+            return items
+
+        scan = {
+            "enabled": True,
+            "scanLimit": int(total_count),
+            "operationsScanned": int(total_count),
+            "complete": True,
+            "totals": {"costUsd": float(total_cost_usd), "credits": float(total_credits or 0.0), "count": int(total_count)},
+            "byOperationType": to_sorted_list(by_op_type, "costUsd")[:25],
+            "byModel": to_sorted_list(by_model, "costUsd")[:25],
+            "byStatus": to_sorted_list(by_status, "costUsd"),
+            "byKeySource": to_sorted_list(by_key_source, "costUsd"),
+        }
+
+    users_rollup.sort(key=lambda x: float(x.get("costUsd", 0.0) or 0.0), reverse=True)
+    top_users = users_rollup[:25]
+
+    # Hydrate top user labels (email/displayName) from Firebase Auth.
+    labels = await _hydrate_user_labels([str(u.get("uid") or "") for u in top_users])
+    for row in top_users:
+        uid = str(row.get("uid") or "").strip()
+        meta = labels.get(uid) or {}
+        row["email"] = meta.get("email")
+        row["displayName"] = meta.get("displayName")
+
+    # Optional bounded scan for range-specific breakdowns (operation log is immutable and contains model, type, credits).
+    if range_bucket == "month":
+        scan_limit_norm = max(0, min(int(scan_limit or 0), 20000))
+        scan = {
+            "enabled": bool(scan_limit_norm > 0),
+            "scanLimit": int(scan_limit_norm),
+            "operationsScanned": 0,
+            "complete": False,
+            "totals": {"costUsd": 0.0, "credits": 0.0, "count": 0},
+            "byOperationType": [],
+            "byModel": [],
+            "byStatus": [],
+            "byKeySource": [],
+        }
+
+        if scan_limit_norm > 0:
+            ops_ref = firebase_service.db.collection_group("operations")
+            if preset_norm == "all":
+                base = ops_ref.order_by("timestamp", direction=firestore.Query.DESCENDING)
+            else:
+                base = (
+                    ops_ref.where(filter=firestore.FieldFilter("timestamp", ">=", start_dt))
+                    .where(filter=firestore.FieldFilter("timestamp", "<", end_excl))
+                    .order_by("timestamp", direction=firestore.Query.DESCENDING)
+                )
+
+            by_op_type: dict[str, dict] = {}
+            by_model: dict[str, dict] = {}
+            by_status: dict[str, dict] = {}
+            by_key_source: dict[str, dict] = {}
+
+            scanned = 0
+            cursor = None
+            batch_size = 500
+            exhausted = False
+
+            while scanned < scan_limit_norm and not exhausted:
+                remaining = scan_limit_norm - scanned
+                q = base.limit(min(batch_size, remaining))
+                if cursor is not None:
+                    q = q.start_after(cursor)
+                try:
+                    docs_batch = list(q.stream())
+                except FailedPrecondition as exc:
+                    if _is_missing_ops_timestamp_index(exc):
+                        detail = _missing_ops_timestamp_index_detail(exc)
+                        _log_admin_error(detail)
+                        raise HTTPException(status_code=503, detail=detail) from None
+                    raise
+                if not docs_batch:
+                    exhausted = True
+                    break
+
+                for snap in docs_batch:
+                    # Guard: only include our known costMetrics operation log subcollections.
+                    path = getattr(snap.reference, "path", "") or ""
+                    if "/costMetrics/v1/operations/" not in str(path):
+                        continue
+
+                    data = snap.to_dict() or {}
+                    costs = data.get("costs") if isinstance(data.get("costs"), dict) else {}
+                    cost_usd = _as_float((costs or {}).get("totalCostUsd"), 0.0)
+
+                    credits = _as_float(data.get("creditsDebited"), 0.0)
+                    spend_rate = _as_float(data.get("spendRate"), 0.0)
+                    if credits <= 0 and spend_rate > 0 and cost_usd > 0:
+                        credits = float(cost_usd * spend_rate)
+                    if cost_usd <= 0 and spend_rate > 0 and credits > 0:
+                        cost_usd = float(credits / spend_rate)
+
+                    cost_usd = float(max(cost_usd, 0.0))
+                    credits = float(max(credits, 0.0))
+
+                    op_type = str(data.get("operationType") or "").strip() or "unknown"
+                    model_raw = str(data.get("modelNormalized") or data.get("model") or "unknown").strip() or "unknown"
+                    model = _display_model_key(model_raw)
+                    status = str(data.get("status") or "").strip().lower() or "unknown"
+                    key_source = str(data.get("keySource") or "").strip().lower() or "unknown"
+
+                    # Totals
+                    scan["totals"]["count"] = int(scan["totals"]["count"] or 0) + 1
+                    scan["totals"]["costUsd"] = float(scan["totals"]["costUsd"] or 0.0) + cost_usd
+                    scan["totals"]["credits"] = float(scan["totals"]["credits"] or 0.0) + credits
+
+                    # Group helpers
+                    def bump(bucket: dict, key: str, base_fields: dict):
+                        entry = bucket.get(key)
+                        if not entry:
+                            entry = {**base_fields, "count": 0, "costUsd": 0.0, "credits": 0.0}
+                            bucket[key] = entry
+                        entry["count"] = int(entry.get("count") or 0) + 1
+                        entry["costUsd"] = float(entry.get("costUsd") or 0.0) + cost_usd
+                        entry["credits"] = float(entry.get("credits") or 0.0) + credits
+
+                    bump(by_op_type, op_type, {"operationType": op_type})
+                    bump(by_model, model, {"model": model})
+                    bump(by_status, status, {"status": status})
+                    bump(by_key_source, key_source, {"keySource": key_source})
+
+                    scanned += 1
+                    if scanned >= scan_limit_norm:
+                        break
+
+                cursor = docs_batch[-1]
+                if len(docs_batch) < batch_size:
+                    exhausted = True
+
+            scan["operationsScanned"] = int(scanned)
+            scan["complete"] = bool(exhausted and scanned < scan_limit_norm)
+
+            # Sort outputs.
+            def to_sorted_list(bucket: dict, sort_key: str):
+                items = list(bucket.values())
+                items.sort(
+                    key=lambda x: (
+                        -_as_float(x.get(sort_key), 0.0),
+                        -int(x.get("count") or 0),
+                        str(x.get(sort_key) or ""),
+                    )
+                )
+                return items
+
+            scan["byOperationType"] = to_sorted_list(by_op_type, "costUsd")[:25]
+            scan["byModel"] = to_sorted_list(by_model, "costUsd")[:25]
+            scan["byStatus"] = to_sorted_list(by_status, "costUsd")
+            scan["byKeySource"] = to_sorted_list(by_key_source, "costUsd")
+
+    return {
+        "range": range_obj,
+        "totals": {
+            "costUsd": float(total_cost_usd),
+            "count": int(total_count),
+            "avgCostUsd": float(total_cost_usd / total_count) if total_count > 0 else 0.0,
+            "creditsEstimated": float(total_cost_usd * default_spend_rate),
+            "creditsTotal": float(total_credits) if total_credits is not None else None,
+            "defaultSpendRate": float(default_spend_rate),
+            "usersWithCosts": int(len(users_rollup)),
+        },
+        "byMonth": [by_month[k] for k in month_keys],
+        "byDay": [by_day[k] for k in (list(range_obj.get("keys") or []) if range_bucket != "month" else [])] if range_bucket != "month" else [],
+        "topUsers": top_users,
+        "scan": scan,
+    }
+
+
+@app.get("/api/admin/costs/operations")
+async def admin_costs_operations(
+    preset: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    limit: int = 50,
+    cursor: str | None = None,
+    _: str = Depends(verify_admin_user),
+):
+    """
+    Paginated global operation log for admin costs dashboard.
+
+    - `preset=all`: newest operations across all time.
+    - `start` / `end`: either month keys in YYYY-MM format (inclusive) OR dates in YYYY-MM-DD format (inclusive).
+    - `cursor`: document path returned as `nextCursor` from a previous call.
+    """
+    preset_norm = str(preset or "").strip().lower() or None
+    if preset_norm != "all":
+        parsed = _parse_costs_range_or_400(start, end)
+        start_dt = parsed["startDt"]
+        end_excl = parsed["endExclusive"]
+        if start_dt >= end_excl:
+            raise HTTPException(status_code=400, detail="start must be < end.")
+
+    limit_norm = max(1, min(int(limit or 50), 200))
+
+    ops_ref = firebase_service.db.collection_group("operations")
+    if preset_norm == "all":
+        base = ops_ref.order_by("timestamp", direction=firestore.Query.DESCENDING)
+    else:
+        base = (
+            ops_ref.where(filter=firestore.FieldFilter("timestamp", ">=", start_dt))
+            .where(filter=firestore.FieldFilter("timestamp", "<", end_excl))
+            .order_by("timestamp", direction=firestore.Query.DESCENDING)
+        )
+
+    if cursor:
+        cursor_path = str(cursor or "").strip()
+        if "/costMetrics/v1/operations/" not in cursor_path or not cursor_path.startswith("users/"):
+            raise HTTPException(status_code=400, detail="Invalid cursor.")
+        try:
+            cursor_snap = firebase_service.db.document(cursor_path).get()
+            if cursor_snap.exists:
+                base = base.start_after(cursor_snap)
+        except Exception:
+            pass
+
+    try:
+        docs = list(base.limit(limit_norm).stream())
+    except FailedPrecondition as exc:
+        if _is_missing_ops_timestamp_index(exc):
+            detail = _missing_ops_timestamp_index_detail(exc)
+            _log_admin_error(detail)
+            raise HTTPException(status_code=503, detail=detail) from None
+        raise
+    out = []
+    for snap in docs:
+        path = getattr(snap.reference, "path", "") or ""
+        if "/costMetrics/v1/operations/" not in str(path):
+            continue
+
+        data = snap.to_dict() or {}
+        costs = data.get("costs") if isinstance(data.get("costs"), dict) else {}
+        tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
+
+        uid = str(data.get("userId") or "").strip() or None
+        if not uid:
+            uid = _uid_from_doc_path(path)
+
+        out.append(
+            {
+                "id": snap.id,
+                "docPath": str(path),
+                "userId": uid,
+                "operationId": str(data.get("operationId") or snap.id),
+                "timestamp": _ts_to_iso(data.get("timestamp")),
+                "status": str(data.get("status") or ""),
+                "errorMessage": str(data.get("errorMessage") or "") or None,
+                "operationType": str(data.get("operationType") or ""),
+                "model": str(data.get("modelNormalized") or data.get("model") or "") or None,
+                "keySource": str(data.get("keySource") or "") or None,
+                "projektId": str(data.get("projektId") or "") or None,
+                "kapitelId": str(data.get("kapitelId") or "") or None,
+                "runId": str(data.get("runId") or "") or None,
+                "quelleId": str(data.get("quelleId") or "") or None,
+                "costUsd": _as_float((costs or {}).get("totalCostUsd"), 0.0),
+                "creditsDebited": _as_float(data.get("creditsDebited"), 0.0),
+                "spendRate": _as_float(data.get("spendRate"), 0.0) or None,
+                "tokens": {
+                    "inputTokens": int(tokens.get("inputTokens", 0) or 0),
+                    "cachedInputTokens": int(tokens.get("cachedInputTokens", 0) or 0),
+                    "outputTokens": int(tokens.get("outputTokens", 0) or 0),
+                    "totalTokens": int(tokens.get("totalTokens", 0) or 0),
+                },
+            }
+        )
+
+    next_cursor = docs[-1].reference.path if len(docs) == limit_norm else None
+    return {"operations": out, "nextCursor": next_cursor}
 
 
 @app.post("/api/admin/users/approve")
@@ -3014,6 +3811,253 @@ async def admin_list_user_projects(
     except Exception:
         raise HTTPException(
             status_code=500, detail="Failed to list projects."
+        ) from None
+
+
+@app.delete("/api/projects/{projekt_id}")
+async def delete_project(
+    projekt_id: str,
+    payload: DeleteProjectRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """Delete a project and all associated documents (user-owned)."""
+    uid_norm = (user_id or "").strip()
+    proj_norm = (projekt_id or "").strip()
+    if not uid_norm or not proj_norm:
+        raise HTTPException(status_code=400, detail="projekt_id is required.")
+
+    if proj_norm == "default":
+        raise HTTPException(status_code=400, detail="Standardprojekt kann nicht gelöscht werden.")
+
+    confirm_norm = _normalize_project_name(getattr(payload, "confirmName", "") or "")
+    if not confirm_norm:
+        raise HTTPException(status_code=400, detail="confirmName is required.")
+
+    try:
+        db = firebase_service.db
+        user_ref = db.collection("users").document(uid_norm)
+        project_ref = user_ref.collection("projects").document(proj_norm)
+        project_snap = project_ref.get()
+        if not project_snap.exists:
+            raise HTTPException(status_code=404, detail="Projekt nicht gefunden.")
+
+        project_data = project_snap.to_dict() or {}
+        expected_norm = _normalize_project_name(project_data.get("name") or "")
+        if not expected_norm:
+            raise HTTPException(status_code=400, detail="Projektname fehlt.")
+
+        if confirm_norm != expected_norm:
+            raise HTTPException(status_code=400, detail="Projektname stimmt nicht überein.")
+
+        def _manual_recursive_delete(ref) -> None:
+            try:
+                # DocumentReference: delete children then the doc itself.
+                if hasattr(ref, "collections") and hasattr(ref, "delete"):
+                    for subcol in ref.collections():
+                        _manual_recursive_delete(subcol)
+                    ref.delete()
+                    return
+
+                # CollectionReference: recurse into documents.
+                if hasattr(ref, "stream"):
+                    for snap in ref.stream():
+                        doc_ref = getattr(snap, "reference", None)
+                        if doc_ref is not None:
+                            _manual_recursive_delete(doc_ref)
+                    return
+            except Exception as exc:
+                raise exc
+
+        def _recursive_delete(ref) -> None:
+            if hasattr(db, "recursive_delete"):
+                # Important: Do NOT pass a BulkWriter here. In some google-cloud-firestore
+                # versions, `recursive_delete(..., bulk_writer=...)` can close the writer,
+                # which breaks subsequent deletes within the same request.
+                db.recursive_delete(ref)
+                return
+
+            _manual_recursive_delete(ref)
+
+        def _delete_docs_with_field(collection_name: str, field_name: str, field_value: str) -> None:
+            col = user_ref.collection(collection_name)
+            snaps = col.where(field_name, "==", field_value).stream()
+            for snap in snaps:
+                _recursive_delete(snap.reference)
+
+        # Project-bound documents.
+        _delete_docs_with_field("gliederungDrafts", "projektId", proj_norm)
+        _delete_docs_with_field("quellen", "projektId", proj_norm)
+        _delete_docs_with_field("kapitels", "projektId", proj_norm)
+
+        # Exports (project-bound). Also best-effort delete their storage prefix.
+        try:
+            exports_col = user_ref.collection("exports")
+            for snap in exports_col.where("projektId", "==", proj_norm).stream():
+                export_id = str(getattr(snap, "id", "") or "").strip()
+                if export_id:
+                    try:
+                        export_service._delete_export_storage_prefix(user_id=uid_norm, export_id=export_id)
+                    except Exception as exc:
+                        logger.warning(
+                            "Non-critical: failed to delete export storage (uid=%s, export_id=%s): %s",
+                            uid_norm,
+                            export_id,
+                            exc,
+                        )
+                _recursive_delete(snap.reference)
+        except Exception as exc:
+            logger.warning("Non-critical: failed to delete exports for project (uid=%s, projekt_id=%s): %s", uid_norm, proj_norm, exc)
+
+        # Cost metrics (project-bound).
+        try:
+            ops_col = user_ref.collection("costMetrics").document("v1").collection("operations")
+            for snap in ops_col.where("projektId", "==", proj_norm).stream():
+                _recursive_delete(snap.reference)
+
+            agg_ref = user_ref.collection("costMetrics").document("v1").collection("aggregatesByProject").document(proj_norm)
+            _recursive_delete(agg_ref)
+        except Exception as exc:
+            logger.warning(
+                "Non-critical: failed to delete cost metrics for project (uid=%s, projekt_id=%s): %s",
+                uid_norm,
+                proj_norm,
+                exc,
+            )
+
+        # Finally delete the project itself.
+        _recursive_delete(project_ref)
+
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to delete project (uid=%s, projekt_id=%s): %s", uid_norm, proj_norm, exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete project ({type(exc).__name__}): {exc}",
+        ) from None
+
+
+@app.delete("/api/admin/users/{uid}/projects/{projekt_id}")
+async def admin_delete_user_project(
+    uid: str,
+    projekt_id: str,
+    payload: AdminDeleteUserProjectRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Delete a project and all associated documents (admin-only)."""
+    uid_norm = (uid or "").strip()
+    proj_norm = (projekt_id or "").strip()
+    if not uid_norm or not proj_norm:
+        raise HTTPException(status_code=400, detail="uid and projekt_id are required.")
+
+    if proj_norm == "default":
+        raise HTTPException(status_code=400, detail="Standardprojekt kann nicht gelöscht werden.")
+
+    confirm_norm = _normalize_project_name(getattr(payload, "confirmName", "") or "")
+    if not confirm_norm:
+        raise HTTPException(status_code=400, detail="confirmName is required.")
+
+    try:
+        db = firebase_service.db
+        user_ref = db.collection("users").document(uid_norm)
+        project_ref = user_ref.collection("projects").document(proj_norm)
+        project_snap = project_ref.get()
+        if not project_snap.exists:
+            raise HTTPException(status_code=404, detail="Projekt nicht gefunden.")
+
+        project_data = project_snap.to_dict() or {}
+        expected_norm = _normalize_project_name(project_data.get("name") or "")
+        if not expected_norm:
+            raise HTTPException(status_code=400, detail="Projektname fehlt.")
+
+        if confirm_norm != expected_norm:
+            raise HTTPException(status_code=400, detail="Projektname stimmt nicht überein.")
+
+        def _manual_recursive_delete(ref) -> None:
+            # Fallback implementation for environments without `Client.recursive_delete`.
+            try:
+                # DocumentReference: delete children then the doc itself.
+                if hasattr(ref, "collections") and hasattr(ref, "delete"):
+                    for subcol in ref.collections():
+                        _manual_recursive_delete(subcol)
+                    ref.delete()
+                    return
+
+                # CollectionReference: recurse into documents.
+                if hasattr(ref, "stream"):
+                    for snap in ref.stream():
+                        doc_ref = getattr(snap, "reference", None)
+                        if doc_ref is not None:
+                            _manual_recursive_delete(doc_ref)
+                    return
+            except Exception as exc:
+                raise exc
+
+        def _recursive_delete(ref) -> None:
+            if hasattr(db, "recursive_delete"):
+                # Important: Do NOT pass a BulkWriter here. In some google-cloud-firestore
+                # versions, `recursive_delete(..., bulk_writer=...)` can close the writer,
+                # which breaks subsequent deletes within the same request.
+                db.recursive_delete(ref)
+                return
+
+            _manual_recursive_delete(ref)
+
+        def _delete_docs_with_field(collection_name: str, field_name: str, field_value: str) -> None:
+            col = user_ref.collection(collection_name)
+            snaps = col.where(field_name, "==", field_value).stream()
+            for snap in snaps:
+                _recursive_delete(snap.reference)
+
+        # Project-bound documents.
+        _delete_docs_with_field("gliederungDrafts", "projektId", proj_norm)
+        _delete_docs_with_field("quellen", "projektId", proj_norm)
+        _delete_docs_with_field("kapitels", "projektId", proj_norm)
+
+        # Exports (project-bound). Also best-effort delete their storage prefix.
+        try:
+            exports_col = user_ref.collection("exports")
+            for snap in exports_col.where("projektId", "==", proj_norm).stream():
+                export_id = str(getattr(snap, "id", "") or "").strip()
+                if export_id:
+                    try:
+                        export_service._delete_export_storage_prefix(user_id=uid_norm, export_id=export_id)
+                    except Exception as exc:
+                        logger.warning(
+                            "Non-critical: failed to delete export storage (uid=%s, export_id=%s): %s",
+                            uid_norm,
+                            export_id,
+                            exc,
+                        )
+                _recursive_delete(snap.reference)
+        except Exception as exc:
+            logger.warning("Non-critical: failed to delete exports for project (uid=%s, projekt_id=%s): %s", uid_norm, proj_norm, exc)
+
+        # Cost metrics (project-bound).
+        try:
+            ops_col = user_ref.collection("costMetrics").document("v1").collection("operations")
+            for snap in ops_col.where("projektId", "==", proj_norm).stream():
+                _recursive_delete(snap.reference)
+            _recursive_delete(user_ref.collection("costMetrics").document("v1").collection("aggregatesByProject").document(proj_norm))
+        except Exception as exc:
+            logger.warning(
+                "Non-critical: failed to delete cost metrics for project (uid=%s, projekt_id=%s): %s",
+                uid_norm,
+                proj_norm,
+                exc,
+            )
+
+        # Finally delete the project itself.
+        _recursive_delete(project_ref)
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to delete project (uid=%s, projekt_id=%s): %s", uid_norm, proj_norm, exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete project ({type(exc).__name__}): {exc}",
         ) from None
 
 

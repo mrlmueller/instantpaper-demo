@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Loader2, Trash2 } from 'lucide-react';
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -65,6 +67,13 @@ function formatNumber(num: number): string {
   return n.toLocaleString('de-DE');
 }
 
+function normalizeProjectName(value: string): string {
+  return String(value || '')
+    .normalize('NFKC')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
 export function AdminUserProjectsPanel({ uid, refreshNonce }: { uid: string; refreshNonce?: number }) {
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +84,10 @@ export function AdminUserProjectsPanel({ uid, refreshNonce }: { uid: string; ref
   const [quelleDialogOpen, setQuelleDialogOpen] = useState(false);
   const [selectedQuelle, setSelectedQuelle] = useState<QuelleDetailResponse | null>(null);
   const [loadingQuelle, setLoadingQuelle] = useState(false);
+
+  const [deleteOpenProjectId, setDeleteOpenProjectId] = useState<string | null>(null);
+  const [deleteConfirmValue, setDeleteConfirmValue] = useState('');
+  const [deleteLoadingProjectId, setDeleteLoadingProjectId] = useState<string | null>(null);
 
   const loadProjects = async () => {
     setLoading(true);
@@ -87,6 +100,9 @@ export function AdminUserProjectsPanel({ uid, refreshNonce }: { uid: string; ref
       setProjects(Array.isArray(data.projects) ? data.projects : []);
       setQuellenByProject({});
       setOpenProjectId(undefined);
+      setDeleteOpenProjectId(null);
+      setDeleteConfirmValue('');
+      setDeleteLoadingProjectId(null);
     } catch (err: any) {
       toast.error('Projekte', { description: err?.message || 'Konnte Projekte nicht laden.' });
       setProjects([]);
@@ -148,7 +164,56 @@ export function AdminUserProjectsPanel({ uid, refreshNonce }: { uid: string; ref
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openProjectId]);
 
+  useEffect(() => {
+    if (!deleteOpenProjectId) return;
+    if (openProjectId === deleteOpenProjectId) return;
+    setDeleteOpenProjectId(null);
+    setDeleteConfirmValue('');
+  }, [deleteOpenProjectId, openProjectId]);
+
   const totalQuellenLoaded = useMemo(() => Object.values(quellenByProject).reduce((acc, list) => acc + list.length, 0), [quellenByProject]);
+
+  const openDelete = (projektId: string) => {
+    if (!projektId) return;
+    setOpenProjectId(projektId);
+    setDeleteConfirmValue('');
+    setDeleteOpenProjectId((prev) => (prev === projektId ? null : projektId));
+  };
+
+  const closeDelete = () => {
+    setDeleteOpenProjectId(null);
+    setDeleteConfirmValue('');
+  };
+
+  const handleDeleteProject = async (project: ProjectRow) => {
+    if (!project?.id) return;
+    if (deleteLoadingProjectId) return;
+    if (project.id === 'default') return;
+
+    const typed = normalizeProjectName(deleteConfirmValue);
+    const expected = normalizeProjectName(project.name || '');
+    if (!typed || typed.toLowerCase() !== expected.toLowerCase()) return;
+
+    setDeleteLoadingProjectId(project.id);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(uid)}/projects/${encodeURIComponent(project.id)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmName: typed }),
+        cache: 'no-store',
+      });
+      const data = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
+      if (!res.ok) throw new Error(data?.error || 'Projekt konnte nicht gelöscht werden.');
+
+      toast.success('Projekt gelöscht', { description: `"${project.name}" wurde gelöscht.` });
+      closeDelete();
+      await loadProjects();
+    } catch (err: any) {
+      toast.error('Projekt löschen', { description: err?.message || 'Projekt konnte nicht gelöscht werden.' });
+    } finally {
+      setDeleteLoadingProjectId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -188,6 +253,12 @@ export function AdminUserProjectsPanel({ uid, refreshNonce }: { uid: string; ref
             const quellen = quellenByProject[p.id];
             const count = typeof quellen === 'undefined' ? '—' : String(quellen.length);
             const isLoadingQuellen = loadingProjectId === p.id;
+            const deleteOpen = deleteOpenProjectId === p.id;
+            const isDeleting = deleteLoadingProjectId === p.id;
+            const typed = normalizeProjectName(deleteConfirmValue);
+            const expected = normalizeProjectName(p.name || '');
+            const matches = typed && typed.toLowerCase() === expected.toLowerCase();
+            const isDefault = p.id === 'default';
 
             return (
               <AccordionItem key={p.id} value={p.id} className="border-b-0 mb-4 last:mb-0">
@@ -198,10 +269,71 @@ export function AdminUserProjectsPanel({ uid, refreshNonce }: { uid: string; ref
                         <span className="truncate">{p.name || p.id}</span>
                         {p.archived ? <Badge variant="outline">archived</Badge> : null}
                       </div>
-                      <div className="text-xs text-muted-foreground shrink-0">{count} Quellen</div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-xs text-muted-foreground">{count} Quellen</div>
+                        <Button
+                          variant={deleteOpen ? 'outline' : 'ghost'}
+                          size={deleteOpen ? 'sm' : 'icon'}
+                          className={
+                            deleteOpen
+                              ? 'h-8 text-red-600 border-red-200 hover:bg-red-50'
+                              : 'h-8 w-8 text-red-600'
+                          }
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!isDefault) openDelete(p.id);
+                          }}
+                          disabled={isDefault}
+                          title={isDefault ? 'Standardprojekt kann nicht gelöscht werden' : 'Projekt löschen'}
+                        >
+                          <Trash2 className={deleteOpen ? 'h-4 w-4 mr-2' : 'h-4 w-4'} />
+                          {deleteOpen ? 'Löschen' : null}
+                        </Button>
+                      </div>
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="pb-4">
+                    {deleteOpen ? (
+                      <div className="mb-4 rounded-lg border border-red-200 bg-red-50/70 p-4">
+                        <div className="text-sm font-semibold text-red-700">
+                          Möchtest du &quot;{p.name || p.id}&quot; wirklich löschen?
+                        </div>
+                        <p className="text-sm text-red-700/90 mt-1">
+                          Diese Aktion kann nicht rückgängig gemacht werden. Alle Kapitel, Quellen, Runs und Texte werden unwiderruflich gelöscht.
+                        </p>
+
+                        <div className="mt-4 space-y-2">
+                          <Label className="text-red-800">Gib den Projektnamen ein:</Label>
+                          <Input
+                            value={deleteConfirmValue}
+                            onChange={(e) => setDeleteConfirmValue(e.target.value)}
+                            placeholder={p.name || p.id}
+                            disabled={isDeleting}
+                          />
+                        </div>
+
+                        <div className="mt-4 flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={() => handleDeleteProject(p)}
+                            disabled={!matches || isDeleting}
+                          >
+                            {isDeleting ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                              <Trash2 className="h-4 w-4 mr-2" />
+                            )}
+                            Endgültig löschen
+                          </Button>
+                          <Button type="button" variant="outline" onClick={closeDelete} disabled={isDeleting}>
+                            Abbrechen
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+
                     {isLoadingQuellen ? (
                       <div className="space-y-2">
                         <Skeleton className="h-10 w-full" />

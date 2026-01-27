@@ -8,6 +8,7 @@ import {
   Calendar,
   FileText,
   FileDown,
+  FolderOpen,
   Coins,
   BarChart3,
   Zap,
@@ -33,8 +34,9 @@ import { cn } from "@/lib/utils";
 import { BillingTab } from "@/app/components/profile/BillingTab";
 import { PromptManager } from "@/app/components/profile/PromptManager";
 import { ExportsTab } from "@/app/components/profile/ExportsTab";
+import { ProjectsTab } from "@/app/components/profile/ProjectsTab";
 
-type ProfileTab = "einstellungen" | "billing" | "statistiken" | "exporte";
+type ProfileTab = "einstellungen" | "billing" | "statistiken" | "exporte" | "projekte";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
@@ -88,6 +90,7 @@ function ProfilePageSkeleton() {
           </div>
           <div className="p-4 flex-1">
             <div className="space-y-1">
+              <Skeleton className="h-10 w-full rounded-lg" />
               <Skeleton className="h-10 w-full rounded-lg" />
               <Skeleton className="h-10 w-full rounded-lg" />
               <Skeleton className="h-10 w-full rounded-lg" />
@@ -180,7 +183,9 @@ export default function ProfilPage() {
 
   useEffect(() => {
     const tab = searchParams.get("tab");
-    if (tab === "billing") setActiveTab("billing");
+    if (tab === "billing" || tab === "exporte" || tab === "projekte") {
+      setActiveTab(tab as ProfileTab);
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -635,6 +640,21 @@ export default function ProfilPage() {
                 >
                   <FileDown className="h-4 w-4" />
                   Exporte
+                </button>
+              ) : null}
+
+              {!effectiveBlocked ? (
+                <button
+                  onClick={() => setActiveTab("projekte")}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                    displayedTab === "projekte"
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
+                  )}
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  Projekte
                 </button>
               ) : null}
             </nav>
@@ -1153,6 +1173,12 @@ export default function ProfilPage() {
               {!effectiveBlocked ? (
                 <TabsContent value="exporte">
                   <ExportsTab userId={authUser.uid} />
+                </TabsContent>
+              ) : null}
+
+              {!effectiveBlocked ? (
+                <TabsContent value="projekte">
+                  <ProjectsTab userId={authUser.uid} />
                 </TabsContent>
               ) : null}
             </Tabs>
