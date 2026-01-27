@@ -305,6 +305,19 @@ def _ts_to_iso(value) -> str | None:
     return None
 
 
+def _ts_to_datetime_utc(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        if hasattr(value, "to_datetime"):
+            value = value.to_datetime()
+        if isinstance(value, datetime):
+            return _datetime_to_utc(value)
+    except Exception:
+        return None
+    return None
+
+
 def _normalize_access_code(raw: str) -> str:
     return str(raw or "").strip().upper().replace(" ", "").replace("_", "-")
 
@@ -1506,6 +1519,35 @@ def _uid_from_doc_path(doc_path: str) -> str | None:
     return None
 
 
+def _get_nested_or_dotted(data: dict, path: str):
+    """
+    Read a value that may be stored either as nested maps (preferred) or as a literal dotted field name.
+
+    Historical aggregate docs in this project used dotted field names like
+    `byTimePeriod.2026-01.totalCostUsd` instead of a nested map `byTimePeriod: { "2026-01": ... }`.
+    """
+
+    if not isinstance(data, dict):
+        return None
+    raw_path = str(path or "").strip()
+    if not raw_path:
+        return None
+
+    # Try nested access first (future-proof).
+    cur = data
+    ok = True
+    for seg in raw_path.split("."):
+        if not isinstance(cur, dict) or seg not in cur:
+            ok = False
+            break
+        cur = cur[seg]
+    if ok:
+        return cur
+
+    # Fallback: literal dotted key.
+    return data.get(raw_path)
+
+
 def _is_missing_ops_timestamp_index(exc: Exception) -> bool:
     msg = str(exc or "")
     msg_l = msg.lower()
@@ -1665,13 +1707,10 @@ async def admin_costs_summary(
                 total_cost_usd += float(max(cost_all, 0.0))
                 total_count += int(max(count_all, 0))
 
-            by_time = data.get("byTimePeriod") if isinstance(data.get("byTimePeriod"), dict) else {}
-            # Only loop recent keys (12).
             for key in month_keys:
-                entry = by_time.get(key) if isinstance(by_time.get(key), dict) else {}
-                cost = _as_float(entry.get("totalCostUsd"), 0.0)
+                cost = _as_float(_get_nested_or_dotted(data, f"byTimePeriod.{key}.totalCostUsd"), 0.0)
                 try:
-                    count = int(entry.get("count", 0) or 0)
+                    count = int(_get_nested_or_dotted(data, f"byTimePeriod.{key}.count") or 0)
                 except Exception:
                     count = 0
 
@@ -1691,17 +1730,13 @@ async def admin_costs_summary(
             if not uid:
                 continue
 
-            by_time = data.get("byTimePeriod") if isinstance(data.get("byTimePeriod"), dict) else {}
             user_cost = 0.0
             user_count = 0
 
-            for key, raw_entry in by_time.items():
-                if key not in month_key_set:
-                    continue
-                entry = raw_entry if isinstance(raw_entry, dict) else {}
-                cost = _as_float(entry.get("totalCostUsd"), 0.0)
+            for key in month_keys:
+                cost = _as_float(_get_nested_or_dotted(data, f"byTimePeriod.{key}.totalCostUsd"), 0.0)
                 try:
-                    count = int(entry.get("count", 0) or 0)
+                    count = int(_get_nested_or_dotted(data, f"byTimePeriod.{key}.count") or 0)
                 except Exception:
                     count = 0
 
@@ -1772,13 +1807,8 @@ async def admin_costs_summary(
                 cost_usd = float(max(cost_usd, 0.0))
                 credits = float(max(credits, 0.0))
 
-                ts = data.get("timestamp")
-                day = None
-                try:
-                    if hasattr(ts, "to_datetime"):
-                        day = _day_key(ts.to_datetime())
-                except Exception:
-                    day = None
+                dt = _ts_to_datetime_utc(data.get("timestamp"))
+                day = _day_key(dt) if dt else None
 
                 if day and day in by_day_keys:
                     by_day[day]["costUsd"] = float(by_day[day].get("costUsd", 0.0) or 0.0) + cost_usd
@@ -3607,30 +3637,26 @@ async def admin_get_user_stats(
         except Exception:
             total_runs = 0
 
-        by_op = _as_record(agg.get("byOperationType"))
-        export_agg = _as_record(by_op.get("export_docx"))
-        export_cost = _cents_from_usd(export_agg.get("totalCostUsd"))
+        export_cost = _cents_from_usd(_get_nested_or_dotted(agg, "byOperationType.export_docx.totalCostUsd"))
         try:
-            export_count = int(export_agg.get("count", 0) or 0)
+            export_count = int(_get_nested_or_dotted(agg, "byOperationType.export_docx.count") or 0)
         except Exception:
             export_count = 0
 
-        by_time = _as_record(agg.get("byTimePeriod"))
         now = datetime.now(timezone.utc)
         runs_by_month = []
         for idx in range(6):
             dt = _add_months(now, -(5 - idx))
             key = _month_key(dt)
-            entry = _as_record(by_time.get(key))
             try:
-                runs = int(entry.get("count", 0) or 0)
+                runs = int(_get_nested_or_dotted(agg, f"byTimePeriod.{key}.count") or 0)
             except Exception:
                 runs = 0
             runs_by_month.append(
                 {
                     "month": _month_label_de(dt.month),
                     "runs": runs,
-                    "cost": _cents_from_usd(entry.get("totalCostUsd")),
+                    "cost": _cents_from_usd(_get_nested_or_dotted(agg, f"byTimePeriod.{key}.totalCostUsd")),
                     "key": key,
                 }
             )

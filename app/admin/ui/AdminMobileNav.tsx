@@ -2,14 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Key, Menu, MessageSquareText, Users, X } from 'lucide-react';
+import { DollarSign, Key, Menu, MessageSquareText, Users, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 type NavItem = {
-  key: 'users' | 'access-codes' | 'prompts';
+  key: 'users' | 'costs' | 'access-codes' | 'prompts';
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -17,6 +17,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { key: 'users', href: '/admin?section=users', label: 'User Management', icon: Users },
+  { key: 'costs', href: '/admin?section=costs', label: 'Costs', icon: DollarSign },
   { key: 'access-codes', href: '/admin/access-codes', label: 'Access Codes', icon: Key },
   { key: 'prompts', href: '/admin?section=prompts', label: 'Default Prompts', icon: MessageSquareText },
 ];
@@ -24,6 +25,7 @@ const NAV_ITEMS: NavItem[] = [
 function getActiveKey(pathname: string, section: string | null): NavItem['key'] {
   const path = String(pathname || '');
   if (path.startsWith('/admin/access-codes')) return 'access-codes';
+  if (section === 'costs') return 'costs';
   if (section === 'prompts') return 'prompts';
   return 'users';
 }
@@ -85,4 +87,3 @@ export function AdminMobileNav() {
     </Dialog>
   );
 }
-

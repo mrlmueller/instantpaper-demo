@@ -11,6 +11,7 @@ import {
   adminSetUserFullAccess,
 } from '@/app/actions/admin';
 import { ConfirmSubmitDialog } from '@/app/components/admin/ConfirmSubmitDialog';
+import { AdminCostsDashboard } from '@/app/components/admin/AdminCostsDashboard';
 import { SystemPromptManager } from '@/app/components/admin/SystemPromptManager';
 import { isAdminUser, listAdminUsers, type AdminUserRow } from '@/app/lib/api/adminServer';
 import { Badge } from '@/components/ui/badge';
@@ -389,10 +390,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
   const sp = (await searchParams) || {};
   const sectionRaw = Array.isArray(sp.section) ? sp.section[0] : sp.section;
-  const section = sectionRaw === 'prompts' ? 'prompts' : 'users';
+  const section = sectionRaw === 'prompts' ? 'prompts' : sectionRaw === 'costs' ? 'costs' : 'users';
 
   if (section === 'prompts') {
     return <SystemPromptManager />;
+  }
+
+  if (section === 'costs') {
+    return <AdminCostsDashboard />;
   }
 
   const { users } = await listAdminUsers({ maxResults: 1000 });

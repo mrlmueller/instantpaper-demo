@@ -15,6 +15,13 @@ async function readErrorDetail(res: Response): Promise<string | null> {
   return null;
 }
 
+function extractFirstUrl(value: string | null | undefined): string | null {
+  const raw = String(value || '');
+  const match = raw.match(/https?:\/\/\S+/);
+  if (!match) return null;
+  return match[0].replace(/[).,;\\]}>]+$/, '');
+}
+
 async function getAuthTokenOrNullAsync(): Promise<string | null> {
   const store = await cookies();
   const token = store.get('__session')?.value;
@@ -59,7 +66,8 @@ export async function proxyAdminJson(request: Request, path: string, init?: Requ
 
     if (!res.ok) {
       const detail = await readErrorDetail(res);
-      return NextResponse.json({ error: detail || 'Request failed.' }, { status: res.status });
+      const createIndexUrl = extractFirstUrl(detail);
+      return NextResponse.json({ error: detail || 'Request failed.', createIndexUrl }, { status: res.status });
     }
 
     const data = await res.json().catch(() => ({}));
