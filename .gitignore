@@ -47,3 +47,5 @@ new-design
 updated-design/
 
 fastapi/.prompt_dumps
+/.llm_label_cache_v1
+/.embed_cache
