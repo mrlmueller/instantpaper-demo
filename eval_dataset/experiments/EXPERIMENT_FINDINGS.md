@@ -13,7 +13,9 @@ This file is an **append-only lab notebook**: after each run where you paste res
 ## Current evaluation setup (pinned)
 
 - Chapters: `platform_theory`, `platform_methodology`, `platform_empirical_case`
-- Label source: `eval_dataset/eval_rubrics` (LLM-assisted labeling, then used as ground truth for eval)
+- Dataset tag (current benchmark):
+  - `stageB_coverage_v1_v1__platform_methodology_labels_v2_b62a29d1b69b__platform_empirical_case_labels_v3_3e82ebaea202__platform_theory_labels_v3_96297d620195`
+- Label source: `eval_dataset/eval_rubrics` + adjudication patches (methodology v2, empirical v3, theory v3; applied with confidence≥70)
 - Primary metric (selection): `ndcg@20` on `__ALL__` macro row
 - Secondary metrics: `p@20`, `mrr_include`, `auc_include`
 
@@ -932,3 +934,398 @@ This file is an **append-only lab notebook**: after each run where you paste res
 **Decision**
 - ⚠️ Do **not** lock RRF into the final pipeline yet: empirical-case evaluation is high-variance (only ~2 INCLUDEs historically), so we first need to improve **label reliability** for `platform_empirical_case`.
 - Next action: run label adjudication v2 for `platform_empirical_case` (pilot 40 → then full 220 if the pilot looks sane), then re-run this RRF decision step.
+
+---
+
+### 2026-02-02 — Empirical-case label adjudication pilot (26 docs): INCLUDEs likely wrong, “maybe/exclude” boundary needs tightening
+
+**Run**
+- Chapter: `platform_empirical_case`
+- Pilot selection: `26` docs (MAX_ITEMS=40; many overlaps between top-by-stage and top-by-tfidf)
+- Stage score column: `score_hybrid_pool`
+- Totals: `requests=26`, `input_tokens=14,536`, `output_tokens=987`, `cost_usd≈$0.0056`
+- Saved:
+  - `eval_dataset/experiments/20260202_103909_b62a29d1b69b_label_adjudication_platform_empirical_case_v2.csv`
+  - `eval_dataset/experiments/20260202_103909_b62a29d1b69b_label_adjudication_platform_empirical_case_v2_cost.csv`
+
+**Outcome**
+- New labels contained **no `include`** in this pilot slice.
+- Both existing INCLUDEs flipped `include → maybe` (likely correct; they were not clear “empirical platform case evidence” sources).
+- Many `exclude → maybe` flips occurred for “network effects” papers in non-target contexts (risk: `maybe` becomes too permissive).
+
+**Interpretation**
+- The empirical-case `include` definition was too strict (“public data + multiple dimensions”), causing `include` to collapse to 0 in the pilot slice.
+- The `maybe/exclude` boundary is too loose for cross-domain “network effects” papers; rubric needs to push wrong-domain items to `exclude`.
+
+**Decision / changes made**
+- Updated label adjudication prompt to **chapter-aware label definitions** and made empirical-case `include` more realistic (platform-specific + evidence-based, one dimension is enough).
+- Updated pilot selection to also sample platform-name / “case study” hits for `platform_empirical_case` (so the pilot actually tests the `include` boundary).
+- Bumped prompt version to `v3_chapter_label_defs` to avoid reusing cached v2 outputs.
+
+**Next**
+- Re-run the empirical-case pilot (MAX_ITEMS=40) under v3; if includes appear and domain mismatches are mostly `exclude`, proceed to full 220 + apply to create a new dataset tag.
+
+---
+
+### 2026-02-02 — Empirical-case adjudication v3 pilot (40 docs): include signal recovered, but needs confidence filtering
+
+**Run**
+- Chapter: `platform_empirical_case`
+- Selected: `40` docs (MAX_ITEMS=40)
+- Existing label mix: `exclude=19`, `maybe=19`, `include=2`
+- Totals: `requests=40`, `input_tokens=26,592`, `output_tokens=1,477`, `cost_usd≈$0.0096`
+- Saved:
+  - `eval_dataset/experiments/20260202_105638_b62a29d1b69b_label_adjudication_platform_empirical_case_v3.csv`
+  - `eval_dataset/experiments/20260202_105638_b62a29d1b69b_label_adjudication_platform_empirical_case_v3_cost.csv`
+
+**New label mix (in this 40-item slice)**
+- `include`: 11
+- `maybe`: 20
+- `exclude`: 9
+
+**Key flips**
+- Several `maybe → include` flips for platform-specific empirical sources (e.g., App Store / Grab / Airbnb).
+- Old INCLUDE still flipped `include → maybe` when it was theoretical-only (good).
+
+**Issues spotted**
+- A couple of “include” outputs had **very low confidence** (e.g., 8–9), which should not be applied blindly.
+
+**Decision**
+- ✅ Proceed to **full-chapter relabel** for `platform_empirical_case` (220 docs) using v3.
+- Apply conservatively with `LABEL_ADJUDICATION_APPLY_CONFIDENCE_MIN=70` to avoid low-confidence mislabels.
+
+---
+
+### 2026-02-02 — Empirical-case adjudication v3 full (220 docs): INCLUDEs increased, apply with confidence≥70
+
+**Run**
+- Chapter: `platform_empirical_case`
+- Mode: full chapter (`MAX_ITEMS=220`)
+- Existing label mix: `exclude=163`, `maybe=55`, `include=2`
+- Totals (estimated incl cached): `requests=220`, `input_tokens≈144,694`, `output_tokens≈8,048`, `cost_usd≈$0.0523`
+- Saved:
+  - `eval_dataset/experiments/20260202_110405_b62a29d1b69b_label_adjudication_platform_empirical_case_v3.csv`
+  - `eval_dataset/experiments/20260202_110405_b62a29d1b69b_label_adjudication_platform_empirical_case_v3_cost.csv`
+
+**Label comparison (counts)**
+- `old_exclude`: `109 exclude`, `2 include`, `52 maybe`
+- `old_maybe`: `2 exclude`, `14 include`, `39 maybe`
+- `old_include`: `1 include`, `1 maybe`
+- Total changed labels: `71`
+- Low-confidence (<70): `21` items
+
+**New-label distribution (full chapter)**
+- `include=17`, `maybe=92`, `exclude=111`
+
+**Decision**
+- ✅ Apply adjudication to the dataset with `LABEL_ADJUDICATION_APPLY_CONFIDENCE_MIN=70` (keeps 199/220 rows; avoids low-confidence INCLUDEs).
+- Next: create the new dataset tag + label-synced scored CSV, then rerun Stage C/C.3 analyses and re-evaluate the RRF `w_cite` decision.
+
+**Applied**
+- New dataset tag:
+  - `stageB_coverage_v1_v1__platform_methodology_labels_v2_b62a29d1b69b__platform_empirical_case_labels_v3_3e82ebaea202`
+- Label-synced scored CSV (for rerank_analysis):
+  - `eval_dataset/experiments/20260202_111802_3e82ebaea202_stageC3_rerank_v1_scored.csv`
+
+---
+
+### 2026-02-02 — Rerank-analysis rerun on updated labels (methodology v2 + empirical v3 applied)
+
+**Pinned dataset**
+- Tag:
+  - `stageB_coverage_v1_v1__platform_methodology_labels_v2_b62a29d1b69b__platform_empirical_case_labels_v3_3e82ebaea202`
+- Label distribution (per chapter):
+  - `platform_empirical_case`: `exclude=115`, `maybe=90`, `include=15`
+  - `platform_methodology`: `exclude=66`, `maybe=131`, `include=23`
+  - `platform_theory`: `exclude=100`, `maybe=101`, `include=19`
+
+**Stage C baseline (macro, __ALL__)**
+- `score_stageC_final`: `ndcg@20≈0.564176`, `p@20≈0.200000`, `mrr_include≈0.777778`, `auc_include≈0.744907`
+
+**Stage C.3 confirmation (offline, using cached rerank-v1 scores)**
+- Best **score fusion**: `alpha_llm=0.20` → `ndcg@20≈0.609165` (Δ vs Stage C: `+0.044990`)
+- Best **top‑N shortlist rerank**: `topn=50` → `ndcg@20≈0.615441` (Δ vs Stage C: `+0.051265`)
+- LOCO still selects `alpha_llm=0.20` and `topn=50` for all holdouts.
+
+**Artifacts**
+- `eval_dataset/experiments/20260202_000629_b62a29d1b69b_stageC3_mix_sweep_v1.csv`
+- `eval_dataset/experiments/20260202_000629_b62a29d1b69b_stageC3_topn_sweep_v1.csv`
+- `eval_dataset/experiments/20260202_000629_b62a29d1b69b_stageC3_mix_loco_v1.csv`
+- `eval_dataset/experiments/20260202_000629_b62a29d1b69b_stageC3_topn_loco_v1.csv`
+
+**Decision**
+- ✅ Stage C.3 design remains correct under the improved labels: **top‑50 shortlist rerank + deterministic tie-break**.
+
+---
+
+### 2026-02-02 — Stage C weight retune “optimized for Stage C.3” is overfitting (reject)
+
+**What changed**
+- Tried to retune Stage C weights to maximize the *post‑Stage‑C.3* metric (macro `ndcg@20`), using the pinned dataset.
+
+**Single-dataset best**
+- `w_embed_max=0.5`, `w_embed=0.6`, `cite_weight=0.08` → macro `ndcg@20≈0.621967`
+
+**Generalization (LOCO)**
+- Avg LOCO holdout `ndcg@20≈0.583189`
+- Avg LOCO delta vs baseline (current Stage C weights): `≈-0.023649`
+
+**Artifacts**
+- `eval_dataset/experiments/20260202_112421_45cf8edd2af2_stageC3_stageC_joint_grid_v1_sweep.csv`
+- `eval_dataset/experiments/20260202_112421_45cf8edd2af2_stageC3_stageC_joint_grid_v1_loco.csv`
+
+**Decision**
+- ❌ Do **not** retune Stage C weights “for Stage C.3” — it improves the training macro but hurts LOCO → classic overfitting.
+- ✅ Keep the existing finalized Stage C weights (`w_embed_max=0.0`, `w_embed=0.7`, `cite_weight=0.08`).
+
+---
+
+### 2026-02-02 — Stage C RRF citation weight sweep v2: small macro gain but harms empirical and fails LOCO (reject)
+
+**What changed**
+- Tested a Stage C **RRF-style** merge with a larger citation weight `w_cite` to see if it helps before Stage C.3.
+
+**Macro sweep**
+- Best macro: `w_cite=0.20` → `ndcg@20≈0.610786` (Δ vs base `+0.003948`)
+
+**LOCO holdout deltas vs base (selected `w_cite` per holdout)**
+- `platform_empirical_case` (selected `w_cite=0.35`): `Δ ndcg@20≈-0.045675` (worst-case harm)
+- `platform_methodology` (selected `w_cite=0.20`): `Δ ndcg@20≈+0.024238`
+- `platform_theory` (selected `w_cite=0.20`): `Δ ndcg@20≈+0.008348`
+
+**Generalization (LOCO)**
+- Avg LOCO delta vs base: `≈-0.004363`
+
+**Artifacts**
+- `eval_dataset/experiments/20260202_112435_def239c4acaf_stageC3_stageC_rrf_cite_sweep_v2.csv`
+- `eval_dataset/experiments/20260202_112435_def239c4acaf_stageC3_stageC_rrf_cite_loco_v2.csv`
+
+**Decision**
+- ❌ Do **not** adopt the RRF `w_cite` change: hurts the empirical chapter and does not generalize under LOCO.
+
+---
+
+### Next (scientific hygiene)
+
+We now have improved labels for:
+- ✅ `platform_methodology` (v2)
+- ✅ `platform_empirical_case` (v3, applied with confidence≥70)
+
+To avoid “uneven ground truth quality”, the next step is to run the same adjudication on:
+- ⏳ `platform_theory` (full 220 docs), then apply with confidence≥70 and rerun rerank-analysis once more.
+
+---
+
+### 2026-02-02 — Theory adjudication v3 full (220 docs) + apply (confidence≥70): INCLUDEs increased substantially
+
+**Run**
+- Chapter: `platform_theory`
+- Mode: full chapter (`MAX_ITEMS=220`)
+- Existing label mix: `maybe=101`, `exclude=100`, `include=19`
+- Totals: `requests=220`, `input_tokens=116,887`, `output_tokens=8,284`, `cost_usd≈$0.04579`
+- Saved:
+  - `eval_dataset/experiments/20260202_124639_3e82ebaea202_label_adjudication_platform_theory_v3.csv`
+  - `eval_dataset/experiments/20260202_124639_3e82ebaea202_label_adjudication_platform_theory_v3_cost.csv`
+
+**Changes**
+- Total changed labels: `69`
+- Low-confidence (<70): `29` (not applied)
+
+**Applied (confidence≥70)**
+- Applied rows: `191/220`
+- Before (chapter): `include=19`, `maybe=101`, `exclude=100`
+- After  (chapter): `include=54`, `maybe=88`, `exclude=78`
+
+**New dataset + scored CSV**
+- New dataset tag:
+  - `stageB_coverage_v1_v1__platform_methodology_labels_v2_b62a29d1b69b__platform_empirical_case_labels_v3_3e82ebaea202__platform_theory_labels_v3_96297d620195`
+- Label-synced scored CSV:
+  - `eval_dataset/experiments/20260202_124639_96297d620195_stageC3_rerank_v1_scored.csv`
+
+**Decision**
+- ✅ All 3 chapters now have adjudicated labels → we can treat this dataset as the new “main benchmark” for pipeline tuning.
+
+---
+
+### 2026-02-02 — Rerank-analysis on the fully adjudicated dataset (all 3 chapters): baseline improved, Stage C retuning still overfits
+
+**Pinned dataset**
+- `stageB_coverage_v1_v1__platform_methodology_labels_v2_b62a29d1b69b__platform_empirical_case_labels_v3_3e82ebaea202__platform_theory_labels_v3_96297d620195`
+
+**Baseline after Stage C.3 (macro, __ALL__)**
+- Stage C weights (kept): `w_embed_max=0.0`, `w_embed=0.7`, `cite_weight=0.08`
+- Macro: `ndcg@20≈0.659435`, `p@20≈0.416667`, `mrr_include≈0.833333`, `auc_include≈0.722174`
+- First INCLUDE ranks (sanity): `empirical_case=1`, `methodology=2`, `theory=1`
+
+**Stage C weight retune “for Stage C.3”**
+- Single-dataset best: `w_embed_max=0.0`, `w_embed=0.5`, `cite_weight=0.12` → `ndcg@20≈0.673464`
+- LOCO avg holdout: `ndcg@20≈0.633036` (Δ vs baseline `≈-0.026398`)
+- Decision: ❌ reject (still overfitting under stronger labels).
+- Artifacts:
+  - `eval_dataset/experiments/20260202_124919_b9c347f21d03_stageC3_stageC_joint_grid_v1_sweep.csv`
+  - `eval_dataset/experiments/20260202_124919_b9c347f21d03_stageC3_stageC_joint_grid_v1_loco.csv`
+
+**Shortlist “rescue” intersections**
+- Single-dataset best improved macro (`ndcg@20≈0.677447`), but LOCO average delta vs base was `0.0` (no generalizable improvement).
+- Decision: ❌ keep baseline (not worth complexity).
+- Artifacts:
+  - `eval_dataset/experiments/20260202_124931_b9c347f21d03_stageC3_shortlist_rescue_intersection_sweep_v1.csv`
+  - `eval_dataset/experiments/20260202_124931_b9c347f21d03_stageC3_shortlist_rescue_intersection_loco_v1.csv`
+
+**RRF citation-weight sweep (re-check)**
+- Best macro in sweep was worse than baseline:
+  - `w_cite=0.20` → `ndcg@20≈0.658292` (Δ `≈-0.001143`)
+- LOCO deltas vs base (selected `w_cite=0.20`):
+  - `platform_empirical_case`: `Δ ndcg@20≈-0.020742`
+  - `platform_methodology`: `Δ ndcg@20≈+0.024238`
+  - `platform_theory`: `Δ ndcg@20≈-0.006925`
+  - Avg LOCO delta: `≈-0.001143`
+- Decision: ❌ reject (hurts empirical + net-negative).
+- Artifacts:
+  - `eval_dataset/experiments/20260202_124932_da4629e6f35d_stageC3_stageC_rrf_cite_sweep_v2.csv`
+  - `eval_dataset/experiments/20260202_124932_da4629e6f35d_stageC3_stageC_rrf_cite_loco_v2.csv`
+
+---
+
+### 2026-02-02 — Stage C.3 TOPN tradeoff (fully adjudicated dataset): TOPN=75 wins macro, but harms methodology and breaks Stage D synergy
+
+**Sweep (macro)**
+- `TOPN=50` (baseline): `ndcg@20≈0.659435`, `p@20≈0.416667`, `mrr_include≈0.833333`
+- `TOPN=75`: `ndcg@20≈0.672256` (Δ `≈+0.012821`), `p@20≈0.433333`, `mrr_include≈0.777778`
+
+**Per-chapter ndcg@20 delta (TOPN=75 − TOPN=50)**
+- `platform_empirical_case`: `≈+0.054035`
+- `platform_methodology`: `≈-0.013273`
+- `platform_theory`: `≈-0.002298`
+
+**Decision**
+- ✅ Keep `TOPN=50` as the production default:
+  - It’s cheaper (50 calls/chapter vs 75) and avoids harming the methodology chapter.
+  - It is the **only** setting that pairs well with Stage D MMR (see next section).
+
+**Artifacts**
+- `eval_dataset/experiments/20260202_131649_96297d620195_stageC3_topn_tradeoff_sweep_v2.csv`
+- `eval_dataset/experiments/20260202_131649_96297d620195_stageC3_topn_tradeoff_loco_v2.csv`
+
+---
+
+### 2026-02-02 — Stage D finalized (fully adjudicated dataset): MMR TF‑IDF improves relevance + reduces redundancy
+
+**What changed**
+- Added a Stage D “diverse top‑K” re-ranker on top of Stage C.3:
+  - pool = top‑`topm` by `score_stageC3_topn_tiebreak_v1`
+  - selection = MMR using TF‑IDF similarity
+  - ranking = chosen docs sorted by `score_stageC3_signal_v1` then `score_stageC3_topn_tiebreak_v1`
+
+**Best sweep setting (macro)**
+- `topm=100`, `lambda=0.6` (also ties with 0.7–0.9)
+- Macro: `ndcg@20≈0.675737` (Δ vs Stage C.3 baseline `≈+0.016302`)
+- Redundancy proxy (avg TF‑IDF mean pairwise sim top‑20): `≈0.1346` (baseline was `≈0.17–0.19`)
+
+**Per-chapter ndcg@20 delta (topm=100, lambda=0.6)**
+- `platform_empirical_case`: `≈+0.049199`
+- `platform_methodology`: `≈+0.001704`
+- `platform_theory`: `≈-0.001996` (negligible)
+
+**Decision**
+- ✅ Stage D finalized as the default “final selection” step:
+  - `TOPN=50`, `K_SELECT=20`, `topm=100`, `lambda=0.6`
+- Optional: expose a future UI toggle (“more diversity”) by lowering `lambda` (more novelty), at the cost of some relevance risk.
+
+**Artifacts**
+- `eval_dataset/experiments/20260202_131649_96297d620195_stageD_mmr_tfidf_sweep_v2.csv`
+- `eval_dataset/experiments/20260202_131855_96297d620195_stageD_mmr_tfidf_loco_v2.csv`
+
+---
+
+### 2026-02-02 — Production hardening (source_final): Stage C.3 prompt v2 + label/confidence gating
+
+**Why**
+- Production surfaced an off-scope failure mode: the LLM can overweight keyword overlap in the wrong domain/context.
+
+**What changed (code)**
+- `source_final.ipynb` Stage C.3 now asks the LLM for:
+  - `label` = `include|maybe|exclude`
+  - `confidence` (0–100)
+  - `score` (0–100, explicitly anchored)
+- Stage C.3 ordering within the shortlist uses:
+  - primary: `label_rank` (include > maybe > exclude)
+  - then: `minmax(score)` within the chapter shortlist
+  - then deterministic tie-breaks (`score_stageC_final`, citations, id)
+- Stage D relevance signal uses `1 + minmax(score)` within top-N and gates out `exclude` / low-confidence items.
+
+**How to validate**
+- Run `source_final.ipynb` (Restart Kernel + Run All) and check if obvious off-scope items disappear from top-20.
+- Paste the JSON summary block back into this chat so we can inspect the saved CSVs.
+
+---
+
+### 2026-02-02 — Production QA: exclude leakage fixed (source_final)
+
+**Observation (production run `20260202_185354`)**
+- Top‑20 contained LLM‑labeled `exclude` items despite Stage C.3 reranking:
+  - `platform_empirical_case`: **8 excludes** in top‑20
+  - `platform_methodology`: **1 exclude** in top‑20
+
+**Root cause**
+- Stage D’s relevance signal boosted shortlist items based on LLM score even when the LLM label was `exclude`, allowing excluded items to float into the final top‑20.
+
+**Fix (code)**
+- Stage C.3: only assigns the “2.x shortlist band” to items with `llm_label in {include, maybe}` (and confidence gate).
+- Stage D: only applies `1 + minmax(llm_score)` to non‑`exclude` + sufficiently confident items, and filters `exclude` out of the MMR pool.
+- Export safety: top‑20 CSV export filters out any remaining `exclude` rows (failsafe).
+
+**Next**
+- Re-run `source_final.ipynb` and confirm the QA summary prints **0 excludes** in top‑20 for all chapters.
+
+---
+
+### 2026-02-02 — Production QA: “blank llm_label” issue → adaptive Stage C.3 top‑N
+
+**Observation (production run `20260202_204422`)**
+- Excludes were successfully removed from top‑20, but `platform_empirical_case` top‑20 still contained **blank** `llm_label` entries (unscored tail docs), which were often off‑scope (e.g., unrelated regulation/accounting/politics papers).
+- Root cause: in `platform_empirical_case`, the LLM labeled **35/50** of the Stage C top‑50 as `exclude`, leaving only **15** non‑exclude candidates — fewer than the desired `k_select=20`.
+
+**Fix (code)**
+- Stage C.3 now **adaptively expands** the per‑chapter shortlist beyond 50 (in steps) until it has at least `min_non_exclude` (=20 by default), up to a cap (`topn_max`).
+- Stage D now selects only from the **scored** shortlist (`_in_topn`) and filters out `exclude` and blank labels.
+
+**Next**
+- Re-run `source_final.ipynb` and confirm the QA summary shows:
+  - `platform_empirical_case`: **0 blanks** and **0 excludes** in top‑20
+  - all chapters: top‑20 rows have `llm_label/llm_confidence/llm_notes` populated.
+
+**Validation (production run `20260202_220223`)**
+- Stage C.3 expansion actually triggered only for `platform_empirical_case`:
+  - `topn_used_by_chapter`: `empirical_case=75`, `methodology=50`, `theory=50`
+  - Additional Stage C.3 cost (beyond cached 150): **25 requests**, `cost≈$0.0111`
+- QA summary (top‑20):
+  - `platform_empirical_case`: `include=4`, `maybe=16` (no excludes, no blanks)
+  - `platform_methodology`: `include=1`, `maybe=19`
+  - `platform_theory`: `include=20`
+
+---
+
+### 2026-02-02 — Generalization smoke test: Zero Trust Architecture (source_final)
+
+**Observation (production run `20260202_222323`)**
+- Chapter: `zero_trust_architecture` (unseen domain, non‑platform topic)
+- Stage C pool size: `stageC_all rows=1313`
+- Stage C.3: `topn_used_by_chapter={"zero_trust_architecture": 50}`, `requests=50`, `cost≈$0.0255`
+- QA summary (top‑20): `llm_label counts = {"include": 20}`
+
+**What’s good**
+- Strong evidence the pipeline is **chapter‑agnostic**: the rubric-driven rerank produced coherent, on‑topic results without any platform-specific heuristics.
+- No regressions from earlier QA fixes: no `exclude` leakage and no blank/unscored rows in top‑20.
+
+**Red flags / limitations surfaced**
+- Top‑20 is dominated by **low‑prestige / generic venues** (e.g., IJSRM/WJARR/IJRASET‑like outlets). This suggests Stage C.3 currently optimizes primarily for **topic fit**, not **authority/evidence level**.
+- Canonical standards can be present in Stage A but still fail to show up in top‑20 due to Stage C prefilter + abstract limitations:
+  - `https://doi.org/10.6028/nist.sp.800-207` (OpenAlex) ranked ~**213** by `score_stageC_final` → did not enter the Stage C.3 top‑N shortlist (no LLM label/score).
+  - `10.6028/nist.sp.800-207-draft` (Semantic Scholar) ranked **6** by `score_stageC_final` but was labeled `maybe` with a low LLM score (likely because the abstract snippet is high‑level and doesn’t expose the document’s detailed reference architecture).
+
+**Implications / next improvements (chapter‑agnostic)**
+- Add an explicit **authority/evidence** dimension (LLM field or heuristic) so standards/surveys and reputable venues outrank generic on‑topic articles.
+- Improve shortlist **recall for standards** whose abstracts are boilerplate:
+  - shortlist union: `(top-N by score_stageC_final) ∪ (top-K by score_tfidf) ∪ (top-K by citations)` before LLM scoring.
+- Normalize `doi_norm` consistently (e.g., always `10.x/...`) to improve dedupe across OpenAlex/Semantic Scholar and prevent citation splitting across duplicates.

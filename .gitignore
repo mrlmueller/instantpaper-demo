@@ -52,3 +52,6 @@ fastapi/.prompt_dumps
 
 /eval_dataset/fetch/s2_cache
 /eval_dataset/experiments
+/eval_dataset/datasets
+
+/final_pipeline
