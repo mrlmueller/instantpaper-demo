@@ -49,3 +49,6 @@ updated-design/
 fastapi/.prompt_dumps
 /.llm_label_cache_v1
 /.embed_cache
+
+/eval_dataset/fetch/s2_cache
+/eval_dataset/experiments
