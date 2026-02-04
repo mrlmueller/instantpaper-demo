@@ -16,6 +16,7 @@ import {
   BookOpen,
   RotateCcw,
   FileDown,
+  Search,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -254,6 +255,12 @@ export function ProjektHeader({
                   <Link href="/quellen-manager" className="flex items-center cursor-pointer">
                     <BookOpen className="mr-2 h-4 w-4" />
                     Quellen-Manager
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/quellen-finder" className="flex items-center cursor-pointer">
+                    <Search className="mr-2 h-4 w-4" />
+                    Quellen-Finder
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
