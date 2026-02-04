@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import time
 import traceback
 from typing import Any, Iterable, Optional
 
@@ -175,6 +176,15 @@ async def run_quellen_finder_sources_search_job(
     svc = QuellenFinderSourcesService()
 
     had_partial_failures = False
+    t0 = time.perf_counter()
+
+    logger.info(
+        "QF sources job start | run_id=%s projekt_id=%s kapitel_id=%s blueprint_model=%s",
+        run_id,
+        projekt_id,
+        kapitel_id,
+        blueprint_model,
+    )
 
     try:
         fs.mark_running(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
@@ -195,12 +205,21 @@ async def run_quellen_finder_sources_search_job(
             message="Fetching sources from OpenAlex + Semantic Scholar (Stage A)",
         )
 
+        logger.info("QF sources pipeline starting | run_id=%s", run_id)
         df, meta = await svc.run_sources_search(
             user_id=user_id,
             projekt_id=projekt_id,
             kapitel_id=kapitel_id,
             research_run_id=run_id,
             blueprint_model=blueprint_model,
+        )
+        dt_pipeline = time.perf_counter() - t0
+        logger.info(
+            "QF sources pipeline finished | run_id=%s seconds=%.2f df_rows=%s meta_keys=%s",
+            run_id,
+            dt_pipeline,
+            int(len(df)) if isinstance(df, pd.DataFrame) else None,
+            sorted(list((meta or {}).keys())) if isinstance(meta, dict) else None,
         )
 
         final_score_col = str((meta or {}).get("final_score_col") or "score_stageD_final")
@@ -216,6 +235,7 @@ async def run_quellen_finder_sources_search_job(
         fs.clear_subcollection(user_id=user_id, projekt_id=projekt_id, run_id=run_id, name="sourcesResults")
 
         if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            logger.info("QF sources job success-with-empty | run_id=%s", run_id)
             fs.mark_success(
                 user_id=user_id,
                 projekt_id=projekt_id,
@@ -226,8 +246,21 @@ async def run_quellen_finder_sources_search_job(
             return
 
         docs = list(_sources_df_to_docs(df, final_score_col=final_score_col))
+        logger.info(
+            "QF sources writing results | run_id=%s resultCount=%s finalScoreCol=%s",
+            run_id,
+            int(len(docs)),
+            final_score_col,
+        )
         fs.write_sources_results(user_id=user_id, projekt_id=projekt_id, run_id=run_id, docs=docs)
 
+        dt_total = time.perf_counter() - t0
+        logger.info(
+            "QF sources job success | run_id=%s seconds=%.2f resultCount=%s",
+            run_id,
+            dt_total,
+            int(len(docs)),
+        )
         fs.mark_success(
             user_id=user_id,
             projekt_id=projekt_id,
@@ -236,6 +269,13 @@ async def run_quellen_finder_sources_search_job(
             extra={"resultCount": int(len(docs)), "finalScoreCol": final_score_col},
         )
     except HTTPException as exc:
+        logger.error(
+            "QF sources job HTTPException | run_id=%s status=%s detail=%s",
+            run_id,
+            getattr(exc, "status_code", None),
+            getattr(exc, "detail", None),
+            exc_info=True,
+        )
         detail = getattr(exc, "detail", None)
         msg = str(detail or exc)[:1000]
         fs.mark_error(
@@ -246,7 +286,7 @@ async def run_quellen_finder_sources_search_job(
             had_partial_failures=had_partial_failures,
         )
     except Exception as exc:
-        logger.error("Quellen-Finder sources search failed (run_id=%s): %s", run_id, exc)
+        logger.error("QF sources job failed | run_id=%s error=%s", run_id, exc, exc_info=True)
         logger.debug("Traceback:\n%s", traceback.format_exc())
         fs.mark_error(
             user_id=user_id,
@@ -255,4 +295,3 @@ async def run_quellen_finder_sources_search_job(
             error_message=str(exc),
             had_partial_failures=had_partial_failures,
         )
-

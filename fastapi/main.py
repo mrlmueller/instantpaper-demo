@@ -5081,8 +5081,8 @@ async def quellen_finder_sources_search(
     try:
         running = (
             fs.runs_col(user_id, projekt_id)
-            .where("kind", "==", "sources_search")
-            .where("status", "==", "running")
+            .where(filter=firestore.FieldFilter("kind", "==", "sources_search"))
+            .where(filter=firestore.FieldFilter("status", "==", "running"))
             .limit(1)
             .get()
         )
@@ -5179,8 +5179,8 @@ async def quellen_finder_pdf_scan(
     try:
         running = (
             fs.runs_col(user_id, projekt_id)
-            .where("kind", "==", "pdf_scan")
-            .where("status", "==", "running")
+            .where(filter=firestore.FieldFilter("kind", "==", "pdf_scan"))
+            .where(filter=firestore.FieldFilter("status", "==", "running"))
             .limit(1)
             .get()
         )

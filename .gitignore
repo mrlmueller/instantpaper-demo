@@ -55,3 +55,7 @@ fastapi/.prompt_dumps
 /eval_dataset/datasets
 
 /final_pipeline
+
+# Quellen-Finder caches / dev artifacts
+fastapi/.quellen_finder_cache/
+pdf-scan/pdf-scan-test.extracted.py

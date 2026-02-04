@@ -390,6 +390,19 @@ class QuellenFinderPdfScanJob:
         client = self.openai._get_client(api_key)  # pylint: disable=protected-access
 
         workflow_id = uuid.uuid4().hex
+        t0 = time.perf_counter()
+        pdf_id_preview = ",".join(list(pdf_ids)[:5])
+        logger.info(
+            "QF pdf scan start | run_id=%s projekt_id=%s kapitel_id=%s pdf_count=%s pdf_ids=%s preprocess=%s workflow_id=%s key_source=%s",
+            run_id,
+            projekt_id,
+            kapitel_id,
+            int(len(pdf_ids)),
+            pdf_id_preview + ("…" if len(pdf_ids) > 5 else ""),
+            bool(preprocess),
+            workflow_id,
+            key_source,
+        )
 
         had_partial_failures = False
         openai_file_ids: list[str] = []
@@ -1182,7 +1195,22 @@ Wichtig: Für jeden Treffer muss 'subpoint_scores' befüllt sein (Multi-Subpoint
                         "stage3Count": int(stage3_count),
                     },
                 )
+                logger.info(
+                    "QF pdf scan success | run_id=%s seconds=%.2f stage2=%s stage3=%s partial=%s",
+                    run_id,
+                    float(time.perf_counter() - t0),
+                    int(stage2_count),
+                    int(stage3_count),
+                    bool(had_partial_failures),
+                )
         except HTTPException as exc:
+            logger.error(
+                "QF pdf scan HTTPException | run_id=%s status=%s detail=%s",
+                run_id,
+                getattr(exc, "status_code", None),
+                getattr(exc, "detail", None),
+                exc_info=True,
+            )
             detail = getattr(exc, "detail", None)
             msg = str(detail or exc)[:1000]
             fs.mark_error(
@@ -1216,10 +1244,18 @@ Wichtig: Für jeden Treffer muss 'subpoint_scores' befüllt sein (Multi-Subpoint
                     cleanup_errors.append(f"file_delete:{fid}:{exc}")
 
             if cleanup_errors:
+                logger.warning(
+                    "QF pdf scan cleanup errors | run_id=%s count=%s first=%s",
+                    run_id,
+                    int(len(cleanup_errors)),
+                    cleanup_errors[:3],
+                )
                 self.firebase.db.collection("users").document(user_id).collection("projects").document(projekt_id).collection("researchRuns").document(run_id).set(
                     {"cleanupErrors": cleanup_errors[:50], "hadPartialFailures": True, "updatedAt": SERVER_TIMESTAMP},
                     merge=True,
                 )
+            else:
+                logger.info("QF pdf scan cleanup ok | run_id=%s", run_id)
 
 
 async def run_quellen_finder_pdf_scan_job(

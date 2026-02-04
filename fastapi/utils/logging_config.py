@@ -30,6 +30,7 @@ def configure_logging() -> None:
     app_level = _parse_level(
         os.getenv("FASTAPI_LOG_LEVEL", "WARNING"), default="WARNING"
     )
+    qf_level = _parse_level(os.getenv("QUELLEN_FINDER_LOG_LEVEL", "INFO"), default="INFO")
 
     logging_config: dict = {
         "version": 1,
@@ -53,6 +54,13 @@ def configure_logging() -> None:
             "app_console": {
                 "class": "logging.StreamHandler",
                 "level": app_level,
+                "formatter": "app",
+                "stream": "ext://sys.stdout",
+            },
+            # Quellen-Finder is actively developed and benefits from more detail even when the app runs at WARNING.
+            "quellen_finder_console": {
+                "class": "logging.StreamHandler",
+                "level": qf_level,
                 "formatter": "app",
                 "stream": "ext://sys.stdout",
             },
@@ -95,6 +103,37 @@ def configure_logging() -> None:
             "services": {"level": app_level},
             "middleware": {"level": app_level},
             "utils": {"level": app_level},
+            # Opt-in verbosity for Quellen-Finder (separate handler, default INFO).
+            "services.quellen_finder_firestore_service": {
+                "handlers": ["quellen_finder_console"],
+                "level": qf_level,
+                "propagate": False,
+            },
+            "services.quellen_finder_sources_job": {
+                "handlers": ["quellen_finder_console"],
+                "level": qf_level,
+                "propagate": False,
+            },
+            "services.quellen_finder_sources_service": {
+                "handlers": ["quellen_finder_console"],
+                "level": qf_level,
+                "propagate": False,
+            },
+            "services.quellen_finder_sources_pipeline": {
+                "handlers": ["quellen_finder_console"],
+                "level": qf_level,
+                "propagate": False,
+            },
+            "services.quellen_finder_pdf_scan_job": {
+                "handlers": ["quellen_finder_console"],
+                "level": qf_level,
+                "propagate": False,
+            },
+            "services.quellen_finder_pdf_scan_pipeline": {
+                "handlers": ["quellen_finder_console"],
+                "level": qf_level,
+                "propagate": False,
+            },
             # Third-party noisy libs.
             "httpx": {"level": "WARNING"},
             "openai": {"level": "WARNING"},
