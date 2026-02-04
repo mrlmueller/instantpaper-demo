@@ -37,5 +37,20 @@ service firebase.storage {
       allow read: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked();
       allow delete: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked();
     }
+
+    // Project-level PDF library uploads
+    match /users/{userId}/projects/{projectId}/pdfs/{pdfName} {
+      allow read: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked();
+
+      // NOTE: `request.resource.contentType` can be unreliable; enforce extension here and verify server-side.
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && hasFullAccess()
+                   && isNotBlocked()
+                   && request.resource.size < 60 * 1024 * 1024  // 60MB limit
+                   && pdfName.matches('.*\\.pdf$');
+
+      allow delete: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked();
+    }
   }
 }

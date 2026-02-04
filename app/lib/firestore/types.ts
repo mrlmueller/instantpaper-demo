@@ -200,3 +200,104 @@ export type SummaryDoc = {
   costUsd: number;
   createdAt: Timestamp;
 };
+
+export type ProjectPdfDoc = {
+  filename: string;
+  storagePath: string;
+  size: number;
+  contentType: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
+export type QuellenFinderRunKind = 'sources_search' | 'pdf_scan';
+export type QuellenFinderRunStatus = 'queued' | 'running' | 'success' | 'error';
+
+export type QuellenFinderProgress = {
+  stage: string;
+  message?: string;
+  current?: number;
+  total?: number;
+};
+
+export type KapitelSnapshot = {
+  id: string;
+  nummer?: string;
+  title?: string;
+  ueberschrift?: string;
+  thema?: string;
+};
+
+export type QuellenFinderRunDoc = ArchiveFields & {
+  kind: QuellenFinderRunKind;
+  status: QuellenFinderRunStatus;
+  projektId: string;
+  kapitelIds: string[];
+  pdfIds?: string[];
+  kapitelSnapshots?: KapitelSnapshot[];
+  model?: string;
+  resultCount?: number;
+  stage2Count?: number;
+  stage3Count?: number;
+  finalScoreCol?: string;
+  hadPartialFailures?: boolean;
+  errorMessage?: string | null;
+  progress?: QuellenFinderProgress;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  startedAt?: Timestamp | null;
+  finishedAt?: Timestamp | null;
+};
+
+export type QuellenFinderSourceResultDoc = {
+  // Curated fields (dev-friendly)
+  title: string | null;
+  authors: string[];
+  year: number | null;
+  venue: string | null;
+  doi: string | null;
+  url: string | null;
+  abstract: string | null;
+  citationCount: number | null;
+  source: 'openalex' | 'semantic_scholar' | 'merged' | string;
+  score: number | null;
+  rank?: number;
+  raw?: Record<string, unknown> | null;
+  createdAt: Timestamp;
+};
+
+export type PdfScanStage2HitDoc = {
+  pdfId: string;
+  pdfLabel: string;
+  pdfFileId?: string | null;
+  subpoint?: string | null;
+  tier?: string | null;
+  score: number | null;
+  anchor: string | null;
+  anchorAlt: string | null;
+  summary: string | null;
+  locatorHint?: string | null;
+  coverage?: string | null;
+  scoreRationale?: string | null;
+  evidenceSnippet?: string | null;
+  subpointScores?: Record<string, number> | null;
+  diagnostics?: Record<string, unknown>;
+  createdAt: Timestamp;
+};
+
+export type PdfScanStage3SectionDoc = {
+  pdfId: string;
+  pdfLabel: string;
+  pdfFileId?: string | null;
+  anchor: string | null;
+  anchorAlt: string | null;
+  heading: string | null;
+  headingMethod?: string | null;
+  anchorPage?: number | null;
+  hitCount?: number | null;
+  summary?: string | null;
+  coveredSubpoints?: string[] | null;
+  score: number | null;
+  diagnostics?: Record<string, unknown>;
+  createdAt: Timestamp;
+};

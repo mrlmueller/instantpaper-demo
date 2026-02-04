@@ -355,6 +355,54 @@ service cloud.firestore {
 
         // Project deletion is an archive transition (client delete denied).
         allow delete: if false;
+
+        // -----------------------------------------------------------------
+        // projects/{projectId}/pdfs/{pdfId} (project-level PDF library)
+        // -----------------------------------------------------------------
+
+        match /pdfs/{pdfId} {
+          allow read: if isOwner(userId);
+
+          allow create: if isOwner(userId)
+            && projectExists(userId, projectId)
+            && request.resource.data.keys().hasAll(['filename', 'storagePath', 'size', 'contentType', 'createdAt', 'updatedAt'])
+            && request.resource.data.keys().hasOnly(['filename', 'storagePath', 'size', 'contentType', 'createdAt', 'updatedAt'])
+            && isNonEmptyString(request.resource.data.filename, 500)
+            && isNonEmptyString(request.resource.data.storagePath, 1000)
+            && request.resource.data.storagePath.matches('^users/' + userId + '/projects/' + projectId + '/pdfs/.+$')
+            && request.resource.data.size is int
+            && request.resource.data.size >= 0
+            && request.resource.data.size <= 60 * 1024 * 1024
+            && request.resource.data.contentType == 'application/pdf'
+            && isTs(request.resource.data.createdAt)
+            && isTs(request.resource.data.updatedAt);
+
+          // PDFs are immutable (replace by deleting + uploading again).
+          allow update: if isOwner(userId)
+            && request.resource.data.createdAt == resource.data.createdAt
+            && request.resource.data.storagePath == resource.data.storagePath
+            && request.resource.data.size == resource.data.size
+            && request.resource.data.contentType == resource.data.contentType
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['filename', 'updatedAt'])
+            && isNonEmptyString(request.resource.data.filename, 500)
+            && isTs(request.resource.data.updatedAt);
+
+          allow delete: if isOwner(userId);
+        }
+
+        // -----------------------------------------------------------------
+        // projects/{projectId}/researchRuns/* (server-owned artifacts)
+        // -----------------------------------------------------------------
+
+        match /researchRuns/{runId} {
+          allow read: if isOwner(userId);
+          allow write: if false;
+
+          match /{doc=**} {
+            allow read: if isOwner(userId);
+            allow write: if false;
+          }
+        }
       }
 
       // -------------------------------------------------------------------
