@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Cookies from "js-cookie";
-import { ArrowLeft, Download, Loader2, Search, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Download, ExternalLink, Loader2, Search, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { addDoc, deleteDoc, limit, onSnapshot, orderBy, query, serverTimestamp, type CollectionReference } from "firebase/firestore";
 import { deleteObject, getStorage, ref, uploadBytes } from "firebase/storage";
@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/app/components/providers/AuthProvider";
 import { firebaseApp } from "@/app/lib/firebase/config";
 import { firestoreClient } from "@/app/lib/firebase/firestoreClient";
-import { downloadFileFromStorage } from "@/app/lib/firebase/storage";
+import { downloadFileFromStorage, getDownloadUrlFromStorage } from "@/app/lib/firebase/storage";
 import {
   projectPdfDoc,
   projectPdfsCol,
@@ -144,6 +144,7 @@ export function QuellenFinder({
 
   const [pdfs, setPdfs] = useState<PdfRow[]>([]);
   const [selectedPdfIds, setSelectedPdfIds] = useState<Set<string>>(new Set());
+  const [pdfQuery, setPdfQuery] = useState("");
   const [uploadingPdfs, setUploadingPdfs] = useState(false);
 
   const [blueprintModel, setBlueprintModel] = useState<"gpt-5-nano" | "gpt-5-mini" | "gpt-5.2">("gpt-5-mini");
@@ -174,6 +175,22 @@ export function QuellenFinder({
     if (selectedKapitelIds.length !== 1) return null;
     return kapitels.find((k) => k.id === selectedKapitelIds[0]) ?? null;
   }, [kapitels, selectedKapitelIds]);
+
+  const pdfById = useMemo(() => {
+    const map = new Map<string, PdfRow>();
+    for (const p of pdfs) map.set(p.id, p);
+    return map;
+  }, [pdfs]);
+
+  const filteredPdfs = useMemo(() => {
+    const q = pdfQuery.trim().toLowerCase();
+    if (!q) return pdfs;
+    return pdfs.filter((p) => {
+      const name = String(p.filename || "").toLowerCase();
+      const path = String(p.storagePath || "").toLowerCase();
+      return name.includes(q) || path.includes(q) || p.id.toLowerCase().includes(q);
+    });
+  }, [pdfQuery, pdfs]);
 
   const sourcesRuns = useMemo(() => runs.filter((r) => r.kind === "sources_search"), [runs]);
   const pdfRuns = useMemo(() => runs.filter((r) => r.kind === "pdf_scan"), [runs]);
@@ -329,6 +346,38 @@ export function QuellenFinder({
       else next.add(id);
       return next;
     });
+  };
+
+  const openPdfInNewTab = async (storagePath: string, opts?: { page?: number }) => {
+    const path = String(storagePath || "").trim();
+    if (!path) {
+      toast.error("PDF kann nicht geöffnet werden", { description: "Storage-Pfad fehlt." });
+      return;
+    }
+
+    const opened = window.open("about:blank", "_blank");
+    if (!opened) {
+      toast.error("PDF kann nicht geöffnet werden", { description: "Popup blockiert." });
+      return;
+    }
+    try {
+      opened.opener = null;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const url = await getDownloadUrlFromStorage(path);
+      const finalUrl = opts?.page ? `${url}#page=${opts.page}` : url;
+      opened.location.href = finalUrl;
+    } catch (e) {
+      try {
+        opened.close();
+      } catch {
+        // ignore
+      }
+      toast.error("PDF konnte nicht geöffnet werden", { description: e instanceof Error ? e.message : String(e) });
+    }
   };
 
   const handleUploadClick = () => uploadInputRef.current?.click();
@@ -496,52 +545,50 @@ export function QuellenFinder({
 
       <div className="px-6 py-4">
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 items-start">
-          <Card className="p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <Input value={kapitelQuery} onChange={(e) => setKapitelQuery(e.target.value)} placeholder="Kapitel suchen (Nr/Titel)" />
-            </div>
-            <div className="text-xs text-muted-foreground mb-3">
-              Ausgewählt: <span className="font-medium">{selectedKapitelIds.length}</span> (derzeit nur 1 Kapitel pro Run)
-            </div>
-            <div className="space-y-2 max-h-[65vh] overflow-auto pr-1">
-              {filteredKapitels.map((k) => {
-                const checked = selectedKapitelIds.includes(k.id);
-                return (
-                  <div
-                    key={k.id}
-                    onClick={() => toggleKapitel(k.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        toggleKapitel(k.id);
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    className="w-full text-left rounded-md border border-border hover:bg-muted/40 transition-colors px-3 py-2"
-                  >
-                    <div className="flex items-start gap-2">
-                      <div className="pt-0.5">
-                        <Checkbox
-                          checked={checked}
-                          onClick={(e) => e.stopPropagation()}
-                          onCheckedChange={() => toggleKapitel(k.id)}
-                        />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium truncate">
-                          {k.nummer} — {k.title}
+          <div className="lg:sticky lg:top-4 self-start">
+            <Card className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <Input value={kapitelQuery} onChange={(e) => setKapitelQuery(e.target.value)} placeholder="Kapitel suchen (Nr/Titel)" />
+              </div>
+              <div className="text-xs text-muted-foreground mb-3">
+                Ausgewählt: <span className="font-medium">{selectedKapitelIds.length}</span> (derzeit nur 1 Kapitel pro Run)
+              </div>
+              <div className="space-y-2 max-h-[65vh] overflow-auto pr-1">
+                {filteredKapitels.map((k) => {
+                  const checked = selectedKapitelIds.includes(k.id);
+                  return (
+                    <div
+                      key={k.id}
+                      onClick={() => toggleKapitel(k.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleKapitel(k.id);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      className="w-full text-left rounded-md border border-border hover:bg-muted/40 transition-colors px-3 py-2"
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="pt-0.5">
+                          <Checkbox checked={checked} onClick={(e) => e.stopPropagation()} onCheckedChange={() => toggleKapitel(k.id)} />
                         </div>
-                        <div className="text-xs text-muted-foreground line-clamp-2">{k.thema || ""}</div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate">
+                            {k.nummer} — {k.title}
+                          </div>
+                          <div className="text-xs text-muted-foreground line-clamp-2">{k.thema || ""}</div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-              {filteredKapitels.length === 0 ? <div className="text-sm text-muted-foreground">Keine Kapitel gefunden.</div> : null}
-            </div>
-          </Card>
+                  );
+                })}
+                {filteredKapitels.length === 0 ? <div className="text-sm text-muted-foreground">Keine Kapitel gefunden.</div> : null}
+              </div>
+            </Card>
+          </div>
 
           <div className="space-y-4">
             <Card className="p-4">
@@ -670,8 +717,8 @@ export function QuellenFinder({
                     {sourcesFiltered.map((r) => {
                       const expanded = expandedSourceIds.has(r.id);
                       return (
-                        <>
-                          <TableRow key={r.id}>
+                        <Fragment key={r.id}>
+                          <TableRow>
                             <TableCell className="tabular-nums">{r.rank ?? r.id}</TableCell>
                             <TableCell className="min-w-[360px]">
                               <div className="font-medium">{r.title || "(untitled)"}</div>
@@ -702,13 +749,13 @@ export function QuellenFinder({
                             </TableCell>
                           </TableRow>
                           {expanded ? (
-                            <TableRow key={`${r.id}__raw`}>
+                            <TableRow>
                               <TableCell colSpan={6} className="bg-muted/30">
                                 <pre className="text-xs overflow-auto max-h-[320px] whitespace-pre-wrap">{JSON.stringify(r.raw ?? {}, null, 2)}</pre>
                               </TableCell>
                             </TableRow>
                           ) : null}
-                        </>
+                        </Fragment>
                       );
                     })}
                     {sourcesFiltered.length === 0 ? (
@@ -744,23 +791,36 @@ export function QuellenFinder({
 
               <div className="mt-3 grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4 items-start">
                 <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Search className="h-4 w-4 text-muted-foreground" />
+                    <Input value={pdfQuery} onChange={(e) => setPdfQuery(e.target.value)} placeholder="PDF suchen (Name/Path/ID)" />
+                  </div>
                   <div className="text-xs text-muted-foreground mb-2">
-                    Ausgewählt: <span className="font-medium">{selectedPdfIds.size}</span> PDFs
+                    Ausgewählt: <span className="font-medium">{selectedPdfIds.size}</span> PDFs • Insgesamt: <span className="font-medium">{pdfs.length}</span>
                   </div>
                   <div className="space-y-2 max-h-[320px] overflow-auto pr-1">
-                    {pdfs.map((p) => {
+                    {filteredPdfs.map((p) => {
                       const checked = selectedPdfIds.has(p.id);
                       return (
-                        <div key={p.id} className="flex items-start gap-2 rounded-md border border-border px-3 py-2">
+                        <div key={p.id} className="flex items-start gap-2 rounded-md border border-border px-3 py-2 hover:bg-muted/40 transition-colors">
                           <div className="pt-0.5">
                             <Checkbox checked={checked} onCheckedChange={() => togglePdf(p.id)} />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="text-sm font-medium truncate">{p.filename}</div>
-                            <div className="text-xs text-muted-foreground truncate">{p.storagePath}</div>
-                            <div className="text-xs text-muted-foreground tabular-nums">{(Number(p.size || 0) / (1024 * 1024)).toFixed(1)} MB</div>
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-sm font-medium truncate min-w-0" title={`${p.filename}\n${p.storagePath}`}>
+                                {p.filename}
+                              </div>
+                              <div className="text-xs text-muted-foreground tabular-nums shrink-0">
+                                {(Number(p.size || 0) / (1024 * 1024)).toFixed(1)} MB
+                              </div>
+                            </div>
+                            <div className="text-[11px] text-muted-foreground truncate">Uploaded: {formatRunTime(p.createdAt)}</div>
                           </div>
                           <div className="flex items-center gap-1">
+                            <Button size="icon" variant="ghost" onClick={() => void openPdfInNewTab(String(p.storagePath || ""))} title="Open (Browser)">
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
                             <Button size="icon" variant="ghost" onClick={() => void downloadFileFromStorage(String(p.storagePath || ""), String(p.filename || "document.pdf"))} title="Download">
                               <Download className="h-4 w-4" />
                             </Button>
@@ -771,7 +831,9 @@ export function QuellenFinder({
                         </div>
                       );
                     })}
-                    {pdfs.length === 0 ? <div className="text-sm text-muted-foreground">Noch keine PDFs hochgeladen.</div> : null}
+                    {filteredPdfs.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">{pdfs.length === 0 ? "Noch keine PDFs hochgeladen." : "Keine PDFs gefunden."}</div>
+                    ) : null}
                   </div>
 
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -820,27 +882,59 @@ export function QuellenFinder({
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="w-[220px]">PDF</TableHead>
-                              <TableHead>Heading</TableHead>
-                              <TableHead className="w-[90px]">Score</TableHead>
-                              <TableHead className="w-[280px]">Anchor</TableHead>
-                              <TableHead className="w-[220px]">Subpoints</TableHead>
+                              <TableHead className="w-[200px]">PDF</TableHead>
+                              <TableHead>Section</TableHead>
+                              <TableHead className="w-[80px]">Score</TableHead>
+                              <TableHead className="w-[380px]">Why</TableHead>
+                              <TableHead className="w-[360px]">Anchor</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {stage3.map((r) => (
-                              <TableRow key={r.id}>
-                                <TableCell className="min-w-[220px]">{r.pdfLabel}</TableCell>
-                                <TableCell className="min-w-[260px]">{r.heading || ""}</TableCell>
-                                <TableCell className="tabular-nums">{r.score ?? ""}</TableCell>
-                                <TableCell className="min-w-[280px]">
-                                  <div className="text-xs whitespace-pre-wrap line-clamp-3">{r.anchor || ""}</div>
-                                </TableCell>
-                                <TableCell className="min-w-[220px]">
-                                  <div className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-3">{(r.coveredSubpoints || []).join(", ")}</div>
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {stage3.map((r) => {
+                              const pdf = pdfById.get(String(r.pdfId || ""));
+                              const storagePath = String(pdf?.storagePath || "");
+                              const pdfLabel = String(r.pdfLabel || pdf?.filename || "");
+                              const page = typeof r.anchorPage === "number" ? r.anchorPage : undefined;
+                              return (
+                                <TableRow key={r.id}>
+                                  <TableCell className="min-w-[200px]">
+                                    <div className="flex items-start gap-2">
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-medium truncate" title={pdfLabel}>
+                                          {pdfLabel}
+                                        </div>
+                                        <div className="text-[11px] text-muted-foreground">
+                                          {r.anchorPage ? `p. ${r.anchorPage}` : null}
+                                          {r.hitCount ? (r.anchorPage ? ` • hits ${r.hitCount}` : `hits ${r.hitCount}`) : null}
+                                        </div>
+                                      </div>
+                                      <div className="shrink-0">
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          disabled={!storagePath}
+                                          onClick={() => void openPdfInNewTab(storagePath, { page })}
+                                          title={storagePath ? "Open PDF" : "PDF fehlt in Library"}
+                                        >
+                                          <ExternalLink className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="min-w-[240px]">
+                                    <div className="text-sm font-medium">{r.heading || ""}</div>
+                                    <div className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-2">{(r.coveredSubpoints || []).join(", ")}</div>
+                                  </TableCell>
+                                  <TableCell className="tabular-nums">{r.score ?? ""}</TableCell>
+                                  <TableCell className="min-w-[380px]">
+                                    <div className="text-xs whitespace-pre-wrap line-clamp-4">{r.summary || ""}</div>
+                                  </TableCell>
+                                  <TableCell className="min-w-[360px]">
+                                    <div className="text-xs whitespace-pre-wrap line-clamp-4">{r.anchor || ""}</div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
                             {stage3.length === 0 ? (
                               <TableRow>
                                 <TableCell colSpan={5} className="text-sm text-muted-foreground">
@@ -858,26 +952,56 @@ export function QuellenFinder({
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="w-[220px]">PDF</TableHead>
-                              <TableHead className="w-[90px]">Score</TableHead>
-                              <TableHead className="w-[140px]">Subpoint</TableHead>
-                              <TableHead className="w-[110px]">Tier</TableHead>
-                              <TableHead>Anchor</TableHead>
+                              <TableHead className="w-[200px]">PDF</TableHead>
+                              <TableHead className="w-[80px]">Score</TableHead>
+                              <TableHead className="w-[160px]">Subpoint</TableHead>
+                              <TableHead className="w-[380px]">Why</TableHead>
+                              <TableHead className="w-[360px]">Evidence</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {stage2.map((r) => (
+                            {stage2.map((r) => {
+                              const pdf = pdfById.get(String(r.pdfId || ""));
+                              const storagePath = String(pdf?.storagePath || "");
+                              const pdfLabel = String(r.pdfLabel || pdf?.filename || "");
+                              const why = (r.scoreRationale || r.coverage || "").trim();
+                              return (
                                 <TableRow key={r.id}>
-                                  <TableCell className="min-w-[220px]">{r.pdfLabel}</TableCell>
+                                  <TableCell className="min-w-[200px]">
+                                    <div className="flex items-start gap-2">
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-medium truncate" title={pdfLabel}>
+                                          {pdfLabel}
+                                        </div>
+                                      </div>
+                                      <div className="shrink-0">
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          disabled={!storagePath}
+                                          onClick={() => void openPdfInNewTab(storagePath)}
+                                          title={storagePath ? "Open PDF" : "PDF fehlt in Library"}
+                                        >
+                                          <ExternalLink className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </TableCell>
                                   <TableCell className="tabular-nums">{r.score ?? ""}</TableCell>
-                                <TableCell className="min-w-[140px]">{r.subpoint || ""}</TableCell>
-                                <TableCell className="min-w-[110px]">{r.tier || ""}</TableCell>
-                                <TableCell className="min-w-[360px]">
-                                  <div className="text-xs whitespace-pre-wrap line-clamp-3">{r.anchor || ""}</div>
-                                  {r.locatorHint ? <div className="text-xs text-muted-foreground line-clamp-2 mt-1">Locator: {r.locatorHint}</div> : null}
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                                  <TableCell className="min-w-[160px]">
+                                    <div className="text-sm">{r.subpoint || ""}</div>
+                                  </TableCell>
+                                  <TableCell className="min-w-[380px]">
+                                    {why ? <div className="text-xs whitespace-pre-wrap line-clamp-3">{why}</div> : <div className="text-xs text-muted-foreground">—</div>}
+                                    {r.summary ? <div className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-2 mt-1">{r.summary}</div> : null}
+                                  </TableCell>
+                                  <TableCell className="min-w-[360px]">
+                                    <div className="text-xs whitespace-pre-wrap line-clamp-4">{r.anchor || ""}</div>
+                                    {r.locatorHint ? <div className="text-xs text-muted-foreground line-clamp-2 mt-1">Locator: {r.locatorHint}</div> : null}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
                             {stage2.length === 0 ? (
                               <TableRow>
                                 <TableCell colSpan={5} className="text-sm text-muted-foreground">
