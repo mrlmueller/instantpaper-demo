@@ -86,7 +86,10 @@ CHAPTER_BLUEPRINT_JSON_SCHEMA: dict = {
         "facet_queries",
         "keywords",
         "key_concepts",
+        "preferred_source_types",
+        "negative_query_terms",
         "scoring_guidance",
+        "notes",
     ],
     "additionalProperties": False,
 }
