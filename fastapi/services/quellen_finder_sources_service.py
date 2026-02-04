@@ -558,8 +558,12 @@ class QuellenFinderSourcesService:
 
         bp_dict = blueprint.model_dump()
 
+        embed_call_i = 0
+
         async def _embed_texts(texts: list[str], *, model: str, batch_size: int) -> EmbedBatchResult:
-            op_prefix = f"{workflow_id}_qf_sources_embed_{kapitel_id}"
+            nonlocal embed_call_i
+            embed_call_i += 1
+            op_prefix = f"{workflow_id}_qf_sources_embed_{kapitel_id}_c{embed_call_i}"
             return await self._embed_texts_with_budget(
                 user_id=user_id,
                 projekt_id=projekt_id,
