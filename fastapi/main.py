@@ -19,6 +19,8 @@ from models.request import (
     LeseflussKapitelRequest,
     GenerateGliederungRequest,
     RefineGliederungRequest,
+    QuellenFinderSourcesSearchRequest,
+    QuellenFinderPdfScanRequest,
     ExportDocxRequest,
     RefineCombinedInitRequest,
     RefineCombinedRequest,
@@ -39,6 +41,9 @@ from services.firebase_service import firebase_service
 from services.credits_service import get_credits_service
 from services.prompt_service import prompt_service
 from services.export_service import export_service
+from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
+from services.quellen_finder_sources_job import run_quellen_finder_sources_search_job
+from services.quellen_finder_pdf_scan_job import run_quellen_finder_pdf_scan_job
 from firebase_admin import auth, storage
 from google.api_core.exceptions import NotFound, FailedPrecondition
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
@@ -5028,6 +5033,201 @@ async def refine_gliederung(
         "root_id": root_id,
         "version": int(new_version),
         "projekt_id": projekt_id,
+        "queued_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@app.post("/api/quellen-finder/sources-search", status_code=status.HTTP_202_ACCEPTED)
+async def quellen_finder_sources_search(
+    request: QuellenFinderSourcesSearchRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Run Quellen-Finder paper search for a single Kapitel (project-level run).
+
+    Creates a server-owned research run doc under:
+      users/{uid}/projects/{projektId}/researchRuns/{runId}
+    and writes results under:
+      .../sourcesResults/*
+    """
+
+    projekt_id = str(request.projekt_id or "").strip()
+    kapitel_id = str(request.kapitel_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not kapitel_id:
+        raise HTTPException(status_code=400, detail="kapitel_id is required")
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+    if not kapitel:
+        raise HTTPException(status_code=404, detail="Kapitel not found.")
+    if str((kapitel or {}).get("projektId") or "").strip() != projekt_id:
+        raise HTTPException(status_code=400, detail="Kapitel gehört nicht zu diesem Projekt.")
+    if bool((kapitel or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Kapitel is archived.")
+
+    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
+    fs = QuellenFinderFirestoreService()
+
+    # Best-effort: prevent duplicate runs while one is running (avoid double charges).
+    try:
+        running = (
+            fs.runs_col(user_id, projekt_id)
+            .where("kind", "==", "sources_search")
+            .where("status", "==", "running")
+            .limit(1)
+            .get()
+        )
+        if running:
+            raise HTTPException(status_code=409, detail="Quellen-Finder paper search is already running.")
+    except HTTPException:
+        raise
+    except Exception:
+        # Do not block if the query fails for any reason (e.g. missing index).
+        pass
+
+    kapitel_snapshot = {
+        "id": kapitel_id,
+        "nummer": str((kapitel or {}).get("nummer") or "").strip() or None,
+        "title": str((kapitel or {}).get("title") or "").strip() or None,
+        "ueberschrift": str((kapitel or {}).get("title") or "").strip() or None,
+        "thema": str((kapitel or {}).get("thema") or "").strip() or None,
+    }
+
+    run_id = fs.create_run(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        kind="sources_search",
+        kapitel_ids=[kapitel_id],
+        kapitel_snapshots=[kapitel_snapshot],
+        model=str(request.blueprint_model or "").strip() or "gpt-5-mini",
+    )
+
+    background_tasks.add_task(
+        run_quellen_finder_sources_search_job,
+        user_id=user_id,
+        projekt_id=projekt_id,
+        kapitel_id=kapitel_id,
+        run_id=run_id,
+        blueprint_model=str(request.blueprint_model or "").strip() or "gpt-5-mini",
+    )
+
+    return {
+        "status": "queued",
+        "run_id": run_id,
+        "projekt_id": projekt_id,
+        "kapitel_id": kapitel_id,
+        "queued_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@app.post("/api/quellen-finder/pdf-scan", status_code=status.HTTP_202_ACCEPTED)
+async def quellen_finder_pdf_scan(
+    request: QuellenFinderPdfScanRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Run Quellen-Finder PDF scan for a single Kapitel and selected project PDFs.
+
+    Creates a server-owned research run doc under:
+      users/{uid}/projects/{projektId}/researchRuns/{runId}
+    and writes results under:
+      .../pdfStage2/*
+      .../pdfStage3/*
+    """
+
+    projekt_id = str(request.projekt_id or "").strip()
+    kapitel_id = str(request.kapitel_id or "").strip()
+    pdf_ids = [str(x or "").strip() for x in (request.pdf_ids or []) if str(x or "").strip()]
+    preprocess = bool(request.preprocess)
+
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not kapitel_id:
+        raise HTTPException(status_code=400, detail="kapitel_id is required")
+    if not pdf_ids:
+        raise HTTPException(status_code=400, detail="pdf_ids is required")
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+    if not kapitel:
+        raise HTTPException(status_code=404, detail="Kapitel not found.")
+    if str((kapitel or {}).get("projektId") or "").strip() != projekt_id:
+        raise HTTPException(status_code=400, detail="Kapitel gehört nicht zu diesem Projekt.")
+    if bool((kapitel or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Kapitel is archived.")
+
+    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
+    fs = QuellenFinderFirestoreService()
+
+    # Best-effort: prevent duplicate runs while one is running (avoid double charges).
+    try:
+        running = (
+            fs.runs_col(user_id, projekt_id)
+            .where("kind", "==", "pdf_scan")
+            .where("status", "==", "running")
+            .limit(1)
+            .get()
+        )
+        if running:
+            raise HTTPException(status_code=409, detail="Quellen-Finder PDF scan is already running.")
+    except HTTPException:
+        raise
+    except Exception:
+        # Do not block if the query fails for any reason (e.g. missing index).
+        pass
+
+    kapitel_snapshot = {
+        "id": kapitel_id,
+        "nummer": str((kapitel or {}).get("nummer") or "").strip() or None,
+        "title": str((kapitel or {}).get("title") or "").strip() or None,
+        "ueberschrift": str((kapitel or {}).get("title") or "").strip() or None,
+        "thema": str((kapitel or {}).get("thema") or "").strip() or None,
+    }
+
+    scan_model = str(os.getenv("OPENAI_PDF_SCAN_MODEL", "gpt-5-mini") or "gpt-5-mini").strip() or "gpt-5-mini"
+
+    run_id = fs.create_run(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        kind="pdf_scan",
+        kapitel_ids=[kapitel_id],
+        kapitel_snapshots=[kapitel_snapshot],
+        model=scan_model,
+        pdf_ids=pdf_ids,
+    )
+
+    background_tasks.add_task(
+        run_quellen_finder_pdf_scan_job,
+        user_id=user_id,
+        projekt_id=projekt_id,
+        kapitel_id=kapitel_id,
+        run_id=run_id,
+        pdf_ids=pdf_ids,
+        preprocess=preprocess,
+    )
+
+    return {
+        "status": "queued",
+        "run_id": run_id,
+        "projekt_id": projekt_id,
+        "kapitel_id": kapitel_id,
+        "pdf_ids": pdf_ids,
         "queued_at": datetime.utcnow().isoformat() + "Z",
     }
 

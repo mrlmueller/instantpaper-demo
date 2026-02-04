@@ -30,6 +30,8 @@ FALLBACK_MODEL_PRICING: dict[str, tuple[Decimal, Decimal, Decimal]] = {
     "gpt-5.1": (Decimal("1.25"), Decimal("0.125"), Decimal("10.00")),
     "gpt-5-mini": (Decimal("0.25"), Decimal("0.025"), Decimal("2.00")),
     "gpt-5-nano": (Decimal("0.05"), Decimal("0.005"), Decimal("0.40")),
+    # Embeddings (input-only pricing; output tokens are zero)
+    "text-embedding-3-small": (Decimal("0.02"), Decimal("0.00"), Decimal("0.00")),
 }
 
 

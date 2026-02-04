@@ -233,3 +233,42 @@ class ExportDocxRequest(BaseModel):
         description="Kapitel IDs to include (only Kapitels with lesefluss text should be provided)",
         min_length=1,
     )
+
+
+class QuellenFinderSourcesSearchRequest(BaseModel):
+    """Request model for running Quellen-Finder paper search for a single Kapitel."""
+
+    projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
+    kapitel_id: str = Field(..., description="Kapitel ID to run paper search for")
+    blueprint_model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
+        default="gpt-5-mini",
+        description="Model to use for Stage B (ChapterBlueprint generation)",
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "projekt_id": "proj123",
+                "kapitel_id": "kap456",
+                "blueprint_model": "gpt-5-mini",
+            }
+        }
+
+
+class QuellenFinderPdfScanRequest(BaseModel):
+    """Request model for running Quellen-Finder PDF scan for a single Kapitel and selected project PDFs."""
+
+    projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
+    kapitel_id: str = Field(..., description="Kapitel ID to run PDF scan for")
+    pdf_ids: List[str] = Field(..., description="Project PDF document IDs to scan", min_length=1)
+    preprocess: bool = Field(default=True, description="Whether to run the LLM preprocess stage before PDF retrieval")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "projekt_id": "proj123",
+                "kapitel_id": "kap456",
+                "pdf_ids": ["pdfA", "pdfB"],
+                "preprocess": True,
+            }
+        }
