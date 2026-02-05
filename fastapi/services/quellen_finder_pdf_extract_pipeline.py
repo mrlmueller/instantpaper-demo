@@ -135,20 +135,136 @@ HEADING_KEYWORDS = {
     "acknowledgment",
     "acknowledgements",
     "appendix",
+
+    # German
+    "zusammenfassung",
+    "kurzfassung",
+    "einleitung",
+    "hintergrund",
+    "verwandte arbeiten",
+    "stand der forschung",
+    "methodik",
+    "methoden",
+    "vorgehensweise",
+    "ergebnisse",
+    "diskussion",
+    "fazit",
+    "schlussfolgerung",
+    "schlussfolgerungen",
+    "ausblick",
+    "literatur",
+    "literaturverzeichnis",
+    "quellen",
+    "danksagung",
+    "danksagungen",
+    "anhang",
 }
 
 METADATA_BADWORDS = {
     "issn",
     "doi",
+    "arxiv",
+    "isbn",
     "volume",
     "issue",
     "pages",
     "website",
     "journal",
+    "preprint",
+    "copyright",
+    "all rights reserved",
+    "creative commons",
+    "cc-by",
     "http",
     "https",
     "www.",
 }
+
+
+_NUM_HEADING_RE = re.compile(r"^(?P<num>\d+(?:\.\d+){0,5})(?:[.)])?\s+(?P<title>\S.+)$")
+_BRACKET_REF_RE = re.compile(r"^\[\d{1,4}\]\s+\S+")
+_CAPTION_START_RE = re.compile(r"^(?:figure|fig\.|table|algorithm)\b", re.IGNORECASE)
+_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+
+_FOOTER_BAND_RATIO = 0.85
+_BOTTOM_SEQ_BAND_RATIO = 0.78
+_LISTY_REPEAT_MIN = 4
+_LISTY_MAX_NUM = 15
+_LISTY_TOP_KEEP_RATIO = 0.22
+_RESET_SMALL_MAX = 10
+_RESET_MIN_MAXTOP = 4
+
+
+def _is_boldish(font_names: List[str]) -> bool:
+    return any("bold" in (fn or "").lower() for fn in (font_names or []))
+
+
+def _strip_leading_numbering(text: str) -> str:
+    t = normalize_ws(text)
+    if not t:
+        return t
+    # 1 / 1. / 1.2 / 1.2.3)
+    t = re.sub(r"^(?:\d+(?:\.\d+){0,5})(?:[.)])?\s+", "", t)
+    # I. / IV) / A.
+    t = re.sub(r"^(?:[IVX]{1,8}|[A-Z])(?:[.)])\s+", "", t)
+    return t
+
+
+def _norm_heading_title(text: str) -> str:
+    return norm_match(normalize_ws(text)).lower().strip()
+
+
+def extract_outline_titles(doc: Any, max_entries: int = 400) -> set[str]:
+    """Extract normalized outline/bookmark titles (best-effort)."""
+
+    try:
+        toc = doc.get_toc() or []
+    except Exception:
+        toc = []
+
+    titles: set[str] = set()
+    for row in toc[: int(max_entries)]:
+        if not row or len(row) < 2:
+            continue
+        title = normalize_ws(str(row[1] or ""))
+        if not title:
+            continue
+        titles.add(_norm_heading_title(_strip_leading_numbering(title)))
+    return titles
+
+
+def _page_has_bottom_number_sequence(
+    page_lines: List[Dict[str, Any]],
+    *,
+    page_height: float,
+    body_size: float,
+) -> bool:
+    """Detect a footnote-like sequence: multiple numbered lines in the bottom band."""
+
+    nums = []
+    for li in page_lines:
+        if float(li["y0"]) < float(page_height) * float(_BOTTOM_SEQ_BAND_RATIO):
+            continue
+        if _is_boldish(li.get("fonts") or []):
+            continue
+        if float(li["avg_size"]) > float(body_size) + 0.2:
+            continue
+        m = re.match(r"^(\d{1,2})(?:[.)])?\s+\S+", str(li.get("text") or ""))
+        if m:
+            nums.append(int(m.group(1)))
+
+    uniq = sorted(set(nums))
+    if len(uniq) < 2:
+        return False
+
+    run = best = 1
+    for i in range(1, len(uniq)):
+        if uniq[i] == uniq[i - 1] + 1:
+            run += 1
+            best = max(best, run)
+        else:
+            run = 1
+    return bool(best >= 2)
 
 
 def estimate_body_font_size(doc: Any, max_pages: int = 12) -> float:
@@ -187,31 +303,175 @@ def looks_like_metadata(line: str) -> bool:
     return False
 
 
-def is_heading_candidate(text: str, avg_size: float, body_size: float, font_names: List[str]) -> bool:
-    """Very strict: accept only if matches heading patterns/keywords or clearly larger than body."""
+def _is_numbered_heading(
+    full_text: str,
+    *,
+    num: str,
+    title: str,
+    avg_size: float,
+    body_size: float,
+    is_bold: bool,
+    y0: float,
+    page_height: float,
+    bottom_number_seq: bool,
+) -> bool:
+    title = normalize_ws(title)
+    if not title:
+        return False
 
-    t = normalize_ws(text)
+    depth = str(num).count(".") + 1
+
+    # List items often use ':' to introduce a long explanation; section headings usually don't.
+    if ":" in title:
+        _left, right = title.split(":", 1)
+        if len(right.split()) >= 5:
+            return False
+        if depth == 1 and len(title.split()) > 12 and (not is_bold):
+            return False
+
+    if depth == 1:
+        # Depth-1 list items are very common; require stronger cues.
+        if (not is_bold) and float(avg_size) <= float(body_size) + 0.2:
+            return False
+        if len(title.split()) > 14 and (not is_bold):
+            return False
+
+    in_footer = float(y0) >= float(page_height) * float(_FOOTER_BAND_RATIO)
+    if in_footer and bool(bottom_number_seq) and (not is_bold) and float(avg_size) <= float(body_size) + 0.2:
+        return False
+
+    # [1] ... is almost always a reference list entry, not a section heading
+    if _BRACKET_REF_RE.match(full_text):
+        return False
+
+    # Common in references exported weirdly: "40 437Jason ..." (two leading numbers)
+    if re.match(r"^\d+\s+\d{3,}", full_text):
+        return False
+
+    # Headings almost never start with a lowercase continuation like "2 or ..."
+    if title[0].islower():
+        return False
+
+    # Captions are not headings
+    if _CAPTION_START_RE.match(title):
+        return False
+
+    ft = full_text.rstrip()
+    if ft.endswith((",", ";")):
+        return False
+
+    # References / footnotes often end with a period. Allow only if clearly formatted as a heading.
+    if ft.endswith(".") and (not is_bold) and float(avg_size) <= float(body_size) + 0.6:
+        return False
+
+    # Typical footnote zone: bottom band + smaller font.
+    if in_footer and (not is_bold) and float(avg_size) <= float(body_size) - 0.8:
+        return False
+
+    low = title.lower()
+    if any(w in low for w in ["doi", "arxiv", "http", "https", "www.", "isbn", "issn"]):
+        return False
+    if re.search(r"\bet\s*al\b", low):
+        return False
+    if re.search(r"\b(pp|vol|no|eds?|proc|conference|journal)\.?\b", low):
+        return False
+
+    has_year = bool(_YEAR_RE.search(title))
+    if has_year and re.search(r"[()\[\],]", title) and (not is_bold):
+        return False
+
+    # Author-like patterns (Surname, J.) are more likely a reference entry.
+    if "," in title:
+        if title.count(",") >= 2 and (not is_bold):
+            return False
+        if re.search(r"\b[A-Z]\.", title) and (not is_bold):
+            return False
+
+    # Very long numbered lines without bold/size cues are usually list items or citations.
+    if len(title.split()) > 18 and (not is_bold) and float(avg_size) <= float(body_size) + 0.3:
+        return False
+
+    # Basic numbering sanity (avoid 0 / huge section numbers from references)
+    try:
+        parts = [int(p) for p in str(num).split(".") if p]
+    except Exception:
+        parts = []
+    if any(p == 0 for p in parts):
+        return False
+    if parts and parts[0] >= 60 and (not is_bold):
+        return False
+
+    return True
+
+
+def is_heading_candidate(
+    text: str,
+    *,
+    avg_size: float,
+    body_size: float,
+    font_names: List[str],
+    y0: float,
+    page_height: float,
+    outline_titles: set[str],
+    bottom_number_seq: bool,
+) -> bool:
+    """Strict: avoid footnotes/references; accept only strong heading signals."""
+
+    t = normalize_ws(text).replace("\u00ad", "")
     if not t:
+        return False
+    if t[:1] in {"•", "", "·"}:
         return False
     low = t.lower()
 
     if looks_like_metadata(t):
         return False
+    if _CAPTION_START_RE.match(t):
+        return False
 
     if len(t) > 140:
         return False
 
-    if re.match(r"^(\d+(\.\d+)*)\s+\S+", t):
+    is_bold = _is_boldish(font_names)
+
+    # Opportunistic: trust PDF outline/bookmarks when present.
+    if outline_titles:
+        ot = _norm_heading_title(_strip_leading_numbering(t))
+        if ot and ot in outline_titles:
+            if not t.rstrip().endswith(".") and (is_bold or float(avg_size) >= float(body_size) + 0.2 or len(t.split()) <= 8):
+                return True
+
+    # Keywords (allow trailing punctuation)
+    kw = low.rstrip(":").rstrip(".").strip()
+    if kw in HEADING_KEYWORDS:
         return True
 
-    if low in HEADING_KEYWORDS:
-        return True
+    m = _NUM_HEADING_RE.match(t)
+    if m:
+        return _is_numbered_heading(
+            t,
+            num=m.group("num"),
+            title=m.group("title"),
+            avg_size=float(avg_size),
+            body_size=float(body_size),
+            is_bold=bool(is_bold),
+            y0=float(y0),
+            page_height=float(page_height),
+            bottom_number_seq=bool(bottom_number_seq),
+        )
 
-    is_boldish = any("bold" in (fn or "").lower() for fn in (font_names or []))
+    # Font/weight cues (for unnumbered headings)
+    if t.rstrip().endswith("."):
+        return False
+    in_footer = float(y0) >= float(page_height) * float(_FOOTER_BAND_RATIO)
+    if in_footer and (not is_bold) and float(avg_size) <= float(body_size) + 0.4:
+        return False
 
     if float(avg_size) >= float(body_size) + 1.6:
         return True
-    if is_boldish and float(avg_size) >= float(body_size) + 0.8 and len(t.split()) <= 14:
+    if is_bold and float(avg_size) >= float(body_size) + 0.4 and len(t.split()) <= 14:
+        return True
+    if is_bold and float(avg_size) >= float(body_size) - 0.2 and len(t.split()) <= 8:
         return True
 
     return False
@@ -295,11 +555,16 @@ def filter_repeated_running_headers(
 
 def build_heading_index_strict(doc: Any, max_levels: int = 4) -> Tuple[List[Heading], float]:
     body_size = estimate_body_font_size(doc)
+    outline_titles = extract_outline_titles(doc)
 
     candidates = []
     for pno in range(doc.page_count):
         page = doc.load_page(pno)
+        rect = page.rect
+        page_height = float(rect.height)
         d = page.get_text("dict")
+
+        page_lines = []
         for b in d.get("blocks", []):
             if b.get("type") != 0:
                 continue
@@ -308,7 +573,7 @@ def build_heading_index_strict(doc: Any, max_levels: int = 4) -> Tuple[List[Head
                 if not spans:
                     continue
 
-                line_text = "".join(sp.get("text", "") for sp in spans)
+                line_text = "".join(sp.get("text", "") for sp in spans).replace("\u00ad", "")
                 t = normalize_ws(line_text)
                 if not t:
                     continue
@@ -327,24 +592,138 @@ def build_heading_index_strict(doc: Any, max_levels: int = 4) -> Tuple[List[Head
                     fonts.append(sp.get("font", ""))
                 avg_size = (num / den) if den else float(spans[0].get("size", 0.0))
 
-                if not is_heading_candidate(t, avg_size, body_size, fonts):
-                    continue
+                bbox = line.get("bbox")
+                if bbox and len(bbox) == 4:
+                    x0, y0, x1, y1 = bbox
+                else:
+                    bxs = [sp.get("bbox") for sp in spans if sp.get("bbox")]
+                    if not bxs:
+                        continue
+                    x0 = min(b[0] for b in bxs)
+                    y0 = min(b[1] for b in bxs)
+                    x1 = max(b[2] for b in bxs)
+                    y1 = max(b[3] for b in bxs)
 
-                if t.endswith((",", ";", ":")) and not re.match(r"^(\d+(\.\d+)*)\s+\S+", t):
-                    continue
+                page_lines.append(
+                    {
+                        "text": t,
+                        "y0": float(y0),
+                        "avg_size": float(avg_size),
+                        "fonts": fonts,
+                    }
+                )
 
-                y0 = min(sp["bbox"][1] for sp in spans if "bbox" in sp)
-                is_num = bool(re.match(r"^(\d+(\.\d+)*)\s+\S+", t))
-                candidates.append((t, pno + 1, float(y0), float(avg_size), bool(is_num)))
+        bottom_seq = _page_has_bottom_number_sequence(page_lines, page_height=page_height, body_size=body_size)
+        for li in page_lines:
+            t = li["text"]
+            y0 = float(li["y0"])
+            avg_size = float(li["avg_size"])
+            fonts = li.get("fonts") or []
+
+            if not is_heading_candidate(
+                t,
+                avg_size=avg_size,
+                body_size=body_size,
+                font_names=fonts,
+                y0=y0,
+                page_height=page_height,
+                outline_titles=outline_titles,
+                bottom_number_seq=bottom_seq,
+            ):
+                continue
+
+            if t.endswith((",", ";", ":")) and not _NUM_HEADING_RE.match(t):
+                continue
+
+            is_num = bool(_NUM_HEADING_RE.match(t))
+            candidates.append((t, pno + 1, float(y0), float(avg_size), bool(is_num)))
 
     if not candidates:
         return [], body_size
+
+    # Drop depth-1 numbered items that repeat a lot (often list items, not headings).
+    simple_counts: Dict[str, int] = {}
+    for (t, _pg, _y0, _sz, is_num) in candidates:
+        if not is_num:
+            continue
+        m = _NUM_HEADING_RE.match(t)
+        if not m:
+            continue
+        num = m.group("num")
+        if num.count(".") != 0:
+            continue
+        simple_counts[num] = simple_counts.get(num, 0) + 1
+
+    listy = set()
+    for n, c in simple_counts.items():
+        if c < int(_LISTY_REPEAT_MIN):
+            continue
+        try:
+            if int(n) <= int(_LISTY_MAX_NUM):
+                listy.add(n)
+        except Exception:
+            continue
+
+    if listy:
+        page_heights = {pno + 1: float(doc.load_page(pno).rect.height) for pno in range(doc.page_count)}
+        filtered = []
+        for (t, pg, y0, sz, is_num) in candidates:
+            if is_num:
+                m = _NUM_HEADING_RE.match(t)
+                if m and m.group("num") in listy and m.group("num").count(".") == 0:
+                    ph = page_heights.get(int(pg), 0.0)
+                    title = m.group("title")
+                    # Keep only if it looks like a real section header near the top margin.
+                    if ph and float(y0) <= float(ph) * float(_LISTY_TOP_KEEP_RATIO) and len(title.split()) <= 8 and ":" not in title:
+                        filtered.append((t, pg, y0, sz, is_num))
+                    continue
+            filtered.append((t, pg, y0, sz, is_num))
+        candidates = filtered
+
+    # If the document uses hierarchical numbering (e.g. 3.1, 4.2), then plain "1." items later on
+    # are often numbered lists (not section headings). Drop depth-1 resets after we have seen higher tops.
+    has_depth2 = False
+    for (t, _pg, _y0, _sz, is_num) in candidates:
+        if not is_num:
+            continue
+        m = _NUM_HEADING_RE.match(t)
+        if not m:
+            continue
+        if m.group("num").count(".") >= 1:
+            has_depth2 = True
+            break
+
+    if has_depth2:
+        ordered = sorted(candidates, key=lambda c: (int(c[1]), float(c[2])))
+        max_top = 0
+        filtered = []
+        for (t, pg, y0, sz, is_num) in ordered:
+            if is_num:
+                m = _NUM_HEADING_RE.match(t)
+                if m:
+                    num = m.group("num")
+                    parts = num.split(".")
+                    top = int(parts[0]) if parts and parts[0].isdigit() else None
+                    depth = num.count(".") + 1
+                    if top is not None and depth >= 2:
+                        max_top = max(int(max_top), int(top))
+                    if (
+                        top is not None
+                        and depth == 1
+                        and int(pg) > 2
+                        and int(max_top) >= int(_RESET_MIN_MAXTOP)
+                        and int(top) <= int(_RESET_SMALL_MAX)
+                        and int(top) < int(max_top) - 1
+                    ):
+                        continue
+            filtered.append((t, pg, y0, sz, is_num))
+        candidates = filtered
 
     sizes = sorted({round(c[3], 1) for c in candidates}, reverse=True)
     size_levels = sizes[: int(max_levels)]
 
     def level_for(sz: float, text: str) -> int:
-        m = re.match(r"^(\d+(\.\d+)*)\s+", text)
+        m = re.match(r"^(\d+(?:\.\d+){0,5})(?:[.)])?\s+", text)
         if m:
             depth = m.group(1).count(".") + 1
             return max(1, min(4, int(depth)))
@@ -684,4 +1063,3 @@ def extract_section_by_hit(doc: Any, hit: Any, headings: List[Heading]) -> Dict[
         "highlights": hl,
         "text": text,
     }
-
