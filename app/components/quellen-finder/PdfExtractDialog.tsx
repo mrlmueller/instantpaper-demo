@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Cookies from "js-cookie";
-import { ExternalLink, Loader2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, ExternalLink, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { getDownloadUrlFromStorage } from "@/app/lib/firebase/storage";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
@@ -149,19 +150,74 @@ function shortName(filename: string): string {
   return `${base.slice(0, 16)}…${base.slice(-22)}`;
 }
 
+async function copyTextToClipboard(text: string): Promise<void> {
+  const value = String(text ?? "");
+  try {
+    await navigator.clipboard.writeText(value);
+    return;
+  } catch {
+    // ignore
+  }
+
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.style.position = "fixed";
+  ta.style.top = "0";
+  ta.style.left = "0";
+  ta.style.width = "1px";
+  ta.style.height = "1px";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  const ok = document.execCommand("copy");
+  ta.remove();
+  if (!ok) throw new Error("Copy failed.");
+}
+
 function PdfPageCanvas(props: {
   pdf: import("pdfjs-dist").PDFDocumentProxy;
   pageNumber: number;
   targetWidth: number;
   root: HTMLElement | null;
   highlightRects: HighlightRect[];
+  highlightPagesCount: number;
+  copyAllHighlights: () => Promise<{ preview: string; chars: number; pages: number }>;
 }) {
-  const { pdf, pageNumber, targetWidth, root, highlightRects } = props;
+  const { pdf, pageNumber, targetWidth, root, highlightRects, highlightPagesCount, copyAllHighlights } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pageRef = useRef<HTMLDivElement | null>(null);
   const textLayerHostRef = useRef<HTMLDivElement | null>(null);
   const textLayerBuilderRef = useRef<unknown>(null);
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
   const { ref, inView } = useInView({ root, rootMargin: "1200px 0px" });
+
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyBusy, setCopyBusy] = useState(false);
+  const [copyAnchor, setCopyAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [copiedPreview, setCopiedPreview] = useState<string>("");
+  const [copiedMeta, setCopiedMeta] = useState<{ chars: number; pages: number } | null>(null);
+
+  const pixelRects = useMemo(() => {
+    if (!dims) return [];
+    return highlightRects
+      .map((r) => {
+        const left = Math.max(0, Math.min(1, safeNumber(r.x0n) ?? 0)) * dims.width;
+        const top = Math.max(0, Math.min(1, safeNumber(r.y0n) ?? 0)) * dims.height;
+        const right = Math.max(0, Math.min(1, safeNumber(r.x1n) ?? 0)) * dims.width;
+        const bottom = Math.max(0, Math.min(1, safeNumber(r.y1n) ?? 0)) * dims.height;
+        return { left, top, right, bottom };
+      })
+      .filter((r) => r.right > r.left && r.bottom > r.top);
+  }, [dims, highlightRects]);
+
+  useEffect(() => {
+    if (!copyOpen) {
+      setCopiedPreview("");
+      setCopiedMeta(null);
+      setCopyAnchor(null);
+    }
+  }, [copyOpen]);
 
   useEffect(() => {
     if (!inView) return;
@@ -242,9 +298,48 @@ function PdfPageCanvas(props: {
     };
   }, []);
 
+  const onPageClick = (e: React.MouseEvent) => {
+    if (!dims) return;
+    if (pixelRects.length === 0) return;
+    const pageEl = pageRef.current;
+    if (!pageEl) return;
+
+    const sel = window.getSelection();
+    if (sel && sel.toString().trim()) return;
+
+    const r = pageEl.getBoundingClientRect();
+    const x = e.clientX - r.left;
+    const y = e.clientY - r.top;
+    const inside = pixelRects.some((p) => x >= p.left && x <= p.right && y >= p.top && y <= p.bottom);
+    if (!inside) return;
+
+    setCopyAnchor({ x, y });
+    setCopyOpen(true);
+  };
+
+  const copyHighlightedText = async () => {
+    if (copyBusy) return;
+    setCopyBusy(true);
+    try {
+      const res = await copyAllHighlights();
+      setCopiedPreview(res.preview);
+      setCopiedMeta({ chars: res.chars, pages: res.pages });
+      toast.success("Highlights kopiert", { description: `${res.chars} Zeichen • ${res.pages} Seiten` });
+    } catch (err) {
+      toast.error("Kopieren fehlgeschlagen", { description: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setCopyBusy(false);
+    }
+  };
+
   return (
     <div ref={ref} className="flex justify-center">
-      <div className="relative qf-pdf-page" style={dims ? { width: dims.width, height: dims.height } : undefined}>
+      <div
+        ref={pageRef}
+        className="relative qf-pdf-page"
+        style={dims ? { width: dims.width, height: dims.height } : undefined}
+        onClick={onPageClick}
+      >
         <canvas ref={canvasRef} className="relative z-0 block bg-white shadow-sm rounded-md" />
         <div ref={textLayerHostRef} className="absolute inset-0 z-10" />
         {dims ? (
@@ -260,13 +355,54 @@ function PdfPageCanvas(props: {
               return (
                 <div
                   key={`${pageNumber}_${idx}`}
-                  className="absolute rounded-[2px] bg-yellow-200/40 outline outline-1 outline-yellow-500/40"
+                  className="absolute rounded-[2px] bg-primary/18 outline outline-1 outline-primary/45"
                   style={{ left, top, width, height }}
                 />
               );
             })}
           </div>
         ) : null}
+
+        <Popover open={copyOpen} onOpenChange={setCopyOpen}>
+          {copyAnchor ? (
+            <PopoverAnchor
+              style={{
+                position: "absolute",
+                left: copyAnchor.x,
+                top: copyAnchor.y,
+                width: 1,
+                height: 1,
+                pointerEvents: "none",
+              }}
+            />
+          ) : null}
+          <PopoverContent className="w-[360px] p-3" sideOffset={8} align="start">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">Highlights</div>
+                <div className="text-xs text-muted-foreground">
+                  Copy all highlighted text{highlightPagesCount ? ` (${highlightPagesCount} pages)` : ""}
+                </div>
+              </div>
+              <Button size="sm" onClick={() => void copyHighlightedText()} disabled={copyBusy}>
+                {copyBusy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+                Copy
+              </Button>
+            </div>
+            {copiedPreview ? (
+              <div className="mt-2">
+                <div className="text-xs text-muted-foreground mb-1">
+                  Copied text{copiedMeta ? ` • ${copiedMeta.chars} chars • ${copiedMeta.pages} pages` : ""}
+                </div>
+                <div className="text-xs whitespace-pre-wrap max-h-[140px] overflow-auto rounded-md border border-border bg-muted/20 p-2 select-text">
+                  {copiedPreview}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2 text-xs text-muted-foreground">Tip: You can also drag-select text and copy normally.</div>
+            )}
+          </PopoverContent>
+        </Popover>
       </div>
     </div>
   );
@@ -291,6 +427,7 @@ export function PdfExtractDialog(props: {
   const { ref: pageWidthRef, width: pageWidth } = useObservedWidth<HTMLDivElement>();
 
   const effectivePdfId = request?.pdfId || extractResp?.pdf?.id || null;
+  const [currentPage, setCurrentPage] = useState(1);
 
   const highlightsByPage = useMemo(() => {
     const m = new Map<number, HighlightRect[]>();
@@ -303,6 +440,103 @@ export function PdfExtractDialog(props: {
     }
     return m;
   }, [extractResp]);
+
+  const highlightPageNumbers = useMemo(() => {
+    const pages = Array.from(highlightsByPage.entries())
+      .filter(([, rects]) => Array.isArray(rects) && rects.length > 0)
+      .map(([pno]) => pno)
+      .sort((a, b) => a - b);
+    return pages;
+  }, [highlightsByPage]);
+
+  const copyAllHighlights = async (): Promise<{ preview: string; chars: number; pages: number }> => {
+    if (!pdfDoc) throw new Error("PDF not loaded yet.");
+    if (highlightPageNumbers.length === 0) throw new Error("No highlights to copy.");
+
+    const pdfjs = await loadPdfJs();
+    const parts: string[] = [];
+
+    for (const pno of highlightPageNumbers) {
+      const rectsN = highlightsByPage.get(pno) ?? [];
+      if (rectsN.length === 0) continue;
+
+      const page = await pdfDoc.getPage(pno);
+      const viewport = page.getViewport({ scale: 1 });
+      const rawDims = viewport.rawDims as unknown as { pageWidth?: number; pageHeight?: number; pageX?: number; pageY?: number };
+      const pageWidth = typeof rawDims.pageWidth === "number" ? rawDims.pageWidth : viewport.width;
+      const pageHeight = typeof rawDims.pageHeight === "number" ? rawDims.pageHeight : viewport.height;
+      const pageX = typeof rawDims.pageX === "number" ? rawDims.pageX : 0;
+      const pageY = typeof rawDims.pageY === "number" ? rawDims.pageY : 0;
+
+      const absRects = rectsN
+        .map((r) => {
+          const x0n = safeNumber(r.x0n) ?? 0;
+          const y0n = safeNumber(r.y0n) ?? 0;
+          const x1n = safeNumber(r.x1n) ?? 0;
+          const y1n = safeNumber(r.y1n) ?? 0;
+          const x0 = Math.max(0, Math.min(pageWidth, x0n * pageWidth));
+          const y0 = Math.max(0, Math.min(pageHeight, y0n * pageHeight));
+          const x1 = Math.max(0, Math.min(pageWidth, x1n * pageWidth));
+          const y1 = Math.max(0, Math.min(pageHeight, y1n * pageHeight));
+          return { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) };
+        })
+        .filter((r) => r.x1 > r.x0 && r.y1 > r.y0);
+
+      if (absRects.length === 0) continue;
+
+      const tc = await page.getTextContent();
+      const items = Array.isArray((tc as any).items) ? ((tc as any).items as any[]) : [];
+
+      const flip = [1, 0, 0, -1, -pageX, pageY + pageHeight];
+      const hits: Array<{ y: number; x: number; str: string }> = [];
+
+      for (const it of items) {
+        const str = typeof it?.str === "string" ? it.str : "";
+        if (!str.trim()) continue;
+        const t = Array.isArray(it?.transform) ? it.transform : null;
+        if (!t || t.length < 6) continue;
+
+        let tx: number[] | null = null;
+        try {
+          tx = (pdfjs as any).Util.transform(flip, t) as number[];
+        } catch {
+          tx = null;
+        }
+        if (!tx || tx.length < 6) continue;
+
+        const left = typeof tx[4] === "number" ? tx[4] : 0;
+        const baselineY = typeof tx[5] === "number" ? tx[5] : 0;
+        const fontHeight = Math.hypot(Number(tx[2] || 0), Number(tx[3] || 0)) || Math.abs(Number(it?.height || 0)) || 0;
+        const width = Math.abs(Number(it?.width || 0)) || 0;
+
+        const top = baselineY - fontHeight;
+        const right = left + width;
+        const bottom = baselineY;
+
+        const intersects = absRects.some((r) => right >= r.x0 && left <= r.x1 && bottom >= r.y0 && top <= r.y1);
+        if (!intersects) continue;
+
+        hits.push({ y: top, x: left, str });
+      }
+
+      if (hits.length === 0) continue;
+      hits.sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y));
+      const pageText = hits
+        .map((h) => h.str)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (pageText) parts.push(pageText);
+    }
+
+    const text = parts.join("\n\n").trim();
+    if (!text) throw new Error("No text found for highlights yet.");
+    await copyTextToClipboard(text);
+
+    const previewLimit = 1200;
+    const preview = text.length > previewLimit ? `${text.slice(0, previewLimit)}…` : text;
+    return { preview, chars: text.length, pages: highlightPageNumbers.length };
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -318,6 +552,7 @@ export function PdfExtractDialog(props: {
     setExtractError(null);
     setPdfError(null);
     setPdfErrorToShow(null);
+    setCurrentPage(1);
 
     (async () => {
       const token = Cookies.get("__session");
@@ -466,9 +701,53 @@ export function PdfExtractDialog(props: {
     }
   }, [open, pdfDoc, extractResp?.extract?.anchor_page, extractResp?.extract?.start?.page, request?.anchorPage]);
 
+  useEffect(() => {
+    if (!open) return;
+    if (!pdfDoc) return;
+    const root = scrollRootRef.current;
+    if (!root) return;
+
+    let raf = 0;
+    const update = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        const rootRect = root.getBoundingClientRect();
+        const els = Array.from(root.querySelectorAll<HTMLElement>("[data-qf-page]"));
+        if (els.length === 0) return;
+        let best = 1;
+        let bestDist = Number.POSITIVE_INFINITY;
+        for (const el of els) {
+          const r = el.getBoundingClientRect();
+          const dist = Math.abs(r.top - rootRect.top);
+          if (dist < bestDist) {
+            bestDist = dist;
+            const n = Number(el.getAttribute("data-qf-page") || "");
+            best = Number.isFinite(n) && n > 0 ? n : best;
+          }
+        }
+        setCurrentPage(best);
+      });
+    };
+
+    root.addEventListener("scroll", update, { passive: true });
+    update();
+    return () => {
+      root.removeEventListener("scroll", update as any);
+      if (raf) window.cancelAnimationFrame(raf);
+    };
+  }, [open, pdfDoc]);
+
+  const scrollToPage = (p: number) => {
+    const root = scrollRootRef.current;
+    const el = root?.querySelector(`[data-qf-page='${p}']`);
+    if (el instanceof HTMLElement) el.scrollIntoView({ block: "start" });
+  };
+
   const storagePath = request?.storagePath || extractResp?.pdf?.storage_path || null;
   const titleRaw = request?.pdfFilename || extractResp?.pdf?.filename || "PDF Preview";
   const title = shortName(titleRaw);
+  const totalPages = pdfDoc?.numPages ?? 0;
   const subtitle = loadingExtract
     ? "Extracting highlights…"
     : extractError
@@ -488,7 +767,10 @@ export function PdfExtractDialog(props: {
               <DialogTitle className="truncate" title={titleRaw}>
                 {title}
               </DialogTitle>
-              <DialogDescription className="truncate">{subtitle}</DialogDescription>
+              <DialogDescription className="truncate">
+                {subtitle}
+                {extractResp?.extract?.highlights?.pages?.length ? " • click a highlight to copy" : ""}
+              </DialogDescription>
             </div>
             <div className="shrink-0 flex items-center gap-2">
               <Button
@@ -533,6 +815,35 @@ export function PdfExtractDialog(props: {
               </DialogClose>
             </div>
           </div>
+          {totalPages ? (
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs text-muted-foreground tabular-nums">
+                Page {currentPage}/{totalPages}
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8"
+                  disabled={currentPage <= 1}
+                  onClick={() => scrollToPage(Math.max(1, currentPage - 1))}
+                  title="Previous page"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => scrollToPage(Math.min(totalPages, currentPage + 1))}
+                  title="Next page"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </DialogHeader>
 
         <div className="mt-2 grid grid-cols-1 lg:grid-cols-[1fr] gap-3 min-h-0 h-full">
@@ -556,6 +867,8 @@ export function PdfExtractDialog(props: {
                         targetWidth={Math.max(320, Math.min(1100, pageWidth || 900))}
                         root={scrollRootRef.current}
                         highlightRects={highlightsByPage.get(pno) ?? []}
+                        highlightPagesCount={highlightPageNumbers.length}
+                        copyAllHighlights={copyAllHighlights}
                       />
                     </div>
                   ))
