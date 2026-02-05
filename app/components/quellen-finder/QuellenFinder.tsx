@@ -1,9 +1,9 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Cookies from "js-cookie";
-import { ArrowLeft, Download, ExternalLink, Loader2, Search, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Download, ExternalLink, Eye, Loader2, Search, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { addDoc, deleteDoc, limit, onSnapshot, orderBy, query, serverTimestamp, type CollectionReference } from "firebase/firestore";
 import { deleteObject, getStorage, ref, uploadBytes } from "firebase/storage";
@@ -38,6 +38,7 @@ import type {
   QuellenFinderSourceResultDoc,
 } from "@/app/lib/firestore/types";
 import type { Kapitel } from "@/app/actions/kapitels";
+import { PdfExtractDialog, type PdfExtractRequest } from "./PdfExtractDialog";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
 
@@ -154,6 +155,9 @@ export function QuellenFinder({
   const [sourcesSortKey, setSourcesSortKey] = useState<SourcesSortKey>("rank");
   const [sourcesSortDir, setSourcesSortDir] = useState<SortDir>("asc");
   const [expandedSourceIds, setExpandedSourceIds] = useState<Set<string>>(new Set());
+
+  const [extractDialogOpen, setExtractDialogOpen] = useState(false);
+  const [extractRequest, setExtractRequest] = useState<PdfExtractRequest | null>(null);
 
   const [stage2, setStage2] = useState<Stage2Row[]>([]);
   const [stage3, setStage3] = useState<Stage3Row[]>([]);
@@ -529,6 +533,31 @@ export function QuellenFinder({
     toast.success("PDF Scan gestartet", { description: runId ? `Run: ${runId}` : undefined });
   };
 
+  const openExtractDialog = (args: {
+    stage: "stage2" | "stage3";
+    docId: string;
+    pdfId?: string;
+    pdfFilename?: string;
+    storagePath?: string;
+    anchorPage?: number;
+  }) => {
+    if (!activePdfRun?.id) {
+      toast.error("Kein aktiver PDF-Run", { description: "Bitte zuerst einen PDF-Run auswählen." });
+      return;
+    }
+    setExtractRequest({
+      projektId,
+      runId: activePdfRun.id,
+      stage: args.stage,
+      docId: args.docId,
+      pdfId: args.pdfId,
+      pdfFilename: args.pdfFilename,
+      storagePath: args.storagePath,
+      anchorPage: args.anchorPage,
+    });
+    setExtractDialogOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="border-b border-border px-6 py-4 flex items-center gap-4">
@@ -714,49 +743,48 @@ export function QuellenFinder({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sourcesFiltered.map((r) => {
+                    {sourcesFiltered.flatMap((r) => {
                       const expanded = expandedSourceIds.has(r.id);
-                      return (
-                        <Fragment key={r.id}>
-                          <TableRow>
-                            <TableCell className="tabular-nums">{r.rank ?? r.id}</TableCell>
-                            <TableCell className="min-w-[360px]">
-                              <div className="font-medium">{r.title || "(untitled)"}</div>
-                              <div className="text-xs text-muted-foreground line-clamp-1">
-                                {(r.authors || []).slice(0, 6).join(", ")}
-                                {r.venue ? ` • ${r.venue}` : ""}
-                                {r.doi ? ` • DOI: ${r.doi}` : ""}
-                              </div>
-                            </TableCell>
-                            <TableCell className="tabular-nums">{r.year ?? ""}</TableCell>
-                            <TableCell className="tabular-nums">{r.citationCount ?? ""}</TableCell>
-                            <TableCell className="tabular-nums">{typeof r.score === "number" ? r.score.toFixed(3) : ""}</TableCell>
-                            <TableCell>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  setExpandedSourceIds((prev) => {
-                                    const next = new Set(prev);
-                                    if (next.has(r.id)) next.delete(r.id);
-                                    else next.add(r.id);
-                                    return next;
-                                  })
-                                }
-                              >
-                                {expanded ? "Hide" : "Show"}
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                          {expanded ? (
-                            <TableRow>
-                              <TableCell colSpan={6} className="bg-muted/30">
-                                <pre className="text-xs overflow-auto max-h-[320px] whitespace-pre-wrap">{JSON.stringify(r.raw ?? {}, null, 2)}</pre>
-                              </TableCell>
-                            </TableRow>
-                          ) : null}
-                        </Fragment>
+                      const mainRow = (
+                        <TableRow key={r.id}>
+                          <TableCell className="tabular-nums">{r.rank ?? r.id}</TableCell>
+                          <TableCell className="min-w-[360px]">
+                            <div className="font-medium">{r.title || "(untitled)"}</div>
+                            <div className="text-xs text-muted-foreground line-clamp-1">
+                              {(r.authors || []).slice(0, 6).join(", ")}
+                              {r.venue ? ` • ${r.venue}` : ""}
+                              {r.doi ? ` • DOI: ${r.doi}` : ""}
+                            </div>
+                          </TableCell>
+                          <TableCell className="tabular-nums">{r.year ?? ""}</TableCell>
+                          <TableCell className="tabular-nums">{r.citationCount ?? ""}</TableCell>
+                          <TableCell className="tabular-nums">{typeof r.score === "number" ? r.score.toFixed(3) : ""}</TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                setExpandedSourceIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(r.id)) next.delete(r.id);
+                                  else next.add(r.id);
+                                  return next;
+                                })
+                              }
+                            >
+                              {expanded ? "Hide" : "Show"}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
                       );
+                      const rawRow = expanded ? (
+                        <TableRow key={`${r.id}__raw`}>
+                          <TableCell colSpan={6} className="bg-muted/30">
+                            <pre className="text-xs overflow-auto max-h-[320px] whitespace-pre-wrap">{JSON.stringify(r.raw ?? {}, null, 2)}</pre>
+                          </TableCell>
+                        </TableRow>
+                      ) : null;
+                      return rawRow ? [mainRow, rawRow] : [mainRow];
                     })}
                     {sourcesFiltered.length === 0 ? (
                       <TableRow>
@@ -893,6 +921,7 @@ export function QuellenFinder({
                             {stage3.map((r) => {
                               const pdf = pdfById.get(String(r.pdfId || ""));
                               const storagePath = String(pdf?.storagePath || "");
+                              const pdfId = String(r.pdfId || "").trim();
                               const pdfLabel = String(r.pdfLabel || pdf?.filename || "");
                               const page = typeof r.anchorPage === "number" ? r.anchorPage : undefined;
                               return (
@@ -908,7 +937,24 @@ export function QuellenFinder({
                                           {r.hitCount ? (r.anchorPage ? ` • hits ${r.hitCount}` : `hits ${r.hitCount}`) : null}
                                         </div>
                                       </div>
-                                      <div className="shrink-0">
+                                      <div className="shrink-0 flex items-center gap-1">
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          onClick={() =>
+                                            openExtractDialog({
+                                              stage: "stage3",
+                                              docId: r.id,
+                                              pdfId: pdfId || undefined,
+                                              pdfFilename: pdfLabel,
+                                              storagePath: storagePath || undefined,
+                                              anchorPage: page,
+                                            })
+                                          }
+                                          title="Preview highlights"
+                                        >
+                                          <Eye className="h-4 w-4" />
+                                        </Button>
                                         <Button
                                           size="icon"
                                           variant="ghost"
@@ -963,6 +1009,7 @@ export function QuellenFinder({
                             {stage2.map((r) => {
                               const pdf = pdfById.get(String(r.pdfId || ""));
                               const storagePath = String(pdf?.storagePath || "");
+                              const pdfId = String(r.pdfId || "").trim();
                               const pdfLabel = String(r.pdfLabel || pdf?.filename || "");
                               const why = (r.scoreRationale || r.coverage || "").trim();
                               return (
@@ -974,7 +1021,23 @@ export function QuellenFinder({
                                           {pdfLabel}
                                         </div>
                                       </div>
-                                      <div className="shrink-0">
+                                      <div className="shrink-0 flex items-center gap-1">
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          onClick={() =>
+                                            openExtractDialog({
+                                              stage: "stage2",
+                                              docId: r.id,
+                                              pdfId: pdfId || undefined,
+                                              pdfFilename: pdfLabel,
+                                              storagePath: storagePath || undefined,
+                                            })
+                                          }
+                                          title="Preview highlights"
+                                        >
+                                          <Eye className="h-4 w-4" />
+                                        </Button>
                                         <Button
                                           size="icon"
                                           variant="ghost"
@@ -1020,6 +1083,14 @@ export function QuellenFinder({
           </div>
         </div>
       </div>
+      <PdfExtractDialog
+        open={extractDialogOpen}
+        onOpenChange={(next) => {
+          setExtractDialogOpen(next);
+          if (!next) setExtractRequest(null);
+        }}
+        request={extractRequest}
+      />
     </div>
   );
 }

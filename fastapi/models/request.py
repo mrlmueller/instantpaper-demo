@@ -272,3 +272,22 @@ class QuellenFinderPdfScanRequest(BaseModel):
                 "preprocess": True,
             }
         }
+
+
+class QuellenFinderPdfExtractRequest(BaseModel):
+    """Request model for extracting/highlighting a PDF section from a Stage-2 hit or Stage-3 section."""
+
+    projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
+    run_id: str = Field(..., description="Research run ID (kind=pdf_scan)")
+    stage: Literal["stage2", "stage3"] = Field(..., description="Which run subcollection to read the doc from")
+    doc_id: str = Field(..., description="Stage document ID to extract from")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "projekt_id": "proj123",
+                "run_id": "run456",
+                "stage": "stage2",
+                "doc_id": "stageDoc789",
+            }
+        }

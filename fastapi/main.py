@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, BackgroundTasks, status, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from utils.config import config
@@ -21,6 +21,7 @@ from models.request import (
     RefineGliederungRequest,
     QuellenFinderSourcesSearchRequest,
     QuellenFinderPdfScanRequest,
+    QuellenFinderPdfExtractRequest,
     ExportDocxRequest,
     RefineCombinedInitRequest,
     RefineCombinedRequest,
@@ -43,7 +44,8 @@ from services.prompt_service import prompt_service
 from services.export_service import export_service
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
 from services.quellen_finder_sources_job import run_quellen_finder_sources_search_job
-from services.quellen_finder_pdf_scan_job import run_quellen_finder_pdf_scan_job
+from services.quellen_finder_pdf_scan_job import run_quellen_finder_pdf_scan_job, _download_pdf_from_firebase_storage
+from services.quellen_finder_pdf_extract_service import extract_quellen_finder_pdf_section
 from firebase_admin import auth, storage
 from google.api_core.exceptions import NotFound, FailedPrecondition
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
@@ -54,13 +56,16 @@ import base64
 import json
 import secrets
 import hashlib
+import shutil
 import os
 import re
+import tempfile
 import unicodedata
 from pathlib import Path
 import html as html_lib
 from urllib.parse import parse_qs
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from starlette.background import BackgroundTask
 
 from utils.logging_config import configure_logging
 
@@ -5230,6 +5235,139 @@ async def quellen_finder_pdf_scan(
         "pdf_ids": pdf_ids,
         "queued_at": datetime.utcnow().isoformat() + "Z",
     }
+
+
+@app.post("/api/quellen-finder/pdf-extract", status_code=status.HTTP_200_OK)
+async def quellen_finder_pdf_extract(
+    request: QuellenFinderPdfExtractRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Extract/highlight a PDF section for a single Stage-2 hit or Stage-3 section.
+
+    This is computed on-demand and is not persisted.
+    """
+
+    projekt_id = str(request.projekt_id or "").strip()
+    run_id = str(request.run_id or "").strip()
+    stage = str(request.stage or "").strip()
+    doc_id = str(request.doc_id or "").strip()
+
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not run_id:
+        raise HTTPException(status_code=400, detail="run_id is required")
+    if stage not in {"stage2", "stage3"}:
+        raise HTTPException(status_code=400, detail="stage must be 'stage2' or 'stage3'")
+    if not doc_id:
+        raise HTTPException(status_code=400, detail="doc_id is required")
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    return extract_quellen_finder_pdf_section(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        stage=stage,  # type: ignore[arg-type]
+        doc_id=doc_id,
+    )
+
+
+@app.get("/api/quellen-finder/project-pdf", status_code=status.HTTP_200_OK)
+async def quellen_finder_project_pdf(
+    projekt_id: str,
+    pdf_id: str,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Download a project PDF through the backend (avoids Firebase Storage CORS issues for in-browser PDF.js).
+
+    This endpoint validates that the PDF belongs to the authenticated user and project.
+    """
+
+    projekt_id = str(projekt_id or "").strip()
+    pdf_id = str(pdf_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not pdf_id:
+        raise HTTPException(status_code=400, detail="pdf_id is required")
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    pdf_snap = (
+        firebase_service.db.collection("users")
+        .document(str(user_id))
+        .collection("projects")
+        .document(str(projekt_id))
+        .collection("pdfs")
+        .document(str(pdf_id))
+        .get()
+    )
+    if not getattr(pdf_snap, "exists", False):
+        raise HTTPException(status_code=404, detail="PDF not found.")
+    pdf_doc = pdf_snap.to_dict() or {}
+
+    storage_path = str(pdf_doc.get("storagePath") or "").strip()
+    filename = str(pdf_doc.get("filename") or "").strip() or "document.pdf"
+    safe_filename = re.sub(r"[\r\n\"]+", "_", filename).strip() or "document.pdf"
+    safe_filename = safe_filename[:200]
+    expected_size = None
+    try:
+        size_raw = pdf_doc.get("size")
+        if isinstance(size_raw, (int, float)) and int(size_raw) > 0:
+            expected_size = int(size_raw)
+    except Exception:
+        expected_size = None
+
+    if not storage_path:
+        raise HTTPException(status_code=400, detail="PDF storagePath is missing.")
+
+    tmpdir = tempfile.mkdtemp(prefix="qf_project_pdf_")
+    dest_path = Path(tmpdir) / "document.pdf"
+
+    try:
+        _download_pdf_from_firebase_storage(
+            storage_path=storage_path,
+            dest_path=dest_path,
+            expected_size=expected_size,
+        )
+    except Exception as exc:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        logger.warning(
+            "QF project-pdf download failed | projekt_id=%s pdf_id=%s storage_path=%s err=%s",
+            projekt_id,
+            pdf_id,
+            storage_path,
+            exc,
+        )
+        raise HTTPException(status_code=502, detail="Failed to download PDF from storage.")
+
+    logger.info(
+        "QF project-pdf ready | projekt_id=%s pdf_id=%s bytes=%s storage_path=%s",
+        projekt_id,
+        pdf_id,
+        int(dest_path.stat().st_size) if dest_path.exists() else None,
+        storage_path,
+    )
+
+    def _cleanup_tmp():
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    return FileResponse(
+        path=str(dest_path),
+        media_type="application/pdf",
+        filename=safe_filename,
+        headers={"Content-Disposition": f'inline; filename=\"{safe_filename}\"'},
+        background=BackgroundTask(_cleanup_tmp),
+    )
 
 
 @app.post("/api/process", status_code=status.HTTP_202_ACCEPTED)
