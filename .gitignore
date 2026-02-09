@@ -53,12 +53,19 @@ updated-design/
 fastapi/.prompt_dumps
 /.llm_label_cache_v1
 /.embed_cache
+/sources_workspace/.embed_cache
+/sources_workspace/.llm_label_cache_v1
 
 /eval_dataset/fetch/s2_cache
 /eval_dataset/experiments
 /eval_dataset/datasets
+/sources_workspace/eval_dataset/fetch/s2_cache
+/sources_workspace/eval_dataset/experiments
+/sources_workspace/eval_dataset/datasets
 
 /final_pipeline
+/sources_workspace/final_pipeline
+/sources_workspace/scratch
 
 # Quellen-Finder caches / dev artifacts
 fastapi/.quellen_finder_cache/
