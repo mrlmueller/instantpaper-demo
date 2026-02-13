@@ -70,6 +70,9 @@ fastapi/.prompt_dumps
 # Two-lane pipeline run artifacts (generated)
 /runs/
 /sources-v2/runs/
+/sources-v2/run_*/
+/sources-v2/.openalex_cache_nb/
+/sources-v2/.ipynb_checkpoints/
 
 # Quellen-Finder caches / dev artifacts
 fastapi/.quellen_finder_cache/

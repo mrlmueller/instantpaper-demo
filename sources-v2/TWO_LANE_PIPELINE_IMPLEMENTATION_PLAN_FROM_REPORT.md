@@ -486,11 +486,9 @@ Use with a small planner model. Output must be strict JSON.
 
 ```text
 SYSTEM:
-You are a scientific literature search planner. Your job is to convert a chapter title and a ~200-word chapter specification into:
-(1) a short topic summary,
-(2) 8–20 atomic facets (requirements) with importance weights,
-(3) bilingual (EN+DE) canonical terms, neighbor terms, and exclusion terms.
-Do NOT name specific papers, authors, or venues. Do NOT invent citations. Be deterministic and consistent.
+You are a scientific literature search planner. Convert a chapter title and a ~200-word chapter specification into a bilingual (EN+DE) query plan for downstream APIs.
+You must be deterministic and consistent across any domain.
+Do NOT name specific papers, authors, or venues. Do NOT invent citations.
 
 USER:
 CHAPTER_TITLE:
@@ -500,141 +498,322 @@ CHAPTER_SPEC (instructions):
 {{chapter_spec_text}}
 
 TASK:
-Create a QueryPlan JSON object with:
-- topic_summary_en: 2–3 sentences
-- topic_summary_de: 2–3 sentences (natural German)
-- facets: 8–20 items. Each facet must be ATOMIC (one requirement/aspect).
-  For each facet:
-    - facet_id: short stable id (lower_snake_case, 3–6 words)
-    - facet_label_en: <=8 words
-    - facet_label_de: <=8 words
-    - importance_weight: integer 1..5
-      * 5 = explicitly required / central objective
-      * 4 = important supporting requirement
-      * 3 = useful context or common subtopic
-      * 2 = peripheral
-      * 1 = optional/rare
-    - text_en: 1–2 sentences describing the facet
-    - text_de: 1–2 sentences describing the facet (natural German)
-    - canonical_terms:
-        en: 6–18 terms/phrases (include synonyms, abbreviations)
-        de: 6–18 terms/phrases (include German equivalents + common English loan terms if used in German literature)
-    - neighbor_terms:
-        en: 4–12 related/adjacent terms (broader/narrower/nearby topics)
-        de: 4–12 related/adjacent terms
-    - exclusion_terms:
-        en: 0–8 terms to avoid wrong senses
-        de: 0–8 terms to avoid wrong senses
+Return a QueryPlan JSON object with these keys:
 
-Also output:
-- global_canonical_terms.en/de (10–25)
-- global_exclusions.en/de (0–15)
+1) topic_summary_en: 2–3 sentences
+2) topic_summary_de: 2–3 sentences (natural German)
+
+3) primary_context_anchors:
+   - en: 3–8 short anchors that uniquely pin the topic (prefer proper nouns, named constructs, standard period/organism/method names)
+   - de: 3–8 short anchors (German equivalents + common English terms used in German literature)
+   RULES:
+   - Each anchor must be 1–6 words.
+   - No generic research words: analysis, study, effects, mechanism, framework, model, system, approach, dynamics, development, review, overview
+     German: Analyse, Studie, Effekte, Mechanismus, Rahmen, Modell, System, Ansatz, Dynamik, Entwicklung, Überblick
+   - Avoid long narrative phrases. Avoid parentheses and commas inside anchors.
+
+4) global_canonical_terms:
+   - en: 12–30 terms/phrases (topic terms + synonyms + abbreviations)
+   - de: 12–30 terms/phrases (German equivalents + common English loan terms)
+   TERM HYGIENE (MANDATORY for ALL term lists):
+   - Each term must be <= 4 words.
+   - No explanatory text, no “e.g.” / “z. B.”.
+   - No parentheses, no commas, no semicolons.
+   - No “modern … jargon” type commentary; only tokens likely to appear in titles/abstracts.
+
+5) global_exclusions:
+   - en: 0–12 atomic confounder terms (<= 3 words each)
+   - de: 0–12 atomic confounder terms (<= 3 words each)
+   EXCLUSION RULES:
+   - Only include exclusions that are likely to appear in unrelated literature and cause wrong-sense retrieval.
+   - No punctuation except hyphen. No parentheses. No example phrases.
+
+6) facets: 8–20 ATOMIC facets (one requirement each).
+For each facet:
+- facet_id: lower_snake_case, 3–6 words, stable
+- facet_type: one of ["background","theory","mechanism","methods","data","measurement","evaluation","case_context","debate","limitations","applications"]
+- importance_weight: integer 1..5 (5 = explicitly required, 4 = important support, 3 = common subtopic, 2 peripheral, 1 optional)
+- facet_label_en: <= 8 words
+- facet_label_de: <= 8 words
+- text_en: 1–2 sentences
+- text_de: 1–2 sentences
+- canonical_terms.en/de: 6–18 terms each (must follow TERM HYGIENE)
+- neighbor_terms.en/de: 4–12 terms each (must follow TERM HYGIENE)
+- exclusion_terms.en/de: 0–6 terms each (must follow EXCLUSION RULES)
 
 QUALITY RULES:
-- Cover ALL explicit instructions in CHAPTER_SPEC via facets (no big gaps).
-- Add 2–4 neighbor facets that are not explicitly stated but are commonly necessary.
+- Cover all explicit instructions in the chapter spec via facets (no gaps).
+- Add 2–4 neighbor facets that are commonly necessary but not explicitly listed.
 - Keep facets non-overlapping as much as possible.
 - Prefer technical terms over vague words.
-- If the chapter is about a historical topic, include common periodization names & key constructs.
-- If the chapter is methods-heavy, include evaluation metrics and typical datasets/tools as facets.
-- If ambiguous terms exist, add exclusion_terms to disambiguate.
+- If the topic is ambiguous, add exclusions to disambiguate.
 
 OUTPUT:
-Return ONLY valid JSON matching the schema described. No extra text.
+Return ONLY valid JSON. No extra text.
 ```
 
 ### Prompt 2 — OpenAlex Query Builder (provider-tailored, budget-aware)
 
 ```text
 SYSTEM:
-You generate OpenAlex /works query strings and parameter objects. You must obey OpenAlex boolean rules:
-- Use UPPERCASE AND/OR/NOT
-- Parentheses and double-quotes are allowed
-- Do NOT use wildcard/fuzzy characters (* ? ~). If present, remove them.
-- Queries should work well for scientific retrieval in English and German.
+You generate OpenAlex /works query objects. Output ONLY valid JSON.
+Goal: high precision with strong recall across ANY scientific domain.
 Be deterministic.
 
+PIPELINE CONTEXT (READ CAREFULLY):
+You generate provider-safe OpenAlex /works queries for retrieval in a two-lane pipeline.
+These queries only collect candidates; downstream stages deduplicate, embed, and rerank.
+So: keep queries context-anchored and reasonably selective, but not ultra-narrow.
+
+INTENTS:
+- authority: broad, high-impact/core literature for the chapter context (we rank later).
+- match: facet-specific topical fit (MUST still include the chapter context).
+
+CHAPTER CONTEXT (USE THIS TO DISAMBIGUATE GENERIC TERMS):
+CHAPTER_TITLE:
+{{chapter_title}}
+
+CHAPTER_SPEC_TEXT:
+{{chapter_spec_text}}
+
+OPENALEX RULES (MUST FOLLOW):
+1) Boolean operators MUST be uppercase: AND / OR / NOT. Parentheses and quotes allowed.
+2) Forbidden characters in search string: * ? ~  (never output these).
+3) Avoid slash tokens. Do NOT output X/Y inside quotes; instead use (X OR Y).
+4) Include search_field for each query:
+   - match queries should use title_and_abstract.search
+   - authority queries should use title_and_abstract.search, plus optionally one default.search booster per language
+5) Filters must be comma-separated (no semicolons). Only use safe keys:
+   language,is_paratext,is_retracted,type,from_publication_date,to_publication_date,
+   primary_location.source.is_core,locations.source.is_core
+6) per_page MUST be 200.
+7) Sorting:
+   - authority: cited_by_count:desc
+   - match: relevance_score:desc (or null)
+
+ANCHORS (MUST FOLLOW):
+- Every query MUST include at least ONE term from primary_context_anchors for that language.
+- Authority queries MUST be context-anchored: prefer primary_context_anchors and/or CHAPTER_TITLE.
+- A second anchor is OPTIONAL for match queries (do not force the same two global anchors in every match query).
+- Match queries must contain at least TWO strong signals total:
+  (a) anchor AND facet-group, OR
+  (b) anchor AND anchor, OR
+  (c) anchor AND facet-group with >=3 facet terms.
+
+GENERIC ANCHORS (CRITICAL):
+- If you use OR-groups for anchors, NEVER include generic descriptors inside the OR-group.
+  OR makes any single term sufficient, so a generic term will destroy topical anchoring.
+- Examples of generic descriptors (do NOT use as anchors): decline, transformation, continuity, change, effects, mechanisms,
+  analysis, study, case study, review, overview, framework, approach, process, dynamics, development.
+- If a global term looks generic, do not use it as an anchor; move it into a facet group or omit it.
+
+GERMAN ANCHOR ROBUSTNESS (CRITICAL):
+- Avoid brittle long natural-language phrases as a single quoted anchor.
+- Prefer compositional anchoring: two shorter anchors combined with AND; each anchor can be an OR-group of variants.
+- Avoid invisible/soft hyphens and special hyphen characters; use plain characters only.
+
+ANTI-NOISE (CRITICAL FOR AUTHORITY):
+- Do NOT use generic filler abstract nouns as an authority “second group”
+  (e.g., decline, transformation, continuity, change, process, analysis, study, research).
+- Authority second-group terms MUST come only from:
+  (a) global_canonical_terms (topic-specific; exclude generic fillers), OR
+  (b) importance_weight>=4 facet canonical_terms/neighbor_terms.
+- If you cannot build a non-generic second group, OMIT it (do not add generic fillers).
+
+EXCLUSIONS (IMPORTANT):
+- Use global_exclusions[language] to add a NOT-group to the query_string when exclusions exist.
+- Only use atomic exclusions (<=3 words, no punctuation except hyphen). If unsure, omit exclusions rather than writing narrative NOT clauses.
+- Always apply exclusions in authority queries; apply them in match queries when the query would otherwise be broad.
+
+QUERY STYLE DIVERSITY (CRITICAL):
+For MATCH intent, output a MIX of query styles across the set:
+A) STRICT: (anchor1 AND anchor2) AND (facet group)
+B) BALANCED: (anchor1 OR anchor_variant1 OR anchor_variant2) AND (facet group)
+C) FACET-LED: (anchor1) AND (facet group with 5–10 terms), WITHOUT requiring a second global anchor.
+Ensure at least 25% of match queries are FACET-LED and at least 25% are BALANCED.
+
+BROADNESS CONTROL:
+- Match queries: 1–2 anchors + 6–12 facet terms max.
+- Authority queries: 1–2 anchors + 4–8 high-level terms.
+- If a facet is generic (methods, causality, evidence), pair it with at least one concrete facet term.
+
+BROADNESS TARGETS (HEURISTIC; you cannot probe counts here):
+- Match queries should typically land in ~200–10,000 results.
+- Authority queries can be broader (~1,000–100,000) but still anchored.
+If likely too broad: add a second anchor with AND, shrink facet group to 4–6 terms, add exclusions.
+If likely too narrow: loosen second anchor, expand facet group to 8–12 terms, use OR variants.
+
+LANGUAGES:
+Always generate both English and German queries.
+
 USER:
+CHAPTER_TITLE:
+{{chapter_title}}
+
+CHAPTER_SPEC_TEXT:
+{{chapter_spec_text}}
+
 INPUT_QUERY_PLAN_JSON:
 {{query_plan_json}}
 
 BUDGET:
-max_queries = {{max_queries}}  # hard cap for OpenAlex queries
+max_queries = {{max_queries}}  # hard cap; do NOT exceed
 languages = ["en","de"]
 
-GOALS:
-Produce a list of query objects for OpenAlex /works that support two intents:
-(A) AUTHORITY retrieval (high-impact core literature)
-(B) MATCH retrieval (high topical fit, including niche)
+OUTPUT JSON SCHEMA:
+{
+  "openalex_queries": [
+    {
+      "intent": "authority" | "match",
+      "language": "en" | "de",
+      "search_field": "default.search" | "title_and_abstract.search",
+      "query_string": "BOOLEAN QUERY STRING",
+      "filters": "comma,separated,filters",
+      "sort": "cited_by_count:desc" | "relevance_score:desc" | null,
+      "per_page": 200,
+      "notes": "<= 18 words"
+    }
+  ]
+}
 
-Each query object must include:
-- intent: "authority" or "match"
-- language: "en" or "de"
-- query_string: boolean query targeting title/abstract/fulltext search behavior
-- filters: OpenAlex filter string (language, is_paratext false if used, publication_year ranges if used)
-- sort: one of:
-   * "cited_by_count:desc" for authority
-   * "relevance_score:desc" (or omit sort) for match
-- per_page: 200
-- notes: brief reason (<=20 words)
+FILTER POLICY:
+- Always include: is_paratext:false
+- Always include: is_retracted:false
+- Always include: language:{en|de}
+- Authority lane MUST include:
+  (1) one broad authority query per language WITHOUT primary_location.source.is_core:true
+  (2) optionally ONE additional authority booster query per language WITH primary_location.source.is_core:true
 
-DIVERSITY RULES:
-- Always include:
-  * 1 global core query EN + 1 global core query DE
-  * facet-targeted queries for ALL facets with importance_weight >=4 (both EN+DE if possible)
-  * 2–4 neighbor queries (EN+DE)
-  * 2–4 methods/evaluation queries if applicable (EN+DE)
-- Use exclusion terms with NOT where it prevents wrong senses.
-- Do not exceed max_queries. If too many, prioritize weight 5 facets, then weight 4, then global/neighbor.
+BUDGETING (DETERMINISTIC):
+- 2 authority global queries (EN+DE)
+- 2 match global queries (EN+DE) with at least one BALANCED style
+- For each facet with weight>=4: 1 match query EN + 1 match query DE
+- If budget remains: up to 6 neighbor/method queries total (EN+DE)
 
-OUTPUT:
-Return ONLY JSON:
-{ "openalex_queries": [ ... ] }
+SELF-CHECK (MUST DO):
+- No * ? ~
+- No slash tokens X/Y (use OR form)
+- Every query includes a primary_context_anchors term
+- MATCH queries include a mix of STRICT / BALANCED / FACET-LED
+- Authority second group is not generic filler
+- Filters use commas and only allowed keys
+If any check fails, silently fix and output corrected JSON only.
+
+Return ONLY JSON: { "openalex_queries": [ ... ] }
 ```
 
 ### Prompt 3 — Semantic Scholar Bulk Search Query Builder
 
 ```text
 SYSTEM:
-You generate Semantic Scholar Academic Graph "paper bulk search" query strings.
-Use operators consistent with Semantic Scholar bulk search examples:
-- OR: |
-- REQUIRED: +term
-- EXCLUDE: -term
-- quotes for exact phrase
-Match is against title and abstract.
-Be deterministic.
+You generate Semantic Scholar Academic Graph bulk search queries. Output ONLY valid JSON.
+Be deterministic. Use only supported bulk query operators and keep queries context-anchored.
+
+PIPELINE CONTEXT (READ CAREFULLY):
+You generate Semantic Scholar bulk search queries for retrieval in a two-lane pipeline.
+These queries only collect candidates; downstream stages deduplicate, embed, and rerank.
+So: keep queries context-anchored and reasonably selective (avoid generic topic-only queries).
+
+INTENTS:
+- authority: broad core literature for the chapter context (we rank later).
+- match: facet-specific topical fit (MUST still include chapter context anchors).
+
+CHAPTER CONTEXT (USE THIS TO DISAMBIGUATE GENERIC TERMS):
+CHAPTER_TITLE:
+{{chapter_title}}
+
+CHAPTER_SPEC_TEXT:
+{{chapter_spec_text}}
+
+ALLOWED OPERATORS:
+- Required: +term or +("a" | "b")
+- Exclude: -term or -"phrase"
+- OR: ("a" | "b" | "c")
+- Quotes for phrases: "two words"
+- Wildcard: suffix only, e.g. gene*  (GUARDRAIL: stem length >=4)
+- Fuzzy/edit distance: term~1 or term~2 (GUARDRAIL: N <=2 unless term length >=8; then N<=3)
+- Phrase proximity: "two word phrase" ~2..4 (GUARDRAIL: N<=4)
+- No slash tokens X/Y (rewrite as ("X" | "Y"))
+- Any OR-group must be parenthesized: ("a" | "b" | "c d").
+
+MANDATORY STRUCTURE:
+- Every MATCH query must have:
+  + (PRIMARY_CONTEXT_OR_GROUP) + (FACET_OR_GROUP) [optional negatives]
+- PRIMARY_CONTEXT_OR_GROUP:
+  - Parenthesized OR-group of 2–6 primary_context_anchors (language-matched).
+  - Do NOT include generic research words.
+- FACET_OR_GROUP:
+  - Parenthesized OR-group of 5–12 facet terms (canonical + neighbor).
+  - May include bilingual variants to improve recall.
+
+EXCLUSIONS:
+- Use up to 3 atomic exclusions when they prevent wrong senses: -term or -"phrase".
+- Atomic = <=3 words, no commas, no parentheses, no “e.g.”.
+
+BROADNESS TARGETS (HEURISTIC; you cannot probe totals here):
+- Match queries should typically land in ~200–10,000 results.
+- Authority queries can be broader (~1,000–100,000) but still anchored.
+If likely too broad: add more context anchors in TOPIC_CONTEXT_OR_GROUP, shrink FACET_OR_GROUP to 4–6 terms, add exclusions.
+If likely too narrow: expand FACET_OR_GROUP to 8–12 terms, add bilingual synonyms, loosen the context group.
 
 USER:
+CHAPTER_TITLE:
+{{chapter_title}}
+
+CHAPTER_SPEC_TEXT:
+{{chapter_spec_text}}
+
 INPUT_QUERY_PLAN_JSON:
 {{query_plan_json}}
 
 BUDGET:
-max_queries = {{max_queries}}  # hard cap for Semantic Scholar queries
+max_queries = {{max_queries}}
 languages = ["en","de"]
 
-GOALS:
-Produce a list of bulk search query objects for two intents:
-(A) AUTHORITY (high-impact, broad)
-(B) MATCH (high precision + recall)
+OUTPUT JSON:
+{
+  "s2_bulk_queries": [
+    {
+      "intent": "authority" | "match",
+      "language": "en" | "de",
+      "query_string": "QUERY STRING",
+      "notes": "<= 18 words"
+    }
+  ]
+}
 
-Each query object must include:
-- intent: "authority" or "match"
-- language: "en" or "de"
-- query_string: use | + - and "phrases"
-- notes: <=20 words why this query exists
+LANGUAGE POLICY (DOMAIN-AGNOSTIC):
+- For language="en":
+  - The required PRIMARY_CONTEXT_OR_GROUP is primarily English (can include German variants when helpful).
+  - The required FACET_OR_GROUP is primarily English (can include German variants when helpful).
+- For language="de":
+  - The required PRIMARY_CONTEXT_OR_GROUP MUST include at least one German context term.
+  - The required FACET_OR_GROUP SHOULD be bilingual when helpful:
+    +("<DE term>" | "<EN term>" | ...), to preserve recall while remaining anchored.
 
-DIVERSITY RULES:
-- Always include global EN+DE.
-- Cover all facets with weight>=4 (prioritize).
-- Add 2–4 neighbor-topic queries (EN+DE).
-- Use exclusions (-term) to prevent wrong sense where needed.
-- Keep query_string length reasonable (avoid > 220 chars unless necessary).
-- Do not exceed max_queries.
+AUTHORITY POLICY:
+- Authority queries must be anchored and broad:
+  +(PRIMARY_CONTEXT_OR_GROUP) +(HIGH_LEVEL_OR_GROUP)
+  - PRIMARY_CONTEXT_OR_GROUP uses primary_context_anchors only (no generic research words).
+  - HIGH_LEVEL_OR_GROUP must use topic-specific terms (global_canonical_terms or weight>=4 facets).
+- Also include ONE bilingual fallback authority query:
+  +("DE primary" | "EN primary") +(HIGH_LEVEL_OR_GROUP)
 
-OUTPUT:
-Return ONLY JSON:
-{ "s2_bulk_queries": [ ... ] }
+BUDGETING:
+- Always: authority EN + authority DE + authority bilingual fallback
+- Always: global match EN + global match DE
+- For each weight>=4 facet: match EN + match DE
+- If budget is exceeded, drop lowest-weight facets first, but keep the bilingual authority fallback.
+
+SELF-CHECK:
+- Every '|' is inside parentheses
+- Wildcard only suffix and stem>=4
+- ~ only within allowed N
+- MATCH has >=2 required groups (two + groups)
+- No slash tokens X/Y (rewrite as ("X" | "Y"))
+Fix silently; output corrected JSON only.
+
+Return ONLY JSON: { "s2_bulk_queries": [ ... ] }
 ```
 
 ### Prompt 4 — Pointwise Reranker (evidence-grounded, facet-aware)
