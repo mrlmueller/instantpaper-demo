@@ -70,6 +70,7 @@ fastapi/.prompt_dumps
 # Two-lane pipeline run artifacts (generated)
 /runs/
 /sources-v2/runs/
+/sources-v2/embeddings_cache_global/
 /sources-v2/run_*/
 /sources-v2/.openalex_cache_nb/
 /sources-v2/.ipynb_checkpoints/
@@ -77,3 +78,4 @@ fastapi/.prompt_dumps
 # Quellen-Finder caches / dev artifacts
 fastapi/.quellen_finder_cache/
 pdf-scan/pdf-scan-test.extracted.py
+
