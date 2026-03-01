@@ -59,7 +59,7 @@ Conventions used in this doc:
 
 ### Important current behaviors (affect tuning)
 
-- **Lane isolation exists today (Phase F pruning)**: lane shortlists are built from `candidate.intents` provenance (`_eligible(cid, lane) := lane in candidate.intents`). This can shrink the authority universe and is called out in `sources-v2/TWO_LANE_PIPELINE_AUDIT.md` + `sources-v2/TWO_LANE_PIPELINE_FIXES.md`.
+- **Lane isolation removed (Phase F pruning)**: both lanes draw from the same candidate universe (per pool). Lanes differ by lane scoring + lane-specific topical/hygiene gates; `candidate.intents` is provenance/debug only.
 - **Artifacts often embed absolute paths** (Windows) inside JSON fields (e.g. `metrics.json`), but the pipeline logic uses `run_ctx` paths. This cheat sheet uses relative paths.
 
 ---
@@ -277,7 +277,7 @@ Cell indices are 0-based (as stored in the `.ipynb`). Cell `id` is the stable Ju
 | C.4     | 11, `c83fc2d4`            | `phase_c_*`                                                                                              | Run both query builders + QC summaries/plots.                                                                               |
 | D       | 12, `6d0e1c3e`            | `phase_d_retrieval` (metrics), `phase_d_openalex_retrieval` / `phase_d_semanticscholar_retrieval` (logs) | Retrieval clients, rate limiting, retries, per-query caches, raw aggregates, metrics.                                       |
 | E       | 14, `d8aacd00`            | `phase_e_candidates`                                                                                     | Normalize OA/S2 raw → `Candidate`, cross-provider dedup + merge precedence, pool split, write JSONL+CSV.                    |
-| F       | 15, `3837b017`            | `phase_f_*` sub-stages + `phase_f` (counts only)                                                         | Embedding caches (local+global), Stage1 scoring, S2 rec expansion, prune + lane isolation, Stage2 chunk scoring + evidence. |
+| F       | 15, `3837b017`            | `phase_f_*` sub-stages + `phase_f` (counts only)                                                         | Embedding caches (local+global), Stage1 scoring, S2 rec expansion, prune (unified universe; no provenance eligibility), Stage2 chunk scoring + evidence. |
 | G       | 16, `a68590e2`            | `phase_g` (counts only)                                                                                  | Recompute exact formulas, build `scores_final.jsonl` + `rankings_stageg.json`, QC.                                          |
 | H       | 17, `98b29fb2`            | `phase_h_coverage_tags`                                                                                  | Compute coverage tags and excerpts; write `coverage_tags.jsonl`; rewrite `scores_final.jsonl` to embed `coverage_tags`.     |
 | I       | 18, `phase_i_rerank`      | `phase_i_rerank`                                                                                         | Rerank top‑K per lane/pool with caches; write `rerank_results.jsonl` + `rankings_stagei.json`.                              |
@@ -1207,7 +1207,7 @@ Within Phase E itself, tuning is code-level:
   - which records survive and what metadata they carry
   - authority normalization percentiles (Phases F/G)
   - pool split ratio (affects Phase F Stage2 evidence capacity)
-- If `Candidate.intents` becomes wrong or incomplete, Phase F lane isolation will prune away candidates from a lane (especially damaging for Authority lane).
+- If `Candidate.intents` becomes wrong or incomplete, provenance/debug diagnostics degrade (but lane selection is unaffected because lanes are built from the unified universe).
 - If `with_abstract` share is low, Phase F’s Stage2 becomes much less useful, and Phase H must rely more on fallback excerpts.
 
 ### 9) Example from run `4af2666…`
@@ -1232,7 +1232,7 @@ Blueprint intent (Phase E):
 Notebook status:
 
 - Implemented: abstract reconstruction, dedup precedence, merge precedence, pool split assertions.
-- Implemented: provenance (`sources[]`, `intents[]`) for later lane isolation and debugging.
+- Implemented: provenance (`sources[]`, `intents[]`) for provenance/debug (not lane eligibility).
 - Delta: Phase E rebuild is coupled to `FORCE_REBUILD_RETRIEVAL` rather than having an explicit “FORCE_REBUILD_CANDIDATES” knob.
 
 ---
@@ -1322,7 +1322,7 @@ Key code locations to edit (cell 15, `3837b017`):
   - `compute_authority_scores` (percentile citations/year + recency + bonuses)
 - Expansion + pruning:
   - `_s2_recommendations_expand`
-  - `_eligible` (lane isolation)
+  - Stage1 pruning block (unified universe; lane gates; intent-mix diagnostics)
   - authority/no-abs gate: `NOABS_AUTH_MIN_MATCH`
 
 Phase F sub-stages (roughly in notebook order):
@@ -1376,13 +1376,15 @@ Phase F sub-stages (roughly in notebook order):
 
 **F5) Pruning after Stage 1 (lane/pool shortlists)**
 
-- Build lane eligibility from Phase E provenance:
-  - `_eligible(cid, lane) := lane in candidate.intents`
+- Lane eligibility contract:
+  - start from the unified Stage1 candidate universe within the target `pool`
+  - `candidate.intents` is provenance/debug only (not used for eligibility)
 - For each lane × pool:
+  - apply lane-specific gates (currently only for `authority/without_abstract`)
   - keep top `N1_WITH_ABS` (with-abstract) or `N1_NO_ABS` (no-abstract) by lane score
 - Extra gate for `authority/without_abstract` to prevent off-topic “high-cite metadata-only” domination:
   - keep only if `match_stage1 >= 0.22` **or** a primary anchor appears in `title+venue+year`
-- Writes `shortlists_stage1.json` and asserts no lane leaks. This shortlist is the contract Phase G uses to decide which ids even exist in `scores_final.jsonl`.
+- Writes `shortlists_stage1.json` and asserts shortlist integrity (ids exist, pool non-mixing, no duplicates). This shortlist is the contract Phase G uses to decide which ids even exist in `scores_final.jsonl`.
 
 **F6) Stage 2 (with-abstract shortlist union only)**
 
@@ -1472,10 +1474,11 @@ High-impact tuning levers:
 
 ### 8) Downstream impact (change propagation)
 
-- If you change **`Candidate.intents` semantics** (Phase E) or Phase F’s `_eligible`, you change lane isolation and therefore:
+- If you change **Phase F pruning / lane gates**, you change:
   - which ids enter `shortlists_stage1.json`
   - which ids get Stage2 evidence
   - which ids appear in `scores_final.jsonl` (Phase G contract)
+- If you change **`Candidate.intents` semantics** (Phase E), you change provenance/debug diagnostics (e.g., intent-mix summaries), but not lane membership.
 - If you change **pruning** sizes, you directly change:
   - Stage2 workload (`chunks_embedded`)
   - Phase I rerank task list (top-K comes from rankings built over the pruned universe)
