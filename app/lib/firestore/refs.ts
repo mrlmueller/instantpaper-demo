@@ -12,9 +12,9 @@ import type {
   ProjectDoc,
   ProjectPdfDoc,
   QuellenFinderRunDoc,
-  QuellenFinderSourceResultDoc,
   PdfScanStage2HitDoc,
   PdfScanStage3SectionDoc,
+  TwoLaneResultDoc,
   QuelleContentDoc,
   QuelleDoc,
   ResultDoc,
@@ -185,14 +185,25 @@ export function projectResearchRunDoc(
   );
 }
 
-export function quellenFinderSourcesResultsCol(
+export function quellenFinderTwoLaneResultsCol(
   db: Firestore,
   uid: string,
   projektId: string,
   runId: string
-): CollectionReference<QuellenFinderSourceResultDoc> {
-  return collection(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'sourcesResults').withConverter(
-    identityConverter<QuellenFinderSourceResultDoc>()
+): CollectionReference<TwoLaneResultDoc> {
+  return collection(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'twoLaneResults').withConverter(
+    identityConverter<TwoLaneResultDoc>()
+  );
+}
+
+export function quellenFinderTwoLaneTelemetryCol(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  runId: string
+): CollectionReference<Record<string, unknown>> {
+  return collection(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'twoLaneTelemetry').withConverter(
+    identityConverter<Record<string, unknown>>()
   );
 }
 

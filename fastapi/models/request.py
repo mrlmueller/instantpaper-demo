@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Literal, List
+from typing import Literal, List, Optional
 
 
 class ProcessQuelleRequest(BaseModel):
@@ -235,24 +235,67 @@ class ExportDocxRequest(BaseModel):
     )
 
 
-class QuellenFinderSourcesSearchRequest(BaseModel):
-    """Request model for running Quellen-Finder paper search for a single Kapitel."""
+class QuellenFinderTwoLaneStartRequest(BaseModel):
+    """Request model for running Quellen-Finder two-lane paper retrieval for a single Kapitel."""
 
     projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
-    kapitel_id: str = Field(..., description="Kapitel ID to run paper search for")
-    blueprint_model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
-        default="gpt-5-mini",
-        description="Model to use for Stage B (ChapterBlueprint generation)",
+    kapitel_id: str = Field(..., description="Kapitel ID to run two-lane source retrieval for")
+    resume_run_id: Optional[str] = Field(
+        default=None,
+        description="Optional existing run id to reuse (dev/resume). Enables cache reuse in local development.",
     )
+
+    planner_model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
+        default="gpt-5-mini",
+        description="Model to use for Phase B (facet planner)",
+    )
+    openalex_query_builder_model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
+        default="gpt-5-mini",
+        description="Model to use for Phase C (OpenAlex query builder)",
+    )
+    s2_query_builder_model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
+        default="gpt-5-mini",
+        description="Model to use for Phase C (Semantic Scholar query builder)",
+    )
+    rerank_model: Literal["gpt-5-nano", "gpt-5-mini"] = Field(
+        default="gpt-5-nano",
+        description="Model to use for Phase I reranking (gpt-5.2 disabled for cost)",
+    )
+    embedding_model: str = Field(
+        default="text-embedding-3-small",
+        description="Embedding model used in Phase F",
+    )
+
+    reasoning_effort: Literal["low", "medium", "high"] = Field(
+        default="high",
+        description="Reasoning effort for Phase B/C schema calls",
+    )
+    rerank_concurrency: int = Field(default=20, ge=1, le=50, description="Concurrent rerank calls in Phase I")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "projekt_id": "proj123",
                 "kapitel_id": "kap456",
-                "blueprint_model": "gpt-5-mini",
+                "planner_model": "gpt-5-mini",
+                "openalex_query_builder_model": "gpt-5-mini",
+                "s2_query_builder_model": "gpt-5-mini",
+                "rerank_model": "gpt-5-nano",
+                "embedding_model": "text-embedding-3-small",
+                "reasoning_effort": "high",
+                "rerank_concurrency": 20,
             }
         }
+
+
+class QuellenFinderTwoLaneCancelRequest(BaseModel):
+    """Request model for requesting cancellation of a two-lane Quellen-Finder run."""
+
+    projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
+    run_id: str = Field(..., description="Research run ID (kind=sources_two_lane)")
+
+    class Config:
+        json_schema_extra = {"example": {"projekt_id": "proj123", "run_id": "run456"}}
 
 
 class QuellenFinderPdfScanRequest(BaseModel):

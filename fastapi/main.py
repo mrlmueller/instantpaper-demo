@@ -19,7 +19,6 @@ from models.request import (
     LeseflussKapitelRequest,
     GenerateGliederungRequest,
     RefineGliederungRequest,
-    QuellenFinderSourcesSearchRequest,
     QuellenFinderPdfScanRequest,
     QuellenFinderPdfExtractRequest,
     ExportDocxRequest,
@@ -31,6 +30,8 @@ from models.request import (
     RefineLeseflussRequest,
     RefineResultInitRequest,
     RefineResultRequest,
+    QuellenFinderTwoLaneStartRequest,
+    QuellenFinderTwoLaneCancelRequest,
 )
 from models.response import ProcessQuelleResponse
 from services.quelle_service import quelle_service
@@ -43,7 +44,7 @@ from services.credits_service import get_credits_service
 from services.prompt_service import prompt_service
 from services.export_service import export_service
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
-from services.quellen_finder_sources_job import run_quellen_finder_sources_search_job
+from services.quellen_finder_sources_two_lane_job import run_quellen_finder_sources_two_lane_job
 from services.quellen_finder_pdf_scan_job import run_quellen_finder_pdf_scan_job, _download_pdf_from_firebase_storage
 from services.quellen_finder_pdf_extract_service import extract_quellen_finder_pdf_section
 from firebase_admin import auth, storage
@@ -5042,19 +5043,20 @@ async def refine_gliederung(
     }
 
 
-@app.post("/api/quellen-finder/sources-search", status_code=status.HTTP_202_ACCEPTED)
-async def quellen_finder_sources_search(
-    request: QuellenFinderSourcesSearchRequest,
+@app.post("/api/quellen-finder/sources-two-lane/start", status_code=status.HTTP_202_ACCEPTED)
+async def quellen_finder_sources_two_lane_start(
+    request: QuellenFinderTwoLaneStartRequest,
     background_tasks: BackgroundTasks,
     user_id: str = Depends(verify_firebase_token),
 ):
     """
-    Run Quellen-Finder paper search for a single Kapitel (project-level run).
+    Run Quellen-Finder two-lane sources pipeline for a single Kapitel (project-level run).
 
     Creates a server-owned research run doc under:
       users/{uid}/projects/{projektId}/researchRuns/{runId}
     and writes results under:
-      .../sourcesResults/*
+      .../twoLaneResults/*
+      .../twoLaneTelemetry/*
     """
 
     projekt_id = str(request.projekt_id or "").strip()
@@ -5078,26 +5080,16 @@ async def quellen_finder_sources_search(
     if bool((kapitel or {}).get("archived") is True):
         raise HTTPException(status_code=400, detail="Kapitel is archived.")
 
+    chapter_title = str((kapitel or {}).get("title") or "").strip()
+    chapter_spec_text = str((kapitel or {}).get("thema") or "").strip()
+    if not chapter_title:
+        raise HTTPException(status_code=400, detail="Kapitelüberschrift fehlt (Kapitel.title).")
+    if not chapter_spec_text:
+        raise HTTPException(status_code=400, detail="Thema & Anweisungen fehlt (Kapitel.thema).")
+
     await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
     fs = QuellenFinderFirestoreService()
-
-    # Best-effort: prevent duplicate runs while one is running (avoid double charges).
-    try:
-        running = (
-            fs.runs_col(user_id, projekt_id)
-            .where(filter=firestore.FieldFilter("kind", "==", "sources_search"))
-            .where(filter=firestore.FieldFilter("status", "==", "running"))
-            .limit(1)
-            .get()
-        )
-        if running:
-            raise HTTPException(status_code=409, detail="Quellen-Finder paper search is already running.")
-    except HTTPException:
-        raise
-    except Exception:
-        # Do not block if the query fails for any reason (e.g. missing index).
-        pass
 
     kapitel_snapshot = {
         "id": kapitel_id,
@@ -5107,22 +5099,75 @@ async def quellen_finder_sources_search(
         "thema": str((kapitel or {}).get("thema") or "").strip() or None,
     }
 
-    run_id = fs.create_run(
-        user_id=user_id,
-        projekt_id=projekt_id,
-        kind="sources_search",
-        kapitel_ids=[kapitel_id],
-        kapitel_snapshots=[kapitel_snapshot],
-        model=str(request.blueprint_model or "").strip() or "gpt-5-mini",
-    )
+    resume_run_id = str(getattr(request, "resume_run_id", "") or "").strip()
+    if resume_run_id:
+        snap = fs.run_ref(user_id, projekt_id, resume_run_id).get()
+        if snap is None or not getattr(snap, "exists", False):
+            raise HTTPException(status_code=404, detail="Run not found.")
+        data = snap.to_dict() if snap is not None else {}
+        if str((data or {}).get("kind") or "") != "sources_two_lane":
+            raise HTTPException(status_code=400, detail="Run is not a two-lane sources run.")
+        status_now = str((data or {}).get("status") or "")
+        if status_now in {"queued", "running"}:
+            raise HTTPException(status_code=409, detail=f"Run is currently {status_now}.")
+
+        run_kapitel_ids = list((data or {}).get("kapitelIds") or [])
+        if kapitel_id not in run_kapitel_ids:
+            raise HTTPException(status_code=400, detail="kapitel_id does not match the run to resume.")
+
+        run_id = resume_run_id
+        fs.run_ref(user_id, projekt_id, run_id).set(
+            {
+                "status": "queued",
+                "errorMessage": None,
+                "hadPartialFailures": False,
+                "resultCount": None,
+                "twoLaneSettings": None,
+                "summary": None,
+                "cancelRequestedAt": None,
+                "cancelledAt": None,
+                "startedAt": None,
+                "finishedAt": None,
+                "progress": {"stage": "queued", "message": "Queued"},
+                "kapitelSnapshots": [kapitel_snapshot],
+                "model": str(request.planner_model or "").strip() or "gpt-5-mini",
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+    else:
+        run_id = fs.create_run(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            kind="sources_two_lane",
+            kapitel_ids=[kapitel_id],
+            kapitel_snapshots=[kapitel_snapshot],
+            model=str(request.planner_model or "").strip() or "gpt-5-mini",
+        )
+
+    pipeline_settings = {
+        "openai_model_planner": str(request.planner_model),
+        "openai_model_openalex_query_builder": str(request.openalex_query_builder_model),
+        "openai_model_s2_query_builder": str(request.s2_query_builder_model),
+        "openai_model_rerank": str(request.rerank_model),
+        "embedding_model": str(request.embedding_model),
+        "openai_reasoning_effort": str(request.reasoning_effort),
+        "rerank_concurrency": int(request.rerank_concurrency),
+    }
+    if resume_run_id:
+        pipeline_settings["force_rebuild"] = False
 
     background_tasks.add_task(
-        run_quellen_finder_sources_search_job,
+        run_quellen_finder_sources_two_lane_job,
         user_id=user_id,
         projekt_id=projekt_id,
         kapitel_id=kapitel_id,
         run_id=run_id,
-        blueprint_model=str(request.blueprint_model or "").strip() or "gpt-5-mini",
+        settings={
+            "chapter_title": chapter_title,
+            "chapter_spec_text": chapter_spec_text,
+            "pipeline_settings": pipeline_settings,
+        },
     )
 
     return {
@@ -5132,6 +5177,35 @@ async def quellen_finder_sources_search(
         "kapitel_id": kapitel_id,
         "queued_at": datetime.utcnow().isoformat() + "Z",
     }
+
+
+@app.post("/api/quellen-finder/sources-two-lane/cancel", status_code=status.HTTP_200_OK)
+async def quellen_finder_sources_two_lane_cancel(
+    request: QuellenFinderTwoLaneCancelRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    projekt_id = str(request.projekt_id or "").strip()
+    run_id = str(request.run_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not run_id:
+        raise HTTPException(status_code=400, detail="run_id is required")
+
+    fs = QuellenFinderFirestoreService()
+    snap = fs.run_ref(user_id, projekt_id, run_id).get()
+    if snap is None or not getattr(snap, "exists", False):
+        raise HTTPException(status_code=404, detail="Run not found.")
+
+    data = snap.to_dict() if snap is not None else {}
+    if str((data or {}).get("kind") or "") != "sources_two_lane":
+        raise HTTPException(status_code=400, detail="Run is not a two-lane sources run.")
+
+    status_now = str((data or {}).get("status") or "")
+    if status_now in {"success", "error", "cancelled"}:
+        return {"status": "already_finished", "run_id": run_id, "current_status": status_now}
+
+    fs.request_cancel(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+    return {"status": "cancel_requested", "run_id": run_id}
 
 
 @app.post("/api/quellen-finder/pdf-scan", status_code=status.HTTP_202_ACCEPTED)

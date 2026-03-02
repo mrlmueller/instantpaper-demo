@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import logging
 from typing import Any, Iterable, Optional
 
@@ -18,6 +19,42 @@ def _as_str(value: Any) -> str | None:
     except Exception:
         return None
     return s or None
+
+
+def _sanitize_firestore_value(value: Any) -> tuple[Any, bool]:
+    """
+    Firestore does not allow nested arrays (arrays containing arrays).
+
+    We sanitize payloads defensively so that debug/telemetry writes don't fail an otherwise successful job.
+    """
+
+    if isinstance(value, float) and not math.isfinite(value):
+        return None, True
+
+    if isinstance(value, dict):
+        changed = False
+        out: dict[str, Any] = {}
+        for k, v in value.items():
+            vv, ch = _sanitize_firestore_value(v)
+            changed = changed or ch
+            out[str(k)] = vv
+        return out, changed
+
+    if isinstance(value, (list, tuple)):
+        changed = False
+        out_list: list[Any] = []
+        for v in value:
+            if isinstance(v, (list, tuple)):
+                inner, _ = _sanitize_firestore_value(list(v))
+                out_list.append({"values": inner})
+                changed = True
+                continue
+            vv, ch = _sanitize_firestore_value(v)
+            changed = changed or ch
+            out_list.append(vv)
+        return out_list, changed
+
+    return value, False
 
 
 class QuellenFinderFirestoreService:
@@ -82,15 +119,20 @@ class QuellenFinderFirestoreService:
         message: str | None = None,
         current: int | None = None,
         total: int | None = None,
+        stage_started_at: bool = False,
     ) -> None:
+        progress: dict[str, Any] = {
+            "stage": str(stage),
+            "message": _as_str(message),
+            "current": int(current) if isinstance(current, int) else None,
+            "total": int(total) if isinstance(total, int) else None,
+        }
+        if bool(stage_started_at):
+            progress["stageStartedAt"] = SERVER_TIMESTAMP
+
         payload: dict[str, Any] = {
             "updatedAt": SERVER_TIMESTAMP,
-            "progress": {
-                "stage": str(stage),
-                "message": _as_str(message),
-                "current": int(current) if isinstance(current, int) else None,
-                "total": int(total) if isinstance(total, int) else None,
-            },
+            "progress": progress,
         }
         self.run_ref(user_id, projekt_id, run_id).set(payload, merge=True)
 
@@ -148,6 +190,30 @@ class QuellenFinderFirestoreService:
             merge=True,
         )
 
+    def request_cancel(self, *, user_id: str, projekt_id: str, run_id: str) -> None:
+        self.run_ref(user_id, projekt_id, run_id).set(
+            {
+                "cancelRequestedAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+                "progress": {"stage": "cancel_requested", "message": "Cancellation requested"},
+            },
+            merge=True,
+        )
+
+    def mark_cancelled(self, *, user_id: str, projekt_id: str, run_id: str) -> None:
+        self.run_ref(user_id, projekt_id, run_id).set(
+            {
+                "status": "cancelled",
+                "errorMessage": None,
+                "hadPartialFailures": False,
+                "cancelledAt": SERVER_TIMESTAMP,
+                "finishedAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+                "progress": {"stage": "cancelled", "message": "Cancelled"},
+            },
+            merge=True,
+        )
+
     def clear_subcollection(self, *, user_id: str, projekt_id: str, run_id: str, name: str) -> None:
         col = self.run_ref(user_id, projekt_id, run_id).collection(str(name))
         snaps = list(col.stream())
@@ -158,7 +224,7 @@ class QuellenFinderFirestoreService:
             batch.delete(snap.reference)
         batch.commit()
 
-    def write_sources_results(
+    def write_two_lane_results(
         self,
         *,
         user_id: str,
@@ -170,7 +236,23 @@ class QuellenFinderFirestoreService:
             user_id=user_id,
             projekt_id=projekt_id,
             run_id=run_id,
-            name="sourcesResults",
+            name="twoLaneResults",
+            docs=docs,
+        )
+
+    def write_two_lane_telemetry(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        docs: Iterable[tuple[str, dict]],
+    ) -> None:
+        self.write_subcollection_docs(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            name="twoLaneTelemetry",
             docs=docs,
         )
 
@@ -186,8 +268,18 @@ class QuellenFinderFirestoreService:
         col = self.run_ref(user_id, projekt_id, run_id).collection(str(name))
         batch = self.firebase.db.batch()
         count = 0
+        sanitized_any = False
         for doc_id, payload in docs:
-            batch.set(col.document(str(doc_id)), payload)
+            payload2, changed = _sanitize_firestore_value(payload)
+            sanitized_any = sanitized_any or changed
+            batch.set(col.document(str(doc_id)), payload2)
             count += 1
         if count:
             batch.commit()
+            if sanitized_any:
+                logger.warning(
+                    "Firestore payload sanitized (nested arrays / non-finite numbers) | subcollection=%s run_id=%s docs=%s",
+                    str(name),
+                    str(run_id),
+                    int(count),
+                )

@@ -109,17 +109,12 @@ def configure_logging() -> None:
                 "level": qf_level,
                 "propagate": False,
             },
-            "services.quellen_finder_sources_job": {
+            "services.quellen_finder_sources_two_lane_job": {
                 "handlers": ["quellen_finder_console"],
                 "level": qf_level,
                 "propagate": False,
             },
-            "services.quellen_finder_sources_service": {
-                "handlers": ["quellen_finder_console"],
-                "level": qf_level,
-                "propagate": False,
-            },
-            "services.quellen_finder_sources_pipeline": {
+            "services.two_lane_sources": {
                 "handlers": ["quellen_finder_console"],
                 "level": qf_level,
                 "propagate": False,

@@ -210,14 +210,15 @@ export type ProjectPdfDoc = {
   updatedAt: Timestamp;
 };
 
-export type QuellenFinderRunKind = 'sources_search' | 'pdf_scan';
-export type QuellenFinderRunStatus = 'queued' | 'running' | 'success' | 'error';
+export type QuellenFinderRunKind = 'sources_two_lane' | 'pdf_scan';
+export type QuellenFinderRunStatus = 'queued' | 'running' | 'success' | 'error' | 'cancelled';
 
 export type QuellenFinderProgress = {
   stage: string;
   message?: string;
   current?: number;
   total?: number;
+  stageStartedAt?: Timestamp | null;
 };
 
 export type KapitelSnapshot = {
@@ -243,26 +244,64 @@ export type QuellenFinderRunDoc = ArchiveFields & {
   hadPartialFailures?: boolean;
   errorMessage?: string | null;
   progress?: QuellenFinderProgress;
+  cancelRequestedAt?: Timestamp | null;
+  cancelledAt?: Timestamp | null;
+  twoLaneSettings?: Record<string, unknown>;
+  summary?: Record<string, unknown>;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   startedAt?: Timestamp | null;
   finishedAt?: Timestamp | null;
 };
 
-export type QuellenFinderSourceResultDoc = {
-  // Curated fields (dev-friendly)
+export type TwoLaneLane = 'match' | 'authority';
+export type TwoLanePool = 'with_abstract' | 'without_abstract';
+
+export type TwoLaneCoverageTag = {
+  facet_id: string;
+  score: number;
+  excerpt: string;
+};
+
+export type TwoLaneRerank = {
+  llm_score_0_100: number | null;
+  covered_facets: string[];
+  rationale: string | null;
+  insufficient_info: boolean | null;
+};
+
+export type TwoLaneScores = {
+  match: number | null;
+  authority: number | null;
+  match_lane: number | null;
+  authority_lane: number | null;
+  best?: number | null;
+  top_m?: number | null;
+  cov?: number | null;
+};
+
+export type TwoLaneResultDoc = {
+  lane: TwoLaneLane;
+  pool: TwoLanePool;
+  rank: number;
+  id: string;
+  doi?: string | null;
   title: string | null;
   authors: string[];
   year: number | null;
   venue: string | null;
-  doi: string | null;
   url: string | null;
+  language?: string | null;
   abstract: string | null;
-  citationCount: number | null;
-  source: 'openalex' | 'semantic_scholar' | 'merged' | string;
-  score: number | null;
-  rank?: number;
-  raw?: Record<string, unknown> | null;
+  citations?: number | null;
+  influential_citations?: number | null;
+  provider?: string | null;
+  provider_ids?: Record<string, unknown> | null;
+  external_ids?: Record<string, unknown> | null;
+  sources?: Record<string, unknown>[] | null;
+  scores: TwoLaneScores;
+  coverage_tags?: TwoLaneCoverageTag[] | null;
+  rerank?: TwoLaneRerank | null;
   createdAt: Timestamp;
 };
 
