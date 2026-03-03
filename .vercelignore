@@ -4,3 +4,6 @@ fastapi/**
 github-deployer-key.json
 **/*.ipynb
 
+sources-v2/
+sources_workspace/
+pdf-scan/

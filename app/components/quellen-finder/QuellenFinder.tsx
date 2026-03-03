@@ -1,63 +1,51 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Cookies from "js-cookie";
-import { ArrowLeft, Download, ExternalLink, Eye, Loader2, Search, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Ban, BarChart3, Check, ChevronDown, ExternalLink, Loader2, Play, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
-import { addDoc, deleteDoc, limit, onSnapshot, orderBy, query, serverTimestamp, type CollectionReference } from "firebase/firestore";
-import { deleteObject, getStorage, ref, uploadBytes } from "firebase/storage";
+import { limit, onSnapshot, orderBy, query } from "firebase/firestore";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { useAuth } from "@/app/components/providers/AuthProvider";
-import { firebaseApp } from "@/app/lib/firebase/config";
 import { firestoreClient } from "@/app/lib/firebase/firestoreClient";
-import { downloadFileFromStorage, getDownloadUrlFromStorage } from "@/app/lib/firebase/storage";
 import {
-  projectPdfDoc,
-  projectPdfsCol,
   projectResearchRunsCol,
-  quellenFinderPdfStage2Col,
-  quellenFinderPdfStage3Col,
   quellenFinderTwoLaneResultsCol,
   quellenFinderTwoLaneTelemetryCol,
 } from "@/app/lib/firestore/refs";
 import type {
-  PdfScanStage2HitDoc,
-  PdfScanStage3SectionDoc,
-  ProjectPdfDoc,
   QuellenFinderRunDoc,
   TwoLaneLane,
+  TwoLanePool,
   TwoLaneResultDoc,
 } from "@/app/lib/firestore/types";
 import type { Kapitel } from "@/app/actions/kapitels";
-import { PdfExtractDialog, type PdfExtractRequest } from "./PdfExtractDialog";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
 
 type WithId<T> = T & { id: string };
 type WithDocId<T> = T & { docId: string };
 type RunRow = WithId<QuellenFinderRunDoc>;
-type PdfRow = WithId<ProjectPdfDoc>;
 type TwoLaneRow = WithDocId<TwoLaneResultDoc>;
 type TelemetryRow = WithId<Record<string, unknown>>;
-type Stage2Row = WithId<PdfScanStage2HitDoc>;
-type Stage3Row = WithId<PdfScanStage3SectionDoc>;
 
 type SortDir = "asc" | "desc";
-type TwoLaneSortKey = "rank" | "laneScore" | "llmScore" | "year" | "citations";
+type TwoLaneSortKey = "rank" | "llmScore" | "year" | "citations";
+type TwoLaneViewKey = "match_with_abstract" | "match_without_abstract" | "authority_with_abstract" | "authority_without_abstract";
 
 type ToDateLike = { toDate: () => Date };
 
@@ -81,15 +69,25 @@ function toDateOrNull(value: unknown): Date | null {
   return null;
 }
 
-function formatRunTime(value: unknown): string {
+function formatTimeHm(value: unknown): string {
+  const d = toDateOrNull(value);
+  if (!d) return "";
+  return d.toLocaleTimeString("de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDateTimeWithSeconds(value: unknown): string {
   const d = toDateOrNull(value);
   if (!d) return "";
   return d.toLocaleString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
+    day: "numeric",
+    month: "numeric",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
   });
 }
 
@@ -100,6 +98,18 @@ function formatDurationMs(ms: number): string {
   const sec = s % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+function formatElapsedShort(ms: number): string {
+  const s = Math.max(0, Math.floor(Number(ms) / 1000));
+  if (s < 60) return `${s}s`;
+  return formatDurationMs(ms);
+}
+
+function formatSecondsShort(seconds: number | null): string {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) return "—";
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  return formatDurationMs(seconds * 1000);
 }
 
 async function readFastApiError(res: Response): Promise<string> {
@@ -113,12 +123,6 @@ async function readFastApiError(res: Response): Promise<string> {
     // ignore
   }
   return "Request failed.";
-}
-
-function normalizeFilename(name: string): string {
-  const base = String(name || "").trim() || "document.pdf";
-  const sanitized = base.replace(/[^a-zA-Z0-9._-]/g, "_");
-  return sanitized.toLowerCase().endsWith(".pdf") ? sanitized : `${sanitized}.pdf`;
 }
 
 function statusBadgeVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
@@ -138,6 +142,61 @@ function progressLabel(run: RunRow | null): string {
   const pct = typeof cur === "number" && typeof total === "number" && total > 0 ? ` (${cur}/${total})` : "";
   const head = stage ? stage : "progress";
   return msg ? `${head}${pct}: ${msg}` : `${head}${pct}`;
+}
+
+const TWO_LANE_PIPELINE_STEPS: { key: string; label: string }[] = [
+  { key: "starting", label: "Start" },
+  { key: "phase_b_query_planner", label: "Query Planning" },
+  { key: "phase_c_openalex_query_builder", label: "OpenAlex Queries" },
+  { key: "phase_c_s2_query_builder", label: "Semantic Scholar Queries" },
+  { key: "phase_d_openalex_retrieval", label: "OpenAlex Retrieval" },
+  { key: "phase_d_semanticscholar_retrieval", label: "Semantic Scholar Retrieval" },
+  { key: "phase_e_candidates", label: "Candidates" },
+  { key: "phase_f", label: "Embedding & Scoring" },
+  { key: "phase_g", label: "Lane Scoring" },
+  { key: "phase_h", label: "Coverage Tags" },
+  { key: "phase_i", label: "LLM Rerank" },
+  { key: "phase_k", label: "Final Output" },
+  { key: "write_results", label: "Saving Results" },
+];
+
+const TWO_LANE_VIEW_LABELS: Record<TwoLaneViewKey, string> = {
+  match_with_abstract: "Match (mit Abstract)",
+  match_without_abstract: "Match (ohne Abstract)",
+  authority_with_abstract: "Authority (mit Abstract)",
+  authority_without_abstract: "Authority (ohne Abstract)",
+};
+
+function parseTwoLaneViewKey(key: TwoLaneViewKey): { lane: TwoLaneLane; pool: TwoLanePool } {
+  const lane: TwoLaneLane = key.startsWith("match") ? "match" : "authority";
+  const pool: TwoLanePool = key.endsWith("with_abstract") ? "with_abstract" : "without_abstract";
+  return { lane, pool };
+}
+
+function formatIntDe(value: unknown): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  return Math.trunc(value).toLocaleString("de-DE");
+}
+
+function formatUsd(value: unknown): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  const digits = value < 1 ? 3 : 2;
+  return `$${value.toFixed(digits)}`;
+}
+
+function kapitelDepth(nummer: unknown): number {
+  const s = String(nummer || "").trim();
+  if (!s) return 0;
+  return Math.max(0, (s.match(/\./g) || []).length);
+}
+
+function llmScorePillClasses(score: number | null): string {
+  if (typeof score !== "number" || !Number.isFinite(score)) {
+    return "bg-muted text-muted-foreground";
+  }
+  if (score >= 90) return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200";
+  if (score >= 70) return "bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200";
+  return "bg-rose-100 text-rose-900 dark:bg-rose-950/40 dark:text-rose-200";
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -343,19 +402,11 @@ export function QuellenFinder({
   projektName: string;
 }) {
   const { user } = useAuth();
-  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [kapitelQuery, setKapitelQuery] = useState("");
-  const [selectedKapitelIds, setSelectedKapitelIds] = useState<string[]>([]);
+  const [selectedKapitelId, setSelectedKapitelId] = useState<string | null>(null);
 
   const [runs, setRuns] = useState<RunRow[]>([]);
   const [activeTwoLaneRunId, setActiveTwoLaneRunId] = useState<string | null>(null);
-  const [activePdfRunId, setActivePdfRunId] = useState<string | null>(null);
-
-  const [pdfs, setPdfs] = useState<PdfRow[]>([]);
-  const [selectedPdfIds, setSelectedPdfIds] = useState<Set<string>>(new Set());
-  const [pdfQuery, setPdfQuery] = useState("");
-  const [uploadingPdfs, setUploadingPdfs] = useState(false);
 
   type PlannerModel = "gpt-5-nano" | "gpt-5-mini" | "gpt-5.2";
   type RerankModel = "gpt-5-nano" | "gpt-5-mini";
@@ -368,89 +419,54 @@ export function QuellenFinder({
   const [embeddingModel, setEmbeddingModel] = useState("text-embedding-3-small");
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>("high");
   const [rerankConcurrency, setRerankConcurrency] = useState<number>(20);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const [twoLaneLane, setTwoLaneLane] = useState<TwoLaneLane>("match");
-  const [showWithoutAbstract, setShowWithoutAbstract] = useState(false);
+  const [twoLaneViewKey, setTwoLaneViewKey] = useState<TwoLaneViewKey>("match_with_abstract");
 
   const [twoLaneResults, setTwoLaneResults] = useState<TwoLaneRow[]>([]);
   const [twoLaneTelemetry, setTwoLaneTelemetry] = useState<TelemetryRow[]>([]);
 
-  const [resultsQuery, setResultsQuery] = useState("");
-  const [resultsSortKey, setResultsSortKey] = useState<TwoLaneSortKey>("rank");
-  const [resultsSortDir, setResultsSortDir] = useState<SortDir>("asc");
+  const [resultsSortKey, setResultsSortKey] = useState<TwoLaneSortKey>("llmScore");
+  const [resultsSortDir, setResultsSortDir] = useState<SortDir>("desc");
 
-  const [paperDialogOpen, setPaperDialogOpen] = useState(false);
-  const [activePaper, setActivePaper] = useState<TwoLaneRow | null>(null);
+  const [activePaperDocId, setActivePaperDocId] = useState<string | null>(null);
   const [telemetryDialogOpen, setTelemetryDialogOpen] = useState(false);
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
-
-  const [extractDialogOpen, setExtractDialogOpen] = useState(false);
-  const [extractRequest, setExtractRequest] = useState<PdfExtractRequest | null>(null);
-
-  const [stage2, setStage2] = useState<Stage2Row[]>([]);
-  const [stage3, setStage3] = useState<Stage3Row[]>([]);
-  const [pdfStageTab, setPdfStageTab] = useState<"stage2" | "stage3">("stage3");
 
   const kapitels = useMemo(() => initialKapitels ?? [], [initialKapitels]);
 
-  const filteredKapitels = useMemo(() => {
-    const q = kapitelQuery.trim().toLowerCase();
-    if (!q) return kapitels;
-    return kapitels.filter((k) => {
-      const title = String(k.title || "").toLowerCase();
-      const nummer = String(k.nummer || "").toLowerCase();
-      return title.includes(q) || nummer.includes(q);
-    });
-  }, [kapitels, kapitelQuery]);
-
   const selectedKapitel = useMemo(() => {
-    if (selectedKapitelIds.length !== 1) return null;
-    return kapitels.find((k) => k.id === selectedKapitelIds[0]) ?? null;
-  }, [kapitels, selectedKapitelIds]);
-
-  const pdfById = useMemo(() => {
-    const map = new Map<string, PdfRow>();
-    for (const p of pdfs) map.set(p.id, p);
-    return map;
-  }, [pdfs]);
-
-  const filteredPdfs = useMemo(() => {
-    const q = pdfQuery.trim().toLowerCase();
-    if (!q) return pdfs;
-    return pdfs.filter((p) => {
-      const name = String(p.filename || "").toLowerCase();
-      const path = String(p.storagePath || "").toLowerCase();
-      return name.includes(q) || path.includes(q) || p.id.toLowerCase().includes(q);
-    });
-  }, [pdfQuery, pdfs]);
+    if (!selectedKapitelId) return null;
+    return kapitels.find((k) => k.id === selectedKapitelId) ?? null;
+  }, [kapitels, selectedKapitelId]);
 
   const twoLaneRuns = useMemo(() => runs.filter((r) => r.kind === "sources_two_lane"), [runs]);
-  const pdfRuns = useMemo(() => runs.filter((r) => r.kind === "pdf_scan"), [runs]);
 
   const activeTwoLaneRun = useMemo(() => {
-    if (!activeTwoLaneRunId) return twoLaneRuns[0] ?? null;
-    return twoLaneRuns.find((r) => r.id === activeTwoLaneRunId) ?? twoLaneRuns[0] ?? null;
-  }, [twoLaneRuns, activeTwoLaneRunId]);
-
-  const activePdfRun = useMemo(() => {
-    if (!activePdfRunId) return pdfRuns[0] ?? null;
-    return pdfRuns.find((r) => r.id === activePdfRunId) ?? pdfRuns[0] ?? null;
-  }, [pdfRuns, activePdfRunId]);
+    if (activeTwoLaneRunId) {
+      const found = twoLaneRuns.find((r) => r.id === activeTwoLaneRunId);
+      if (found) return found;
+    }
+    if (selectedKapitelId) {
+      return twoLaneRuns.find((r) => Array.isArray(r.kapitelIds) && r.kapitelIds.includes(selectedKapitelId)) ?? null;
+    }
+    return twoLaneRuns[0] ?? null;
+  }, [twoLaneRuns, activeTwoLaneRunId, selectedKapitelId]);
 
   useEffect(() => {
-    if (!activeTwoLaneRunId && twoLaneRuns.length) setActiveTwoLaneRunId(twoLaneRuns[0].id);
-    if (activeTwoLaneRunId && !twoLaneRuns.some((r) => r.id === activeTwoLaneRunId)) {
-      setActiveTwoLaneRunId(twoLaneRuns[0]?.id ?? null);
+    if (selectedKapitelId) return;
+    if (activeTwoLaneRun?.kapitelIds?.[0]) {
+      setSelectedKapitelId(activeTwoLaneRun.kapitelIds[0]);
+      return;
     }
-  }, [twoLaneRuns, activeTwoLaneRunId]);
+    if (kapitels.length) setSelectedKapitelId(kapitels[0]?.id ?? null);
+  }, [selectedKapitelId, activeTwoLaneRun?.kapitelIds, kapitels]);
 
   useEffect(() => {
-    if (!activePdfRunId && pdfRuns.length) setActivePdfRunId(pdfRuns[0].id);
-    if (activePdfRunId && !pdfRuns.some((r) => r.id === activePdfRunId)) {
-      setActivePdfRunId(pdfRuns[0]?.id ?? null);
-    }
-  }, [pdfRuns, activePdfRunId]);
+    if (!activeTwoLaneRunId) return;
+    if (twoLaneRuns.some((r) => r.id === activeTwoLaneRunId)) return;
+    setActiveTwoLaneRunId(null);
+  }, [twoLaneRuns, activeTwoLaneRunId]);
 
   useEffect(() => {
     if (!user?.uid || !projektId) return;
@@ -464,22 +480,6 @@ export function QuellenFinder({
       (err) => {
         console.error("Failed to load researchRuns:", err);
         setRuns([]);
-      }
-    );
-  }, [user?.uid, projektId]);
-
-  useEffect(() => {
-    if (!user?.uid || !projektId) return;
-    const q = query(projectPdfsCol(firestoreClient, user.uid, projektId), orderBy("createdAt", "desc"), limit(200));
-    return onSnapshot(
-      q,
-      (snap) => {
-        const next = snap.docs.map((d) => ({ id: d.id, ...(d.data() as ProjectPdfDoc) }));
-        setPdfs(next);
-      },
-      (err) => {
-        console.error("Failed to load project pdfs:", err);
-        setPdfs([]);
       }
     );
   }, [user?.uid, projektId]);
@@ -523,36 +523,6 @@ export function QuellenFinder({
       unsubTelemetry();
     };
   }, [user?.uid, projektId, activeTwoLaneRun?.id]);
-
-  useEffect(() => {
-    if (!user?.uid || !projektId || !activePdfRun?.id) {
-      setStage2([]);
-      setStage3([]);
-      return;
-    }
-    const stage2Col = quellenFinderPdfStage2Col(firestoreClient, user.uid, projektId, activePdfRun.id);
-    const stage3Col = quellenFinderPdfStage3Col(firestoreClient, user.uid, projektId, activePdfRun.id);
-    const unsub2 = onSnapshot(
-      query(stage2Col, limit(400)),
-      (snap) => setStage2(snap.docs.map((d) => ({ id: d.id, ...(d.data() as PdfScanStage2HitDoc) }))),
-      (err) => {
-        console.error("Failed to load pdfStage2:", err);
-        setStage2([]);
-      }
-    );
-    const unsub3 = onSnapshot(
-      query(stage3Col, limit(200)),
-      (snap) => setStage3(snap.docs.map((d) => ({ id: d.id, ...(d.data() as PdfScanStage3SectionDoc) }))),
-      (err) => {
-        console.error("Failed to load pdfStage3:", err);
-        setStage3([]);
-      }
-    );
-    return () => {
-      unsub2();
-      unsub3();
-    };
-  }, [user?.uid, projektId, activePdfRun?.id]);
 
   const telemetryById = useMemo(() => {
     const map = new Map<string, TelemetryRow>();
@@ -604,6 +574,18 @@ export function QuellenFinder({
   const metricsDoc = asRecord(telemetryById.get("metrics"));
 
   const facets = asRecordArray(phaseBPlan["facets"]);
+  const facetLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of facets) {
+      const id = typeof f["facet_id"] === "string" ? String(f["facet_id"]) : "";
+      if (!id) continue;
+      const labelDe = typeof f["facet_label_de"] === "string" ? String(f["facet_label_de"]) : "";
+      const labelEn = typeof f["facet_label_en"] === "string" ? String(f["facet_label_en"]) : "";
+      const label = labelDe || labelEn || id;
+      map.set(id, label);
+    }
+    return map;
+  }, [facets]);
   const primaryAnchors = asRecord(phaseBPlan["primary_context_anchors"]);
   const primaryAnchorsEn = asStringArray(primaryAnchors["en"]);
   const primaryAnchorsDe = asStringArray(primaryAnchors["de"]);
@@ -619,53 +601,52 @@ export function QuellenFinder({
   const openalexQueryLenHist = asRecord(asRecord(queryLengths["openalex"])["hist_20bins"]);
   const s2QueryLenHist = asRecord(asRecord(queryLengths["semanticscholar"])["hist_20bins"]);
 
-  const twoLaneFiltered = useMemo(() => {
-    const q = resultsQuery.trim().toLowerCase();
-
-    let rows = twoLaneResults.filter(
-      (r) => r.lane === twoLaneLane && (r.pool === "with_abstract" || (showWithoutAbstract && r.pool === "without_abstract"))
-    );
-
-    if (q) {
-      rows = rows.filter((r) => {
-        const title = String(r.title || "").toLowerCase();
-        const authors = Array.isArray(r.authors) ? r.authors.join("; ").toLowerCase() : "";
-        const venue = String(r.venue || "").toLowerCase();
-        const doi = String(r.doi || "").toLowerCase();
-        return title.includes(q) || authors.includes(q) || venue.includes(q) || doi.includes(q);
-      });
+  const twoLaneCountsByView = useMemo(() => {
+    const counts: Record<TwoLaneViewKey, number> = {
+      match_with_abstract: 0,
+      match_without_abstract: 0,
+      authority_with_abstract: 0,
+      authority_without_abstract: 0,
+    };
+    for (const r of twoLaneResults) {
+      const k = `${r.lane}_${r.pool}` as TwoLaneViewKey;
+      if (k in counts) counts[k] += 1;
     }
+    return counts;
+  }, [twoLaneResults]);
 
-    const dir = resultsSortDir === "asc" ? 1 : -1;
-    const byNum = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : -Infinity);
-    const byRank = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 9999);
+  const twoLaneFiltered = useMemo(() => {
+    const { lane, pool } = parseTwoLaneViewKey(twoLaneViewKey);
+    const rows = twoLaneResults.filter((r) => r.lane === lane && r.pool === pool);
 
-    const laneScore = (r: TwoLaneRow) => {
-      const s = r.scores || ({} as Record<string, unknown>);
-      const key = twoLaneLane === "match" ? "match_lane" : "authority_lane";
-      const v = (s as Record<string, unknown>)[key];
-      return byNum(typeof v === "number" ? v : null);
+    const dir: 1 | -1 = resultsSortDir === "asc" ? 1 : -1;
+
+    const numOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+    const cmpNum = (a: number | null, b: number | null) => {
+      if (a === null && b === null) return 0;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return dir * (a - b);
     };
 
-    const llmScore = (r: TwoLaneRow) => {
-      const v = (r.rerank as Record<string, unknown> | null | undefined)?.llm_score_0_100;
-      return byNum(typeof v === "number" ? v : null);
-    };
+    const llmScore = (r: TwoLaneRow) => numOrNull((r.rerank as Record<string, unknown> | null | undefined)?.llm_score_0_100);
 
     return [...rows].sort((a, b) => {
-      if (resultsSortKey === "rank") return dir * (byRank(a.rank) - byRank(b.rank));
-      if (resultsSortKey === "year") return dir * (byNum(a.year) - byNum(b.year));
-      if (resultsSortKey === "citations") return dir * (byNum(a.citations) - byNum(b.citations));
-      if (resultsSortKey === "llmScore") return dir * (llmScore(a) - llmScore(b));
-      return dir * (laneScore(a) - laneScore(b));
+      if (resultsSortKey === "rank") return dir * ((numOrNull(a.rank) ?? 9999) - (numOrNull(b.rank) ?? 9999));
+      if (resultsSortKey === "year") return cmpNum(numOrNull(a.year), numOrNull(b.year));
+      if (resultsSortKey === "citations") return cmpNum(numOrNull(a.citations), numOrNull(b.citations));
+      return cmpNum(llmScore(a), llmScore(b));
     });
-  }, [twoLaneResults, twoLaneLane, showWithoutAbstract, resultsQuery, resultsSortDir, resultsSortKey]);
+  }, [twoLaneResults, twoLaneViewKey, resultsSortDir, resultsSortKey]);
 
-  const canRunTwoLane = Boolean(user?.uid && projektId && selectedKapitelIds.length === 1);
-  const canRunPdfScan = Boolean(user?.uid && projektId && selectedKapitelIds.length === 1 && selectedPdfIds.size > 0);
+  useEffect(() => {
+    if (!activePaperDocId) return;
+    if (twoLaneFiltered.some((r) => r.docId === activePaperDocId)) return;
+    setActivePaperDocId(null);
+  }, [twoLaneFiltered, activePaperDocId]);
 
   const runningTwoLane = activeTwoLaneRun?.status === "running" || activeTwoLaneRun?.status === "queued";
-  const runningPdfScan = activePdfRun?.status === "running" || activePdfRun?.status === "queued";
+  const canRunTwoLane = Boolean(user?.uid && projektId && selectedKapitelId);
 
   useEffect(() => {
     if (!runningTwoLane) return;
@@ -674,138 +655,42 @@ export function QuellenFinder({
     return () => window.clearInterval(id);
   }, [runningTwoLane]);
 
-  const toggleKapitel = (id: string) => {
-    setSelectedKapitelIds((prev) => {
-      const has = prev.includes(id);
-      if (has) return prev.filter((x) => x !== id);
-      return [...prev, id];
-    });
-  };
+  const lastPipelineStepIndexByRunId = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    if (!activeTwoLaneRun?.id) return;
+    const stage = String(activeTwoLaneRun.progress?.stage || "");
+    const idx = TWO_LANE_PIPELINE_STEPS.findIndex((s) => s.key === stage);
+    if (idx >= 0) lastPipelineStepIndexByRunId.current.set(activeTwoLaneRun.id, idx);
+  }, [activeTwoLaneRun?.id, activeTwoLaneRun?.progress?.stage]);
 
-  const togglePdf = (id: string) => {
-    setSelectedPdfIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const openPdfInNewTab = async (storagePath: string, opts?: { page?: number }) => {
-    const path = String(storagePath || "").trim();
-    if (!path) {
-      toast.error("PDF kann nicht geöffnet werden", { description: "Storage-Pfad fehlt." });
+  const lastRunStatus = useRef<{ runId: string; status: string } | null>(null);
+  useEffect(() => {
+    if (!activeTwoLaneRun) return;
+    const prev = lastRunStatus.current;
+    if (!prev || prev.runId !== activeTwoLaneRun.id) {
+      lastRunStatus.current = { runId: activeTwoLaneRun.id, status: String(activeTwoLaneRun.status || "") };
       return;
     }
 
-    const opened = window.open("about:blank", "_blank");
-    if (!opened) {
-      toast.error("PDF kann nicht geöffnet werden", { description: "Popup blockiert." });
-      return;
-    }
-    try {
-      opened.opener = null;
-    } catch {
-      // ignore
-    }
-
-    try {
-      const url = await getDownloadUrlFromStorage(path);
-      const finalUrl = opts?.page ? `${url}#page=${opts.page}` : url;
-      opened.location.href = finalUrl;
-    } catch (e) {
-      try {
-        opened.close();
-      } catch {
-        // ignore
-      }
-      toast.error("PDF konnte nicht geöffnet werden", { description: e instanceof Error ? e.message : String(e) });
-    }
-  };
-
-  const handleUploadClick = () => uploadInputRef.current?.click();
-
-  const handleUploadPdfs = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    if (!user?.uid) return;
-
-    setUploadingPdfs(true);
-    const storage = getStorage(firebaseApp);
-    const col = projectPdfsCol(firestoreClient, user.uid, projektId) as unknown as CollectionReference<Record<string, unknown>>;
-
-    try {
-      for (const file of Array.from(files)) {
-        const sizeOk = file.size < 60 * 1024 * 1024;
-        const isPdfName = String(file.name || "").toLowerCase().endsWith(".pdf");
-        if (!sizeOk) {
-          toast.error("PDF zu groß", { description: `${file.name} ist größer als 60MB.` });
-          continue;
-        }
-        if (!isPdfName) {
-          toast.error("Nur PDFs erlaubt", { description: `${file.name} hat keine .pdf Endung.` });
-          continue;
-        }
-
-        const timestamp = Date.now();
-        const storageName = `${timestamp}_${normalizeFilename(file.name)}`;
-        const storagePath = `users/${user.uid}/projects/${projektId}/pdfs/${storageName}`;
-
-        const storageRef = ref(storage, storagePath);
-        await uploadBytes(storageRef, file, { contentType: "application/pdf" });
-
-        await addDoc(col, {
-          filename: String(file.name || "document.pdf"),
-          storagePath,
-          size: Number(file.size || 0),
-          contentType: "application/pdf",
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+    const nextStatus = String(activeTwoLaneRun.status || "");
+    if (prev.status !== nextStatus) {
+      if (nextStatus === "success") {
+        toast.success("Suche abgeschlossen", {
+          description: typeof activeTwoLaneRun.resultCount === "number" ? `${formatIntDe(activeTwoLaneRun.resultCount)} Ergebnisse` : undefined,
         });
+      } else if (nextStatus === "cancelled") {
+        toast.success("Suche abgebrochen", { description: `Run: ${activeTwoLaneRun.id}` });
+      } else if (nextStatus === "error") {
+        toast.error("Suche fehlgeschlagen", { description: String(activeTwoLaneRun.errorMessage || "").trim() || "Unbekannter Fehler" });
       }
-
-      toast.success("PDFs hochgeladen");
-    } catch (err: unknown) {
-      console.error("PDF upload failed:", err);
-      toast.error("PDF Upload fehlgeschlagen", { description: err instanceof Error ? err.message : "Unbekannter Fehler" });
-    } finally {
-      setUploadingPdfs(false);
-      if (uploadInputRef.current) uploadInputRef.current.value = "";
     }
-  };
 
-  const handleDeletePdf = async (pdf: PdfRow) => {
-    if (!user?.uid) return;
-    const ok = window.confirm(`PDF wirklich löschen?\n\n${pdf.filename}`);
-    if (!ok) return;
-
-    const storage = getStorage(firebaseApp);
-    try {
-      const storagePath = String(pdf.storagePath || "");
-      if (storagePath) {
-        await deleteObject(ref(storage, storagePath)).catch((e) => {
-          const errCode =
-            typeof e === "object" && e && "code" in e && typeof (e as { code?: unknown }).code === "string"
-              ? String((e as { code?: unknown }).code)
-              : null;
-          if (errCode !== "storage/object-not-found") throw e;
-        });
-      }
-      await deleteDoc(projectPdfDoc(firestoreClient, user.uid, projektId, pdf.id));
-      setSelectedPdfIds((prev) => {
-        const next = new Set(prev);
-        next.delete(pdf.id);
-        return next;
-      });
-      toast.success("PDF gelöscht");
-    } catch (err: unknown) {
-      console.error("Delete PDF failed:", err);
-      toast.error("PDF löschen fehlgeschlagen", { description: err instanceof Error ? err.message : "Unbekannter Fehler" });
-    }
-  };
+    lastRunStatus.current = { runId: activeTwoLaneRun.id, status: nextStatus };
+  }, [activeTwoLaneRun, activeTwoLaneRun?.id, activeTwoLaneRun?.status, activeTwoLaneRun?.resultCount, activeTwoLaneRun?.errorMessage]);
 
   const startTwoLaneSources = async () => {
     if (!canRunTwoLane) {
-      toast.error("Bitte genau ein Kapitel auswählen.");
+      toast.error("Bitte ein Kapitel auswählen.");
       return;
     }
     const token = Cookies.get("__session");
@@ -813,7 +698,11 @@ export function QuellenFinder({
       toast.error("Nicht eingeloggt", { description: "Session Token fehlt." });
       return;
     }
-    const kapitelId = selectedKapitelIds[0];
+    if (!selectedKapitelId) {
+      toast.error("Bitte ein Kapitel auswählen.");
+      return;
+    }
+    const kapitelId = selectedKapitelId;
 
     const res = await fetch(`${API_BASE_URL}/api/quellen-finder/sources-two-lane/start`, {
       method: "POST",
@@ -837,14 +726,14 @@ export function QuellenFinder({
         toast.error("Nicht genügend Credits", { description: detail });
         return;
       }
-      toast.error("Two-Lane Sources fehlgeschlagen", { description: detail });
+      toast.error("Suche fehlgeschlagen", { description: detail });
       return;
     }
 
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     const runId = typeof data.run_id === "string" ? String(data.run_id) : "";
     if (runId) setActiveTwoLaneRunId(runId);
-    toast.success("Two-Lane Sources gestartet", { description: runId ? `Run: ${runId}` : undefined });
+    toast.success("Suche gestartet", { description: runId ? `Run: ${runId}` : undefined });
   };
 
   const cancelTwoLaneSources = async () => {
@@ -870,465 +759,600 @@ export function QuellenFinder({
       return;
     }
 
-    toast.success("Cancellation requested", { description: `Run: ${activeTwoLaneRun.id}` });
+    toast.success("Abbruch angefordert", { description: `Run: ${activeTwoLaneRun.id}` });
   };
 
-  const startPdfScan = async () => {
-    if (!canRunPdfScan) {
-      toast.error("Bitte genau ein Kapitel auswählen und mindestens ein PDF markieren.");
+  const selectKapitel = (kapitelId: string | null) => {
+    setSelectedKapitelId(kapitelId);
+    setActivePaperDocId(null);
+
+    if (!kapitelId) {
+      setActiveTwoLaneRunId(null);
       return;
     }
-    const token = Cookies.get("__session");
-    if (!token) {
-      toast.error("Nicht eingeloggt", { description: "Session Token fehlt." });
-      return;
-    }
-    const kapitelId = selectedKapitelIds[0];
-    const pdfIds = Array.from(selectedPdfIds);
 
-    const res = await fetch(`${API_BASE_URL}/api/quellen-finder/pdf-scan`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ projekt_id: projektId, kapitel_id: kapitelId, pdf_ids: pdfIds, preprocess: true }),
-    });
+    const mostRecentRun = twoLaneRuns.find((r) => Array.isArray(r.kapitelIds) && r.kapitelIds.includes(kapitelId));
+    setActiveTwoLaneRunId(mostRecentRun?.id ?? null);
+  };
 
-    if (!res.ok) {
-      const detail = await readFastApiError(res);
-      if (res.status === 402) {
-        toast.error("Nicht genügend Credits", { description: detail });
-        return;
+  const selectRun = (run: RunRow) => {
+    setActiveTwoLaneRunId(run.id);
+    setActivePaperDocId(null);
+    const kid = Array.isArray(run.kapitelIds) ? run.kapitelIds[0] : null;
+    if (kid) setSelectedKapitelId(kid);
+  };
+
+  const toggleResultsSort = (key: TwoLaneSortKey) => {
+    setResultsSortKey((prev) => {
+      if (prev === key) {
+        setResultsSortDir((d) => (d === "asc" ? "desc" : "asc"));
+        return prev;
       }
-      toast.error("PDF Scan fehlgeschlagen", { description: detail });
-      return;
-    }
-
-    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    const runId = typeof data.run_id === "string" ? String(data.run_id) : "";
-    if (runId) setActivePdfRunId(runId);
-    toast.success("PDF Scan gestartet", { description: runId ? `Run: ${runId}` : undefined });
+      setResultsSortDir(key === "rank" ? "asc" : "desc");
+      return key;
+    });
   };
 
-  const openExtractDialog = (args: {
-    stage: "stage2" | "stage3";
-    docId: string;
-    pdfId?: string;
-    pdfFilename?: string;
-    storagePath?: string;
-    anchorPage?: number;
-  }) => {
-    if (!activePdfRun?.id) {
-      toast.error("Kein aktiver PDF-Run", { description: "Bitte zuerst einen PDF-Run auswählen." });
-      return;
-    }
-    setExtractRequest({
-      projektId,
-      runId: activePdfRun.id,
-      stage: args.stage,
-      docId: args.docId,
-      pdfId: args.pdfId,
-      pdfFilename: args.pdfFilename,
-      storagePath: args.storagePath,
-      anchorPage: args.anchorPage,
-    });
-    setExtractDialogOpen(true);
+  const activeKapitelSnapshot = activeTwoLaneRun?.kapitelSnapshots?.[0] ?? null;
+  const chapterNummer = String(activeKapitelSnapshot?.nummer ?? selectedKapitel?.nummer ?? "").trim();
+  const chapterTitle = String(activeKapitelSnapshot?.title ?? selectedKapitel?.title ?? "").trim();
+  const chapterHeading = `${chapterNummer ? `${chapterNummer} ` : ""}${chapterTitle || "Kapitel"}`.trim();
+
+  const runStartedAt = toDateOrNull(activeTwoLaneRun?.startedAt) ?? toDateOrNull(activeTwoLaneRun?.createdAt);
+  const runFinishedAt = toDateOrNull(activeTwoLaneRun?.finishedAt);
+  const runStartMs = runStartedAt?.getTime() ?? nowMs;
+  const stageStartMs =
+    (toDateOrNull(activeTwoLaneRun?.progress?.stageStartedAt) ?? runStartedAt)?.getTime() ?? runStartMs;
+  const elapsedMs = Math.max(0, nowMs - runStartMs);
+  const stageElapsedMs = Math.max(0, nowMs - stageStartMs);
+
+  const summaryRec = asRecord(activeTwoLaneRun?.summary);
+  const totalCostUsd = typeof finalReportView.totalCostUsd === "number" ? finalReportView.totalCostUsd : asNumberOrNull(summaryRec["total_cost_usd"]);
+  const secondsTotal = asNumberOrNull(summaryRec["seconds_total"]);
+  const resultCount =
+    typeof activeTwoLaneRun?.resultCount === "number" ? activeTwoLaneRun.resultCount : twoLaneResults.length ? twoLaneResults.length : null;
+  const candidatesTotal = typeof finalReportView.counts["candidates_total"] === "number" ? (finalReportView.counts["candidates_total"] as number) : null;
+
+  const stageKey = String(activeTwoLaneRun?.progress?.stage || "");
+  const stageIdxDirect = TWO_LANE_PIPELINE_STEPS.findIndex((s) => s.key === stageKey);
+  const stageIdxRemembered = activeTwoLaneRun?.id ? (lastPipelineStepIndexByRunId.current.get(activeTwoLaneRun.id) ?? -1) : -1;
+  const stageIdx = stageIdxDirect >= 0 ? stageIdxDirect : stageIdxRemembered;
+
+  const isDone = activeTwoLaneRun?.status === "success" || stageKey === "done";
+  const isError = activeTwoLaneRun?.status === "error" || stageKey === "error";
+  const isCancelled = activeTwoLaneRun?.status === "cancelled" || stageKey === "cancelled";
+  const isCancelRequested = Boolean(activeTwoLaneRun?.cancelRequestedAt) || stageKey === "cancel_requested";
+
+  const completedSteps = isDone ? TWO_LANE_PIPELINE_STEPS.length : Math.max(0, stageIdx);
+  const activeStep = !isDone && stageIdx >= 0 ? stageIdx : -1;
+  const activeStepLabel = activeStep >= 0 ? TWO_LANE_PIPELINE_STEPS[activeStep]?.label ?? "" : "";
+
+  const renderPaperDetails = (paper: TwoLaneRow) => {
+    const llm =
+      typeof paper.rerank?.llm_score_0_100 === "number" && Number.isFinite(paper.rerank.llm_score_0_100)
+        ? Math.round(paper.rerank.llm_score_0_100)
+        : null;
+    const rationale = String(paper.rerank?.rationale || "").trim();
+    const covered = Array.isArray(paper.rerank?.covered_facets) ? paper.rerank?.covered_facets : [];
+    const topics = [...new Set((covered || []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()))]
+      .map((id) => facetLabelById.get(id) ?? id)
+      .slice(0, 16);
+    const href = paper.doi ? `https://doi.org/${paper.doi}` : String(paper.url || "");
+    const linkLabel = paper.doi ? String(paper.doi) : String(paper.url || "");
+
+    return (
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">Titel</div>
+          <div className="text-base font-semibold leading-snug">{paper.title || "(ohne Titel)"}</div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground">Autoren</div>
+            <div className="text-sm">{(paper.authors || []).join(", ") || "—"}</div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground">Venue</div>
+            <div className="text-sm">{paper.venue || "—"}</div>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">Abstract</div>
+          <div className="text-sm text-muted-foreground whitespace-pre-wrap">{paper.abstract || "—"}</div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">LLM‑Bewertung</div>
+          <div className="flex items-start gap-3">
+            <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-xs font-semibold tabular-nums ${llmScorePillClasses(llm)}`}>
+              {llm !== null ? llm : "—"}
+            </span>
+            <div className="text-sm text-muted-foreground whitespace-pre-wrap">{rationale || "—"}</div>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">Themen</div>
+          <div className="flex flex-wrap gap-2">
+            {topics.length ? (
+              topics.map((t) => (
+                <Badge key={t} variant="outline">
+                  {t}
+                </Badge>
+              ))
+            ) : (
+              <div className="text-sm text-muted-foreground">—</div>
+            )}
+          </div>
+        </div>
+
+        {href && linkLabel ? (
+          <div>
+            <Link href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-primary hover:underline">
+              <ExternalLink className="h-4 w-4" />
+              {linkLabel}
+            </Link>
+          </div>
+        ) : null}
+      </div>
+    );
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="border-b border-border px-6 py-4 flex items-center gap-4">
-        <Button asChild variant="ghost" size="icon">
-          <Link href="/dashboard" aria-label="Back to dashboard">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div className="min-w-0">
-          <div className="text-lg font-semibold truncate">Quellen-Finder</div>
-          <div className="text-sm text-muted-foreground truncate">Projekt: {projektName}</div>
-        </div>
-      </div>
-
-      <div className="px-6 py-4">
-        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 items-start">
-          <div className="lg:sticky lg:top-4 self-start">
-            <Card className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <Input value={kapitelQuery} onChange={(e) => setKapitelQuery(e.target.value)} placeholder="Kapitel suchen (Nr/Titel)" />
-              </div>
-              <div className="text-xs text-muted-foreground mb-3">
-                Ausgewählt: <span className="font-medium">{selectedKapitelIds.length}</span> (derzeit nur 1 Kapitel pro Run)
-              </div>
-              <div className="space-y-2 max-h-[65vh] overflow-auto pr-1">
-                {filteredKapitels.map((k) => {
-                  const checked = selectedKapitelIds.includes(k.id);
-                  return (
-                    <div
-                      key={k.id}
-                      onClick={() => toggleKapitel(k.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          toggleKapitel(k.id);
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      className="w-full text-left rounded-md border border-border hover:bg-muted/40 transition-colors px-3 py-2"
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className="pt-0.5">
-                          <Checkbox checked={checked} onClick={(e) => e.stopPropagation()} onCheckedChange={() => toggleKapitel(k.id)} />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium truncate">
-                            {k.nummer} — {k.title}
-                          </div>
-                          <div className="text-xs text-muted-foreground line-clamp-2">{k.thema || ""}</div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                {filteredKapitels.length === 0 ? <div className="text-sm text-muted-foreground">Keine Kapitel gefunden.</div> : null}
-              </div>
-            </Card>
+    <TooltipProvider delayDuration={150}>
+      <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-background flex flex-col">
+        <div className="border-b border-border px-6 py-4 flex items-center gap-4">
+          <Button asChild variant="ghost" size="icon">
+            <Link href="/dashboard" aria-label="Back to dashboard">
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+          </Button>
+          <div className="min-w-0">
+            <div className="text-lg font-semibold truncate">Quellen-Suche</div>
+            <div className="text-sm text-muted-foreground truncate">Wissenschaftliche Literatur automatisch finden und bewerten</div>
           </div>
+        </div>
 
-          <div className="space-y-4">
-            <Card className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold">Aktives Kapitel</div>
-                  <div className="text-xs text-muted-foreground">Kapitelüberschrift + Thema &amp; Anweisungen werden verwendet.</div>
-                </div>
-                {selectedKapitel ? <Badge variant="outline">{selectedKapitel.nummer}</Badge> : null}
-              </div>
-              <Separator className="my-3" />
-              {selectedKapitel ? (
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">{selectedKapitel.title}</div>
-                  <div className="text-xs text-muted-foreground whitespace-pre-wrap">{selectedKapitel.thema || ""}</div>
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">Bitte genau ein Kapitel auswählen.</div>
-              )}
-            </Card>
-
-            <Card className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold">1) Sources (Two-lane)</div>
-                  <div className="text-xs text-muted-foreground">
-                    Match/Authority × With/Without Abstract. Speichert Top-40 pro Lane/Pool + Telemetry (Firestore).
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                  <Button size="sm" variant="outline" onClick={() => setSettingsDialogOpen(true)}>
-                    Settings
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setTelemetryDialogOpen(true)} disabled={!activeTwoLaneRun?.id}>
-                    Run details
-                  </Button>
-                  <Button size="sm" onClick={startTwoLaneSources} disabled={!canRunTwoLane || runningTwoLane}>
-                    {runningTwoLane ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Start
-                  </Button>
-                  <Button size="sm" variant="destructive" onClick={cancelTwoLaneSources} disabled={!runningTwoLane}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-
-              <div className="mt-3 flex items-center gap-2 flex-wrap">
-                <div className="text-xs text-muted-foreground">Run:</div>
-                <Select value={activeTwoLaneRun?.id || ""} onValueChange={(v) => setActiveTwoLaneRunId(v || null)} disabled={twoLaneRuns.length === 0}>
-                  <SelectTrigger className="w-[320px] h-8">
-                    <SelectValue placeholder="(keine Runs)" />
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
+          <aside className="w-full lg:w-[320px] shrink-0 border-b lg:border-b-0 lg:border-r border-border bg-sidebar flex flex-col text-sidebar-foreground">
+            <div className="p-5 border-b border-sidebar-border space-y-4 shrink-0">
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-sidebar-foreground/70">Kapitel auswählen</div>
+                <Select value={selectedKapitelId || ""} onValueChange={(v) => selectKapitel(v || null)}>
+                  <SelectTrigger className="w-full h-auto min-h-10 whitespace-normal items-center py-2.5 bg-background shadow-none">
+                    <div className="min-w-0 flex-1 text-left">
+                      {selectedKapitel ? (
+                        <div className="line-clamp-2 leading-snug">
+                          <span className="text-muted-foreground tabular-nums mr-2">{selectedKapitel.nummer}</span>
+                          {selectedKapitel.title}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">Kapitel auswählen</span>
+                      )}
+                    </div>
                   </SelectTrigger>
-                  <SelectContent>
-                    {twoLaneRuns.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {formatRunTime(r.createdAt) || r.id} — {r.status}
-                      </SelectItem>
-                    ))}
+                  <SelectContent align="start" className="max-h-[60vh] w-[var(--radix-select-trigger-width)]">
+                    {kapitels.map((k) => {
+                      const depth = kapitelDepth(k.nummer);
+                      return (
+                        <SelectItem key={k.id} value={k.id}>
+                          <div className="flex items-start gap-2 min-w-0 w-full" style={{ paddingLeft: depth * 12 }}>
+                            <span className="text-muted-foreground tabular-nums shrink-0">{k.nummer}</span>
+                            <span className="min-w-0 leading-snug line-clamp-2">{k.title}</span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
-                {activeTwoLaneRun ? (
-                  <>
-                    <Badge variant={statusBadgeVariant(activeTwoLaneRun.status)}>{activeTwoLaneRun.status}</Badge>
-                    {activeTwoLaneRun.hadPartialFailures ? <Badge variant="outline">partial</Badge> : null}
-                    <span className="text-xs text-muted-foreground">{progressLabel(activeTwoLaneRun)}</span>
-                  </>
-                ) : null}
-                {activeTwoLaneRun ? (
-                  <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-                    {runningTwoLane ? (
-                      <>
-                        <Badge variant="outline" className="tabular-nums">
-                          Elapsed {formatDurationMs(nowMs - (toDateOrNull(activeTwoLaneRun.startedAt) ?? toDateOrNull(activeTwoLaneRun.createdAt) ?? new Date()).getTime())}
-                        </Badge>
-                        <Badge variant="outline" className="tabular-nums">
-                          Stage{" "}
-                          {formatDurationMs(
-                            nowMs -
-                              (toDateOrNull(activeTwoLaneRun.progress?.stageStartedAt) ??
-                                toDateOrNull(activeTwoLaneRun.startedAt) ??
-                                toDateOrNull(activeTwoLaneRun.createdAt) ??
-                                new Date()).getTime()
-                          )}
-                        </Badge>
-                      </>
-                    ) : null}
-                    {typeof (activeTwoLaneRun.summary as Record<string, unknown> | undefined)?.total_cost_usd === "number" ? (
-                      <Badge variant="secondary" className="tabular-nums">
-                        ${Number((activeTwoLaneRun.summary as Record<string, unknown>).total_cost_usd).toFixed(2)}
-                      </Badge>
-                    ) : null}
-                  </div>
-                ) : null}
+                {selectedKapitel ? <div className="text-xs text-sidebar-foreground/70 line-clamp-3">{selectedKapitel.thema || ""}</div> : null}
               </div>
 
-              <Separator className="my-3" />
+              <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
+                <CollapsibleTrigger asChild>
+                  <button type="button" className="w-full flex items-center justify-between text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground">
+                    <span className="flex items-center gap-2">
+                      <SlidersHorizontal className="h-4 w-4" />
+                      Einstellungen
+                    </span>
+                    <ChevronDown className={`h-4 w-4 transition-transform ${settingsOpen ? "rotate-180" : ""}`} />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pt-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">Planner model</div>
+                      <Select value={plannerModel} onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" || v === "gpt-5.2" ? setPlannerModel(v) : null)}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Planner" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gpt-5-nano">gpt-5-nano</SelectItem>
+                          <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
+                          <SelectItem value="gpt-5.2">gpt-5.2</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">OpenAlex query model</div>
+                      <Select
+                        value={openalexQueryModel}
+                        onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" || v === "gpt-5.2" ? setOpenalexQueryModel(v) : null)}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="OpenAlex query model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gpt-5-nano">gpt-5-nano</SelectItem>
+                          <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
+                          <SelectItem value="gpt-5.2">gpt-5.2</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">S2 query model</div>
+                      <Select value={s2QueryModel} onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" || v === "gpt-5.2" ? setS2QueryModel(v) : null)}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="S2 query model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gpt-5-nano">gpt-5-nano</SelectItem>
+                          <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
+                          <SelectItem value="gpt-5.2">gpt-5.2</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">Rerank model</div>
+                      <Select value={rerankModel} onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" ? setRerankModel(v) : null)}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Rerank model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gpt-5-nano">gpt-5-nano</SelectItem>
+                          <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">Reasoning effort</div>
+                      <Select value={reasoningEffort} onValueChange={(v) => (v === "low" || v === "medium" || v === "high" ? setReasoningEffort(v) : null)}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Effort" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">low</SelectItem>
+                          <SelectItem value="medium">medium</SelectItem>
+                          <SelectItem value="high">high</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">Rerank concurrency</div>
+                      <Input
+                        className="h-9"
+                        type="number"
+                        value={String(rerankConcurrency)}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (Number.isFinite(n)) setRerankConcurrency(Math.max(1, Math.min(50, Math.floor(n))));
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">Embedding model</div>
+                    <Select value={embeddingModel} onValueChange={setEmbeddingModel}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="Embedding model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="text-embedding-3-small">text-embedding-3-small</SelectItem>
+                        <SelectItem value="text-embedding-3-large">text-embedding-3-large</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+
+              <Button size="lg" onClick={startTwoLaneSources} disabled={!canRunTwoLane} className="w-full">
+                <Play className="h-4 w-4" />
+                Suche starten
+              </Button>
+            </div>
+
+            <div className="flex-1 overflow-auto divide-y divide-sidebar-border">
+              {twoLaneRuns.map((r) => {
+                const snap = r.kapitelSnapshots?.[0] ?? null;
+                const num = String(snap?.nummer || "").trim();
+                const title = String(snap?.title || "").trim();
+                const label = `${num ? `${num} ` : ""}${title || ""}`.trim() || r.id;
+
+                const time = formatTimeHm(r.startedAt ?? r.createdAt);
+                const sub =
+                  r.status === "running" || r.status === "queued"
+                    ? `${time}  Läuft…`
+                    : r.status === "success"
+                      ? `${time}  ${formatIntDe(r.resultCount ?? 0)} Ergebnisse`
+                      : r.status === "cancelled"
+                        ? `${time}  Abgebrochen`
+                        : `${time}  Fehler`;
+
+                const active = r.id === activeTwoLaneRun?.id;
+
+                const icon =
+                  r.status === "running" || r.status === "queued" ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                  ) : r.status === "success" ? (
+                    <Check className="h-4 w-4 text-emerald-600" />
+                  ) : r.status === "cancelled" ? (
+                    <Ban className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 text-red-600" />
+                  );
+
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => selectRun(r)}
+                    className={`w-full text-left px-5 py-3 hover:bg-sidebar-accent/70 transition-colors ${active ? "bg-sidebar-accent" : ""}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">{label}</div>
+                        <div className="text-xs text-sidebar-foreground/70 truncate">{sub}</div>
+                      </div>
+                      <div className="pt-0.5 shrink-0">{icon}</div>
+                    </div>
+                  </button>
+                );
+              })}
+              {twoLaneRuns.length === 0 ? <div className="px-5 py-3 text-xs text-sidebar-foreground/70">Noch keine Runs.</div> : null}
+            </div>
+          </aside>
+
+          <div className="flex-1 min-w-0 overflow-auto p-6">
+            <div className="space-y-4 min-w-0">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-xl font-semibold truncate">{chapterHeading || "Kapitel auswählen"}</div>
+                {activeTwoLaneRun ? (
+                  <div className="text-xs text-muted-foreground">
+                    Gestartet: {formatDateTimeWithSeconds(runStartedAt)}{" "}
+                    {runFinishedAt ? <>| Abgeschlossen: {formatDateTimeWithSeconds(runFinishedAt)}</> : null}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">
+                    {selectedKapitel ? "Noch keine Quellen‑Suche für dieses Kapitel. Starte links eine neue Suche." : "Wähle links ein Kapitel und starte eine neue Quellen‑Suche."}
+                  </div>
+                )}
+              </div>
+
+              {activeTwoLaneRun ? (
+                <div className="flex items-center gap-3 flex-wrap justify-end">
+                  {runningTwoLane ? (
+                    <>
+                      <div className="text-xs text-muted-foreground tabular-nums">
+                        {formatElapsedShort(elapsedMs)} | Phase: {formatElapsedShort(stageElapsedMs)} | {formatUsd(totalCostUsd)}
+                      </div>
+                      <Button size="sm" variant="outline" onClick={cancelTwoLaneSources} disabled={!runningTwoLane || isCancelRequested}>
+                        {isCancelRequested ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <X className="h-4 w-4 mr-2" />}
+                        {isCancelRequested ? "Wird abgebrochen…" : "Abbrechen"}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xs text-muted-foreground tabular-nums">{formatUsd(totalCostUsd)}</div>
+                      {typeof resultCount === "number" ? (
+                        <Badge variant="outline" className="tabular-nums">
+                          {formatIntDe(resultCount)} Ergebnisse
+                        </Badge>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            <Card className="p-4">
+              <div className="text-sm font-semibold">Pipeline-Status</div>
+
+              <div className="mt-3 space-y-3">
+                <div className="flex gap-1">
+                  {TWO_LANE_PIPELINE_STEPS.map((s, idx) => {
+                    const isCompleted = isDone || (activeStep >= 0 && idx < activeStep);
+                    const isActive = !isDone && idx === activeStep;
+                    const cls = isCompleted
+                      ? "bg-primary"
+                      : isActive
+                        ? isError
+                          ? "bg-red-500"
+                          : "bg-orange-400"
+                        : "bg-muted/60";
+                    return (
+                      <Tooltip key={s.key}>
+                        <TooltipTrigger asChild>
+                          <div className={`h-2 flex-1 rounded-sm ${cls}`} aria-label={s.label} />
+                        </TooltipTrigger>
+                        <TooltipContent side="top">{s.label}</TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
+                    {isDone ? (
+                      <Check className="h-4 w-4 text-emerald-600" />
+                    ) : isError ? (
+                      <AlertTriangle className="h-4 w-4 text-red-600" />
+                    ) : isCancelled ? (
+                      <Ban className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                    )}
+                    <span className="truncate">
+                      {isDone
+                        ? "Abgeschlossen"
+                        : isError
+                          ? "Fehler"
+                          : isCancelled
+                            ? "Abgebrochen"
+                            : isCancelRequested
+                              ? "Abbruch angefordert"
+                              : activeStepLabel || "Wartet…"}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground tabular-nums shrink-0">
+                    {completedSteps} / {TWO_LANE_PIPELINE_STEPS.length} Schritte
+                  </div>
+                </div>
+              </div>
+
+            </Card>
+
+            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+              <Button size="sm" variant="outline" onClick={() => setTelemetryDialogOpen(true)} disabled={!activeTwoLaneRun?.id}>
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Pipeline Details
+              </Button>
+              <div className="tabular-nums">
+                {runningTwoLane ? formatElapsedShort(elapsedMs) : formatSecondsShort(secondsTotal ?? (runFinishedAt ? (runFinishedAt.getTime() - runStartMs) / 1000 : null))}
+              </div>
+              <span>|</span>
+              <div className="tabular-nums">{formatUsd(totalCostUsd)}</div>
+              <span>|</span>
+              <div className="tabular-nums">{candidatesTotal !== null ? `${formatIntDe(candidatesTotal)} Kandidaten` : "— Kandidaten"}</div>
+            </div>
+
+            <Card className="p-4">
+              <div className="space-y-3">
+                <div className="text-sm font-semibold">Suchergebnisse</div>
+
                 <Tabs
-                  value={twoLaneLane}
+                  value={twoLaneViewKey}
                   onValueChange={(v) => {
-                    if (v === "match" || v === "authority") setTwoLaneLane(v as TwoLaneLane);
+                    if (v in TWO_LANE_VIEW_LABELS) {
+                      setTwoLaneViewKey(v as TwoLaneViewKey);
+                      setActivePaperDocId(null);
+                    }
                   }}
                 >
-                  <TabsList className="h-8">
-                    <TabsTrigger value="match" className="text-xs">
-                      Match
-                    </TabsTrigger>
-                    <TabsTrigger value="authority" className="text-xs">
-                      Authority
-                    </TabsTrigger>
+                  <TabsList className="h-9 bg-muted/40 p-1 flex flex-wrap">
+                    {(Object.keys(TWO_LANE_VIEW_LABELS) as TwoLaneViewKey[]).map((k) => (
+                      <TabsTrigger key={k} value={k} className="text-xs">
+                        <span className="flex items-center gap-2">
+                          {TWO_LANE_VIEW_LABELS[k]}
+                          <span className="tabular-nums text-muted-foreground">{twoLaneCountsByView[k] ?? 0}</span>
+                        </span>
+                      </TabsTrigger>
+                    ))}
                   </TabsList>
                 </Tabs>
 
-                <div className="flex items-center gap-2">
-                  <Switch id="qf-show-without-abstract" checked={showWithoutAbstract} onCheckedChange={setShowWithoutAbstract} />
-                  <Label htmlFor="qf-show-without-abstract" className="text-xs text-muted-foreground cursor-pointer">
-                    Show without abstract (display only)
-                  </Label>
-                </div>
-
-                <div className="flex items-center gap-2 flex-1 min-w-[220px]">
-                  <Search className="h-4 w-4 text-muted-foreground" />
-                  <Input value={resultsQuery} onChange={(e) => setResultsQuery(e.target.value)} placeholder="Filter: title/authors/venue/doi" className="h-8" />
-                </div>
-
-                <Select
-                  value={resultsSortKey}
-                  onValueChange={(v) => {
-                    if (v === "rank" || v === "laneScore" || v === "llmScore" || v === "year" || v === "citations") setResultsSortKey(v);
-                  }}
-                >
-                  <SelectTrigger className="w-[170px] h-8">
-                    <SelectValue placeholder="Sort" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="rank">Rank</SelectItem>
-                    <SelectItem value="laneScore">Lane score</SelectItem>
-                    <SelectItem value="llmScore">LLM score</SelectItem>
-                    <SelectItem value="citations">Citations</SelectItem>
-                    <SelectItem value="year">Year</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select value={resultsSortDir} onValueChange={(v) => (v === "asc" || v === "desc" ? setResultsSortDir(v) : null)}>
-                  <SelectTrigger className="w-[120px] h-8">
-                    <SelectValue placeholder="Dir" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="asc">Asc</SelectItem>
-                    <SelectItem value="desc">Desc</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <div className="text-xs text-muted-foreground">
-                  Rows: <span className="font-medium">{twoLaneFiltered.length}</span>
-                </div>
-              </div>
-
-              <div className="mt-3 md:hidden space-y-2">
-                {twoLaneFiltered.map((r) => {
-                  const s = r.scores || ({} as Record<string, unknown>);
-                  const laneScore =
-                    typeof (s as Record<string, unknown>)[twoLaneLane === "match" ? "match_lane" : "authority_lane"] === "number"
-                      ? (s as Record<string, unknown>)[twoLaneLane === "match" ? "match_lane" : "authority_lane"]
-                      : null;
-                  const llmScore = (r.rerank as Record<string, unknown> | null | undefined)?.llm_score_0_100;
-                  const insuff = Boolean((r.rerank as Record<string, unknown> | null | undefined)?.insufficient_info);
-                  return (
-                    <button
-                      key={r.docId}
-                      type="button"
-                      className="w-full text-left rounded-md border border-border hover:bg-muted/40 transition-colors px-3 py-2"
-                      onClick={() => {
-                        setActivePaper(r);
-                        setPaperDialogOpen(true);
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium line-clamp-2">{r.title || "(untitled)"}</div>
-                          <div className="text-xs text-muted-foreground line-clamp-1">
-                            {(r.authors || []).slice(0, 4).join(", ")}
-                            {r.year ? ` • ${r.year}` : ""}
-                            {typeof r.citations === "number" ? ` • cites ${r.citations}` : ""}
-                            {r.pool === "without_abstract" ? " • no abstract" : ""}
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-1 shrink-0">
-                          <div className="text-xs tabular-nums">{typeof laneScore === "number" ? laneScore.toFixed(3) : ""}</div>
-                          <div className="flex items-center gap-1">
-                            {typeof llmScore === "number" ? <Badge variant="secondary">LLM {llmScore}</Badge> : null}
-                            {insuff ? <Badge variant="outline">insuff</Badge> : null}
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-                {twoLaneFiltered.length === 0 ? <div className="text-sm text-muted-foreground">Keine Ergebnisse.</div> : null}
-              </div>
-
-              <div className="mt-3 hidden md:block overflow-x-auto border border-border rounded-md">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[64px]">#</TableHead>
-                      <TableHead>Title</TableHead>
-                      <TableHead className="w-[80px] hidden lg:table-cell">Year</TableHead>
-                      <TableHead className="w-[90px] hidden lg:table-cell">Cites</TableHead>
-                      <TableHead className="w-[110px]">Lane</TableHead>
-                      <TableHead className="w-[110px]">LLM</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {twoLaneFiltered.map((r) => {
-                      const s = r.scores || ({} as Record<string, unknown>);
-                      const laneScore =
-                        typeof (s as Record<string, unknown>)[twoLaneLane === "match" ? "match_lane" : "authority_lane"] === "number"
-                          ? (s as Record<string, unknown>)[twoLaneLane === "match" ? "match_lane" : "authority_lane"]
-                          : null;
-                      const llmScore = (r.rerank as Record<string, unknown> | null | undefined)?.llm_score_0_100;
-                      const insuff = Boolean((r.rerank as Record<string, unknown> | null | undefined)?.insufficient_info);
-                      return (
-                        <TableRow
-                          key={r.docId}
-                          className="cursor-pointer"
-                          onClick={() => {
-                            setActivePaper(r);
-                            setPaperDialogOpen(true);
-                          }}
-                        >
-                          <TableCell className="tabular-nums">{r.rank}</TableCell>
-                          <TableCell className="min-w-[360px]">
-                            <div className="font-medium line-clamp-2">{r.title || "(untitled)"}</div>
-                            <div className="text-xs text-muted-foreground line-clamp-1">
-                              {(r.authors || []).slice(0, 6).join(", ")}
-                              {r.venue ? ` • ${r.venue}` : ""}
-                              {r.doi ? ` • DOI: ${r.doi}` : ""}
-                              {r.pool === "without_abstract" ? " • no abstract" : ""}
-                            </div>
-                          </TableCell>
-                          <TableCell className="tabular-nums hidden lg:table-cell">{r.year ?? ""}</TableCell>
-                          <TableCell className="tabular-nums hidden lg:table-cell">{r.citations ?? ""}</TableCell>
-                          <TableCell className="tabular-nums">{typeof laneScore === "number" ? laneScore.toFixed(3) : ""}</TableCell>
-                          <TableCell className="tabular-nums">
-                            <div className="flex items-center gap-1">
-                              {typeof llmScore === "number" ? <Badge variant="secondary">{llmScore}</Badge> : <span className="text-muted-foreground">—</span>}
-                              {insuff ? <Badge variant="outline">insuff</Badge> : null}
-                            </div>
-                          </TableCell>
+                <div className="rounded-md border border-border overflow-hidden">
+                  <div className="overflow-auto">
+                    <Table className="table-fixed">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[56px]">#</TableHead>
+                          <TableHead>Titel</TableHead>
+                          <TableHead className="w-[90px]">
+                            <button type="button" onClick={() => toggleResultsSort("year")} className="flex items-center gap-1">
+                              Jahr
+                              <ChevronDown
+                                className={`h-3 w-3 transition-transform ${resultsSortKey === "year" ? "opacity-100" : "opacity-30"} ${resultsSortKey === "year" && resultsSortDir === "asc" ? "rotate-180" : ""}`}
+                              />
+                            </button>
+                          </TableHead>
+                          <TableHead className="w-[120px]">
+                            <button type="button" onClick={() => toggleResultsSort("citations")} className="flex items-center gap-1">
+                              Zitierungen
+                              <ChevronDown
+                                className={`h-3 w-3 transition-transform ${resultsSortKey === "citations" ? "opacity-100" : "opacity-30"} ${resultsSortKey === "citations" && resultsSortDir === "asc" ? "rotate-180" : ""}`}
+                              />
+                            </button>
+                          </TableHead>
+                          <TableHead className="w-[90px]">
+                            <button type="button" onClick={() => toggleResultsSort("llmScore")} className="flex items-center gap-1">
+                              Score
+                              <ChevronDown
+                                className={`h-3 w-3 transition-transform ${resultsSortKey === "llmScore" ? "opacity-100" : "opacity-30"} ${resultsSortKey === "llmScore" && resultsSortDir === "asc" ? "rotate-180" : ""}`}
+                              />
+                            </button>
+                          </TableHead>
+                          <TableHead className="w-[220px]">Venue</TableHead>
                         </TableRow>
-                      );
-                    })}
-                    {twoLaneFiltered.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-sm text-muted-foreground">
-                          Keine Ergebnisse.
-                        </TableCell>
-                      </TableRow>
-                    ) : null}
-                  </TableBody>
-                </Table>
-              </div>
-
-              <Dialog open={paperDialogOpen} onOpenChange={setPaperDialogOpen}>
-                <DialogContent className="max-w-3xl">
-                  <DialogHeader>
-                    <DialogTitle>{activePaper?.title || "Paper"}</DialogTitle>
-                    <DialogDescription>Abstract, scores, rerank, and debug info for this paper.</DialogDescription>
-                  </DialogHeader>
-                  <div className="max-h-[70vh] overflow-auto space-y-4">
-                    <div className="text-xs text-muted-foreground">
-                      {(activePaper?.authors || []).slice(0, 12).join(", ")}
-                      {activePaper?.year ? ` • ${activePaper.year}` : ""}
-                      {activePaper?.venue ? ` • ${activePaper.venue}` : ""}
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {activePaper?.url ? (
-                        <Button asChild size="sm" variant="outline">
-                          <Link href={activePaper.url} target="_blank" rel="noreferrer">
-                            <ExternalLink className="h-4 w-4 mr-2" />
-                            Open
-                          </Link>
-                        </Button>
-                      ) : null}
-                      {activePaper?.doi ? (
-                        <Badge variant="outline" className="font-mono">
-                          DOI: {activePaper.doi}
-                        </Badge>
-                      ) : null}
-                      {typeof activePaper?.citations === "number" ? <Badge variant="outline">cites {activePaper.citations}</Badge> : null}
-                      {typeof activePaper?.influential_citations === "number" ? <Badge variant="outline">infl {activePaper.influential_citations}</Badge> : null}
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">Abstract</div>
-                      <div className="text-xs text-muted-foreground whitespace-pre-wrap">{activePaper?.abstract || "(none)"}</div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">Scores</div>
-                      <pre className="text-xs overflow-auto whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">{JSON.stringify(activePaper?.scores ?? {}, null, 2)}</pre>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">Rerank</div>
-                      <pre className="text-xs overflow-auto whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">{JSON.stringify(activePaper?.rerank ?? null, null, 2)}</pre>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">Coverage tags</div>
-                      <pre className="text-xs overflow-auto whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">{JSON.stringify(activePaper?.coverage_tags ?? [], null, 2)}</pre>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">Debug</div>
-                      <pre className="text-xs overflow-auto whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
-                        {JSON.stringify(
-                          {
-                            provider: activePaper?.provider ?? null,
-                            provider_ids: activePaper?.provider_ids ?? null,
-                            external_ids: activePaper?.external_ids ?? null,
-                            sources: activePaper?.sources ?? null,
-                          },
-                          null,
-                          2
-                        )}
-                      </pre>
-                    </div>
+                      </TableHeader>
+                      <TableBody>
+                        {twoLaneFiltered.map((r) => {
+                          const llm =
+                            typeof r.rerank?.llm_score_0_100 === "number" && Number.isFinite(r.rerank.llm_score_0_100)
+                              ? Math.round(r.rerank.llm_score_0_100)
+                              : null;
+                          const rowActive = r.docId === activePaperDocId;
+                          return (
+                            <Fragment key={r.docId}>
+                              <TableRow
+                                className={`cursor-pointer ${rowActive ? "bg-muted/40" : ""}`}
+                                onClick={() => setActivePaperDocId((prev) => (prev === r.docId ? null : r.docId))}
+                              >
+                                <TableCell className="tabular-nums">{r.rank}</TableCell>
+                                <TableCell className="max-w-0">
+                                  <div className="truncate font-medium">{r.title || "(ohne Titel)"}</div>
+                                </TableCell>
+                                <TableCell className="tabular-nums">{r.year ?? ""}</TableCell>
+                                <TableCell className="tabular-nums">{typeof r.citations === "number" ? formatIntDe(r.citations) : ""}</TableCell>
+                                <TableCell className="tabular-nums">
+                                  <span
+                                    className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-xs font-semibold tabular-nums ${llmScorePillClasses(
+                                      llm
+                                    )}`}
+                                  >
+                                    {llm !== null ? llm : "—"}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="max-w-0">
+                                  <div className="truncate text-sm text-muted-foreground">{r.venue || ""}</div>
+                                </TableCell>
+                              </TableRow>
+                              {rowActive ? (
+                                <TableRow className="bg-background">
+                                  <TableCell colSpan={6} className="p-0">
+                                    <div className="border-t border-border p-4 bg-background">{renderPaperDetails(r)}</div>
+                                  </TableCell>
+                                </TableRow>
+                              ) : null}
+                            </Fragment>
+                          );
+                        })}
+                        {twoLaneFiltered.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-sm text-muted-foreground">
+                              Keine Ergebnisse.
+                            </TableCell>
+                          </TableRow>
+                        ) : null}
+                      </TableBody>
+                    </Table>
                   </div>
-                </DialogContent>
-              </Dialog>
+                </div>
 
-              <Dialog open={telemetryDialogOpen} onOpenChange={setTelemetryDialogOpen}>
+              </div>
+            </Card>
+
+            <Dialog open={telemetryDialogOpen} onOpenChange={setTelemetryDialogOpen}>
                 <DialogContent className="w-[80vw] max-w-[80vw] sm:max-w-[80vw] h-[80vh] max-h-[80vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Two-lane run details</DialogTitle>
@@ -2656,402 +2680,10 @@ export function QuellenFinder({
                   </Tabs>
                 </DialogContent>
               </Dialog>
-
-              <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
-                <DialogContent className="max-w-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Two-lane settings</DialogTitle>
-                    <DialogDescription>Configure models and runtime settings for the two-lane pipeline.</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">Planner model</div>
-                        <Select value={plannerModel} onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" || v === "gpt-5.2" ? setPlannerModel(v) : null)}>
-                          <SelectTrigger className="h-8">
-                            <SelectValue placeholder="Planner" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="gpt-5-nano">gpt-5-nano</SelectItem>
-                            <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
-                            <SelectItem value="gpt-5.2">gpt-5.2</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">OpenAlex query model</div>
-                        <Select value={openalexQueryModel} onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" || v === "gpt-5.2" ? setOpenalexQueryModel(v) : null)}>
-                          <SelectTrigger className="h-8">
-                            <SelectValue placeholder="OpenAlex" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="gpt-5-nano">gpt-5-nano</SelectItem>
-                            <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
-                            <SelectItem value="gpt-5.2">gpt-5.2</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">S2 query model</div>
-                        <Select value={s2QueryModel} onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" || v === "gpt-5.2" ? setS2QueryModel(v) : null)}>
-                          <SelectTrigger className="h-8">
-                            <SelectValue placeholder="S2" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="gpt-5-nano">gpt-5-nano</SelectItem>
-                            <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
-                            <SelectItem value="gpt-5.2">gpt-5.2</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">Rerank model</div>
-                        <Select value={rerankModel} onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" ? setRerankModel(v) : null)}>
-                          <SelectTrigger className="h-8">
-                            <SelectValue placeholder="Rerank" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="gpt-5-nano">gpt-5-nano</SelectItem>
-                            <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">Reasoning effort</div>
-                        <Select value={reasoningEffort} onValueChange={(v) => (v === "low" || v === "medium" || v === "high" ? setReasoningEffort(v) : null)}>
-                          <SelectTrigger className="h-8">
-                            <SelectValue placeholder="Effort" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="low">low</SelectItem>
-                            <SelectItem value="medium">medium</SelectItem>
-                            <SelectItem value="high">high</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground">Rerank concurrency</div>
-                        <Input
-                          className="h-8"
-                          type="number"
-                          value={String(rerankConcurrency)}
-                          onChange={(e) => {
-                            const n = Number(e.target.value);
-                            if (Number.isFinite(n)) setRerankConcurrency(Math.max(1, Math.min(50, Math.floor(n))));
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">Embedding model</div>
-                      <Input className="h-8" value={embeddingModel} onChange={(e) => setEmbeddingModel(e.target.value)} placeholder="text-embedding-3-small" />
-                    </div>
-
-                    <div className="text-xs text-muted-foreground">Budget cap is enforced server-side (2 USD). Rerank disallows gpt-5.2.</div>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </Card>
-
-            <Card className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold">2) PDF Library + Scan</div>
-                  <div className="text-xs text-muted-foreground">Upload in Firebase Storage, danach Download durch Backend. Stage 2 + Stage 3 werden gespeichert.</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input ref={uploadInputRef} type="file" accept="application/pdf" multiple className="hidden" onChange={(e) => void handleUploadPdfs(e.target.files)} />
-                  <Button size="sm" variant="outline" onClick={handleUploadClick} disabled={!user?.uid || uploadingPdfs}>
-                    {uploadingPdfs ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Upload className="h-4 w-4 mr-2" />}
-                    Upload PDFs
-                  </Button>
-                  <Button size="sm" onClick={startPdfScan} disabled={!canRunPdfScan || runningPdfScan}>
-                    {runningPdfScan ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Scan PDFs
-                  </Button>
-                </div>
-              </div>
-
-              <div className="mt-3 grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4 items-start">
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Search className="h-4 w-4 text-muted-foreground" />
-                    <Input value={pdfQuery} onChange={(e) => setPdfQuery(e.target.value)} placeholder="PDF suchen (Name/Path/ID)" />
-                  </div>
-                  <div className="text-xs text-muted-foreground mb-2">
-                    Ausgewählt: <span className="font-medium">{selectedPdfIds.size}</span> PDFs • Insgesamt: <span className="font-medium">{pdfs.length}</span>
-                  </div>
-                  <div className="space-y-2 max-h-[320px] overflow-auto pr-1">
-                    {filteredPdfs.map((p) => {
-                      const checked = selectedPdfIds.has(p.id);
-                      return (
-                        <div key={p.id} className="flex items-start gap-2 rounded-md border border-border px-3 py-2 hover:bg-muted/40 transition-colors">
-                          <div className="pt-0.5">
-                            <Checkbox checked={checked} onCheckedChange={() => togglePdf(p.id)} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="text-sm font-medium truncate min-w-0" title={`${p.filename}\n${p.storagePath}`}>
-                                {p.filename}
-                              </div>
-                              <div className="text-xs text-muted-foreground tabular-nums shrink-0">
-                                {(Number(p.size || 0) / (1024 * 1024)).toFixed(1)} MB
-                              </div>
-                            </div>
-                            <div className="text-[11px] text-muted-foreground truncate">Uploaded: {formatRunTime(p.createdAt)}</div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button size="icon" variant="ghost" onClick={() => void openPdfInNewTab(String(p.storagePath || ""))} title="Open (Browser)">
-                              <ExternalLink className="h-4 w-4" />
-                            </Button>
-                            <Button size="icon" variant="ghost" onClick={() => void downloadFileFromStorage(String(p.storagePath || ""), String(p.filename || "document.pdf"))} title="Download">
-                              <Download className="h-4 w-4" />
-                            </Button>
-                            <Button size="icon" variant="ghost" onClick={() => void handleDeletePdf(p)} title="Delete">
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {filteredPdfs.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">{pdfs.length === 0 ? "Noch keine PDFs hochgeladen." : "Keine PDFs gefunden."}</div>
-                    ) : null}
-                  </div>
-
-                  <div className="mt-3 flex items-center gap-2 flex-wrap">
-                    <div className="text-xs text-muted-foreground">Run:</div>
-                    <Select value={activePdfRun?.id || ""} onValueChange={(v) => setActivePdfRunId(v || null)} disabled={pdfRuns.length === 0}>
-                      <SelectTrigger className="w-[320px] h-8">
-                        <SelectValue placeholder="(keine Runs)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {pdfRuns.map((r) => (
-                          <SelectItem key={r.id} value={r.id}>
-                            {formatRunTime(r.createdAt) || r.id} — {r.status}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {activePdfRun ? (
-                      <>
-                        <Badge variant={statusBadgeVariant(activePdfRun.status)}>{activePdfRun.status}</Badge>
-                        {activePdfRun.hadPartialFailures ? <Badge variant="outline">partial</Badge> : null}
-                        <span className="text-xs text-muted-foreground">{progressLabel(activePdfRun)}</span>
-                      </>
-                    ) : null}
-                  </div>
-                  {activePdfRun ? (
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      Stage2: {Number(activePdfRun.stage2Count ?? 0)} • Stage3: {Number(activePdfRun.stage3Count ?? 0)} • Run: <span className="font-mono">{activePdfRun.id}</span>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div>
-                  <Tabs
-                    value={pdfStageTab}
-                    onValueChange={(v) => {
-                      if (v === "stage2" || v === "stage3") setPdfStageTab(v);
-                    }}
-                  >
-                    <TabsList>
-                      <TabsTrigger value="stage3">Stage 3 (Sections)</TabsTrigger>
-                      <TabsTrigger value="stage2">Stage 2 (Hits)</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="stage3" className="mt-3">
-                      <div className="overflow-auto border border-border rounded-md">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="w-[200px]">PDF</TableHead>
-                              <TableHead>Section</TableHead>
-                              <TableHead className="w-[80px]">Score</TableHead>
-                              <TableHead className="w-[380px]">Why</TableHead>
-                              <TableHead className="w-[360px]">Anchor</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {stage3.map((r) => {
-                              const pdf = pdfById.get(String(r.pdfId || ""));
-                              const storagePath = String(pdf?.storagePath || "");
-                              const pdfId = String(r.pdfId || "").trim();
-                              const pdfLabel = String(r.pdfLabel || pdf?.filename || "");
-                              const page = typeof r.anchorPage === "number" ? r.anchorPage : undefined;
-                              return (
-                                <TableRow key={r.id}>
-                                  <TableCell className="min-w-[200px]">
-                                    <div className="flex items-start gap-2">
-                                      <div className="min-w-0">
-                                        <div className="text-sm font-medium truncate" title={pdfLabel}>
-                                          {pdfLabel}
-                                        </div>
-                                        <div className="text-[11px] text-muted-foreground">
-                                          {r.anchorPage ? `p. ${r.anchorPage}` : null}
-                                          {r.hitCount ? (r.anchorPage ? ` • hits ${r.hitCount}` : `hits ${r.hitCount}`) : null}
-                                        </div>
-                                      </div>
-                                      <div className="shrink-0 flex items-center gap-1">
-                                        <Button
-                                          size="icon"
-                                          variant="ghost"
-                                          onClick={() =>
-                                            openExtractDialog({
-                                              stage: "stage3",
-                                              docId: r.id,
-                                              pdfId: pdfId || undefined,
-                                              pdfFilename: pdfLabel,
-                                              storagePath: storagePath || undefined,
-                                              anchorPage: page,
-                                            })
-                                          }
-                                          title="Preview highlights"
-                                        >
-                                          <Eye className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                          size="icon"
-                                          variant="ghost"
-                                          disabled={!storagePath}
-                                          onClick={() => void openPdfInNewTab(storagePath, { page })}
-                                          title={storagePath ? "Open PDF" : "PDF fehlt in Library"}
-                                        >
-                                          <ExternalLink className="h-4 w-4" />
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell className="min-w-[240px]">
-                                    <div className="text-sm font-medium">{r.heading || ""}</div>
-                                    <div className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-2">{(r.coveredSubpoints || []).join(", ")}</div>
-                                  </TableCell>
-                                  <TableCell className="tabular-nums">{r.score ?? ""}</TableCell>
-                                  <TableCell className="min-w-[380px]">
-                                    <div className="text-xs whitespace-pre-wrap line-clamp-4">{r.summary || ""}</div>
-                                  </TableCell>
-                                  <TableCell className="min-w-[360px]">
-                                    <div className="text-xs whitespace-pre-wrap line-clamp-4">{r.anchor || ""}</div>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                            {stage3.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={5} className="text-sm text-muted-foreground">
-                                  Keine Stage-3 Ergebnisse.
-                                </TableCell>
-                              </TableRow>
-                            ) : null}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="stage2" className="mt-3">
-                      <div className="overflow-auto border border-border rounded-md">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="w-[200px]">PDF</TableHead>
-                              <TableHead className="w-[80px]">Score</TableHead>
-                              <TableHead className="w-[160px]">Subpoint</TableHead>
-                              <TableHead className="w-[380px]">Why</TableHead>
-                              <TableHead className="w-[360px]">Evidence</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {stage2.map((r) => {
-                              const pdf = pdfById.get(String(r.pdfId || ""));
-                              const storagePath = String(pdf?.storagePath || "");
-                              const pdfId = String(r.pdfId || "").trim();
-                              const pdfLabel = String(r.pdfLabel || pdf?.filename || "");
-                              const why = (r.scoreRationale || r.coverage || "").trim();
-                              return (
-                                <TableRow key={r.id}>
-                                  <TableCell className="min-w-[200px]">
-                                    <div className="flex items-start gap-2">
-                                      <div className="min-w-0">
-                                        <div className="text-sm font-medium truncate" title={pdfLabel}>
-                                          {pdfLabel}
-                                        </div>
-                                      </div>
-                                      <div className="shrink-0 flex items-center gap-1">
-                                        <Button
-                                          size="icon"
-                                          variant="ghost"
-                                          onClick={() =>
-                                            openExtractDialog({
-                                              stage: "stage2",
-                                              docId: r.id,
-                                              pdfId: pdfId || undefined,
-                                              pdfFilename: pdfLabel,
-                                              storagePath: storagePath || undefined,
-                                            })
-                                          }
-                                          title="Preview highlights"
-                                        >
-                                          <Eye className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                          size="icon"
-                                          variant="ghost"
-                                          disabled={!storagePath}
-                                          onClick={() => void openPdfInNewTab(storagePath)}
-                                          title={storagePath ? "Open PDF" : "PDF fehlt in Library"}
-                                        >
-                                          <ExternalLink className="h-4 w-4" />
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell className="tabular-nums">{r.score ?? ""}</TableCell>
-                                  <TableCell className="min-w-[160px]">
-                                    <div className="text-sm">{r.subpoint || ""}</div>
-                                  </TableCell>
-                                  <TableCell className="min-w-[380px]">
-                                    {why ? <div className="text-xs whitespace-pre-wrap line-clamp-3">{why}</div> : <div className="text-xs text-muted-foreground">—</div>}
-                                    {r.summary ? <div className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-2 mt-1">{r.summary}</div> : null}
-                                  </TableCell>
-                                  <TableCell className="min-w-[360px]">
-                                    <div className="text-xs whitespace-pre-wrap line-clamp-4">{r.anchor || ""}</div>
-                                    {r.locatorHint ? <div className="text-xs text-muted-foreground line-clamp-2 mt-1">Locator: {r.locatorHint}</div> : null}
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                            {stage2.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={5} className="text-sm text-muted-foreground">
-                                  Keine Stage-2 Ergebnisse.
-                                </TableCell>
-                              </TableRow>
-                            ) : null}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </TabsContent>
-                  </Tabs>
-                </div>
-              </div>
-            </Card>
           </div>
         </div>
       </div>
-      <PdfExtractDialog
-        open={extractDialogOpen}
-        onOpenChange={(next) => {
-          setExtractDialogOpen(next);
-          if (!next) setExtractRequest(null);
-        }}
-        request={extractRequest}
-      />
-    </div>
+          </div>
+        </TooltipProvider>
   );
 }
