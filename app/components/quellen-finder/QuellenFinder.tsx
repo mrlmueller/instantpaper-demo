@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -138,6 +138,199 @@ function progressLabel(run: RunRow | null): string {
   const pct = typeof cur === "number" && typeof total === "number" && total > 0 ? ` (${cur}/${total})` : "";
   const head = stage ? stage : "progress";
   return msg ? `${head}${pct}: ${msg}` : `${head}${pct}`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v) => v && typeof v === "object").map((v) => v as Record<string, unknown>);
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const v of value) {
+    if (typeof v !== "string") continue;
+    const s = v.trim();
+    if (s) out.push(s);
+  }
+  return out;
+}
+
+function asNumberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function asIntOrNull(value: unknown): number | null {
+  const n = asNumberOrNull(value);
+  if (n === null) return null;
+  return Math.trunc(n);
+}
+
+function quantile(sorted: number[], q: number): number | null {
+  const xs = sorted.filter((v) => typeof v === "number" && Number.isFinite(v)).slice().sort((a, b) => a - b);
+  if (!xs.length) return null;
+  const qq = Math.max(0, Math.min(1, q));
+  const pos = (xs.length - 1) * qq;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return xs[lo] ?? null;
+  const w = pos - lo;
+  const a = xs[lo] ?? 0;
+  const b = xs[hi] ?? 0;
+  return a * (1 - w) + b * w;
+}
+
+function summarizeCounts(values: number[]): { mean: number | null; median: number | null; p90: number | null; max: number | null } {
+  const xs = values.filter((v) => typeof v === "number" && Number.isFinite(v)).slice();
+  if (!xs.length) return { mean: null, median: null, p90: null, max: null };
+  xs.sort((a, b) => a - b);
+  const mean = xs.reduce((acc, v) => acc + v, 0) / xs.length;
+  const median = quantile(xs, 0.5);
+  const p90 = quantile(xs, 0.9);
+  const max = xs[xs.length - 1] ?? null;
+  return { mean, median, p90, max };
+}
+
+function TermBadges({ terms, max = 14 }: { terms: string[]; max?: number }) {
+  const xs = (terms || []).filter((t) => typeof t === "string" && t.trim()).map((t) => t.trim());
+  const head = xs.slice(0, Math.max(0, max));
+  const tail = xs.slice(head.length);
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1">
+        {head.map((t, i) => (
+          <Badge key={`${t}-${i}`} variant="outline" className="text-[10px]">
+            {t}
+          </Badge>
+        ))}
+        {tail.length ? (
+          <Badge variant="secondary" className="text-[10px]">
+            +{tail.length}
+          </Badge>
+        ) : null}
+      </div>
+      {tail.length ? (
+        <details>
+          <summary className="text-xs text-muted-foreground cursor-pointer select-none">Show all</summary>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {xs.map((t, i) => (
+              <Badge key={`${t}-${i}`} variant="outline" className="text-[10px]">
+                {t}
+              </Badge>
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function HistogramBars({ hist, height = 96 }: { hist: unknown; height?: number }) {
+  const rec = asRecord(hist);
+  const countsRaw = rec["counts"];
+  const counts = Array.isArray(countsRaw)
+    ? countsRaw.map((v) => (typeof v === "number" && Number.isFinite(v) ? v : 0)).map((v) => Math.max(0, Math.trunc(v)))
+    : [];
+  const bins = typeof rec["bins"] === "number" && Number.isFinite(rec["bins"]) ? Math.max(1, Math.trunc(rec["bins"])) : counts.length;
+  const lo = asNumberOrNull(rec["lo"]) ?? 0;
+  const hi = asNumberOrNull(rec["hi"]) ?? Math.max(1, bins);
+  const maxCount = Math.max(1, ...counts);
+  if (!counts.length) return <div className="text-sm text-muted-foreground">No histogram data yet.</div>;
+
+  const step = bins > 0 ? (hi - lo) / bins : 1;
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-end gap-[2px]" style={{ height }}>
+        {counts.map((c, i) => {
+          const binLo = lo + i * step;
+          const binHi = binLo + step;
+          return (
+            <div
+              key={i}
+              className="flex-1 bg-muted rounded-sm overflow-hidden"
+              title={`${binLo.toFixed(1)}–${binHi.toFixed(1)}: ${c}`}
+            >
+              <div className="w-full bg-primary/70" style={{ height: `${(c / maxCount) * 100}%` }} />
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <span className="tabular-nums">{lo.toFixed(0)}</span>
+        <span className="tabular-nums">{hi.toFixed(0)}</span>
+      </div>
+    </div>
+  );
+}
+
+function BarList({ rows, maxRows = 80 }: { rows: { label: string; value: number }[]; maxRows?: number }) {
+  const xs = (rows || []).filter((r) => r && typeof r.label === "string" && typeof r.value === "number" && Number.isFinite(r.value));
+  if (!xs.length) return <div className="text-sm text-muted-foreground">No data yet.</div>;
+  const maxVal = Math.max(1, ...xs.map((r) => r.value));
+  const view = xs.slice(0, Math.max(0, maxRows));
+  return (
+    <div className="space-y-1">
+      {view.map((r) => (
+        <div key={r.label} className="flex items-center gap-2">
+          <div className="w-14 text-[10px] font-mono text-muted-foreground tabular-nums">{r.label}</div>
+          <div className="flex-1 h-2 bg-muted rounded-sm overflow-hidden">
+            <div className="h-2 bg-primary/70" style={{ width: `${(r.value / maxVal) * 100}%` }} />
+          </div>
+          <div className="w-16 text-[10px] text-right tabular-nums text-muted-foreground">{r.value}</div>
+        </div>
+      ))}
+      {xs.length > view.length ? <div className="text-[10px] text-muted-foreground">+{xs.length - view.length} more</div> : null}
+    </div>
+  );
+}
+
+function ScatterMatchAuthority({ points, height = 280 }: { points: unknown; height?: number }) {
+  const xsRaw = Array.isArray(points) ? points : [];
+  const xs = xsRaw
+    .map((p) => asRecord(p))
+    .map((p) => ({
+      x: asNumberOrNull(p["match_lane"]) ?? 0,
+      y: asNumberOrNull(p["authority_lane"]) ?? 0,
+      pool: typeof p["pool"] === "string" ? String(p["pool"]) : "unknown",
+    }))
+    .filter((p) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1);
+
+  if (!xs.length) return <div className="text-sm text-muted-foreground">No scatter data yet.</div>;
+
+  const color = (pool: string) => {
+    if (pool === "with_abstract") return "#3b82f6"; // blue-500
+    if (pool === "without_abstract") return "#f97316"; // orange-500
+    return "#94a3b8"; // slate-400
+  };
+
+  return (
+    <div className="space-y-2">
+      <svg width="100%" height={height} viewBox="0 0 100 100" preserveAspectRatio="none" className="rounded-md border border-border bg-background">
+        <line x1="0" y1="100" x2="100" y2="100" stroke="rgba(148,163,184,0.35)" strokeWidth="0.5" />
+        <line x1="0" y1="0" x2="0" y2="100" stroke="rgba(148,163,184,0.35)" strokeWidth="0.5" />
+        <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(148,163,184,0.15)" strokeWidth="0.5" />
+        <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(148,163,184,0.15)" strokeWidth="0.5" />
+        {xs.map((p, i) => (
+          <circle key={i} cx={p.x * 100} cy={(1 - p.y) * 100} r="0.9" fill={color(p.pool)} fillOpacity="0.35" />
+        ))}
+      </svg>
+      <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#3b82f6" }} />
+          with_abstract
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#f97316" }} />
+          without_abstract
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function QuellenFinder({
@@ -402,6 +595,30 @@ export function QuellenFinder({
     return { models, costs, stageRows, counts, totalCostUsd, budgetCapUsd, keySource, raw: fr ? frRec : { costs: summaryRec } };
   }, [telemetryById, activeTwoLaneRun?.summary]);
 
+  const phaseBPlan = asRecord(telemetryById.get("phase_b_plan"));
+  const phaseCQueries = asRecord(telemetryById.get("phase_c_queries"));
+  const phaseDRetrieval = asRecord(telemetryById.get("phase_d_retrieval"));
+  const phaseECandidates = asRecord(telemetryById.get("phase_e_candidates"));
+  const phaseFScoring = asRecord(telemetryById.get("phase_f_scoring"));
+  const phaseIRerank = asRecord(telemetryById.get("phase_i_rerank"));
+  const metricsDoc = asRecord(telemetryById.get("metrics"));
+
+  const facets = asRecordArray(phaseBPlan["facets"]);
+  const primaryAnchors = asRecord(phaseBPlan["primary_context_anchors"]);
+  const primaryAnchorsEn = asStringArray(primaryAnchors["en"]);
+  const primaryAnchorsDe = asStringArray(primaryAnchors["de"]);
+  const globalCanonicalTerms = asRecord(phaseBPlan["global_canonical_terms"]);
+  const globalCanonicalTermsEn = asStringArray(globalCanonicalTerms["en"]);
+  const globalCanonicalTermsDe = asStringArray(globalCanonicalTerms["de"]);
+  const globalExclusions = asRecord(phaseBPlan["global_exclusions"]);
+  const globalExclusionsEn = asStringArray(globalExclusions["en"]);
+  const globalExclusionsDe = asStringArray(globalExclusions["de"]);
+  const openalexQueries = asRecordArray(phaseCQueries["openalex_queries"]);
+  const s2BulkQueries = asRecordArray(phaseCQueries["s2_bulk_queries"]);
+  const queryLengths = asRecord(phaseCQueries["query_lengths"]);
+  const openalexQueryLenHist = asRecord(asRecord(queryLengths["openalex"])["hist_20bins"]);
+  const s2QueryLenHist = asRecord(asRecord(queryLengths["semanticscholar"])["hist_20bins"]);
+
   const twoLaneFiltered = useMemo(() => {
     const q = resultsQuery.trim().toLowerCase();
 
@@ -630,56 +847,6 @@ export function QuellenFinder({
     toast.success("Two-Lane Sources gestartet", { description: runId ? `Run: ${runId}` : undefined });
   };
 
-  const retryTwoLaneSources = async () => {
-    if (!activeTwoLaneRun?.id) {
-      toast.error("Kein aktiver Run", { description: "Bitte zuerst einen Run auswählen." });
-      return;
-    }
-    const token = Cookies.get("__session");
-    if (!token) {
-      toast.error("Nicht eingeloggt", { description: "Session Token fehlt." });
-      return;
-    }
-
-    const kapitelId = activeTwoLaneRun.kapitelIds?.[0] || selectedKapitelIds[0] || "";
-    if (!kapitelId) {
-      toast.error("Kapitel fehlt", { description: "Der Run hat keine Kapitel-ID." });
-      return;
-    }
-
-    const res = await fetch(`${API_BASE_URL}/api/quellen-finder/sources-two-lane/start`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        projekt_id: projektId,
-        kapitel_id: kapitelId,
-        resume_run_id: activeTwoLaneRun.id,
-        planner_model: plannerModel,
-        openalex_query_builder_model: openalexQueryModel,
-        s2_query_builder_model: s2QueryModel,
-        rerank_model: rerankModel,
-        embedding_model: embeddingModel,
-        reasoning_effort: reasoningEffort,
-        rerank_concurrency: rerankConcurrency,
-      }),
-    });
-
-    if (!res.ok) {
-      const detail = await readFastApiError(res);
-      if (res.status === 402) {
-        toast.error("Nicht genügend Credits", { description: detail });
-        return;
-      }
-      toast.error("Retry fehlgeschlagen", { description: detail });
-      return;
-    }
-
-    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    const runId = typeof data.run_id === "string" ? String(data.run_id) : "";
-    if (runId) setActiveTwoLaneRunId(runId);
-    toast.success("Retry gestartet", { description: runId ? `Run: ${runId}` : undefined });
-  };
-
   const cancelTwoLaneSources = async () => {
     if (!activeTwoLaneRun?.id) {
       toast.error("Kein aktiver Run", { description: "Bitte zuerst einen Run auswählen." });
@@ -862,11 +1029,6 @@ export function QuellenFinder({
                   <Button size="sm" variant="outline" onClick={() => setTelemetryDialogOpen(true)} disabled={!activeTwoLaneRun?.id}>
                     Run details
                   </Button>
-                  {activeTwoLaneRun?.id && (activeTwoLaneRun.status === "error" || activeTwoLaneRun.status === "cancelled") ? (
-                    <Button size="sm" variant="outline" onClick={retryTwoLaneSources} disabled={runningTwoLane}>
-                      Retry
-                    </Button>
-                  ) : null}
                   <Button size="sm" onClick={startTwoLaneSources} disabled={!canRunTwoLane || runningTwoLane}>
                     {runningTwoLane ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                     Start
@@ -1100,6 +1262,7 @@ export function QuellenFinder({
                 <DialogContent className="max-w-3xl">
                   <DialogHeader>
                     <DialogTitle>{activePaper?.title || "Paper"}</DialogTitle>
+                    <DialogDescription>Abstract, scores, rerank, and debug info for this paper.</DialogDescription>
                   </DialogHeader>
                   <div className="max-h-[70vh] overflow-auto space-y-4">
                     <div className="text-xs text-muted-foreground">
@@ -1166,9 +1329,10 @@ export function QuellenFinder({
               </Dialog>
 
               <Dialog open={telemetryDialogOpen} onOpenChange={setTelemetryDialogOpen}>
-                <DialogContent className="max-w-5xl">
+                <DialogContent className="w-[80vw] max-w-[80vw] sm:max-w-[80vw] h-[80vh] max-h-[80vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Two-lane run details</DialogTitle>
+                    <DialogDescription>Notebook-style telemetry (tables & plots). Updates while the run is running.</DialogDescription>
                   </DialogHeader>
                   <Tabs defaultValue="overview">
                     <TabsList className="h-8 flex flex-wrap">
@@ -1324,39 +1488,1170 @@ export function QuellenFinder({
                       </div>
                     </TabsContent>
                     <TabsContent value="facets" className="mt-3">
-                      <pre className="text-xs overflow-auto max-h-[65vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
-                        {JSON.stringify(telemetryById.get("phase_b_plan") ?? {}, null, 2)}
-                      </pre>
+                      <div className="space-y-4">
+                        {Object.keys(phaseBPlan).length === 0 ? (
+                          <div className="text-sm text-muted-foreground">Waiting for Phase B (facets plan)…</div>
+                        ) : null}
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                          <div className="rounded-md border border-border p-3">
+                            <div className="text-sm font-medium mb-1">Topic summary (EN)</div>
+                            <div className="text-xs text-muted-foreground whitespace-pre-wrap">
+                              {typeof phaseBPlan["topic_summary_en"] === "string" && String(phaseBPlan["topic_summary_en"]).trim()
+                                ? String(phaseBPlan["topic_summary_en"])
+                                : "—"}
+                            </div>
+                          </div>
+                          <div className="rounded-md border border-border p-3">
+                            <div className="text-sm font-medium mb-1">Topic summary (DE)</div>
+                            <div className="text-xs text-muted-foreground whitespace-pre-wrap">
+                              {typeof phaseBPlan["topic_summary_de"] === "string" && String(phaseBPlan["topic_summary_de"]).trim()
+                                ? String(phaseBPlan["topic_summary_de"])
+                                : "—"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                          <div className="rounded-md border border-border p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-sm font-medium">Primary anchors</div>
+                              <Badge variant="outline" className="tabular-nums">
+                                {primaryAnchorsEn.length + primaryAnchorsDe.length}
+                              </Badge>
+                            </div>
+                            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="space-y-1">
+                                <div className="text-xs text-muted-foreground">EN</div>
+                                <TermBadges terms={primaryAnchorsEn} />
+                              </div>
+                              <div className="space-y-1">
+                                <div className="text-xs text-muted-foreground">DE</div>
+                                <TermBadges terms={primaryAnchorsDe} />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-md border border-border p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-sm font-medium">Global terms</div>
+                              <Badge variant="outline" className="tabular-nums">
+                                {globalCanonicalTermsEn.length + globalCanonicalTermsDe.length}
+                              </Badge>
+                            </div>
+                            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="space-y-1">
+                                <div className="text-xs text-muted-foreground">EN</div>
+                                <TermBadges terms={globalCanonicalTermsEn} />
+                              </div>
+                              <div className="space-y-1">
+                                <div className="text-xs text-muted-foreground">DE</div>
+                                <TermBadges terms={globalCanonicalTermsDe} />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-md border border-border p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-sm font-medium">Global exclusions</div>
+                              <Badge variant="outline" className="tabular-nums">
+                                {globalExclusionsEn.length + globalExclusionsDe.length}
+                              </Badge>
+                            </div>
+                            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="space-y-1">
+                                <div className="text-xs text-muted-foreground">EN</div>
+                                <TermBadges terms={globalExclusionsEn} />
+                              </div>
+                              <div className="space-y-1">
+                                <div className="text-xs text-muted-foreground">DE</div>
+                                <TermBadges terms={globalExclusionsDe} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-md border border-border overflow-x-auto">
+                          <div className="px-3 py-2 border-b border-border">
+                            <div className="text-sm font-medium">Facets</div>
+                            <div className="text-xs text-muted-foreground">Summary table (expand below for full details).</div>
+                          </div>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-[70px]">Weight</TableHead>
+                                <TableHead className="w-[160px]">Type</TableHead>
+                                <TableHead className="w-[260px]">Facet</TableHead>
+                                <TableHead className="min-w-[280px]">Label (EN)</TableHead>
+                                <TableHead className="min-w-[280px] hidden lg:table-cell">Label (DE)</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {facets.map((f, idx) => {
+                                const fid = typeof f["facet_id"] === "string" ? String(f["facet_id"]) : "";
+                                const weight = asIntOrNull(f["importance_weight"]);
+                                const typ = typeof f["facet_type"] === "string" ? String(f["facet_type"]) : "";
+                                const labelEn = typeof f["facet_label_en"] === "string" ? String(f["facet_label_en"]) : "";
+                                const labelDe = typeof f["facet_label_de"] === "string" ? String(f["facet_label_de"]) : "";
+                                return (
+                                  <TableRow key={fid || `${idx}`}>
+                                    <TableCell className="tabular-nums">{typeof weight === "number" ? weight : "—"}</TableCell>
+                                    <TableCell className="text-xs">{typ || "—"}</TableCell>
+                                    <TableCell className="font-mono text-xs">{fid || "—"}</TableCell>
+                                    <TableCell className="text-xs">{labelEn || "—"}</TableCell>
+                                    <TableCell className="text-xs hidden lg:table-cell">{labelDe || "—"}</TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                              {facets.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={5} className="text-sm text-muted-foreground">
+                                    No facets available yet.
+                                  </TableCell>
+                                </TableRow>
+                              ) : null}
+                            </TableBody>
+                          </Table>
+                        </div>
+
+                        <div className="space-y-2">
+                          {facets.map((f, idx) => {
+                            const fid = typeof f["facet_id"] === "string" ? String(f["facet_id"]) : "";
+                            const weight = asIntOrNull(f["importance_weight"]);
+                            const typ = typeof f["facet_type"] === "string" ? String(f["facet_type"]) : "";
+                            const labelEn = typeof f["facet_label_en"] === "string" ? String(f["facet_label_en"]) : "";
+                            const labelDe = typeof f["facet_label_de"] === "string" ? String(f["facet_label_de"]) : "";
+                            const textEn = typeof f["text_en"] === "string" ? String(f["text_en"]) : "";
+                            const textDe = typeof f["text_de"] === "string" ? String(f["text_de"]) : "";
+
+                            const canonical = asRecord(f["canonical_terms"]);
+                            const neighbors = asRecord(f["neighbor_terms"]);
+                            const exclusions = asRecord(f["exclusion_terms"]);
+                            const canonicalEn = asStringArray(canonical["en"]);
+                            const canonicalDe = asStringArray(canonical["de"]);
+                            const neighborsEn = asStringArray(neighbors["en"]);
+                            const neighborsDe = asStringArray(neighbors["de"]);
+                            const exclusionsEn = asStringArray(exclusions["en"]);
+                            const exclusionsDe = asStringArray(exclusions["de"]);
+
+                            return (
+                              <details key={fid || `${idx}`} className="rounded-md border border-border p-3">
+                                <summary className="cursor-pointer select-none">
+                                  <div className="flex items-start gap-2">
+                                    <Badge variant="secondary" className="tabular-nums">
+                                      {typeof weight === "number" ? weight : "—"}
+                                    </Badge>
+                                    <div className="min-w-0">
+                                      <div className="text-sm font-medium">{labelEn || fid || "(facet)"}</div>
+                                      <div className="text-xs text-muted-foreground line-clamp-1">
+                                        {typ || "—"}
+                                        {fid ? ` • ${fid}` : ""}
+                                        {labelDe ? ` • ${labelDe}` : ""}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </summary>
+
+                                <div className="mt-3 space-y-3">
+                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                    <div className="rounded-md border border-border p-3 bg-muted/20">
+                                      <div className="text-xs text-muted-foreground">Text (EN)</div>
+                                      <div className="text-xs whitespace-pre-wrap">{textEn || "—"}</div>
+                                    </div>
+                                    <div className="rounded-md border border-border p-3 bg-muted/20">
+                                      <div className="text-xs text-muted-foreground">Text (DE)</div>
+                                      <div className="text-xs whitespace-pre-wrap">{textDe || "—"}</div>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                    <div className="rounded-md border border-border p-3">
+                                      <div className="text-sm font-medium mb-2">Terms (EN)</div>
+                                      <div className="space-y-3">
+                                        <div className="space-y-1">
+                                          <div className="text-xs text-muted-foreground">Canonical</div>
+                                          <TermBadges terms={canonicalEn} max={18} />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <div className="text-xs text-muted-foreground">Neighbors</div>
+                                          <TermBadges terms={neighborsEn} max={18} />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <div className="text-xs text-muted-foreground">Exclusions</div>
+                                          <TermBadges terms={exclusionsEn} max={18} />
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="rounded-md border border-border p-3">
+                                      <div className="text-sm font-medium mb-2">Terms (DE)</div>
+                                      <div className="space-y-3">
+                                        <div className="space-y-1">
+                                          <div className="text-xs text-muted-foreground">Canonical</div>
+                                          <TermBadges terms={canonicalDe} max={18} />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <div className="text-xs text-muted-foreground">Neighbors</div>
+                                          <TermBadges terms={neighborsDe} max={18} />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <div className="text-xs text-muted-foreground">Exclusions</div>
+                                          <TermBadges terms={exclusionsDe} max={18} />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </details>
+                            );
+                          })}
+                          {facets.length === 0 ? <div className="text-sm text-muted-foreground">No facet details yet.</div> : null}
+                        </div>
+
+                        <details>
+                          <summary className="text-xs text-muted-foreground cursor-pointer select-none">Raw JSON</summary>
+                          <pre className="mt-2 text-xs overflow-auto max-h-[45vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
+                            {JSON.stringify(phaseBPlan ?? {}, null, 2)}
+                          </pre>
+                        </details>
+                      </div>
                     </TabsContent>
                     <TabsContent value="queries" className="mt-3">
-                      <pre className="text-xs overflow-auto max-h-[65vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
-                        {JSON.stringify(telemetryById.get("phase_c_queries") ?? {}, null, 2)}
-                      </pre>
+                      <div className="space-y-4">
+                        {Object.keys(phaseCQueries).length === 0 ? (
+                          <div className="text-sm text-muted-foreground">Waiting for Phase C (queries)…</div>
+                        ) : null}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="rounded-md border border-border p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-sm font-medium">OpenAlex query length</div>
+                              <Badge variant="outline" className="tabular-nums">
+                                {openalexQueries.length}
+                              </Badge>
+                            </div>
+                            <div className="mt-2">
+                              <HistogramBars hist={openalexQueryLenHist} height={110} />
+                            </div>
+                          </div>
+
+                          <div className="rounded-md border border-border p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-sm font-medium">Semantic Scholar query length</div>
+                              <Badge variant="outline" className="tabular-nums">
+                                {s2BulkQueries.length}
+                              </Badge>
+                            </div>
+                            <div className="mt-2">
+                              <HistogramBars hist={s2QueryLenHist} height={110} />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-md border border-border overflow-x-auto">
+                          <div className="px-3 py-2 border-b border-border">
+                            <div className="text-sm font-medium">OpenAlex queries</div>
+                          </div>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-[64px]">#</TableHead>
+                                <TableHead className="w-[120px]">Intent/lang</TableHead>
+                                <TableHead className="min-w-[520px]">Query</TableHead>
+                                <TableHead className="min-w-[280px] hidden lg:table-cell">Notes</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {openalexQueries.map((q, i) => {
+                                const intent = typeof q["intent"] === "string" ? String(q["intent"]) : "unknown";
+                                const lang = typeof q["language"] === "string" ? String(q["language"]) : "unknown";
+                                const qs = typeof q["query_string"] === "string" ? String(q["query_string"]) : "";
+                                const notes = typeof q["notes"] === "string" ? String(q["notes"]) : "";
+                                const searchField = typeof q["search_field"] === "string" ? String(q["search_field"]) : "";
+                                const filters = typeof q["filters"] === "string" ? String(q["filters"]) : "";
+                                const sort = typeof q["sort"] === "string" ? String(q["sort"]) : "";
+                                const perPage = asIntOrNull(q["per_page"]);
+                                return (
+                                  <TableRow key={`${intent}-${lang}-${i}`}>
+                                    <TableCell className="tabular-nums">{i + 1}</TableCell>
+                                    <TableCell className="text-xs">
+                                      <Badge variant="outline" className="mr-1">
+                                        {intent}
+                                      </Badge>
+                                      <Badge variant="secondary">{lang}</Badge>
+                                    </TableCell>
+                                    <TableCell className="text-xs">
+                                      <div className="whitespace-pre-wrap">{qs || "—"}</div>
+                                      <div className="mt-1 text-[10px] font-mono text-muted-foreground line-clamp-1">
+                                        {searchField || "default.search"}
+                                        {filters ? ` • ${filters}` : ""}
+                                        {sort ? ` • ${sort}` : ""}
+                                        {typeof perPage === "number" ? ` • per_page=${perPage}` : ""}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{notes || "—"}</TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                              {openalexQueries.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={4} className="text-sm text-muted-foreground">
+                                    No OpenAlex queries yet.
+                                  </TableCell>
+                                </TableRow>
+                              ) : null}
+                            </TableBody>
+                          </Table>
+                        </div>
+
+                        <div className="rounded-md border border-border overflow-x-auto">
+                          <div className="px-3 py-2 border-b border-border">
+                            <div className="text-sm font-medium">Semantic Scholar bulk queries</div>
+                          </div>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-[64px]">#</TableHead>
+                                <TableHead className="w-[120px]">Intent/lang</TableHead>
+                                <TableHead className="min-w-[520px]">Query</TableHead>
+                                <TableHead className="min-w-[280px] hidden lg:table-cell">Notes</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {s2BulkQueries.map((q, i) => {
+                                const intent = typeof q["intent"] === "string" ? String(q["intent"]) : "unknown";
+                                const lang = typeof q["language"] === "string" ? String(q["language"]) : "unknown";
+                                const qs = typeof q["query_string"] === "string" ? String(q["query_string"]) : "";
+                                const notes = typeof q["notes"] === "string" ? String(q["notes"]) : "";
+                                return (
+                                  <TableRow key={`${intent}-${lang}-${i}`}>
+                                    <TableCell className="tabular-nums">{i + 1}</TableCell>
+                                    <TableCell className="text-xs">
+                                      <Badge variant="outline" className="mr-1">
+                                        {intent}
+                                      </Badge>
+                                      <Badge variant="secondary">{lang}</Badge>
+                                    </TableCell>
+                                    <TableCell className="text-xs whitespace-pre-wrap">{qs || "—"}</TableCell>
+                                    <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{notes || "—"}</TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                              {s2BulkQueries.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={4} className="text-sm text-muted-foreground">
+                                    No Semantic Scholar queries yet.
+                                  </TableCell>
+                                </TableRow>
+                              ) : null}
+                            </TableBody>
+                          </Table>
+                        </div>
+
+                        <details>
+                          <summary className="text-xs text-muted-foreground cursor-pointer select-none">Raw JSON</summary>
+                          <pre className="mt-2 text-xs overflow-auto max-h-[45vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
+                            {JSON.stringify(phaseCQueries ?? {}, null, 2)}
+                          </pre>
+                        </details>
+                      </div>
                     </TabsContent>
                     <TabsContent value="retrieval" className="mt-3">
-                      <pre className="text-xs overflow-auto max-h-[65vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
-                        {JSON.stringify(telemetryById.get("phase_d_retrieval") ?? {}, null, 2)}
-                      </pre>
+                      {(() => {
+                        const oa = asRecord(phaseDRetrieval["openalex"]);
+                        const s2 = asRecord(phaseDRetrieval["semanticscholar"]);
+
+                        const buildProvider = (
+                          provider: "openalex" | "semanticscholar",
+                          label: string,
+                          qs: Record<string, unknown>[]
+                        ): {
+                          label: string;
+                          total: number;
+                          queryRows: { qid: string; intent: string; lang: string; records: number; share: number | null; queryString: string; notes: string }[];
+                          byIntentLang: { key: string; records: number }[];
+                          years: { label: string; value: number }[];
+                          zeroIds: string[];
+                          fetchMeta: { queryFailed: number | null; recordsFetched: number | null };
+                          stats: { mean: number | null; median: number | null; p90: number | null; max: number | null };
+                        } => {
+                          const rec = provider === "openalex" ? oa : s2;
+                          const total = asIntOrNull(rec["records_total"]) ?? 0;
+                          const byQuery = asRecord(rec["records_by_query_id"]);
+                          const byIntentLangRec = asRecord(rec["records_by_intent_lang"]);
+                          const byYearRec = asRecord(rec["records_by_year"]);
+                          const zeroIds = asStringArray(rec["zero_result_query_ids"]);
+                          const fetchMetaRec = asRecord(rec["fetch_meta"]);
+                          const queryFailed = asIntOrNull(fetchMetaRec["query_failed"]);
+                          const recordsFetched = asIntOrNull(fetchMetaRec["records_fetched"]);
+
+                          const queryRows = qs.map((q, idx0) => {
+                            const intent = typeof q["intent"] === "string" ? String(q["intent"]) : "unknown";
+                            const lang = typeof q["language"] === "string" ? String(q["language"]) : "unknown";
+                            const qid = `${provider}:${idx0 + 1}:${intent}:${lang}`;
+                            const records = asIntOrNull(byQuery[qid]) ?? 0;
+                            const share = total > 0 ? records / total : null;
+                            const queryString = typeof q["query_string"] === "string" ? String(q["query_string"]) : "";
+                            const notes = typeof q["notes"] === "string" ? String(q["notes"]) : "";
+                            return { qid, intent, lang, records, share, queryString, notes };
+                          });
+
+                          const byIntentLang = Object.entries(byIntentLangRec)
+                            .map(([k, v]) => ({ key: String(k), records: asIntOrNull(v) ?? 0 }))
+                            .filter((r) => r.records > 0)
+                            .sort((a, b) => b.records - a.records);
+
+                          const years = Object.entries(byYearRec)
+                            .map(([k, v]) => ({ year: Number(k), value: asIntOrNull(v) ?? 0 }))
+                            .filter((r) => Number.isFinite(r.year) && r.value > 0)
+                            .sort((a, b) => a.year - b.year)
+                            .map((r) => ({ label: String(r.year), value: r.value }));
+
+                          const stats = summarizeCounts(queryRows.map((r) => r.records));
+
+                          return { label, total, queryRows, byIntentLang, years, zeroIds, fetchMeta: { queryFailed, recordsFetched }, stats };
+                        };
+
+                        const oaView = buildProvider("openalex", "OpenAlex", openalexQueries);
+                        const s2View = buildProvider("semanticscholar", "Semantic Scholar", s2BulkQueries);
+
+                        const ProviderBlock = ({
+                          view,
+                        }: {
+                          view: {
+                            label: string;
+                            total: number;
+                            queryRows: { qid: string; intent: string; lang: string; records: number; share: number | null; queryString: string; notes: string }[];
+                            byIntentLang: { key: string; records: number }[];
+                            years: { label: string; value: number }[];
+                            zeroIds: string[];
+                            fetchMeta: { queryFailed: number | null; recordsFetched: number | null };
+                            stats: { mean: number | null; median: number | null; p90: number | null; max: number | null };
+                          };
+                        }) => {
+                          const queryCount = view.queryRows.length;
+                          const zeroCount = view.zeroIds.length;
+                          const dominance = view.total > 0 ? ((view.stats.max ?? 0) / view.total) * 100 : null;
+                          const broad = [...view.queryRows].sort((a, b) => b.records - a.records).slice(0, 12);
+                          const narrow = [...view.queryRows].sort((a, b) => a.records - b.records).slice(0, 12);
+                          const yearsTail = view.years.length > 80 ? view.years.slice(-80) : view.years;
+
+                          return (
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline">{view.label}</Badge>
+                                <span className="text-xs text-muted-foreground tabular-nums">{view.total} records</span>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div className="rounded-md border border-border p-3">
+                                  <div className="text-xs text-muted-foreground">Queries</div>
+                                  <div className="text-sm font-medium tabular-nums">{queryCount}</div>
+                                </div>
+                                <div className="rounded-md border border-border p-3">
+                                  <div className="text-xs text-muted-foreground">Zero queries</div>
+                                  <div className="text-sm font-medium tabular-nums">{zeroCount}</div>
+                                  {queryCount ? (
+                                    <div className="text-[10px] text-muted-foreground tabular-nums">{((zeroCount / queryCount) * 100).toFixed(1)}%</div>
+                                  ) : null}
+                                </div>
+                                <div className="rounded-md border border-border p-3">
+                                  <div className="text-xs text-muted-foreground">Records/query</div>
+                                  <div className="text-sm font-medium tabular-nums">
+                                    {view.stats.mean !== null ? view.stats.mean.toFixed(1) : "—"}
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground tabular-nums">
+                                    median {view.stats.median !== null ? view.stats.median.toFixed(0) : "—"} • p90{" "}
+                                    {view.stats.p90 !== null ? view.stats.p90.toFixed(0) : "—"} • max{" "}
+                                    {view.stats.max !== null ? view.stats.max.toFixed(0) : "—"}
+                                  </div>
+                                </div>
+                                <div className="rounded-md border border-border p-3">
+                                  <div className="text-xs text-muted-foreground">Dominance</div>
+                                  <div className="text-sm font-medium tabular-nums">{dominance !== null ? `${dominance.toFixed(1)}%` : "—"}</div>
+                                  <div className="text-[10px] text-muted-foreground">
+                                    failed {view.fetchMeta.queryFailed ?? "—"} • fetched {view.fetchMeta.recordsFetched ?? "—"}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                <div className="rounded-md border border-border overflow-x-auto">
+                                  <div className="px-3 py-2 border-b border-border">
+                                    <div className="text-sm font-medium">Records by intent/lang</div>
+                                  </div>
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Intent/lang</TableHead>
+                                        <TableHead className="w-[120px]">Records</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {view.byIntentLang.map((r) => (
+                                        <TableRow key={r.key}>
+                                          <TableCell className="font-mono text-xs">{r.key}</TableCell>
+                                          <TableCell className="tabular-nums">{r.records}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                      {view.byIntentLang.length === 0 ? (
+                                        <TableRow>
+                                          <TableCell colSpan={2} className="text-sm text-muted-foreground">
+                                            No records yet.
+                                          </TableCell>
+                                        </TableRow>
+                                      ) : null}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+
+                                <div className="rounded-md border border-border p-3">
+                                  <div className="text-sm font-medium mb-2">Records by year</div>
+                                  <BarList rows={yearsTail} maxRows={5000} />
+                                  {view.years.length > yearsTail.length ? (
+                                    <details className="mt-2">
+                                      <summary className="text-xs text-muted-foreground cursor-pointer select-none">
+                                        Show full distribution ({view.years.length} years)
+                                      </summary>
+                                      <div className="mt-2">
+                                        <BarList rows={view.years} maxRows={5000} />
+                                      </div>
+                                    </details>
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                <div className="rounded-md border border-border overflow-x-auto">
+                                  <div className="px-3 py-2 border-b border-border">
+                                    <div className="text-sm font-medium">Broad queries (top by records)</div>
+                                  </div>
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead className="w-[64px]">#</TableHead>
+                                        <TableHead className="w-[120px]">Intent/lang</TableHead>
+                                        <TableHead className="w-[120px]">Records</TableHead>
+                                        <TableHead>Query</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {broad.map((r, i) => (
+                                        <TableRow key={r.qid}>
+                                          <TableCell className="tabular-nums">{i + 1}</TableCell>
+                                          <TableCell className="text-xs">
+                                            <Badge variant="outline" className="mr-1">
+                                              {r.intent}
+                                            </Badge>
+                                            <Badge variant="secondary">{r.lang}</Badge>
+                                          </TableCell>
+                                          <TableCell className="tabular-nums">
+                                            {r.records}
+                                            {r.share !== null ? <span className="text-[10px] text-muted-foreground"> ({(r.share * 100).toFixed(1)}%)</span> : null}
+                                          </TableCell>
+                                          <TableCell className="text-xs">
+                                            <div className="whitespace-pre-wrap line-clamp-2">{r.queryString || "—"}</div>
+                                            {r.notes ? <div className="text-[10px] text-muted-foreground line-clamp-1">{r.notes}</div> : null}
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                      {broad.length === 0 ? (
+                                        <TableRow>
+                                          <TableCell colSpan={4} className="text-sm text-muted-foreground">
+                                            No query stats yet.
+                                          </TableCell>
+                                        </TableRow>
+                                      ) : null}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+
+                                <div className="rounded-md border border-border overflow-x-auto">
+                                  <div className="px-3 py-2 border-b border-border">
+                                    <div className="text-sm font-medium">Narrow queries (bottom by records)</div>
+                                  </div>
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead className="w-[64px]">#</TableHead>
+                                        <TableHead className="w-[120px]">Intent/lang</TableHead>
+                                        <TableHead className="w-[120px]">Records</TableHead>
+                                        <TableHead>Query</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {narrow.map((r, i) => (
+                                        <TableRow key={r.qid}>
+                                          <TableCell className="tabular-nums">{i + 1}</TableCell>
+                                          <TableCell className="text-xs">
+                                            <Badge variant="outline" className="mr-1">
+                                              {r.intent}
+                                            </Badge>
+                                            <Badge variant="secondary">{r.lang}</Badge>
+                                          </TableCell>
+                                          <TableCell className="tabular-nums">
+                                            {r.records}
+                                            {r.share !== null ? <span className="text-[10px] text-muted-foreground"> ({(r.share * 100).toFixed(1)}%)</span> : null}
+                                          </TableCell>
+                                          <TableCell className="text-xs">
+                                            <div className="whitespace-pre-wrap line-clamp-2">{r.queryString || "—"}</div>
+                                            {r.notes ? <div className="text-[10px] text-muted-foreground line-clamp-1">{r.notes}</div> : null}
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                      {narrow.length === 0 ? (
+                                        <TableRow>
+                                          <TableCell colSpan={4} className="text-sm text-muted-foreground">
+                                            No query stats yet.
+                                          </TableCell>
+                                        </TableRow>
+                                      ) : null}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </div>
+
+                              {view.zeroIds.length ? (
+                                <details>
+                                  <summary className="text-xs text-muted-foreground cursor-pointer select-none">Zero-result query ids ({view.zeroIds.length})</summary>
+                                  <pre className="mt-2 text-xs overflow-auto max-h-[30vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
+                                    {view.zeroIds.join("\n")}
+                                  </pre>
+                                </details>
+                              ) : null}
+                            </div>
+                          );
+                        };
+
+                        return (
+                          <div className="space-y-6">
+                            {Object.keys(phaseDRetrieval).length === 0 ? (
+                              <div className="text-sm text-muted-foreground">Waiting for Phase D (retrieval)…</div>
+                            ) : null}
+                            <ProviderBlock view={oaView} />
+                            <Separator />
+                            <ProviderBlock view={s2View} />
+
+                            <details>
+                              <summary className="text-xs text-muted-foreground cursor-pointer select-none">Raw JSON</summary>
+                              <pre className="mt-2 text-xs overflow-auto max-h-[45vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
+                                {JSON.stringify(phaseDRetrieval ?? {}, null, 2)}
+                              </pre>
+                            </details>
+                          </div>
+                        );
+                      })()}
                     </TabsContent>
                     <TabsContent value="candidates" className="mt-3">
-                      <pre className="text-xs overflow-auto max-h-[65vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
-                        {JSON.stringify(telemetryById.get("phase_e_candidates") ?? {}, null, 2)}
-                      </pre>
+                      {(() => {
+                        const counts = asRecord(phaseECandidates["counts"]);
+                        const byLanePool = asRecord(counts["by_lane_pool"]);
+                        const poolCounts = asRecord(counts["pool"]);
+                        const total = asIntOrNull(counts["candidates_total"]);
+                        const doiPresent = asIntOrNull(counts["doi_present"]);
+                        const yearMissing = asIntOrNull(counts["year_missing"]);
+
+                        const byLanePoolRows = Object.entries(byLanePool)
+                          .map(([k, v]) => ({ key: String(k), count: asIntOrNull(v) ?? 0 }))
+                          .sort((a, b) => b.count - a.count);
+
+                        const topNoAnchors = asRecordArray(phaseECandidates["top_cited_no_anchors"]);
+                        const topEcon = asRecordArray(phaseECandidates["top_econ_hit"]);
+
+                        return (
+                          <div className="space-y-4">
+                            {Object.keys(phaseECandidates).length === 0 ? (
+                              <div className="text-sm text-muted-foreground">Waiting for Phase E (candidates)…</div>
+                            ) : null}
+
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Candidates</div>
+                                <div className="text-sm font-medium tabular-nums">{typeof total === "number" ? total : "—"}</div>
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Pools</div>
+                                <div className="text-xs text-muted-foreground space-y-1 mt-1">
+                                  {Object.entries(poolCounts).map(([k, v]) => (
+                                    <div key={k} className="flex items-center justify-between gap-2">
+                                      <span className="font-mono text-[10px]">{k}</span>
+                                      <span className="tabular-nums">{asIntOrNull(v) ?? 0}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">DOI present</div>
+                                <div className="text-sm font-medium tabular-nums">{typeof doiPresent === "number" ? doiPresent : "—"}</div>
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Year missing</div>
+                                <div className="text-sm font-medium tabular-nums">{typeof yearMissing === "number" ? yearMissing : "—"}</div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-md border border-border overflow-x-auto">
+                              <div className="px-3 py-2 border-b border-border">
+                                <div className="text-sm font-medium">Counts by lane/pool</div>
+                              </div>
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Lane/pool</TableHead>
+                                    <TableHead className="w-[120px]">Count</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {byLanePoolRows.map((r) => (
+                                    <TableRow key={r.key}>
+                                      <TableCell className="font-mono text-xs">{r.key}</TableCell>
+                                      <TableCell className="tabular-nums">{r.count}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                  {byLanePoolRows.length === 0 ? (
+                                    <TableRow>
+                                      <TableCell colSpan={2} className="text-sm text-muted-foreground">
+                                        No lane/pool counts yet.
+                                      </TableCell>
+                                    </TableRow>
+                                  ) : null}
+                                </TableBody>
+                              </Table>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                              <div className="rounded-md border border-border overflow-x-auto">
+                                <div className="px-3 py-2 border-b border-border">
+                                  <div className="text-sm font-medium">Top cited but NO anchors</div>
+                                </div>
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="w-[90px]">Cites</TableHead>
+                                      <TableHead className="w-[80px]">Year</TableHead>
+                                      <TableHead className="w-[140px]">Pool</TableHead>
+                                      <TableHead>Title</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {topNoAnchors.map((r, idx) => {
+                                      const id = typeof r["id"] === "string" ? String(r["id"]) : "";
+                                      const cites = asIntOrNull(r["citations"]);
+                                      const year = asIntOrNull(r["year"]);
+                                      const pool = typeof r["pool"] === "string" ? String(r["pool"]) : "";
+                                      const title = typeof r["title"] === "string" ? String(r["title"]) : "";
+                                      return (
+                                        <TableRow key={id || `${idx}`}>
+                                          <TableCell className="tabular-nums">{typeof cites === "number" ? cites : "—"}</TableCell>
+                                          <TableCell className="tabular-nums">{typeof year === "number" ? year : "—"}</TableCell>
+                                          <TableCell className="text-xs font-mono">{pool || "—"}</TableCell>
+                                          <TableCell className="text-xs">
+                                            <div className="line-clamp-2">{title || id || "—"}</div>
+                                          </TableCell>
+                                        </TableRow>
+                                      );
+                                    })}
+                                    {topNoAnchors.length === 0 ? (
+                                      <TableRow>
+                                        <TableCell colSpan={4} className="text-sm text-muted-foreground">
+                                          No rows yet.
+                                        </TableCell>
+                                      </TableRow>
+                                    ) : null}
+                                  </TableBody>
+                                </Table>
+                              </div>
+
+                              <div className="rounded-md border border-border overflow-x-auto">
+                                <div className="px-3 py-2 border-b border-border">
+                                  <div className="text-sm font-medium">Top econ-hit candidates</div>
+                                </div>
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="w-[90px]">Hits</TableHead>
+                                      <TableHead className="w-[90px]">Cites</TableHead>
+                                      <TableHead className="w-[80px]">Year</TableHead>
+                                      <TableHead className="w-[140px]">Pool</TableHead>
+                                      <TableHead>Title</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {topEcon.map((r, idx) => {
+                                      const id = typeof r["id"] === "string" ? String(r["id"]) : "";
+                                      const hits = asIntOrNull(r["econ_hits"]);
+                                      const cites = asIntOrNull(r["citations"]);
+                                      const year = asIntOrNull(r["year"]);
+                                      const pool = typeof r["pool"] === "string" ? String(r["pool"]) : "";
+                                      const title = typeof r["title"] === "string" ? String(r["title"]) : "";
+                                      const anchorHit = Boolean(r["anchor_hit"]);
+                                      return (
+                                        <TableRow key={id || `${idx}`}>
+                                          <TableCell className="tabular-nums">{typeof hits === "number" ? hits : "—"}</TableCell>
+                                          <TableCell className="tabular-nums">{typeof cites === "number" ? cites : "—"}</TableCell>
+                                          <TableCell className="tabular-nums">{typeof year === "number" ? year : "—"}</TableCell>
+                                          <TableCell className="text-xs font-mono">
+                                            {pool || "—"}
+                                            {anchorHit ? (
+                                              <Badge variant="outline" className="ml-2">
+                                                anchor
+                                              </Badge>
+                                            ) : null}
+                                          </TableCell>
+                                          <TableCell className="text-xs">
+                                            <div className="line-clamp-2">{title || id || "—"}</div>
+                                          </TableCell>
+                                        </TableRow>
+                                      );
+                                    })}
+                                    {topEcon.length === 0 ? (
+                                      <TableRow>
+                                        <TableCell colSpan={5} className="text-sm text-muted-foreground">
+                                          No rows yet.
+                                        </TableCell>
+                                      </TableRow>
+                                    ) : null}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </div>
+
+                            <details>
+                              <summary className="text-xs text-muted-foreground cursor-pointer select-none">Raw JSON</summary>
+                              <pre className="mt-2 text-xs overflow-auto max-h-[45vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
+                                {JSON.stringify(phaseECandidates ?? {}, null, 2)}
+                              </pre>
+                            </details>
+                          </div>
+                        );
+                      })()}
                     </TabsContent>
                     <TabsContent value="scoring" className="mt-3">
-                      <pre className="text-xs overflow-auto max-h-[65vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
-                        {JSON.stringify(telemetryById.get("phase_f_scoring") ?? {}, null, 2)}
-                      </pre>
+                      {(() => {
+                        const counts = asRecord(phaseFScoring["counts"]);
+                        const anchorRate = asRecord(phaseFScoring["anchor_hit_rate_top20"]);
+                        const dist = asRecord(phaseFScoring["distributions"]);
+                        const matchDist = asRecord(dist["match_lane"]);
+                        const authDist = asRecord(dist["authority_lane"]);
+
+                        const candidates = asIntOrNull(counts["candidates"]);
+                        const facetsN = asIntOrNull(counts["facets"]);
+                        const stage2Candidates = asIntOrNull(counts["stage2_candidates"]);
+
+                        const prune = asRecord(counts["prune"]);
+                        const kept = asRecord(prune["kept"]);
+                        const keptMatch = asRecord(kept["match"]);
+                        const keptAuthority = asRecord(kept["authority"]);
+                        const keptRows = [
+                          { lane: "match", pool: "with_abstract", n: asIntOrNull(keptMatch["with_abstract"]) ?? 0 },
+                          { lane: "match", pool: "without_abstract", n: asIntOrNull(keptMatch["without_abstract"]) ?? 0 },
+                          { lane: "authority", pool: "with_abstract", n: asIntOrNull(keptAuthority["with_abstract"]) ?? 0 },
+                          { lane: "authority", pool: "without_abstract", n: asIntOrNull(keptAuthority["without_abstract"]) ?? 0 },
+                        ];
+
+                        const anchorRows = Object.entries(anchorRate)
+                          .map(([k, v]) => {
+                            const rec = asRecord(v);
+                            const topN = asIntOrNull(rec["top_n"]) ?? 0;
+                            const hits = asIntOrNull(rec["anchor_hits"]) ?? 0;
+                            const [lane, pool] = String(k).split("/", 2);
+                            const rate = topN > 0 ? hits / topN : null;
+                            return { key: String(k), lane, pool, topN, hits, rate };
+                          })
+                          .sort((a, b) => a.key.localeCompare(b.key));
+
+                        return (
+                          <div className="space-y-4">
+                            {Object.keys(phaseFScoring).length === 0 ? (
+                              <div className="text-sm text-muted-foreground">Waiting for Phase F (scoring)…</div>
+                            ) : null}
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Candidates</div>
+                                <div className="text-sm font-medium tabular-nums">{typeof candidates === "number" ? candidates : "—"}</div>
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Facets</div>
+                                <div className="text-sm font-medium tabular-nums">{typeof facetsN === "number" ? facetsN : "—"}</div>
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Stage2 candidates</div>
+                                <div className="text-sm font-medium tabular-nums">{typeof stage2Candidates === "number" ? stage2Candidates : "—"}</div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                              <div className="rounded-md border border-border overflow-x-auto">
+                                <div className="px-3 py-2 border-b border-border">
+                                  <div className="text-sm font-medium">Kept per lane/pool</div>
+                                </div>
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Lane</TableHead>
+                                      <TableHead>Pool</TableHead>
+                                      <TableHead className="w-[120px]">Kept</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {keptRows.map((r) => (
+                                      <TableRow key={`${r.lane}/${r.pool}`}>
+                                        <TableCell className="text-xs">
+                                          <Badge variant="outline">{r.lane}</Badge>
+                                        </TableCell>
+                                        <TableCell className="text-xs font-mono">{r.pool}</TableCell>
+                                        <TableCell className="tabular-nums">{r.n}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+
+                              <div className="rounded-md border border-border overflow-x-auto">
+                                <div className="px-3 py-2 border-b border-border">
+                                  <div className="text-sm font-medium">Anchor hit rate (top-20)</div>
+                                </div>
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Lane</TableHead>
+                                      <TableHead>Pool</TableHead>
+                                      <TableHead className="w-[110px]">Hits</TableHead>
+                                      <TableHead className="w-[110px]">Top N</TableHead>
+                                      <TableHead className="w-[110px]">Rate</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {anchorRows.map((r) => (
+                                      <TableRow key={r.key}>
+                                        <TableCell className="text-xs">
+                                          <Badge variant="outline">{r.lane || "—"}</Badge>
+                                        </TableCell>
+                                        <TableCell className="text-xs font-mono">{r.pool || "—"}</TableCell>
+                                        <TableCell className="tabular-nums">{r.hits}</TableCell>
+                                        <TableCell className="tabular-nums">{r.topN}</TableCell>
+                                        <TableCell className="tabular-nums">{r.rate !== null ? `${(r.rate * 100).toFixed(0)}%` : "—"}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                    {anchorRows.length === 0 ? (
+                                      <TableRow>
+                                        <TableCell colSpan={5} className="text-sm text-muted-foreground">
+                                          No anchor stats yet.
+                                        </TableCell>
+                                      </TableRow>
+                                    ) : null}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-sm font-medium mb-2">Match lane — with abstract</div>
+                                <HistogramBars hist={asRecord(matchDist["with_abstract"])} height={110} />
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-sm font-medium mb-2">Match lane — without abstract</div>
+                                <HistogramBars hist={asRecord(matchDist["without_abstract"])} height={110} />
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-sm font-medium mb-2">Authority lane — with abstract</div>
+                                <HistogramBars hist={asRecord(authDist["with_abstract"])} height={110} />
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-sm font-medium mb-2">Authority lane — without abstract</div>
+                                <HistogramBars hist={asRecord(authDist["without_abstract"])} height={110} />
+                              </div>
+                            </div>
+
+                            <div className="rounded-md border border-border p-3">
+                              <div className="text-sm font-medium mb-2">Match vs authority (sample)</div>
+                              <ScatterMatchAuthority points={phaseFScoring["scatter_match_vs_authority_sample"]} />
+                            </div>
+
+                            <details>
+                              <summary className="text-xs text-muted-foreground cursor-pointer select-none">Raw JSON</summary>
+                              <pre className="mt-2 text-xs overflow-auto max-h-[45vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
+                                {JSON.stringify(phaseFScoring ?? {}, null, 2)}
+                              </pre>
+                            </details>
+                          </div>
+                        );
+                      })()}
                     </TabsContent>
                     <TabsContent value="rerank" className="mt-3">
-                      <pre className="text-xs overflow-auto max-h-[65vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
-                        {JSON.stringify(telemetryById.get("phase_i_rerank") ?? {}, null, 2)}
-                      </pre>
+                      {(() => {
+                        const counts = asRecord(phaseIRerank["counts"]);
+                        const modelUsed =
+                          typeof counts["model_used"] === "string"
+                            ? String(counts["model_used"])
+                            : typeof counts["model"] === "string"
+                              ? String(counts["model"])
+                              : null;
+                        const tasksTotal = asIntOrNull(counts["tasks_total"]);
+                        const apiCalls = asIntOrNull(counts["api_calls"]);
+                        const failures = asIntOrNull(counts["failures"]);
+                        const costUsd = asNumberOrNull(counts["cost_usd_total"]) ?? asNumberOrNull(counts["cost_usd_est_total"]);
+                        const latencyP50 = asNumberOrNull(counts["latency_s_p50"]);
+                        const insufficientTotal = asIntOrNull(phaseIRerank["insufficient_total"]);
+
+                        const insuffByLanePool = asRecord(counts["insufficient_by_lane_pool"]);
+                        const insuffRows = Object.entries(insuffByLanePool)
+                          .map(([k, v]) => ({ key: String(k), n: asIntOrNull(v) ?? 0 }))
+                          .sort((a, b) => b.n - a.n);
+
+                        return (
+                          <div className="space-y-4">
+                            {Object.keys(phaseIRerank).length === 0 ? (
+                              <div className="text-sm text-muted-foreground">Waiting for Phase I (rerank)…</div>
+                            ) : null}
+
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Model</div>
+                                <div className="text-sm font-medium">{modelUsed || "—"}</div>
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Tasks</div>
+                                <div className="text-sm font-medium tabular-nums">{typeof tasksTotal === "number" ? tasksTotal : "—"}</div>
+                                <div className="text-[10px] text-muted-foreground tabular-nums">
+                                  calls {typeof apiCalls === "number" ? apiCalls : "—"} • failures {typeof failures === "number" ? failures : "—"}
+                                </div>
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Cost</div>
+                                <div className="text-sm font-medium tabular-nums">{typeof costUsd === "number" ? `$${costUsd.toFixed(4)}` : "—"}</div>
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Insufficient</div>
+                                <div className="text-sm font-medium tabular-nums">{typeof insufficientTotal === "number" ? insufficientTotal : "—"}</div>
+                                <div className="text-[10px] text-muted-foreground tabular-nums">{typeof latencyP50 === "number" ? `p50 ${latencyP50.toFixed(1)}s` : ""}</div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-md border border-border p-3">
+                              <div className="text-sm font-medium mb-2">LLM score distribution</div>
+                              <HistogramBars hist={phaseIRerank["llm_score_hist"]} height={120} />
+                            </div>
+
+                            {insuffRows.length ? (
+                              <div className="rounded-md border border-border overflow-x-auto">
+                                <div className="px-3 py-2 border-b border-border">
+                                  <div className="text-sm font-medium">Insufficient by lane/pool</div>
+                                </div>
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Lane/pool</TableHead>
+                                      <TableHead className="w-[120px]">Count</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {insuffRows.map((r) => (
+                                      <TableRow key={r.key}>
+                                        <TableCell className="font-mono text-xs">{r.key}</TableCell>
+                                        <TableCell className="tabular-nums">{r.n}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            ) : null}
+
+                            <details>
+                              <summary className="text-xs text-muted-foreground cursor-pointer select-none">Raw JSON</summary>
+                              <pre className="mt-2 text-xs overflow-auto max-h-[45vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
+                                {JSON.stringify(phaseIRerank ?? {}, null, 2)}
+                              </pre>
+                            </details>
+                          </div>
+                        );
+                      })()}
                     </TabsContent>
                     <TabsContent value="metrics" className="mt-3">
-                      <pre className="text-xs overflow-auto max-h-[65vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
-                        {JSON.stringify(telemetryById.get("metrics") ?? {}, null, 2)}
-                      </pre>
+                      {(() => {
+                        const stages = asRecord(metricsDoc["stages"]);
+                        const rows = Object.entries(stages)
+                          .map(([stage, v]) => {
+                            const rec = asRecord(v);
+                            const dur = asNumberOrNull(rec["last_duration_s"]);
+                            const oa = asRecord(rec["openai"]);
+                            const modelUsed = typeof oa["model_used"] === "string" ? String(oa["model_used"]) : null;
+                            const cost = asNumberOrNull(oa["cost_usd"]);
+                            return { stage: String(stage), dur, modelUsed, cost };
+                          })
+                          .sort((a, b) => (b.dur ?? -1) - (a.dur ?? -1));
+
+                        return (
+                          <div className="space-y-4">
+                            {Object.keys(metricsDoc).length === 0 ? (
+                              <div className="text-sm text-muted-foreground">Waiting for metrics…</div>
+                            ) : null}
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Created (UTC)</div>
+                                <div className="text-sm font-medium">
+                                  {typeof metricsDoc["created_at_utc"] === "string" ? String(metricsDoc["created_at_utc"]) : "—"}
+                                </div>
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Updated (UTC)</div>
+                                <div className="text-sm font-medium">
+                                  {typeof metricsDoc["updated_at_utc"] === "string" ? String(metricsDoc["updated_at_utc"]) : "—"}
+                                </div>
+                              </div>
+                              <div className="rounded-md border border-border p-3">
+                                <div className="text-xs text-muted-foreground">Stages</div>
+                                <div className="text-sm font-medium tabular-nums">{rows.length}</div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-md border border-border overflow-x-auto">
+                              <div className="px-3 py-2 border-b border-border">
+                                <div className="text-sm font-medium">Stage timings (metrics.json)</div>
+                              </div>
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Stage</TableHead>
+                                    <TableHead className="w-[120px]">Seconds</TableHead>
+                                    <TableHead className="min-w-[240px] hidden lg:table-cell">Model used</TableHead>
+                                    <TableHead className="w-[120px] hidden lg:table-cell">Cost</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {rows.map((r) => (
+                                    <TableRow key={r.stage}>
+                                      <TableCell className="font-mono text-xs">{r.stage}</TableCell>
+                                      <TableCell className="tabular-nums">{typeof r.dur === "number" ? Math.round(r.dur) : "—"}</TableCell>
+                                      <TableCell className="text-xs hidden lg:table-cell">{r.modelUsed || "—"}</TableCell>
+                                      <TableCell className="tabular-nums hidden lg:table-cell">
+                                        {typeof r.cost === "number" ? `$${r.cost.toFixed(4)}` : "—"}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                  {rows.length === 0 ? (
+                                    <TableRow>
+                                      <TableCell colSpan={4} className="text-sm text-muted-foreground">
+                                        No stage metrics yet.
+                                      </TableCell>
+                                    </TableRow>
+                                  ) : null}
+                                </TableBody>
+                              </Table>
+                            </div>
+
+                            <details>
+                              <summary className="text-xs text-muted-foreground cursor-pointer select-none">Raw JSON</summary>
+                              <pre className="mt-2 text-xs overflow-auto max-h-[45vh] whitespace-pre-wrap rounded-md border border-border p-3 bg-muted/30">
+                                {JSON.stringify(metricsDoc ?? {}, null, 2)}
+                              </pre>
+                            </details>
+                          </div>
+                        );
+                      })()}
                     </TabsContent>
                   </Tabs>
                 </DialogContent>
@@ -1366,6 +2661,7 @@ export function QuellenFinder({
                 <DialogContent className="max-w-2xl">
                   <DialogHeader>
                     <DialogTitle>Two-lane settings</DialogTitle>
+                    <DialogDescription>Configure models and runtime settings for the two-lane pipeline.</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

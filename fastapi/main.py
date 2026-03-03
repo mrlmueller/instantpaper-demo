@@ -5099,51 +5099,14 @@ async def quellen_finder_sources_two_lane_start(
         "thema": str((kapitel or {}).get("thema") or "").strip() or None,
     }
 
-    resume_run_id = str(getattr(request, "resume_run_id", "") or "").strip()
-    if resume_run_id:
-        snap = fs.run_ref(user_id, projekt_id, resume_run_id).get()
-        if snap is None or not getattr(snap, "exists", False):
-            raise HTTPException(status_code=404, detail="Run not found.")
-        data = snap.to_dict() if snap is not None else {}
-        if str((data or {}).get("kind") or "") != "sources_two_lane":
-            raise HTTPException(status_code=400, detail="Run is not a two-lane sources run.")
-        status_now = str((data or {}).get("status") or "")
-        if status_now in {"queued", "running"}:
-            raise HTTPException(status_code=409, detail=f"Run is currently {status_now}.")
-
-        run_kapitel_ids = list((data or {}).get("kapitelIds") or [])
-        if kapitel_id not in run_kapitel_ids:
-            raise HTTPException(status_code=400, detail="kapitel_id does not match the run to resume.")
-
-        run_id = resume_run_id
-        fs.run_ref(user_id, projekt_id, run_id).set(
-            {
-                "status": "queued",
-                "errorMessage": None,
-                "hadPartialFailures": False,
-                "resultCount": None,
-                "twoLaneSettings": None,
-                "summary": None,
-                "cancelRequestedAt": None,
-                "cancelledAt": None,
-                "startedAt": None,
-                "finishedAt": None,
-                "progress": {"stage": "queued", "message": "Queued"},
-                "kapitelSnapshots": [kapitel_snapshot],
-                "model": str(request.planner_model or "").strip() or "gpt-5-mini",
-                "updatedAt": SERVER_TIMESTAMP,
-            },
-            merge=True,
-        )
-    else:
-        run_id = fs.create_run(
-            user_id=user_id,
-            projekt_id=projekt_id,
-            kind="sources_two_lane",
-            kapitel_ids=[kapitel_id],
-            kapitel_snapshots=[kapitel_snapshot],
-            model=str(request.planner_model or "").strip() or "gpt-5-mini",
-        )
+    run_id = fs.create_run(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        kind="sources_two_lane",
+        kapitel_ids=[kapitel_id],
+        kapitel_snapshots=[kapitel_snapshot],
+        model=str(request.planner_model or "").strip() or "gpt-5-mini",
+    )
 
     pipeline_settings = {
         "openai_model_planner": str(request.planner_model),
@@ -5154,9 +5117,6 @@ async def quellen_finder_sources_two_lane_start(
         "openai_reasoning_effort": str(request.reasoning_effort),
         "rerank_concurrency": int(request.rerank_concurrency),
     }
-    if resume_run_id:
-        pipeline_settings["force_rebuild"] = False
-
     background_tasks.add_task(
         run_quellen_finder_sources_two_lane_job,
         user_id=user_id,

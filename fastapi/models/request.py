@@ -240,10 +240,6 @@ class QuellenFinderTwoLaneStartRequest(BaseModel):
 
     projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
     kapitel_id: str = Field(..., description="Kapitel ID to run two-lane source retrieval for")
-    resume_run_id: Optional[str] = Field(
-        default=None,
-        description="Optional existing run id to reuse (dev/resume). Enables cache reuse in local development.",
-    )
 
     planner_model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
         default="gpt-5-mini",
