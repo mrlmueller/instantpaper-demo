@@ -17,6 +17,7 @@ import {
   RotateCcw,
   FileDown,
   Search,
+  FileText,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -261,6 +262,12 @@ export function ProjektHeader({
                   <Link href="/quellen-finder" className="flex items-center cursor-pointer">
                     <Search className="mr-2 h-4 w-4" />
                     Quellen-Finder
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/pdf-scan" className="flex items-center cursor-pointer">
+                    <FileText className="mr-2 h-4 w-4" />
+                    PDF‑Scan
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
