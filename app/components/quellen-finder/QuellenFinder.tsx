@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Cookies from "js-cookie";
 import { AlertTriangle, ArrowLeft, Ban, BarChart3, Check, ChevronDown, ExternalLink, Loader2, Play, SlidersHorizontal, X } from "lucide-react";
@@ -16,11 +16,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { useAuth } from "@/app/components/providers/AuthProvider";
+import { ViewportWarning } from "@/app/components/viewport-warning";
 import { firestoreClient } from "@/app/lib/firebase/firestoreClient";
 import {
   projectResearchRunsCol,
@@ -48,6 +50,144 @@ type TwoLaneSortKey = "rank" | "llmScore" | "year" | "citations";
 type TwoLaneViewKey = "match_with_abstract" | "match_without_abstract" | "authority_with_abstract" | "authority_without_abstract";
 
 type ToDateLike = { toDate: () => Date };
+
+type PaperDetailsProps = {
+  paper: TwoLaneRow;
+  facetLabelById: Map<string, string>;
+};
+
+const PaperDetails = memo(function PaperDetails({ paper, facetLabelById }: PaperDetailsProps) {
+  const truncateChars = (value: string, maxChars: number) => {
+    const s = String(value || "");
+    if (s.length <= maxChars) return s;
+    if (maxChars <= 3) return s.slice(0, maxChars);
+    return `${s.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
+  };
+
+  const llm =
+    typeof paper.rerank?.llm_score_0_100 === "number" && Number.isFinite(paper.rerank.llm_score_0_100) ? Math.round(paper.rerank.llm_score_0_100) : null;
+  const rationale = String(paper.rerank?.rationale || "").trim();
+  const covered = Array.isArray(paper.rerank?.covered_facets) ? paper.rerank?.covered_facets : [];
+  const topics = [...new Set((covered || []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()))]
+    .map((id) => facetLabelById.get(id) ?? id)
+    .slice(0, 16);
+  const authorsRaw = (paper.authors || []).join(", ").trim();
+  const authors = authorsRaw ? truncateChars(authorsRaw, 200) : "—";
+  const venueRaw = String(paper.venue || "").trim();
+  const venue = venueRaw ? truncateChars(venueRaw, 200) : "—";
+  const href = paper.doi ? `https://doi.org/${paper.doi}` : String(paper.url || "");
+  const linkLabel = paper.doi ? String(paper.doi) : String(paper.url || "");
+
+  return (
+    <div className="space-y-4 whitespace-normal">
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">Titel</div>
+        <div className="text-base font-semibold leading-snug break-words">{paper.title || "(ohne Titel)"}</div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">Autoren</div>
+          <div className="text-sm break-words">{authors}</div>
+        </div>
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">Venue</div>
+          <div className="text-sm break-words">{venue}</div>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">Abstract</div>
+        <div className="text-sm text-muted-foreground whitespace-pre-wrap">{paper.abstract || "—"}</div>
+      </div>
+
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">LLM‑Bewertung</div>
+        <div className="flex items-start gap-3">
+          <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-xs font-semibold tabular-nums ${llmScorePillClasses(llm)}`}>
+            {llm !== null ? llm : "—"}
+          </span>
+          <div className="text-sm text-muted-foreground whitespace-pre-wrap">{rationale || "—"}</div>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">Themen</div>
+        <div className="flex flex-wrap gap-2">
+          {topics.length ? (
+            topics.map((t) => (
+              <Badge key={t} variant="outline">
+                {t}
+              </Badge>
+            ))
+          ) : (
+            <div className="text-sm text-muted-foreground">—</div>
+          )}
+        </div>
+      </div>
+
+      {href && linkLabel ? (
+        <div>
+          <Link href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-primary hover:underline">
+            <ExternalLink className="h-4 w-4" />
+            {linkLabel}
+          </Link>
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
+const PaperDetailsSkeleton = memo(function PaperDetailsSkeleton() {
+  return (
+    <div className="space-y-4" aria-label="Loading paper details">
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-14" />
+        <Skeleton className="h-5 w-3/4" />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-4 w-full" />
+        </div>
+        <div className="space-y-2">
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-11/12" />
+        <Skeleton className="h-4 w-10/12" />
+      </div>
+
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-24" />
+        <div className="flex items-start gap-3">
+          <Skeleton className="h-5 w-10 rounded-md" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-10/12" />
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-16" />
+        <div className="flex flex-wrap gap-2">
+          <Skeleton className="h-6 w-24 rounded-md" />
+          <Skeleton className="h-6 w-20 rounded-md" />
+          <Skeleton className="h-6 w-28 rounded-md" />
+        </div>
+      </div>
+
+      <Skeleton className="h-4 w-48" />
+    </div>
+  );
+});
 
 function hasToDate(value: unknown): value is ToDateLike {
   if (typeof value !== "object" || value === null) return false;
@@ -430,6 +570,8 @@ export function QuellenFinder({
   const [resultsSortDir, setResultsSortDir] = useState<SortDir>("desc");
 
   const [activePaperDocId, setActivePaperDocId] = useState<string | null>(null);
+  const [paperDetailsOpen, setPaperDetailsOpen] = useState(false);
+  const [paperDetailsReadyDocId, setPaperDetailsReadyDocId] = useState<string | null>(null);
   const [telemetryDialogOpen, setTelemetryDialogOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -565,15 +707,15 @@ export function QuellenFinder({
     return { models, costs, stageRows, counts, totalCostUsd, budgetCapUsd, keySource, raw: fr ? frRec : { costs: summaryRec } };
   }, [telemetryById, activeTwoLaneRun?.summary]);
 
-  const phaseBPlan = asRecord(telemetryById.get("phase_b_plan"));
-  const phaseCQueries = asRecord(telemetryById.get("phase_c_queries"));
-  const phaseDRetrieval = asRecord(telemetryById.get("phase_d_retrieval"));
-  const phaseECandidates = asRecord(telemetryById.get("phase_e_candidates"));
-  const phaseFScoring = asRecord(telemetryById.get("phase_f_scoring"));
-  const phaseIRerank = asRecord(telemetryById.get("phase_i_rerank"));
-  const metricsDoc = asRecord(telemetryById.get("metrics"));
+  const phaseBPlan = useMemo(() => asRecord(telemetryById.get("phase_b_plan")), [telemetryById]);
+  const phaseCQueries = useMemo(() => asRecord(telemetryById.get("phase_c_queries")), [telemetryById]);
+  const phaseDRetrieval = useMemo(() => asRecord(telemetryById.get("phase_d_retrieval")), [telemetryById]);
+  const phaseECandidates = useMemo(() => asRecord(telemetryById.get("phase_e_candidates")), [telemetryById]);
+  const phaseFScoring = useMemo(() => asRecord(telemetryById.get("phase_f_scoring")), [telemetryById]);
+  const phaseIRerank = useMemo(() => asRecord(telemetryById.get("phase_i_rerank")), [telemetryById]);
+  const metricsDoc = useMemo(() => asRecord(telemetryById.get("metrics")), [telemetryById]);
 
-  const facets = asRecordArray(phaseBPlan["facets"]);
+  const facets = useMemo(() => asRecordArray(phaseBPlan["facets"]), [phaseBPlan]);
   const facetLabelById = useMemo(() => {
     const map = new Map<string, string>();
     for (const f of facets) {
@@ -586,20 +728,21 @@ export function QuellenFinder({
     }
     return map;
   }, [facets]);
-  const primaryAnchors = asRecord(phaseBPlan["primary_context_anchors"]);
-  const primaryAnchorsEn = asStringArray(primaryAnchors["en"]);
-  const primaryAnchorsDe = asStringArray(primaryAnchors["de"]);
-  const globalCanonicalTerms = asRecord(phaseBPlan["global_canonical_terms"]);
-  const globalCanonicalTermsEn = asStringArray(globalCanonicalTerms["en"]);
-  const globalCanonicalTermsDe = asStringArray(globalCanonicalTerms["de"]);
-  const globalExclusions = asRecord(phaseBPlan["global_exclusions"]);
-  const globalExclusionsEn = asStringArray(globalExclusions["en"]);
-  const globalExclusionsDe = asStringArray(globalExclusions["de"]);
-  const openalexQueries = asRecordArray(phaseCQueries["openalex_queries"]);
-  const s2BulkQueries = asRecordArray(phaseCQueries["s2_bulk_queries"]);
-  const queryLengths = asRecord(phaseCQueries["query_lengths"]);
-  const openalexQueryLenHist = asRecord(asRecord(queryLengths["openalex"])["hist_20bins"]);
-  const s2QueryLenHist = asRecord(asRecord(queryLengths["semanticscholar"])["hist_20bins"]);
+
+  const primaryAnchors = useMemo(() => asRecord(phaseBPlan["primary_context_anchors"]), [phaseBPlan]);
+  const primaryAnchorsEn = useMemo(() => asStringArray(primaryAnchors["en"]), [primaryAnchors]);
+  const primaryAnchorsDe = useMemo(() => asStringArray(primaryAnchors["de"]), [primaryAnchors]);
+  const globalCanonicalTerms = useMemo(() => asRecord(phaseBPlan["global_canonical_terms"]), [phaseBPlan]);
+  const globalCanonicalTermsEn = useMemo(() => asStringArray(globalCanonicalTerms["en"]), [globalCanonicalTerms]);
+  const globalCanonicalTermsDe = useMemo(() => asStringArray(globalCanonicalTerms["de"]), [globalCanonicalTerms]);
+  const globalExclusions = useMemo(() => asRecord(phaseBPlan["global_exclusions"]), [phaseBPlan]);
+  const globalExclusionsEn = useMemo(() => asStringArray(globalExclusions["en"]), [globalExclusions]);
+  const globalExclusionsDe = useMemo(() => asStringArray(globalExclusions["de"]), [globalExclusions]);
+  const openalexQueries = useMemo(() => asRecordArray(phaseCQueries["openalex_queries"]), [phaseCQueries]);
+  const s2BulkQueries = useMemo(() => asRecordArray(phaseCQueries["s2_bulk_queries"]), [phaseCQueries]);
+  const queryLengths = useMemo(() => asRecord(phaseCQueries["query_lengths"]), [phaseCQueries]);
+  const openalexQueryLenHist = useMemo(() => asRecord(asRecord(queryLengths["openalex"])["hist_20bins"]), [queryLengths]);
+  const s2QueryLenHist = useMemo(() => asRecord(asRecord(queryLengths["semanticscholar"])["hist_20bins"]), [queryLengths]);
 
   const twoLaneCountsByView = useMemo(() => {
     const counts: Record<TwoLaneViewKey, number> = {
@@ -642,8 +785,17 @@ export function QuellenFinder({
   useEffect(() => {
     if (!activePaperDocId) return;
     if (twoLaneFiltered.some((r) => r.docId === activePaperDocId)) return;
+    setPaperDetailsOpen(false);
+    setPaperDetailsReadyDocId(null);
     setActivePaperDocId(null);
   }, [twoLaneFiltered, activePaperDocId]);
+
+  useEffect(() => {
+    if (!paperDetailsOpen || !activePaperDocId) return;
+    if (paperDetailsReadyDocId === activePaperDocId) return;
+    const id = window.requestAnimationFrame(() => setPaperDetailsReadyDocId(activePaperDocId));
+    return () => window.cancelAnimationFrame(id);
+  }, [paperDetailsOpen, activePaperDocId, paperDetailsReadyDocId]);
 
   const runningTwoLane = activeTwoLaneRun?.status === "running" || activeTwoLaneRun?.status === "queued";
   const canRunTwoLane = Boolean(user?.uid && projektId && selectedKapitelId);
@@ -762,9 +914,30 @@ export function QuellenFinder({
     toast.success("Abbruch angefordert", { description: `Run: ${activeTwoLaneRun.id}` });
   };
 
+  const resetPaperDetails = () => {
+    setPaperDetailsOpen(false);
+    setPaperDetailsReadyDocId(null);
+    setActivePaperDocId(null);
+  };
+
+  const togglePaperDetails = (docId: string) => {
+    if (activePaperDocId === docId) {
+      if (paperDetailsOpen) {
+        setPaperDetailsOpen(false);
+        return;
+      }
+      setPaperDetailsReadyDocId(null);
+      setPaperDetailsOpen(true);
+      return;
+    }
+    setActivePaperDocId(docId);
+    setPaperDetailsReadyDocId(null);
+    setPaperDetailsOpen(true);
+  };
+
   const selectKapitel = (kapitelId: string | null) => {
     setSelectedKapitelId(kapitelId);
-    setActivePaperDocId(null);
+    resetPaperDetails();
 
     if (!kapitelId) {
       setActiveTwoLaneRunId(null);
@@ -777,7 +950,7 @@ export function QuellenFinder({
 
   const selectRun = (run: RunRow) => {
     setActiveTwoLaneRunId(run.id);
-    setActivePaperDocId(null);
+    resetPaperDetails();
     const kid = Array.isArray(run.kapitelIds) ? run.kapitelIds[0] : null;
     if (kid) setSelectedKapitelId(kid);
   };
@@ -827,82 +1000,9 @@ export function QuellenFinder({
   const activeStep = !isDone && stageIdx >= 0 ? stageIdx : -1;
   const activeStepLabel = activeStep >= 0 ? TWO_LANE_PIPELINE_STEPS[activeStep]?.label ?? "" : "";
 
-  const renderPaperDetails = (paper: TwoLaneRow) => {
-    const llm =
-      typeof paper.rerank?.llm_score_0_100 === "number" && Number.isFinite(paper.rerank.llm_score_0_100)
-        ? Math.round(paper.rerank.llm_score_0_100)
-        : null;
-    const rationale = String(paper.rerank?.rationale || "").trim();
-    const covered = Array.isArray(paper.rerank?.covered_facets) ? paper.rerank?.covered_facets : [];
-    const topics = [...new Set((covered || []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()))]
-      .map((id) => facetLabelById.get(id) ?? id)
-      .slice(0, 16);
-    const href = paper.doi ? `https://doi.org/${paper.doi}` : String(paper.url || "");
-    const linkLabel = paper.doi ? String(paper.doi) : String(paper.url || "");
-
-    return (
-      <div className="space-y-4">
-        <div className="space-y-1">
-          <div className="text-xs text-muted-foreground">Titel</div>
-          <div className="text-base font-semibold leading-snug">{paper.title || "(ohne Titel)"}</div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">Autoren</div>
-            <div className="text-sm">{(paper.authors || []).join(", ") || "—"}</div>
-          </div>
-          <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">Venue</div>
-            <div className="text-sm">{paper.venue || "—"}</div>
-          </div>
-        </div>
-
-        <div className="space-y-1">
-          <div className="text-xs text-muted-foreground">Abstract</div>
-          <div className="text-sm text-muted-foreground whitespace-pre-wrap">{paper.abstract || "—"}</div>
-        </div>
-
-        <div className="space-y-1">
-          <div className="text-xs text-muted-foreground">LLM‑Bewertung</div>
-          <div className="flex items-start gap-3">
-            <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-xs font-semibold tabular-nums ${llmScorePillClasses(llm)}`}>
-              {llm !== null ? llm : "—"}
-            </span>
-            <div className="text-sm text-muted-foreground whitespace-pre-wrap">{rationale || "—"}</div>
-          </div>
-        </div>
-
-        <div className="space-y-1">
-          <div className="text-xs text-muted-foreground">Themen</div>
-          <div className="flex flex-wrap gap-2">
-            {topics.length ? (
-              topics.map((t) => (
-                <Badge key={t} variant="outline">
-                  {t}
-                </Badge>
-              ))
-            ) : (
-              <div className="text-sm text-muted-foreground">—</div>
-            )}
-          </div>
-        </div>
-
-        {href && linkLabel ? (
-          <div>
-            <Link href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-primary hover:underline">
-              <ExternalLink className="h-4 w-4" />
-              {linkLabel}
-            </Link>
-          </div>
-        ) : null}
-      </div>
-    );
-  };
-
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-background flex flex-col">
+      <div className="min-h-screen h-screen overflow-hidden bg-background flex flex-col">
         <div className="border-b border-border px-6 py-4 flex items-center gap-4">
           <Button asChild variant="ghost" size="icon">
             <Link href="/dashboard" aria-label="Back to dashboard">
@@ -915,13 +1015,13 @@ export function QuellenFinder({
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
-          <aside className="w-full lg:w-[320px] shrink-0 border-b lg:border-b-0 lg:border-r border-border bg-sidebar flex flex-col text-sidebar-foreground">
+        <div className="flex-1 min-h-0 flex flex-row">
+          <aside className="w-[320px] shrink-0 border-r border-border bg-sidebar flex flex-col text-sidebar-foreground">
             <div className="p-5 border-b border-sidebar-border space-y-4 shrink-0">
               <div className="space-y-2">
                 <div className="text-xs font-medium text-sidebar-foreground/70">Kapitel auswählen</div>
                 <Select value={selectedKapitelId || ""} onValueChange={(v) => selectKapitel(v || null)}>
-                  <SelectTrigger className="w-full h-auto min-h-10 whitespace-normal items-center py-2.5 bg-background shadow-none">
+                  <SelectTrigger className="w-full h-auto min-h-10 whitespace-normal items-center px-4 py-3 bg-background shadow-none">
                     <div className="min-w-0 flex-1 text-left">
                       {selectedKapitel ? (
                         <div className="line-clamp-2 leading-snug">
@@ -1245,7 +1345,7 @@ export function QuellenFinder({
                   onValueChange={(v) => {
                     if (v in TWO_LANE_VIEW_LABELS) {
                       setTwoLaneViewKey(v as TwoLaneViewKey);
-                      setActivePaperDocId(null);
+                      resetPaperDetails();
                     }
                   }}
                 >
@@ -1298,15 +1398,17 @@ export function QuellenFinder({
                       <TableBody>
                         {twoLaneFiltered.map((r) => {
                           const llm =
-                            typeof r.rerank?.llm_score_0_100 === "number" && Number.isFinite(r.rerank.llm_score_0_100)
+                           typeof r.rerank?.llm_score_0_100 === "number" && Number.isFinite(r.rerank.llm_score_0_100)
                               ? Math.round(r.rerank.llm_score_0_100)
                               : null;
-                          const rowActive = r.docId === activePaperDocId;
+                          const rowSelected = r.docId === activePaperDocId;
+                          const rowOpen = rowSelected && paperDetailsOpen;
+                          const rowReady = rowSelected && paperDetailsReadyDocId === r.docId;
                           return (
                             <Fragment key={r.docId}>
                               <TableRow
-                                className={`cursor-pointer ${rowActive ? "bg-muted/40" : ""}`}
-                                onClick={() => setActivePaperDocId((prev) => (prev === r.docId ? null : r.docId))}
+                                className={`cursor-pointer ${rowOpen ? "bg-muted/40" : ""}`}
+                                onClick={() => togglePaperDetails(r.docId)}
                               >
                                 <TableCell className="tabular-nums">{r.rank}</TableCell>
                                 <TableCell className="max-w-0">
@@ -1327,10 +1429,12 @@ export function QuellenFinder({
                                   <div className="truncate text-sm text-muted-foreground">{r.venue || ""}</div>
                                 </TableCell>
                               </TableRow>
-                              {rowActive ? (
-                                <TableRow className="bg-background">
+                              {rowSelected ? (
+                                <TableRow className={`bg-background ${rowOpen ? "" : "hidden"}`}>
                                   <TableCell colSpan={6} className="p-0">
-                                    <div className="border-t border-border p-4 bg-background">{renderPaperDetails(r)}</div>
+                                    <div className="border-t border-border p-4 bg-background">
+                                      {rowReady ? <PaperDetails paper={r} facetLabelById={facetLabelById} /> : <PaperDetailsSkeleton />}
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               ) : null}
@@ -1353,6 +1457,7 @@ export function QuellenFinder({
             </Card>
 
             <Dialog open={telemetryDialogOpen} onOpenChange={setTelemetryDialogOpen}>
+              {telemetryDialogOpen ? (
                 <DialogContent className="w-[80vw] max-w-[80vw] sm:max-w-[80vw] h-[80vh] max-h-[80vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Two-lane run details</DialogTitle>
@@ -2679,11 +2784,13 @@ export function QuellenFinder({
                     </TabsContent>
                   </Tabs>
                 </DialogContent>
-              </Dialog>
+              ) : null}
+            </Dialog>
           </div>
         </div>
       </div>
           </div>
-        </TooltipProvider>
+        <ViewportWarning />
+      </TooltipProvider>
   );
 }
