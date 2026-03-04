@@ -207,6 +207,18 @@ export function quellenFinderTwoLaneTelemetryCol(
   );
 }
 
+export function quellenFinderTwoLaneTelemetryDoc(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  runId: string,
+  docId: string
+): DocumentReference<Record<string, unknown>> {
+  return doc(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'twoLaneTelemetry', docId).withConverter(
+    identityConverter<Record<string, unknown>>()
+  );
+}
+
 export function quellenFinderPdfStage2Col(
   db: Firestore,
   uid: string,

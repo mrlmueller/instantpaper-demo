@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import shutil
+import statistics
 import tempfile
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -30,6 +31,7 @@ from .pipeline import (
     plan_queries_llm,
     read_json,
     rebuild_aggregate_jsonl,
+    stage_timer,
 )
 from .telemetry import build_two_lane_telemetry
 from utils.config import config as app_config
@@ -313,6 +315,9 @@ async def run_two_lane_sources_pipeline(
             chapter_spec_text=str(chapter_spec_text or "").strip(),
             pipeline_version=str(cfg.pipeline_version or "two_lane_v1"),
         )
+        records_openalex: int | None = None
+        records_s2: int | None = None
+        candidates_total: int | None = None
 
         # Resume shortcut (local dev): if we already have a valid output.json and force_rebuild=False,
         # skip the expensive pipeline and just reuse artifacts.
@@ -397,24 +402,208 @@ async def run_two_lane_sources_pipeline(
             except Exception:
                 pass
 
-        def _hist(values: list[int], *, bins: int = 20) -> Dict[str, Any]:
-            xs = [int(v) for v in values if isinstance(v, int) and v >= 0]
-            if not xs:
-                return {"bins": int(bins), "lo": 0, "hi": 1, "counts": [0] * int(bins)}
-            lo = 0
-            hi = max(1, int(max(xs)))
-            step = (hi - lo) / float(max(1, int(bins)))
-            counts = [0] * int(bins)
-            for v in xs:
-                if v <= lo:
-                    i = 0
-                elif v >= hi:
-                    i = int(bins) - 1
-                else:
-                    i = int((v - lo) / step)
-                    i = max(0, min(int(bins) - 1, i))
-                counts[i] += 1
-            return {"bins": int(bins), "lo": lo, "hi": hi, "counts": counts}
+        def _query_id(provider: str, i: int, intent: str, language: str) -> str:
+            return f"{provider}:{int(i)}:{str(intent or 'unknown').strip() or 'unknown'}:{str(language or 'unknown').strip() or 'unknown'}"
+
+        def _build_min_report(
+            *,
+            facets_count: int | None = None,
+            queries_oa: int | None = None,
+            queries_s2: int | None = None,
+            records_openalex: int | None = None,
+            records_s2: int | None = None,
+            candidates_total: int | None = None,
+        ) -> Dict[str, Any]:
+            return {
+                "telemetry_schema_version": 2,
+                "kpis": {
+                    "seconds_total": None,
+                    "total_cost_usd": float(getattr(llm, "total_cost_usd", 0.0) or 0.0),
+                    "budget_cap_usd": float(getattr(llm, "max_total_cost_usd", 2.0) or 2.0),
+                    "records_total": (None if records_openalex is None or records_s2 is None else int(records_openalex) + int(records_s2)),
+                    "records_openalex": (int(records_openalex) if records_openalex is not None else None),
+                    "records_semanticscholar": (int(records_s2) if records_s2 is not None else None),
+                    "candidates_total": (int(candidates_total) if candidates_total is not None else None),
+                    "facets_count": (int(facets_count) if facets_count is not None else None),
+                    "queries_total": (None if queries_oa is None or queries_s2 is None else int(queries_oa) + int(queries_s2)),
+                    "queries_openalex": (int(queries_oa) if queries_oa is not None else None),
+                    "queries_semanticscholar": (int(queries_s2) if queries_s2 is not None else None),
+                },
+                "stage_tables": {"durations": [], "costs": []},
+                "models": {
+                    "planner": str(getattr(cfg, "openai_model_planner", "") or "") or None,
+                    "openalex_queries": str(getattr(cfg, "openai_model_openalex_query_builder", "") or "") or None,
+                    "s2_queries": str(getattr(cfg, "openai_model_s2_query_builder", "") or "") or None,
+                    "rerank": str(getattr(cfg, "openai_model_rerank", "") or "") or None,
+                    "embedding": str(getattr(cfg, "embedding_model", "") or "") or None,
+                },
+                "plots": {
+                    "publication_year": {"data": []},
+                    "citations_log10": {"data": []},
+                    "coverage_tags_count": {"data": []},
+                    "llm_score_distribution": {"data": []},
+                    "llm_score_vs_lane_score": {"data": []},
+                    "match_lane_distribution": {"data": []},
+                    "match_vs_authority_top500": {"data": []},
+                    "lane_score_by_rank_top200": {
+                        "match_with": [],
+                        "match_without": [],
+                        "authority_with": [],
+                        "authority_without": [],
+                    },
+                    "coverage_tags_top": {"data": []},
+                },
+            }
+
+        def _build_v2_b_plan(plan_obj: Any) -> Dict[str, Any]:
+            p = plan_obj.model_dump(mode="json") if hasattr(plan_obj, "model_dump") else {}
+            return {
+                "telemetry_schema_version": 2,
+                "topic_summary_de": str(p.get("topic_summary_de") or ""),
+                "topic_summary_en": str(p.get("topic_summary_en") or ""),
+                "primary_context_anchors": p.get("primary_context_anchors") or {"en": [], "de": []},
+                "global_canonical_terms": p.get("global_canonical_terms") or {"en": [], "de": []},
+                "global_exclusions": p.get("global_exclusions") or {"en": [], "de": []},
+                "facets": list(p.get("facets") or []),
+            }
+
+        def _build_v2_c_queries(openalex_qs: list, s2_qs: list) -> Dict[str, Any]:
+            oa_rows = []
+            for i, q in enumerate(openalex_qs or [], start=1):
+                try:
+                    intent = str(getattr(q, "intent", "") or "").strip() or "unknown"
+                    lang = str(getattr(q, "language", "") or "").strip() or "unknown"
+                    oa_rows.append(
+                        {
+                            "query_id": _query_id("openalex", i, intent, lang),
+                            "i": int(i),
+                            "intent": intent,
+                            "language": lang,
+                            "query_string": str(getattr(q, "query_string", "") or ""),
+                            "notes": str(getattr(q, "notes", "") or "") or None,
+                            "search_field": str(getattr(q, "search_field", "") or "") or None,
+                            "filters": str(getattr(q, "filters", "") or "") or None,
+                            "sort": (str(getattr(q, "sort", "") or "") or None),
+                            "per_page": int(getattr(q, "per_page", 200) or 200),
+                        }
+                    )
+                except Exception:
+                    continue
+
+            s2_rows = []
+            for i, q in enumerate(s2_qs or [], start=1):
+                try:
+                    intent = str(getattr(q, "intent", "") or "").strip() or "unknown"
+                    lang = str(getattr(q, "language", "") or "").strip() or "unknown"
+                    s2_rows.append(
+                        {
+                            "query_id": _query_id("semanticscholar", i, intent, lang),
+                            "i": int(i),
+                            "intent": intent,
+                            "language": lang,
+                            "query_string": str(getattr(q, "query_string", "") or ""),
+                            "notes": str(getattr(q, "notes", "") or "") or None,
+                        }
+                    )
+                except Exception:
+                    continue
+
+            oa_lens = [len(str(getattr(q, "query_string", "") or "")) for q in (openalex_qs or [])]
+            s2_lens = [len(str(getattr(q, "query_string", "") or "")) for q in (s2_qs or [])]
+            all_lens = [int(x) for x in (oa_lens + s2_lens) if isinstance(x, int) and x >= 0]
+            median_len = (None if not all_lens else float(statistics.median(sorted(all_lens))))
+            max_len = (None if not all_lens else int(max(all_lens)))
+
+            def _bin_dist(xs: list[int], *, key: str, acc: dict[int, dict[str, int]]):
+                for x in xs:
+                    try:
+                        n = int(x)
+                    except Exception:
+                        continue
+                    if n < 0:
+                        continue
+                    lo = (n // 10) * 10
+                    acc.setdefault(lo, {"openalex": 0, "semanticscholar": 0})[key] += 1
+
+            bins: dict[int, dict[str, int]] = {}
+            _bin_dist(oa_lens, key="openalex", acc=bins)
+            _bin_dist(s2_lens, key="semanticscholar", acc=bins)
+            max_edge = 0 if not bins else (max(bins.keys()) + 10)
+            length_dist = []
+            for lo in range(0, int(max_edge), 10):
+                row = bins.get(lo) or {"openalex": 0, "semanticscholar": 0}
+                length_dist.append({"bin_lo": int(lo), "bin_hi": int(lo + 10), "openalex": int(row["openalex"]), "semanticscholar": int(row["semanticscholar"])})
+
+            match_total = int(sum(1 for q in (openalex_qs or []) if str(getattr(q, "intent", "") or "") == "match") + sum(1 for q in (s2_qs or []) if str(getattr(q, "intent", "") or "") == "match"))
+            authority_total = int(sum(1 for q in (openalex_qs or []) if str(getattr(q, "intent", "") or "") == "authority") + sum(1 for q in (s2_qs or []) if str(getattr(q, "intent", "") or "") == "authority"))
+
+            return {
+                "telemetry_schema_version": 2,
+                "counts": {
+                    "openalex_total": int(len(openalex_qs or [])),
+                    "s2_total": int(len(s2_qs or [])),
+                    "match_total": int(match_total),
+                    "authority_total": int(authority_total),
+                    "median_length": (None if median_len is None else float(median_len)),
+                    "max_length": (None if max_len is None else int(max_len)),
+                },
+                "length_distribution": {"bin_width_chars": 10, "data": length_dist},
+                "openalex_queries": oa_rows,
+                "s2_queries": s2_rows,
+            }
+
+        def _count_raw_intents(path: Path) -> Dict[str, int]:
+            out = {"total": 0, "match": 0, "authority": 0}
+            try:
+                if not path.exists():
+                    return out
+                with path.open("r", encoding="utf-8") as f:
+                    for line in f:
+                        s = line.strip()
+                        if not s:
+                            continue
+                        try:
+                            rec = json.loads(s)
+                        except Exception:
+                            continue
+                        if not isinstance(rec, dict):
+                            continue
+                        intent = str(rec.get("intent") or "").strip()
+                        out["total"] += 1
+                        if intent == "match":
+                            out["match"] += 1
+                        elif intent == "authority":
+                            out["authority"] += 1
+            except Exception:
+                return out
+            return out
+
+        def _build_v2_d_retrieval_min(*, openalex_fetch: Optional[Dict[str, Any]], s2_fetch: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+            oa_scan = _count_raw_intents(Path(run_ctx.artifacts.openalex_raw_jsonl))
+            s2_scan = _count_raw_intents(Path(run_ctx.artifacts.semanticscholar_raw_jsonl))
+            oa_total = int(oa_scan.get("total") or 0) or int((openalex_fetch or {}).get("records") or 0)
+            s2_total = int(s2_scan.get("total") or 0) or int((s2_fetch or {}).get("records") or 0)
+            return {
+                "telemetry_schema_version": 2,
+                "provider_totals": {
+                    "openalex": {
+                        "records_total": int(oa_total),
+                        "authority": int(oa_scan.get("authority") or 0),
+                        "match": int(oa_scan.get("match") or 0),
+                    },
+                    "semanticscholar": {
+                        "records_total": int(s2_total),
+                        "authority": int(s2_scan.get("authority") or 0),
+                        "match": int(s2_scan.get("match") or 0),
+                    },
+                },
+                "provider_summary": [],
+                "records_by_intent_lang": {"openalex": [], "semanticscholar": []},
+                "year_distribution": {"data": []},
+                "top_queries": {"data": []},
+                "bottom_queries_nonzero": {"data": []},
+                "zero_result_queries": {"data": [], "truncated": False, "total": 0},
+            }
 
         await _progress("phase_b_query_planner", "Planning facets & query strategy")
         plan, _meta_b = await plan_queries_llm(
@@ -424,13 +613,9 @@ async def run_two_lane_sources_pipeline(
             llm=llm,
             force_rebuild=force_rebuild,
         )
+        facets_count = int(len(getattr(plan, "facets", []) or []))
         try:
-            await _telemetry(
-                {
-                    "phase_b_plan": plan.model_dump(mode="json"),
-                    "metrics": read_json(Path(run_ctx.artifacts.metrics_json)),
-                }
-            )
+            await _telemetry({"v2_b_plan": _build_v2_b_plan(plan), "v2_report": _build_min_report(facets_count=facets_count)})
         except Exception:
             pass
         await _check_cancel()
@@ -446,18 +631,10 @@ async def run_two_lane_sources_pipeline(
             force_rebuild=force_rebuild,
         )
         try:
-            oa_lens = [len(str(q.query_string or "")) for q in openalex_queries]
             await _telemetry(
                 {
-                    "phase_c_queries": {
-                        "openalex_queries": [q.model_dump(mode="json") for q in openalex_queries],
-                        "s2_bulk_queries": [],
-                        "query_lengths": {
-                            "openalex": {"count": int(len(oa_lens)), "lengths": oa_lens, "hist_20bins": _hist(oa_lens, bins=20)},
-                            "semanticscholar": {"count": 0, "lengths": [], "hist_20bins": _hist([], bins=20)},
-                        },
-                    },
-                    "metrics": read_json(Path(run_ctx.artifacts.metrics_json)),
+                    "v2_c_queries": _build_v2_c_queries(openalex_queries, []),
+                    "v2_report": _build_min_report(facets_count=facets_count, queries_oa=len(openalex_queries), queries_s2=0),
                 }
             )
         except Exception:
@@ -475,19 +652,14 @@ async def run_two_lane_sources_pipeline(
             force_rebuild=force_rebuild,
         )
         try:
-            oa_lens = [len(str(q.query_string or "")) for q in openalex_queries]
-            s2_lens = [len(str(q.query_string or "")) for q in s2_bulk_queries]
             await _telemetry(
                 {
-                    "phase_c_queries": {
-                        "openalex_queries": [q.model_dump(mode="json") for q in openalex_queries],
-                        "s2_bulk_queries": [q.model_dump(mode="json") for q in s2_bulk_queries],
-                        "query_lengths": {
-                            "openalex": {"count": int(len(oa_lens)), "lengths": oa_lens, "hist_20bins": _hist(oa_lens, bins=20)},
-                            "semanticscholar": {"count": int(len(s2_lens)), "lengths": s2_lens, "hist_20bins": _hist(s2_lens, bins=20)},
-                        },
-                    },
-                    "metrics": read_json(Path(run_ctx.artifacts.metrics_json)),
+                    "v2_c_queries": _build_v2_c_queries(openalex_queries, s2_bulk_queries),
+                    "v2_report": _build_min_report(
+                        facets_count=facets_count,
+                        queries_oa=len(openalex_queries),
+                        queries_s2=len(s2_bulk_queries),
+                    ),
                 }
             )
         except Exception:
@@ -495,47 +667,43 @@ async def run_two_lane_sources_pipeline(
         await _check_cancel()
 
         await _progress("phase_d_openalex_retrieval", "Fetching OpenAlex records")
-        openalex_fetch = await asyncio.to_thread(
-            fetch_openalex_to_cache,
-            cfg=cfg,
-            run_ctx=run_ctx,
-            queries=openalex_queries,
-            force_rebuild=force_rebuild,
-        )
+        with stage_timer(run_ctx, "phase_d_openalex_retrieval"):
+            openalex_fetch = await asyncio.to_thread(
+                fetch_openalex_to_cache,
+                cfg=cfg,
+                run_ctx=run_ctx,
+                queries=openalex_queries,
+                force_rebuild=force_rebuild,
+            )
         await _check_cancel()
 
         await _progress("phase_d_semanticscholar_retrieval", "Fetching Semantic Scholar records")
-        s2_fetch = await asyncio.to_thread(
-            fetch_s2_to_cache,
-            cfg=cfg,
-            run_ctx=run_ctx,
-            queries=s2_bulk_queries,
-            force_rebuild=force_rebuild,
-        )
+        with stage_timer(run_ctx, "phase_d_semanticscholar_retrieval"):
+            s2_fetch = await asyncio.to_thread(
+                fetch_s2_to_cache,
+                cfg=cfg,
+                run_ctx=run_ctx,
+                queries=s2_bulk_queries,
+                force_rebuild=force_rebuild,
+            )
         await _check_cancel()
 
         rebuild_aggregate_jsonl(run_ctx.artifacts.openalex_raw_jsonl, list(openalex_fetch.get("used_cache_paths") or []))
         rebuild_aggregate_jsonl(run_ctx.artifacts.semanticscholar_raw_jsonl, list(s2_fetch.get("used_cache_paths") or []))
         try:
+            v2_d_min = _build_v2_d_retrieval_min(openalex_fetch=openalex_fetch if isinstance(openalex_fetch, dict) else None, s2_fetch=s2_fetch if isinstance(s2_fetch, dict) else None)
+            records_openalex = int(((v2_d_min.get("provider_totals") or {}).get("openalex") or {}).get("records_total") or 0)
+            records_s2 = int(((v2_d_min.get("provider_totals") or {}).get("semanticscholar") or {}).get("records_total") or 0)
             await _telemetry(
                 {
-                    "phase_d_retrieval": {
-                        "openalex": {
-                            "fetch_meta": {
-                                "query_failed": int((openalex_fetch or {}).get("query_failed") or 0),
-                                "records": int((openalex_fetch or {}).get("records") or 0),
-                                "records_fetched": int((openalex_fetch or {}).get("records_fetched") or 0),
-                            }
-                        },
-                        "semanticscholar": {
-                            "fetch_meta": {
-                                "query_failed": int((s2_fetch or {}).get("query_failed") or 0),
-                                "records": int((s2_fetch or {}).get("records") or 0),
-                                "records_fetched": int((s2_fetch or {}).get("records_fetched") or 0),
-                            }
-                        },
-                    },
-                    "metrics": read_json(Path(run_ctx.artifacts.metrics_json)),
+                    "v2_d_retrieval": v2_d_min,
+                    "v2_report": _build_min_report(
+                        facets_count=facets_count,
+                        queries_oa=len(openalex_queries),
+                        queries_s2=len(s2_bulk_queries),
+                        records_openalex=records_openalex,
+                        records_s2=records_s2,
+                    ),
                 }
             )
         except Exception:
@@ -543,7 +711,28 @@ async def run_two_lane_sources_pipeline(
         await _check_cancel()
 
         await _progress("phase_e_candidates", "Normalizing & deduplicating candidates")
-        _cands, _meta_e = await asyncio.to_thread(build_candidates_from_raw, run_ctx=run_ctx, force_rebuild=force_rebuild)
+        with stage_timer(run_ctx, "phase_e_candidates"):
+            _cands, _meta_e = await asyncio.to_thread(build_candidates_from_raw, run_ctx=run_ctx, force_rebuild=force_rebuild)
+        try:
+            if isinstance(_meta_e, dict):
+                candidates_total = int(_meta_e.get("deduped_candidates") or 0)
+        except Exception:
+            pass
+        try:
+            await _telemetry(
+                {
+                    "v2_report": _build_min_report(
+                        facets_count=facets_count,
+                        queries_oa=len(openalex_queries),
+                        queries_s2=len(s2_bulk_queries),
+                        records_openalex=records_openalex,
+                        records_s2=records_s2,
+                        candidates_total=candidates_total,
+                    )
+                }
+            )
+        except Exception:
+            pass
         await _check_cancel()
 
         await _progress("phase_f", "Embedding & scoring candidates")
@@ -551,6 +740,39 @@ async def run_two_lane_sources_pipeline(
             cfg=cfg, run_ctx=run_ctx, llm=llm, force_rebuild=force_rebuild, check_cancel=_check_cancel
         )
         await _check_cancel()
+        try:
+            metrics_partial = read_json(Path(run_ctx.artifacts.metrics_json))
+            effective_settings_partial = _derive_effective_settings(cfg=cfg, metrics=metrics_partial if isinstance(metrics_partial, dict) else {})
+            costs_partial = _derive_costs_from_metrics(
+                metrics=metrics_partial if isinstance(metrics_partial, dict) else {},
+                run_dir=run_ctx.run_dir,
+                key_source=str(key_source),
+                budget_cap_usd=float(llm.max_total_cost_usd),
+            )
+            telemetry_partial = build_two_lane_telemetry(
+                run_ctx=run_ctx,
+                effective_settings=effective_settings_partial,
+                costs=costs_partial,
+                openalex_fetch=openalex_fetch if isinstance(openalex_fetch, dict) else None,
+                s2_fetch=s2_fetch if isinstance(s2_fetch, dict) else None,
+            )
+            v2_f = telemetry_partial.get("v2_f_scoring")
+            if isinstance(v2_f, dict):
+                await _telemetry(
+                    {
+                        "v2_f_scoring": v2_f,
+                        "v2_report": _build_min_report(
+                            facets_count=facets_count,
+                            queries_oa=len(openalex_queries),
+                            queries_s2=len(s2_bulk_queries),
+                            records_openalex=records_openalex,
+                            records_s2=records_s2,
+                            candidates_total=candidates_total,
+                        ),
+                    }
+                )
+        except Exception:
+            pass
 
         await _progress("phase_g", "Final lane scoring (Phase G)")
         _meta_g = await run_phase_g_lane_fusion(cfg=cfg, run_ctx=run_ctx, check_cancel=_check_cancel)
@@ -570,17 +792,51 @@ async def run_two_lane_sources_pipeline(
             force_rebuild=force_rebuild,
         )
         await _check_cancel()
+        try:
+            metrics_partial = read_json(Path(run_ctx.artifacts.metrics_json))
+            effective_settings_partial = _derive_effective_settings(cfg=cfg, metrics=metrics_partial if isinstance(metrics_partial, dict) else {})
+            costs_partial = _derive_costs_from_metrics(
+                metrics=metrics_partial if isinstance(metrics_partial, dict) else {},
+                run_dir=run_ctx.run_dir,
+                key_source=str(key_source),
+                budget_cap_usd=float(llm.max_total_cost_usd),
+            )
+            telemetry_partial = build_two_lane_telemetry(
+                run_ctx=run_ctx,
+                effective_settings=effective_settings_partial,
+                costs=costs_partial,
+                openalex_fetch=openalex_fetch if isinstance(openalex_fetch, dict) else None,
+                s2_fetch=s2_fetch if isinstance(s2_fetch, dict) else None,
+            )
+            v2_i = telemetry_partial.get("v2_i_rerank")
+            if isinstance(v2_i, dict):
+                await _telemetry(
+                    {
+                        "v2_i_rerank": v2_i,
+                        "v2_report": _build_min_report(
+                            facets_count=facets_count,
+                            queries_oa=len(openalex_queries),
+                            queries_s2=len(s2_bulk_queries),
+                            records_openalex=records_openalex,
+                            records_s2=records_s2,
+                            candidates_total=candidates_total,
+                        ),
+                    }
+                )
+        except Exception:
+            pass
 
         await _progress("phase_k", "Building final output (Phase K)")
-        _meta_k = await run_phase_k_output(
-            cfg=cfg,
-            run_ctx=run_ctx,
-            chapter_title=chapter_input.chapter_title,
-            chapter_spec_text=chapter_input.chapter_spec_text,
-            top_n=40,
-            check_cancel=_check_cancel,
-            force_rebuild=force_rebuild,
-        )
+        with stage_timer(run_ctx, "phase_k_output"):
+            _meta_k = await run_phase_k_output(
+                cfg=cfg,
+                run_ctx=run_ctx,
+                chapter_title=chapter_input.chapter_title,
+                chapter_spec_text=chapter_input.chapter_spec_text,
+                top_n=40,
+                check_cancel=_check_cancel,
+                force_rebuild=force_rebuild,
+            )
         await _check_cancel()
 
         output = read_json(Path(run_ctx.artifacts.output_json))
