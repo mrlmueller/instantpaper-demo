@@ -31,6 +31,7 @@ import { firestoreClient } from "@/app/lib/firebase/firestoreClient";
 import { projectResearchRunDoc, quellenFinderTwoLaneTelemetryDoc } from "@/app/lib/firestore/refs";
 import type { Kapitel } from "@/app/actions/kapitels";
 import type { QuellenFinderRunDoc } from "@/app/lib/firestore/types";
+import { HelpPopover } from "./HelpPopover";
 
 type WithId<T> = T & { id: string };
 type RunRow = WithId<QuellenFinderRunDoc>;
@@ -306,19 +307,25 @@ export function PipelineDetailsDialog({
   );
 }
 
-function KpiCard({ label, value, tooltip }: { label: string; value: React.ReactNode; tooltip?: React.ReactNode }) {
-  const card = (
+function KpiCard({
+  label,
+  value,
+  helpKey,
+  helpExtra,
+}: {
+  label: string;
+  value: React.ReactNode;
+  helpKey?: string;
+  helpExtra?: { de?: React.ReactNode; en?: React.ReactNode };
+}) {
+  return (
     <Card className="p-4">
-      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        {helpKey ? <HelpPopover helpKey={helpKey} extra={helpExtra} /> : null}
+      </div>
       <div className="text-lg font-semibold tabular-nums mt-1">{value}</div>
     </Card>
-  );
-  if (!tooltip) return card;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{card}</TooltipTrigger>
-      <TooltipContent className="max-w-[60vw]">{tooltip}</TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -380,36 +387,66 @@ function ReportTab({
           <KpiCard
             label="Records abgerufen"
             value={formatIntDe(kpis["records_total"])}
-            tooltip={
-              <div className="grid gap-1 text-xs">
-                <div className="flex items-center justify-between gap-6">
-                  <span className="text-muted-foreground">OpenAlex</span>
-                  <span className="tabular-nums">{formatIntDe(kpis["records_openalex"])}</span>
+            helpKey="report.records_total"
+            helpExtra={{
+              de: (
+                <div className="space-y-1">
+                  <div>
+                    <span className="text-muted-foreground">OpenAlex:</span>{" "}
+                    <span className="tabular-nums">{formatIntDe(kpis["records_openalex"])}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Semantic Scholar:</span>{" "}
+                    <span className="tabular-nums">{formatIntDe(kpis["records_semanticscholar"])}</span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between gap-6">
-                  <span className="text-muted-foreground">S2</span>
-                  <span className="tabular-nums">{formatIntDe(kpis["records_semanticscholar"])}</span>
+              ),
+              en: (
+                <div className="space-y-1">
+                  <div>
+                    <span className="text-muted-foreground">OpenAlex:</span>{" "}
+                    <span className="tabular-nums">{formatIntDe(kpis["records_openalex"])}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Semantic Scholar:</span>{" "}
+                    <span className="tabular-nums">{formatIntDe(kpis["records_semanticscholar"])}</span>
+                  </div>
                 </div>
-              </div>
-            }
+              ),
+            }}
           />
-          <KpiCard label="Kandidaten" value={formatIntDe(kpis["candidates_total"])} />
-          <KpiCard label="Facetten" value={formatIntDe(kpis["facets_count"])} />
+          <KpiCard label="Kandidaten" value={formatIntDe(kpis["candidates_total"])} helpKey="report.candidates_total" />
+          <KpiCard label="Facetten" value={formatIntDe(kpis["facets_count"])} helpKey="report.facets_count" />
           <KpiCard
             label="Queries"
             value={formatIntDe(kpis["queries_total"])}
-            tooltip={
-              <div className="grid gap-1 text-xs">
-                <div className="flex items-center justify-between gap-6">
-                  <span className="text-muted-foreground">OpenAlex</span>
-                  <span className="tabular-nums">{formatIntDe(kpis["queries_openalex"])}</span>
+            helpKey="report.queries_total"
+            helpExtra={{
+              de: (
+                <div className="space-y-1">
+                  <div>
+                    <span className="text-muted-foreground">OpenAlex:</span>{" "}
+                    <span className="tabular-nums">{formatIntDe(kpis["queries_openalex"])}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Semantic Scholar:</span>{" "}
+                    <span className="tabular-nums">{formatIntDe(kpis["queries_semanticscholar"])}</span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between gap-6">
-                  <span className="text-muted-foreground">S2</span>
-                  <span className="tabular-nums">{formatIntDe(kpis["queries_semanticscholar"])}</span>
+              ),
+              en: (
+                <div className="space-y-1">
+                  <div>
+                    <span className="text-muted-foreground">OpenAlex:</span>{" "}
+                    <span className="tabular-nums">{formatIntDe(kpis["queries_openalex"])}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Semantic Scholar:</span>{" "}
+                    <span className="tabular-nums">{formatIntDe(kpis["queries_semanticscholar"])}</span>
+                  </div>
                 </div>
-              </div>
-            }
+              ),
+            }}
           />
         </div>
 
@@ -502,43 +539,43 @@ function ReportTab({
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          <ChartCard title="Publication Year (Ranked IDs)">
+          <ChartCard title="Publication Year (Ranked IDs)" helpKey="report.publication_year">
             <YearBarChart data={asRecordArray(asRecord(plots["publication_year"])["data"])} />
           </ChartCard>
-          <ChartCard title="Citations (log10(1+cites))">
+          <ChartCard title="Citations (log10(1+cites))" helpKey="report.citations_log10">
             <HistogramTwoPools data={asRecordArray(asRecord(plots["citations_log10"])["data"])} />
           </ChartCard>
-          <ChartCard title="Coverage Tags Count">
+          <ChartCard title="Coverage Tags Count" helpKey="report.coverage_tags_count">
             <CoverageTagsCountChart data={asRecordArray(asRecord(plots["coverage_tags_count"])["data"])} />
           </ChartCard>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <ChartCard title="LLM Rerank Score Distribution">
+          <ChartCard title="LLM Rerank Score Distribution" helpKey="report.llm_score_distribution">
             <HistogramTwoPools data={asRecordArray(asRecord(plots["llm_score_distribution"])["data"])} />
           </ChartCard>
-          <ChartCard title="LLM Score vs Lane Score">
+          <ChartCard title="LLM Score vs Lane Score" helpKey="report.llm_vs_lane">
             <LlmVsLaneScatter data={asRecordArray(asRecord(plots["llm_score_vs_lane_score"])["data"])} />
           </ChartCard>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <ChartCard title="Match Lane Distribution">
+          <ChartCard title="Match Lane Distribution" helpKey="report.match_lane_distribution">
             <HistogramTwoPools data={asRecordArray(asRecord(plots["match_lane_distribution"])["data"])} />
           </ChartCard>
-          <ChartCard title="Match vs Authority (Top 500)">
+          <ChartCard title="Match vs Authority (Top 500)" helpKey="report.match_vs_authority">
             <MatchVsAuthorityScatter data={asRecordArray(asRecord(plots["match_vs_authority_top500"])["data"])} />
           </ChartCard>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <ChartCard title="match: lane_score by rank (top 200)">
+          <ChartCard title="match: lane_score by rank (top 200)" helpKey="report.lane_score_by_rank">
             <LaneScoreByRankChart
               withData={asRecordArray(byRank["match_with"])}
               withoutData={asRecordArray(byRank["match_without"])}
             />
           </ChartCard>
-          <ChartCard title="authority: lane_score by rank (top 200)">
+          <ChartCard title="authority: lane_score by rank (top 200)" helpKey="report.lane_score_by_rank">
             <LaneScoreByRankChart
               withData={asRecordArray(byRank["authority_with"])}
               withoutData={asRecordArray(byRank["authority_without"])}
@@ -546,7 +583,7 @@ function ReportTab({
           </ChartCard>
         </div>
 
-        <ChartCard title="Coverage Tags">
+        <ChartCard title="Coverage Tags" helpKey="report.coverage_tags_top">
           <CoverageTagsTopChart data={asRecordArray(asRecord(plots["coverage_tags_top"])["data"])} />
         </ChartCard>
       </div>
@@ -554,10 +591,13 @@ function ReportTab({
   );
 }
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function ChartCard({ title, helpKey, children }: { title: string; helpKey?: string; children: React.ReactNode }) {
   return (
     <Card className="p-4">
-      <div className="text-sm font-medium mb-3">{title}</div>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="text-sm font-medium">{title}</div>
+        {helpKey ? <HelpPopover helpKey={helpKey} /> : null}
+      </div>
       <div className="h-[260px]">{children}</div>
     </Card>
   );
@@ -842,11 +882,17 @@ function PlanTab({ doc, loaded }: { doc: Record<string, unknown> | null | undefi
     <div className="space-y-4">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <Card className="p-4">
-          <div className="text-sm font-medium mb-2">Topic Summary (DE)</div>
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="text-sm font-medium">Topic Summary (DE)</div>
+            <HelpPopover helpKey="b.topic_summary" />
+          </div>
           <div className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{topicDe || "—"}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-sm font-medium mb-2">Topic Summary (EN)</div>
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="text-sm font-medium">Topic Summary (EN)</div>
+            <HelpPopover helpKey="b.topic_summary" />
+          </div>
           <div className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{topicEn || "—"}</div>
         </Card>
       </div>
@@ -854,7 +900,10 @@ function PlanTab({ doc, loaded }: { doc: Record<string, unknown> | null | undefi
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         <Card className="p-4">
           <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-medium">Primary Anchors</div>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="text-sm font-medium">Primary Anchors</div>
+              <HelpPopover helpKey="b.primary_anchors" />
+            </div>
             <Badge variant="outline" className="tabular-nums text-[11px] font-normal">
               {primaryEn.length + primaryDe.length}
             </Badge>
@@ -873,7 +922,10 @@ function PlanTab({ doc, loaded }: { doc: Record<string, unknown> | null | undefi
 
         <Card className="p-4">
           <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-medium">Global Terms</div>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="text-sm font-medium">Global Terms</div>
+              <HelpPopover helpKey="b.global_terms" />
+            </div>
             <Badge variant="outline" className="tabular-nums text-[11px] font-normal">
               {globalTermsEn.length + globalTermsDe.length}
             </Badge>
@@ -901,7 +953,10 @@ function PlanTab({ doc, loaded }: { doc: Record<string, unknown> | null | undefi
 
         <Card className="p-4">
           <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-medium">Global Exclusions</div>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="text-sm font-medium">Global Exclusions</div>
+              <HelpPopover helpKey="b.global_exclusions" />
+            </div>
             <Badge variant="outline" className="tabular-nums text-[11px] font-normal">
               {exclusionsEn.length + exclusionsDe.length}
             </Badge>
@@ -931,7 +986,10 @@ function PlanTab({ doc, loaded }: { doc: Record<string, unknown> | null | undefi
 
       <Card className="p-4">
         <div className="flex items-center justify-between gap-3 mb-3">
-          <div className="text-sm font-medium">Facets</div>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="text-sm font-medium">Facets</div>
+            <HelpPopover helpKey="b.facets" />
+          </div>
           <div className="text-xs text-muted-foreground">Summary table (expand below for full details).</div>
         </div>
         <div className="overflow-x-auto">
@@ -1046,22 +1104,48 @@ function QueriesTab({ doc, loaded }: { doc: Record<string, unknown> | null | und
           <KpiCard
             label="OpenAlex Queries"
             value={formatIntDe(counts["openalex_total"])}
-            tooltip={
-              <div className="text-xs">
-                <span className="text-muted-foreground">Zero‑result queries:</span>{" "}
-                <span className="tabular-nums">{formatIntDe(counts["openalex_zero_result_queries"])}</span>
-              </div>
-            }
+            helpKey="c.openalex_queries"
+            helpExtra={{
+              de: (
+                <div className="space-y-1">
+                  <div>
+                    <span className="text-muted-foreground">Zero‑Result Queries:</span>{" "}
+                    <span className="tabular-nums">{formatIntDe(counts["openalex_zero_result_queries"])}</span>
+                  </div>
+                </div>
+              ),
+              en: (
+                <div className="space-y-1">
+                  <div>
+                    <span className="text-muted-foreground">Zero‑result queries:</span>{" "}
+                    <span className="tabular-nums">{formatIntDe(counts["openalex_zero_result_queries"])}</span>
+                  </div>
+                </div>
+              ),
+            }}
           />
           <KpiCard
             label="S2 Queries"
             value={formatIntDe(counts["s2_total"])}
-            tooltip={
-              <div className="text-xs">
-                <span className="text-muted-foreground">Zero‑result queries:</span>{" "}
-                <span className="tabular-nums">{formatIntDe(counts["s2_zero_result_queries"])}</span>
-              </div>
-            }
+            helpKey="c.s2_queries"
+            helpExtra={{
+              de: (
+                <div className="space-y-1">
+                  <div>
+                    <span className="text-muted-foreground">Zero‑Result Queries:</span>{" "}
+                    <span className="tabular-nums">{formatIntDe(counts["s2_zero_result_queries"])}</span>
+                  </div>
+                </div>
+              ),
+              en: (
+                <div className="space-y-1">
+                  <div>
+                    <span className="text-muted-foreground">Zero‑result queries:</span>{" "}
+                    <span className="tabular-nums">{formatIntDe(counts["s2_zero_result_queries"])}</span>
+                  </div>
+                </div>
+              ),
+            }}
           />
           <KpiCard label="Authority" value={formatIntDe(counts["authority_total"])} />
           <KpiCard label="Match" value={formatIntDe(counts["match_total"])} />
@@ -1069,13 +1153,16 @@ function QueriesTab({ doc, loaded }: { doc: Record<string, unknown> | null | und
           <KpiCard label="Max Length" value={counts["max_length"] ? `${formatIntDe(counts["max_length"])} chars` : "—"} />
         </div>
 
-        <ChartCard title="Query String Length Distribution">
+        <ChartCard title="Query String Length Distribution" helpKey="c.length_distribution">
           <QueryLengthDistributionChart data={distRows} />
         </ChartCard>
 
         <Card className="p-4">
             <div className="flex items-center justify-between gap-3 mb-3">
-              <div className="text-sm font-medium">Generated Queries</div>
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="text-sm font-medium">Generated Queries</div>
+                <HelpPopover helpKey="c.generated_queries" />
+              </div>
             <Tabs value={provider} onValueChange={(v) => setProvider(v as "openalex" | "semanticscholar")}>
               <TabsList className="h-8">
                 <TabsTrigger value="openalex" className="text-xs">
@@ -1238,7 +1325,8 @@ function RetrievalTab({ doc, loaded }: { doc: Record<string, unknown> | null | u
             <div className="flex items-center justify-between gap-2">
               <div className="text-sm font-medium flex items-center gap-2">
                 <span className="inline-block h-2 w-2 rounded-full" style={{ background: "var(--chart-1)" }} />
-                OpenAlex
+                <span>OpenAlex</span>
+                <HelpPopover helpKey="d.provider_totals" />
               </div>
               <div className="text-xs text-muted-foreground tabular-nums">{formatIntDe(oa["records_total"])} Records</div>
             </div>
@@ -1261,7 +1349,8 @@ function RetrievalTab({ doc, loaded }: { doc: Record<string, unknown> | null | u
             <div className="flex items-center justify-between gap-2">
               <div className="text-sm font-medium flex items-center gap-2">
                 <span className="inline-block h-2 w-2 rounded-full" style={{ background: "var(--chart-2)" }} />
-                Semantic Scholar
+                <span>Semantic Scholar</span>
+                <HelpPopover helpKey="d.provider_totals" />
               </div>
               <div className="text-xs text-muted-foreground tabular-nums">{formatIntDe(s2["records_total"])} Records</div>
             </div>
@@ -1282,7 +1371,10 @@ function RetrievalTab({ doc, loaded }: { doc: Record<string, unknown> | null | u
         </div>
 
         <Card className="p-3">
-          <div className="text-sm font-medium mb-2">Phase D — Provider Summary</div>
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="text-sm font-medium">Phase D — Provider Summary</div>
+            <HelpPopover helpKey="d.provider_summary" />
+          </div>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -1338,32 +1430,44 @@ function RetrievalTab({ doc, loaded }: { doc: Record<string, unknown> | null | u
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <Card className="p-3">
-            <div className="text-sm font-medium mb-2">OpenAlex — Records by intent/lang</div>
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="text-sm font-medium">OpenAlex — Records by intent/lang</div>
+              <HelpPopover helpKey="d.provider_summary" />
+            </div>
             <ScrollArea className="max-h-[160px]">
               <IntentLangTable rows={rilOa} />
             </ScrollArea>
           </Card>
           <Card className="p-3">
-            <div className="text-sm font-medium mb-2">Semantic Scholar — Records by intent/lang</div>
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="text-sm font-medium">Semantic Scholar — Records by intent/lang</div>
+              <HelpPopover helpKey="d.provider_summary" />
+            </div>
             <ScrollArea className="max-h-[160px]">
               <IntentLangTable rows={rilS2} />
             </ScrollArea>
           </Card>
         </div>
 
-        <ChartCard title="Year Distribution of Retrieved Records">
+        <ChartCard title="Year Distribution of Retrieved Records" helpKey="d.year_distribution">
           <YearProviderChart data={yearRows} />
         </ChartCard>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <Card className="p-4">
-            <div className="text-sm font-medium mb-3">Top 10 Queries (Most Results)</div>
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="text-sm font-medium">Top 10 Queries (Most Results)</div>
+              <HelpPopover helpKey="d.top_bottom_queries" />
+            </div>
             <ScrollArea className="h-[360px]">
               <QueryCountTable rows={topRows} />
             </ScrollArea>
           </Card>
           <Card className="p-4">
-            <div className="text-sm font-medium mb-3">Bottom 10 Queries (Fewest Results)</div>
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="text-sm font-medium">Bottom 10 Queries (Fewest Results)</div>
+              <HelpPopover helpKey="d.top_bottom_queries" />
+            </div>
             <ScrollArea className="h-[360px]">
               <QueryCountTable rows={bottomRows} />
             </ScrollArea>
@@ -1372,7 +1476,10 @@ function RetrievalTab({ doc, loaded }: { doc: Record<string, unknown> | null | u
 
         <Card className="p-4">
           <div className="flex items-center justify-between gap-3 mb-3">
-            <div className="text-sm font-medium">Zero‑Result Queries</div>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="text-sm font-medium">Zero‑Result Queries</div>
+              <HelpPopover helpKey="d.zero_result_queries" />
+            </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="tabular-nums text-[11px] font-normal">
                 {formatIntDe(zeroList.length)}
@@ -1596,15 +1703,18 @@ function CandidatesTab({ doc, loaded }: { doc: Record<string, unknown> | null | 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <KpiCard label="Gesamt" value={formatIntDe(counts["candidates_total"])} />
-        <KpiCard label="Normalized" value={formatIntDe(counts["normalized_total"])} />
-        <KpiCard label="Duplikate entfernt" value={formatIntDe(counts["duplicates_removed"])} />
-        <KpiCard label="Merged" value={formatIntDe(counts["merges"])} />
-        <KpiCard label="DOI vorhanden" value={formatIntDe(counts["doi_present"])} />
+        <KpiCard label="Gesamt" value={formatIntDe(counts["candidates_total"])} helpKey="e.kpis" />
+        <KpiCard label="Normalized" value={formatIntDe(counts["normalized_total"])} helpKey="e.kpis" />
+        <KpiCard label="Duplikate entfernt" value={formatIntDe(counts["duplicates_removed"])} helpKey="e.kpis" />
+        <KpiCard label="Merged" value={formatIntDe(counts["merges"])} helpKey="e.kpis" />
+        <KpiCard label="DOI vorhanden" value={formatIntDe(counts["doi_present"])} helpKey="e.kpis" />
       </div>
 
       <Card className="p-4">
-        <div className="text-sm font-medium mb-2">Pool‑Verteilung</div>
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <div className="text-sm font-medium">Pool‑Verteilung</div>
+          <HelpPopover helpKey="e.pool_distribution" />
+        </div>
         <div className="h-3 w-full rounded-full bg-muted overflow-hidden flex">
           <div style={{ width: `${pctWith}%`, background: "var(--chart-1)" }} />
           <div style={{ width: `${pctWithout}%`, background: "var(--chart-2)" }} />
@@ -1612,33 +1722,38 @@ function CandidatesTab({ doc, loaded }: { doc: Record<string, unknown> | null | 
         <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-2 min-w-0">
             <span className="inline-block h-2 w-2 rounded-sm" style={{ background: "var(--chart-1)" }} />
-            <span className="truncate">
-              Mit Abstract ({totalPools ? pctWith.toFixed(1) : "0.0"}%)
-            </span>
+            <span className="truncate">Mit Abstract ({totalPools ? pctWith.toFixed(1) : "0.0"}%)</span>
           </div>
           <div className="flex items-center gap-2 min-w-0">
             <span className="inline-block h-2 w-2 rounded-sm" style={{ background: "var(--chart-2)" }} />
-            <span className="truncate">
-              Ohne Abstract ({totalPools ? pctWithout.toFixed(1) : "0.0"}%)
-            </span>
+            <span className="truncate">Ohne Abstract ({totalPools ? pctWithout.toFixed(1) : "0.0"}%)</span>
           </div>
         </div>
       </Card>
 
       <Card className="p-4">
-        <div className="text-sm font-medium mb-3">Top‑zitierte Kandidaten</div>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="text-sm font-medium">Top‑zitierte Kandidaten</div>
+          <HelpPopover helpKey="e.top_cited" />
+        </div>
         <ExpandableCandidateList items={topCited} openId={openId} onToggle={setOpenId} />
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <Card className="p-4">
-          <div className="text-sm font-medium mb-3">Top Cited but NO Anchors</div>
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="text-sm font-medium">Top Cited but NO Anchors</div>
+            <HelpPopover helpKey="e.top_no_anchors" />
+          </div>
           <ScrollArea className="h-[360px] pr-2">
             <ExpandableCandidateList items={topNoAnchors} openId={openId} onToggle={setOpenId} compact />
           </ScrollArea>
         </Card>
         <Card className="p-4">
-          <div className="text-sm font-medium mb-3">Top Econ‑Hit Candidates</div>
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="text-sm font-medium">Top Econ‑Hit Candidates</div>
+            <HelpPopover helpKey="e.top_econ_hit" />
+          </div>
           <ScrollArea className="h-[360px] pr-2">
             <ExpandableCandidateList items={topEcon} openId={openId} onToggle={setOpenId} compact />
           </ScrollArea>
@@ -1749,15 +1864,18 @@ function ScoringTab({ doc, loaded }: { doc: Record<string, unknown> | null | und
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <KpiCard label="Stage‑2 Candidates" value={formatIntDe(kpis["stage2_candidates"])} />
-        <KpiCard label="Facets Used" value={formatIntDe(kpis["facets_used"])} />
-        <KpiCard label="Kosten" value={formatUsd(kpis["cost_usd"])} />
-        <KpiCard label="Stage‑2 Scored" value={formatIntDe(kpis["stage2_scored"])} />
-        <KpiCard label="Pruning Kept" value={formatIntDe(kpis["pruning_kept_total"])} />
+        <KpiCard label="Stage‑2 Candidates" value={formatIntDe(kpis["stage2_candidates"])} helpKey="f.stage2_candidates" />
+        <KpiCard label="Facets Used" value={formatIntDe(kpis["facets_used"])} helpKey="f.facets_used" />
+        <KpiCard label="Kosten" value={formatUsd(kpis["cost_usd"])} helpKey="f.embedding_cost" />
+        <KpiCard label="Stage‑2 Scored" value={formatIntDe(kpis["stage2_scored"])} helpKey="f.stage2_scored" />
+        <KpiCard label="Pruning Kept" value={formatIntDe(kpis["pruning_kept_total"])} helpKey="f.pruning_kept" />
       </div>
 
       <Card className="p-4">
-        <div className="text-sm font-medium mb-3">Anchor Hit Rate (Top 20)</div>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="text-sm font-medium">Anchor Hit Rate (Top 20)</div>
+          <HelpPopover helpKey="f.anchor_hit_rate" />
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -1797,10 +1915,10 @@ function ScoringTab({ doc, loaded }: { doc: Record<string, unknown> | null | und
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <ChartCard title="Authority Lane Distribution">
+        <ChartCard title="Authority Lane Distribution" helpKey="f.lane_distributions">
           <HistogramTwoPools data={authorityRows} />
         </ChartCard>
-        <ChartCard title="Match Lane Distribution">
+        <ChartCard title="Match Lane Distribution" helpKey="f.lane_distributions">
           <HistogramTwoPools data={matchRows} />
         </ChartCard>
       </div>
@@ -1825,19 +1943,22 @@ function RerankTab({ doc, loaded }: { doc: Record<string, unknown> | null | unde
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard label="Model" value={String(kpis["model"] || "—")} />
-        <KpiCard label="Tasks" value={formatIntDe(kpis["tasks_total"])} />
-        <KpiCard label="Calls / Failures" value={`${calls} / ${failures}`} />
-        <KpiCard label="Kosten" value={formatUsd(kpis["cost_usd_total"])} />
-        <KpiCard label="Insufficient" value={formatIntDe(kpis["insufficient_total"])} />
-        <KpiCard label="p50 Latency" value={Number.isFinite(latency) ? `${latency.toFixed(1)}s` : "—"} />
+        <KpiCard label="Tasks" value={formatIntDe(kpis["tasks_total"])} helpKey="i.tasks" />
+        <KpiCard label="Calls / Failures" value={`${calls} / ${failures}`} helpKey="i.calls_failures" />
+        <KpiCard label="Kosten" value={formatUsd(kpis["cost_usd_total"])} helpKey="i.cost" />
+        <KpiCard label="Insufficient" value={formatIntDe(kpis["insufficient_total"])} helpKey="i.insufficient" />
+        <KpiCard label="p50 Latency" value={Number.isFinite(latency) ? `${latency.toFixed(1)}s` : "—"} helpKey="i.latency_p50" />
       </div>
 
-      <ChartCard title="LLM Score Distribution (0‑100)">
+      <ChartCard title="LLM Score Distribution (0‑100)" helpKey="i.score_distribution">
         <HistogramTwoPools data={distRows} />
       </ChartCard>
 
       <Card className="p-4">
-        <div className="text-sm font-medium mb-3">Token Usage</div>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="text-sm font-medium">Token Usage</div>
+          <HelpPopover helpKey="i.token_usage" />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <KpiCard label="Input Tokens" value={formatIntDe(tokens["input_tokens_total"])} />
           <KpiCard label="Output Tokens" value={formatIntDe(tokens["output_tokens_total"])} />
