@@ -438,7 +438,7 @@ TOP_N_SAMPLES = 8
 
 FACETS_MIN = 8
 FACETS_MAX = 20
-ANCHORS_MIN = 3
+ANCHORS_MIN = 4
 
 QUERY_DUP_WARN = 0.10
 QUERY_DUP_FAIL = 0.25
@@ -1208,6 +1208,7 @@ class Facet(BaseModel):
     facet_label_en: str
     facet_label_de: str
     facet_type: str
+    facet_group: str
     importance_weight: int = Field(ge=1, le=5)
     text_en: str
     text_de: str
@@ -1222,6 +1223,9 @@ class QueryPlan(BaseModel):
     topic_summary_en: str
     topic_summary_de: str
     primary_context_anchors: BilingualTerms
+    core_object_terms: BilingualTerms
+    must_keep_constraints: List[str] = Field(default_factory=list)
+    drift_risks: List[str] = Field(default_factory=list)
     facets: List[Facet]
     global_canonical_terms: BilingualTerms
     global_exclusions: BilingualTerms
@@ -1597,6 +1601,16 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 
+FACET_GROUP_ENUM = [
+    "object",
+    "construct",
+    "data_proxy",
+    "method",
+    "context",
+    "limitation",
+]
+
+
 QUERY_PLAN_JSON_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -1604,6 +1618,9 @@ QUERY_PLAN_JSON_SCHEMA = {
         "topic_summary_en",
         "topic_summary_de",
         "primary_context_anchors",
+        "core_object_terms",
+        "must_keep_constraints",
+        "drift_risks",
         "facets",
         "global_canonical_terms",
         "global_exclusions",
@@ -1619,6 +1636,23 @@ QUERY_PLAN_JSON_SCHEMA = {
                 "en": {"type": "array", "items": {"type": "string"}},
                 "de": {"type": "array", "items": {"type": "string"}},
             },
+        },
+        "core_object_terms": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["en", "de"],
+            "properties": {
+                "en": {"type": "array", "items": {"type": "string"}},
+                "de": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        "must_keep_constraints": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "drift_risks": {
+            "type": "array",
+            "items": {"type": "string"},
         },
         "global_canonical_terms": {
             "type": "object",
@@ -1648,6 +1682,7 @@ QUERY_PLAN_JSON_SCHEMA = {
                     "facet_label_en",
                     "facet_label_de",
                     "facet_type",
+                    "facet_group",
                     "importance_weight",
                     "text_en",
                     "text_de",
@@ -1675,6 +1710,7 @@ QUERY_PLAN_JSON_SCHEMA = {
                             "applications",
                         ],
                     },
+                    "facet_group": {"type": "string", "enum": FACET_GROUP_ENUM},
                     "importance_weight": {"type": "integer", "minimum": 1, "maximum": 5},
                     "text_en": {"type": "string"},
                     "text_de": {"type": "string"},
@@ -1712,67 +1748,138 @@ QUERY_PLAN_JSON_SCHEMA = {
 }
 
 
-PLANNER_SYSTEM_PROMPT = """You are a scientific literature search planner. Convert a chapter title and a ~200-word chapter specification into a bilingual (EN+DE) query plan for downstream APIs.
-You must be deterministic and consistent across any domain.
-Do NOT name specific papers, authors, or venues. Do NOT invent citations.
+PLANNER_SYSTEM_PROMPT = """
+You are a scientific literature search planner for a multi-stage academic retrieval pipeline.
+Your job is not to describe a topic in generic academic language. Your job is to preserve the chapter's exact retrieval target so downstream query builders can find the right literature.
+
+Priority order:
+1) Preserve the chapter's core object, corpus, domain, or context exactly.
+2) Preserve the main constructs, questions, outcomes, or debates.
+3) Preserve data-source, proxy, measurement, and validity constraints.
+4) Add useful neighboring facets without diluting the core object.
+5) Add exclusions only for true wrong-sense confounders.
+
+Rules:
+- If a phrase is central to the chapter object, keep it even if one token inside the phrase is generic.
+- Do not replace concrete chapter nouns with broader abstractions.
+- Method terms are supporting context unless the chapter is explicitly about methods.
+- Do not name specific papers, authors, or venues. Do not invent citations.
+- Be deterministic and return only valid JSON.
 """
 
 PLANNER_USER_PROMPT_TEMPLATE = """CHAPTER_TITLE:
 {{chapter_title}}
 
-CHAPTER_SPEC (instructions):
+CHAPTER_SPEC (retrieval contract):
 {{chapter_spec_text}}
 
 TASK:
+Return a QueryPlan JSON object with the existing schema.
+
+HOW TO INTERPRET THE CHAPTER:
+Preserve these distinctions in the plan:
+- chapter object / corpus / domain context
+- target construct / question / outcome
+- data source / proxy / measurement constraints
+- analytical methods
+- exclusions / wrong-sense confounders
+
+PRIORITY ORDER:
+1) preserve the chapter's core object/corpus/domain exactly
+2) preserve the main constructs/questions/outcomes
+3) preserve data/proxy/measurement constraints
+4) add useful neighboring facets without diluting the object
+5) add exclusions only for true wrong-sense confounders
+
 Return a QueryPlan JSON object with these keys:
 
-1) topic_summary_en: 2–3 sentences
-2) topic_summary_de: 2–3 sentences (natural German)
+1) topic_summary_en: 2-3 sentences
+2) topic_summary_de: 2-3 sentences (natural German)
+
+Summary rules:
+- State the chapter object, the main construct/question, and the role of data/proxies/methods.
+- Do not generalize away the named corpus/object.
 
 3) primary_context_anchors:
-   - en: 3–8 short anchors that uniquely pin the topic (prefer proper nouns, named constructs, standard period/organism/method names)
-   - de: 3–8 short anchors (German equivalents + common English terms used in German literature)
+   - en: 4-10 short anchors
+   - de: 4-10 short anchors
    RULES:
-   - Each anchor must be 1–6 words.
-   - No generic research words: analysis, study, effects, mechanism, framework, model, system, approach, dynamics, development, review, overview
-     German: Analyse, Studie, Effekte, Mechanismus, Rahmen, Modell, System, Ansatz, Dynamik, Entwicklung, Überblick
+   - Each anchor must be 1-6 words.
+   - At least 2 anchors per language should name the core object/corpus/domain when available.
+   - Pure method anchors are allowed only if genuinely central; they must never be the majority.
+   - Avoid vague standalone research words such as analysis, study, effects, framework, model, system, approach, dynamics, development, overview.
+   - A full phrase may be kept if the phrase itself is chapter-critical, even if one word inside it is generic.
    - Avoid long narrative phrases. Avoid parentheses and commas inside anchors.
 
-4) global_canonical_terms:
-   - en: 12–30 terms/phrases (topic terms + synonyms + abbreviations)
-   - de: 12–30 terms/phrases (German equivalents + common English loan terms)
-   TERM HYGIENE (MANDATORY for ALL term lists):
-   - Each term must be <= 4 words.
-   - No explanatory text, no “e.g.” / “z. B.”.
-   - No parentheses, no commas, no semicolons.
-   - No “modern … jargon” type commentary; only tokens likely to appear in titles/abstracts.
+4) core_object_terms:
+   - en: 3-12 short terms/phrases naming the core object/corpus/domain
+   - de: 3-12 short terms/phrases naming the core object/corpus/domain
+   RULES:
+   - These should be the best retrieval phrases for the chapter's object, not methods or broad abstractions.
+   - Reuse exact chapter wording where helpful.
+   - Each term must be <= 4 words and follow TERM HYGIENE.
 
-5) global_exclusions:
-   - en: 0–12 atomic confounder terms (<= 3 words each)
-   - de: 0–12 atomic confounder terms (<= 3 words each)
+5) must_keep_constraints:
+   - 3-10 short English strings
+   RULES:
+   - Each item should capture a non-negotiable retrieval constraint that downstream stages must preserve.
+   - Focus on object, construct, proxy/data, measurement, or scope constraints.
+   - Keep each item short and concrete.
+
+6) drift_risks:
+   - 2-8 short English strings
+   RULES:
+   - List the most likely ways retrieval could drift off-topic.
+   - Include generic method drift when relevant.
+   - Keep each item short and concrete.
+
+7) global_canonical_terms:
+   - en: 12-30 terms/phrases
+   - de: 12-30 terms/phrases
+   TERM HYGIENE:
+   - Each term must be <= 4 words.
+   - No explanatory text, no "e.g." / "z. B.".
+   - No parentheses, no commas, no semicolons.
+   - Preserve important chapter wording if it is likely to appear in titles/abstracts.
+   - Ensure the list includes object terms first, then construct/data/proxy terms, then method terms.
+
+8) global_exclusions:
+   - en: 0-12 atomic confounder terms
+   - de: 0-12 atomic confounder terms
    EXCLUSION RULES:
    - Only include exclusions that are likely to appear in unrelated literature and cause wrong-sense retrieval.
-   - No punctuation except hyphen. No parentheses. No example phrases.
+   - <= 3 words each
+   - No punctuation except hyphen
+   - If unsure, omit the exclusion
 
-6) facets: 8–20 ATOMIC facets (one requirement each).
+9) facets: 8-18 ATOMIC facets.
 For each facet:
-- facet_id: lower_snake_case, 3–6 words, stable
+- facet_id: lower_snake_case, 3-6 words, stable
 - facet_type: one of ["background","theory","mechanism","methods","data","measurement","evaluation","case_context","debate","limitations","applications"]
-- importance_weight: integer 1..5 (5 = explicitly required, 4 = important support, 3 = common subtopic, 2 peripheral, 1 optional)
+- facet_group: one of ["object","construct","data_proxy","method","context","limitation"]
+- importance_weight: integer 1..5
 - facet_label_en: <= 8 words
 - facet_label_de: <= 8 words
-- text_en: 1–2 sentences
-- text_de: 1–2 sentences
-- canonical_terms.en/de: 6–18 terms each (must follow TERM HYGIENE)
-- neighbor_terms.en/de: 4–12 terms each (must follow TERM HYGIENE)
-- exclusion_terms.en/de: 0–6 terms each (must follow EXCLUSION RULES)
+- text_en: 1-2 sentences
+- text_de: 1-2 sentences
+- canonical_terms.en/de: 6-18 terms each
+- neighbor_terms.en/de: 4-12 terms each
+- exclusion_terms.en/de: 0-6 terms each
 
-QUALITY RULES:
-- Cover all explicit instructions in the chapter spec via facets (no gaps).
-- Add 2–4 neighbor facets that are commonly necessary but not explicitly listed.
+FACET RULES:
+- Cover every explicit instruction in the chapter spec.
+- Add 2-4 useful neighboring facets that support retrieval, but keep the plan centered on the named chapter object.
+- If the chapter is not primarily a methods chapter, generic methods facets must not dominate the weight>=4 set.
+- For any methods/data/measurement facet, write it as methods/data/measurement FOR this chapter object, not as a generic field overview.
+- Use facet_group to mark the facet's coarse retrieval role.
+- If the chapter mentions proxies, secondary data, validity, bias, or representativeness, add the relevant facets when supported by the spec.
 - Keep facets non-overlapping as much as possible.
-- Prefer technical terms over vague words.
-- If the topic is ambiguous, add exclusions to disambiguate.
+
+QUALITY CHECKS:
+- If your top anchors would retrieve generic method papers but not the chapter object, revise them.
+- If core_object_terms are weak, generic, or method-heavy, revise them.
+- If the plan drops the concrete object/corpus in favor of abstractions, revise it.
+- If an exclusion is not a clear wrong-sense confounder, omit it.
 
 OUTPUT:
 Return ONLY valid JSON. No extra text.
@@ -1815,10 +1922,59 @@ _GENERIC_RESEARCH_WORDS = [
     "überblick",
 ]
 _GENERIC_RESEARCH_WORD_PAT = re.compile(r"\b(" + "|".join(re.escape(w) for w in _GENERIC_RESEARCH_WORDS) + r")\b", re.IGNORECASE)
+_GENERIC_RESEARCH_WORD_SET = {w.casefold() for w in _GENERIC_RESEARCH_WORDS}
+_ANCHOR_JOINER_WORDS = {
+    "and",
+    "or",
+    "of",
+    "for",
+    "the",
+    "a",
+    "an",
+    "und",
+    "oder",
+    "von",
+    "für",
+    "der",
+    "die",
+    "das",
+}
 
 
 def _word_count(text: str) -> int:
     return len([w for w in re.split(r"\s+", str(text or "").strip()) if w])
+
+
+def _phrase_tokens(text: str) -> List[str]:
+    return [t.casefold() for t in re.findall(r"[\w-]+", str(text or ""), flags=re.UNICODE) if t]
+
+
+def _normalized_phrase(text: str) -> str:
+    return " ".join(_phrase_tokens(text))
+
+
+def _is_vague_anchor(term: str) -> bool:
+    toks = _phrase_tokens(term)
+    if not toks:
+        return True
+    content = [t for t in toks if t not in _ANCHOR_JOINER_WORDS]
+    if not content:
+        return True
+    if len(content) == 1 and content[0] in _GENERIC_RESEARCH_WORD_SET:
+        return True
+    return all(t in _GENERIC_RESEARCH_WORD_SET for t in content)
+
+
+def _is_short_plain_text(text: str, *, min_words: int = 1, max_words: int = 12, max_chars: int = 120) -> bool:
+    s = str(text or "").strip()
+    if not s:
+        return False
+    if len(s) > int(max_chars):
+        return False
+    n_words = _word_count(s)
+    if n_words < int(min_words) or n_words > int(max_words):
+        return False
+    return True
 
 
 def _is_atomic_exclusion(term: str) -> bool:
@@ -1866,8 +2022,8 @@ def diagnose_query_plan(plan: QueryPlan) -> Dict[str, Any]:
     # Primary context anchors
     for lang in ("en", "de"):
         anchors = getattr(plan.primary_context_anchors, lang, []) or []
-        if len(anchors) < 3 or len(anchors) > 8:
-            issues.append(f"CRITICAL: primary_context_anchors.{lang} has {len(anchors)} items (expected 3–8).")
+        if len(anchors) < 4 or len(anchors) > 10:
+            issues.append(f"CRITICAL: primary_context_anchors.{lang} has {len(anchors)} items (expected 4–10).")
 
         bad = []
         for a in anchors:
@@ -1878,11 +2034,60 @@ def diagnose_query_plan(plan: QueryPlan) -> Dict[str, Any]:
             if not _is_hygienic_term(aa, max_words=6):
                 bad.append(aa)
                 continue
-            if _GENERIC_RESEARCH_WORD_PAT.search(aa):
+            if _is_vague_anchor(aa):
                 bad.append(aa)
                 continue
         if bad:
             issues.append(f"CRITICAL: primary_context_anchors.{lang} contains invalid/generic anchors: {bad[:6]}")
+
+    # Core object terms
+    for lang in ("en", "de"):
+        obj_terms = getattr(plan.core_object_terms, lang, []) or []
+        if len(obj_terms) < 3 or len(obj_terms) > 12:
+            issues.append(f"CRITICAL: core_object_terms.{lang} has {len(obj_terms)} items (expected 3–12).")
+        bad = []
+        for t in obj_terms:
+            tt = str(t or "").strip()
+            if not _is_hygienic_term(tt, max_words=4):
+                bad.append(tt)
+                continue
+            if _is_vague_anchor(tt):
+                bad.append(tt)
+                continue
+        if bad:
+            issues.append(f"CRITICAL: core_object_terms.{lang} contains invalid/generic terms: {bad[:6]}")
+
+    anchors_norm = {
+        lang: {_normalized_phrase(x) for x in (getattr(plan.primary_context_anchors, lang, []) or []) if _normalized_phrase(x)}
+        for lang in ("en", "de")
+    }
+    obj_norm = {
+        lang: {_normalized_phrase(x) for x in (getattr(plan.core_object_terms, lang, []) or []) if _normalized_phrase(x)}
+        for lang in ("en", "de")
+    }
+    for lang in ("en", "de"):
+        overlap = any(
+            (a == c) or (a in c) or (c in a)
+            for a in anchors_norm[lang]
+            for c in obj_norm[lang]
+        )
+        if not overlap:
+            issues.append(f"CRITICAL: primary_context_anchors.{lang} does not preserve any core_object_terms.{lang} phrase.")
+
+    # Semantic guardrails
+    mkc = list(plan.must_keep_constraints or [])
+    if len(mkc) < 3 or len(mkc) > 10:
+        issues.append(f"CRITICAL: must_keep_constraints has {len(mkc)} items (expected 3–10).")
+    bad_mkc = [x for x in mkc if not _is_short_plain_text(x, min_words=2, max_words=12, max_chars=120)]
+    if bad_mkc:
+        issues.append(f"CRITICAL: must_keep_constraints contains invalid items: {bad_mkc[:6]}")
+
+    drift = list(plan.drift_risks or [])
+    if len(drift) < 2 or len(drift) > 8:
+        issues.append(f"CRITICAL: drift_risks has {len(drift)} items (expected 2–8).")
+    bad_drift = [x for x in drift if not _is_short_plain_text(x, min_words=2, max_words=12, max_chars=120)]
+    if bad_drift:
+        issues.append(f"CRITICAL: drift_risks contains invalid items: {bad_drift[:6]}")
 
     # Term hygiene checks
     def check_term_list(name: str, terms: List[str], *, max_words: int) -> None:
@@ -1903,12 +2108,33 @@ def diagnose_query_plan(plan: QueryPlan) -> Dict[str, Any]:
     check_exclusions("global_exclusions.de", plan.global_exclusions.de)
 
     for f in plan.facets:
+        if str(getattr(f, "facet_group", "") or "") not in FACET_GROUP_ENUM:
+            issues.append(f"CRITICAL: facet[{f.facet_id}] has invalid facet_group: {getattr(f, 'facet_group', None)!r}")
         check_term_list(f"facet[{f.facet_id}].canonical_terms.en", f.canonical_terms.en, max_words=4)
         check_term_list(f"facet[{f.facet_id}].canonical_terms.de", f.canonical_terms.de, max_words=4)
         check_term_list(f"facet[{f.facet_id}].neighbor_terms.en", f.neighbor_terms.en, max_words=4)
         check_term_list(f"facet[{f.facet_id}].neighbor_terms.de", f.neighbor_terms.de, max_words=4)
         check_exclusions(f"facet[{f.facet_id}].exclusion_terms.en", f.exclusion_terms.en)
         check_exclusions(f"facet[{f.facet_id}].exclusion_terms.de", f.exclusion_terms.de)
+
+    facet_groups_all = [str(getattr(f, "facet_group", "") or "") for f in plan.facets]
+    if "object" not in facet_groups_all:
+        issues.append("CRITICAL: QueryPlan has no object facet_group facet.")
+
+    high_value_groups = [
+        str(getattr(f, "facet_group", "") or "")
+        for f in plan.facets
+        if int(getattr(f, "importance_weight", 0) or 0) >= 4
+    ]
+    if not any(g in {"object", "construct", "data_proxy"} for g in high_value_groups):
+        issues.append("CRITICAL: weight>=4 facets do not include any object/construct/data_proxy facet_group.")
+
+    method_heavy = sum(1 for g in high_value_groups if g == "method")
+    objectish = sum(1 for g in high_value_groups if g in {"object", "construct", "data_proxy"})
+    if high_value_groups and method_heavy > objectish:
+        issues.append(
+            "Method-heavy weighting detected: weight>=4 method facets outnumber object/construct/data_proxy facets."
+        )
 
     # Very rough overlap heuristic: identical canonical term sets.
     canon_sets: Dict[Tuple[Tuple[str, ...], Tuple[str, ...]], str] = {}
@@ -2177,6 +2403,10 @@ diag = meta.get("diagnostics") or diagnose_query_plan(plan)
 facet_count = safe_len(getattr(plan, 'facets', []) or [])
 anchors_en = safe_len(getattr(getattr(plan, 'primary_context_anchors', None), 'en', []) or [])
 anchors_de = safe_len(getattr(getattr(plan, 'primary_context_anchors', None), 'de', []) or [])
+obj_terms_en = safe_len(getattr(getattr(plan, 'core_object_terms', None), 'en', []) or [])
+obj_terms_de = safe_len(getattr(getattr(plan, 'core_object_terms', None), 'de', []) or [])
+must_keep_n = safe_len(getattr(plan, 'must_keep_constraints', []) or [])
+drift_risks_n = safe_len(getattr(plan, 'drift_risks', []) or [])
 
 # Build facet rows (verbose, but scannable)
 facet_rows = []
@@ -2186,6 +2416,7 @@ for f in (getattr(plan, 'facets', []) or []):
             'facet_id': f.facet_id,
             'weight': int(getattr(f, 'importance_weight', 0) or 0),
             'facet_type': str(getattr(f, 'facet_type', '') or ''),
+            'facet_group': str(getattr(f, 'facet_group', '') or ''),
             'label_en': _truncate(getattr(f, 'facet_label_en', '') or '', 70),
             'canon_en_n': safe_len(getattr(getattr(f, 'canonical_terms', None), 'en', []) or []),
             'canon_de_n': safe_len(getattr(getattr(f, 'canonical_terms', None), 'de', []) or []),
@@ -2238,6 +2469,28 @@ qc.append(
         expected=f'>={ANCHORS_MIN} each',
         why='anchors keep provider queries context-bound and reduce off-topic pollution',
         fix='Refine chapter title/spec; ensure domain anchors appear explicitly',
+    )
+)
+
+qc.append(
+    qc_row(
+        check='core_object_terms',
+        status='OK' if (obj_terms_en >= 3 and obj_terms_de >= 3) else 'FAIL',
+        value=f'en={obj_terms_en}, de={obj_terms_de}',
+        expected='>=3 each',
+        why='core object terms preserve the chapter target for downstream query builders',
+        fix='Adjust planner prompt/schema so the core object is stated explicitly in both languages',
+    )
+)
+
+qc.append(
+    qc_row(
+        check='semantic_guardrails',
+        status='OK' if (must_keep_n >= 3 and drift_risks_n >= 2) else 'FAIL',
+        value=f'must_keep={must_keep_n}, drift_risks={drift_risks_n}',
+        expected='must_keep>=3, drift_risks>=2',
+        why='these fields explicitly communicate what later stages must preserve and how retrieval can drift',
+        fix='Tighten Phase B prompt/schema so non-negotiable constraints and drift risks are always emitted',
     )
 )
 
@@ -2313,6 +2566,8 @@ section_at_a_glance(
         'query_plan.json': run_ctx.artifacts.query_plan_json,
         'facets': facet_count,
         'anchors(en/de)': f"{anchors_en}/{anchors_de}",
+        'core_object_terms(en/de)': f"{obj_terms_en}/{obj_terms_de}",
+        'must_keep/drift_risks': f"{must_keep_n}/{drift_risks_n}",
     },
     qc,
     {'query_plan.json': run_ctx.artifacts.query_plan_json},
@@ -2378,6 +2633,28 @@ for ft, a in sorted(agg.items(), key=lambda kv: (-kv[1]['n'], kv[0])):
     )
 print_table(rows_over, columns=['facet_type', 'n', 'avg_weight', 'weight_5_count'], max_rows=50, max_col_width=50)
 
+print_section('Facets — Overview (by facet_group)')
+agg_group: dict[str, dict[str, float]] = {}
+for r in facet_rows:
+    fg = str(r.get('facet_group') or '')
+    a = agg_group.setdefault(fg, {'n': 0, 'w_sum': 0.0, 'w4p': 0})
+    a['n'] += 1
+    a['w_sum'] += float(r.get('weight') or 0)
+    if int(r.get('weight') or 0) >= 4:
+        a['w4p'] += 1
+
+rows_group = []
+for fg, a in sorted(agg_group.items(), key=lambda kv: (-kv[1]['n'], kv[0])):
+    rows_group.append(
+        {
+            'facet_group': fg or '<empty>',
+            'n': _fmt_int(a['n']),
+            'avg_weight': f"{(a['w_sum'] / float(max(1, a['n']))):.2f}",
+            'weight_4_plus': _fmt_int(a['w4p']),
+        }
+    )
+print_table(rows_group, columns=['facet_group', 'n', 'avg_weight', 'weight_4_plus'], max_rows=50, max_col_width=50)
+
 print_section('Facets — Table')
 facet_rows_sorted = sorted(facet_rows, key=lambda r: (-int(r.get('weight') or 0), str(r.get('facet_id') or '')))
 print_table(
@@ -2386,6 +2663,7 @@ print_table(
         'facet_id',
         'weight',
         'facet_type',
+        'facet_group',
         'label_en',
         'canon_en_n',
         'canon_de_n',
@@ -2414,6 +2692,18 @@ try:
             'terms': _join_terms(plan.primary_context_anchors.de, max_terms=25, max_chars=260),
         },
         {
+            'kind': 'core_object_terms',
+            'lang': 'en',
+            'n': obj_terms_en,
+            'terms': _join_terms(plan.core_object_terms.en, max_terms=20, max_chars=260),
+        },
+        {
+            'kind': 'core_object_terms',
+            'lang': 'de',
+            'n': obj_terms_de,
+            'terms': _join_terms(plan.core_object_terms.de, max_terms=20, max_chars=260),
+        },
+        {
             'kind': 'global_canonical_terms',
             'lang': 'en',
             'n': safe_len(plan.global_canonical_terms.en),
@@ -2436,6 +2726,18 @@ try:
             'lang': 'de',
             'n': safe_len(plan.global_exclusions.de),
             'terms': _join_terms(plan.global_exclusions.de, max_terms=20, max_chars=260),
+        },
+        {
+            'kind': 'must_keep_constraints',
+            'lang': '-',
+            'n': must_keep_n,
+            'terms': _join_terms(plan.must_keep_constraints, max_terms=12, max_chars=260),
+        },
+        {
+            'kind': 'drift_risks',
+            'lang': '-',
+            'n': drift_risks_n,
+            'terms': _join_terms(plan.drift_risks, max_terms=12, max_chars=260),
         },
     ]
     print_table(global_rows, columns=['kind', 'lang', 'n', 'terms'], max_rows=20, max_col_width=260)
@@ -2486,6 +2788,7 @@ for f in (getattr(plan, 'facets', []) or []):
                 'facet_id': f.facet_id,
                 'weight': w,
                 'facet_type': str(getattr(f, 'facet_type', '') or ''),
+                'facet_group': str(getattr(f, 'facet_group', '') or ''),
                 'reasons': ', '.join(reasons[:5]),
                 'canon_en': _join_terms(ce, max_terms=8, max_chars=180),
                 'canon_de': _join_terms(cd, max_terms=8, max_chars=180),
@@ -2497,7 +2800,7 @@ if not risk_rows:
 else:
     print_table(
         sorted(risk_rows, key=lambda r: (-int(r.get('weight') or 0), str(r.get('facet_id') or ''))),
-        columns=['facet_id', 'weight', 'facet_type', 'reasons', 'canon_en', 'canon_de'],
+        columns=['facet_id', 'weight', 'facet_type', 'facet_group', 'reasons', 'canon_en', 'canon_de'],
         max_rows=50,
         max_col_width=220,
     )
@@ -7278,6 +7581,7 @@ write_json(
                 'facet_label_de': f.facet_label_de,
                 'importance_weight': int(f.importance_weight),
                 'facet_type': f.facet_type,
+                'facet_group': f.facet_group,
             }
             for f in facets
         ],
