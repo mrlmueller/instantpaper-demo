@@ -443,8 +443,12 @@ ANCHORS_MIN = 4
 QUERY_DUP_WARN = 0.10
 QUERY_DUP_FAIL = 0.25
 
-ZERO_Q_WARN = 0.20
-ZERO_Q_FAIL = 0.50
+OPENALEX_ZERO_Q_WARN = 0.35
+OPENALEX_ZERO_Q_FAIL = 0.60
+S2_ZERO_Q_WARN = 0.25
+S2_ZERO_Q_FAIL = 0.40
+S2_DE_ZERO_Q_WARN = 0.50
+S2_DE_ZERO_Q_FAIL = 0.80
 
 DOMINANCE_WARN = 0.30
 DOMINANCE_FAIL = 0.50
@@ -2873,7 +2877,7 @@ class OpenAlexQuery(BaseModel):
 
     intent: Literal["authority", "match"]
     language: Literal["en", "de"]
-    search_field: Literal["default.search", "title_and_abstract.search"] = "title_and_abstract.search"
+    search_field: Literal["search", "default.search", "title_and_abstract.search"] = "title_and_abstract.search"
     query_string: str
     filters: str
     sort: Optional[Literal["cited_by_count:desc", "relevance_score:desc"]] = None
@@ -2904,7 +2908,7 @@ OPENALEX_QUERY_BUILDER_JSON_SCHEMA: Dict[str, Any] = {
                 "properties": {
                     "intent": {"type": "string", "enum": ["authority", "match"]},
                     "language": {"type": "string", "enum": ["en", "de"]},
-                    "search_field": {"type": "string", "enum": ["default.search", "title_and_abstract.search"]},
+                    "search_field": {"type": "string", "enum": ["search", "title_and_abstract.search"]},
                     "query_string": {"type": "string"},
                     "filters": {"type": "string"},
                     "sort": {
@@ -2948,15 +2952,23 @@ S2_BULK_QUERY_BUILDER_JSON_SCHEMA: Dict[str, Any] = {
 # Phase C.1 — Prompt templates (from the implementation plan)
 # -----------------------------
 
-OPENALEX_QUERY_BUILDER_SYSTEM_PROMPT = """You generate OpenAlex /works query objects. Output ONLY valid JSON.
-Goal: high precision with strong recall across ANY scientific domain.
+OPENALEX_QUERY_BUILDER_SYSTEM_PROMPT = """You generate OpenAlex /works query objects for a multi-stage scientific retrieval pipeline.
+Your job is to maximize useful recall without losing the chapter's true object.
+
+Priority order:
+1) Keep every query inside the chapter object, corpus, or domain.
+2) Cover the main constructs, data/proxy constraints, and required facets.
+3) Add breadth through controlled synonym and facet variation.
+4) Add authority boosters only when they remain chapter-anchored.
+5) Prefer simpler provider-safe syntax over clever but brittle syntax.
+
+Do not output prose. Output only valid JSON.
 Be deterministic.
 """
 
-OPENALEX_QUERY_BUILDER_USER_PROMPT_TEMPLATE = """PIPELINE CONTEXT (READ CAREFULLY):
-You generate provider-safe OpenAlex /works query objects for retrieval in a two-lane pipeline.
-These queries only collect candidates; downstream stages deduplicate, embed, and rerank.
-So: keep queries context-anchored and selective, but not ultra-narrow.
+OPENALEX_QUERY_BUILDER_USER_PROMPT_TEMPLATE = """PIPELINE CONTEXT:
+You generate provider-safe OpenAlex /works query objects for a two-lane retrieval pipeline.
+These queries only collect candidates, but you must still prevent generic-method drift now.
 
 CHAPTER_TITLE:
 {{chapter_title}}
@@ -2968,23 +2980,13 @@ INPUT_QUERY_PLAN_JSON:
 {{query_plan_json}}
 
 BUDGET:
-max_queries = {{max_queries}}  # hard cap
+max_queries = {{max_queries}}
 languages = ["en","de"]
 
-KONTEXT:
-CHAPTER_TITLE is the titel of a chapter that I want to write in my paper and CHAPTER_SPEC_TEXT is a text that describes exactly what the chapter
-should be about. This is one step in a pipeline to find the best sources to write that chapter in my paper about. 
-
-GOALS:
-Return OpenAlex /works query objects supporting:
-- authority intent: canonical/high-impact core literature (still context-anchored)
-- match intent: best topical fit, including strong partial matches on facets
-
-OPENALEX BOOLEAN RULES (MANDATORY):
-- AND/OR/NOT must be UPPERCASE
-- Parentheses and quotes allowed
-- Forbidden: * ? ~ (never output these)
-- Avoid slash tokens X/Y; write (X OR Y) instead
+GOAL HIERARCHY:
+- authority: canonical/high-impact literature that is still clearly about the chapter object
+- match: strongest topical fit for the chapter, including strong partial matches on required facets
+- do not spend budget on queries that are mainly about a generic method with weak chapter-object anchoring
 
 OUTPUT JSON SCHEMA:
 {
@@ -2992,7 +2994,7 @@ OUTPUT JSON SCHEMA:
     {
       "intent": "authority" | "match",
       "language": "en" | "de",
-      "search_field": "default.search" | "title_and_abstract.search",
+      "search_field": "search" | "title_and_abstract.search",
       "query_string": "BOOLEAN QUERY STRING",
       "filters": "comma,separated,filters",
       "sort": "cited_by_count:desc" | "relevance_score:desc" | null,
@@ -3002,58 +3004,99 @@ OUTPUT JSON SCHEMA:
   ]
 }
 
-MANDATORY RULES:
-1) Every query MUST include at least ONE term from primary_context_anchors[language].
-2) TERM HYGIENE: do not output any term containing parentheses, commas, “e.g.”, “z. B.”, or explanatory text.
-3) EXCLUSIONS:
-   - Only use atomic exclusion terms (<=3 words, no punctuation except hyphen).
-   - If exclusions violate this, OMIT exclusions rather than writing narrative NOT clauses.
-4) search_field policy:
-   - match -> "title_and_abstract.search"
-   - authority -> "title_and_abstract.search" for most queries, plus optionally 1 booster per language using "default.search" for extra recall.
-5) filters MUST include: is_paratext:false, is_retracted:false, language:<en|de>
-6) Authority lane MUST include per language:
-   - one broad authority query WITHOUT is_core filter
-   - optionally one booster query WITH primary_location.source.is_core:true
-7) Sorting:
-   - authority: cited_by_count:desc
-   - match: relevance_score:desc or null
+IMPORTANT IMPLEMENTATION NOTE:
+The live API probe showed:
+- top-level OpenAlex `search` is much broader than `title_and_abstract.search`
+- wildcard and `~` syntax can work on top-level `search`
+- exact phrase AND can collapse quickly if the phrase pair is too rare
+
+So for THIS task:
+- authority queries should generally use `search`
+- match queries should generally use `title_and_abstract.search`
+- use readable quoted phrases first
+- use `*` or `~` only on `search` and only when they clearly solve a recall problem
+- do NOT use `?`
+- AND/OR/NOT must be uppercase
+- avoid slash tokens X/Y; rewrite as (X OR Y)
+
+MANDATORY RETRIEVAL RULES:
+1) Every query MUST include at least one term from primary_context_anchors[language].
+2) Every MATCH query must include:
+   - one core object/corpus/domain anchor
+   - and one construct/data/method group that is meaningful only inside that object
+3) Pure method-only queries are NOT allowed.
+4) Authority queries may be broader, but they must still remain about the chapter object.
+5) Use exclusions only for true wrong-sense confounders. If exclusions are weak or messy, omit them.
 
 FILTER POLICY:
-- Only use comma-separated filters (no semicolons).
-- Only use safe keys:
+- filters MUST include: is_paratext:false, is_retracted:false, language:<en|de>
+- use only comma-separated filters
+- use only safe keys already supported by the implementation:
   language,is_paratext,is_retracted,type,from_publication_date,to_publication_date,
   primary_location.source.is_core,locations.source.is_core
 
-BUDGETING (DETERMINISTIC):
-- authority: 2 queries (EN+DE) + up to 2 is_core boosters (EN+DE)
-- match: global match EN+DE
-- match: for each facet with weight>=4 -> 1 EN + 1 DE query
-- if budget remains -> 6 extra queries total across neighbor/method facets
+search_field policy:
+- authority -> "search"
+- match -> "title_and_abstract.search"
 
-QUERY SHAPES (MIX REQUIRED FOR MATCH):
-- STRICT: (anchor1 AND anchor2) AND (facet OR-group)
-- BALANCED: (anchor OR anchor_variant...) AND (facet OR-group)
-- FACET-LED: (anchor) AND (facet OR-group with 8–12 terms)
-Ensure at least 25% FACET-LED and at least 25% BALANCED among match queries.
+QUERY FAMILIES TO COVER:
+- authority core EN + DE or bilingual fallback
+- optional authority boosters EN + DE when both are lexically plausible
+- global object+construct match EN + at least one DE or bilingual core query
+- object+facet queries for weight>=4 facets, with DE used selectively
+- if budget remains, prefer object+data/proxy or object+limitations expansions before generic method expansions
+
+LANGUAGE POLICY:
+- do not mirror every English query into German mechanically
+- if the German rendering becomes too literal, niche, or implementation-like, prefer one strongly object-anchored DE core query over multiple dead DE clones
+- keep DE coverage for queries whose object phrase and facet phrase are both likely to appear in German titles/abstracts
+
+LEXICALITY POLICY:
+- prefer literature-native phrases that are likely to appear verbatim in titles/abstracts
+- prefer direct object phrases over implementation jargon or abstract substitutes
+- prefer full forms before acronyms or project-local shorthand
+
+QUERY SHAPES:
+- CORE: ("core object" OR variants) AND ("construct" OR variants)
+- OBJECT+DATA: ("core object" OR variants) AND ("data" OR "proxy" OR "measurement" variants)
+- OBJECT+METHOD: ("core object" OR variants) AND ("specific method" OR close variants)
+- AUTHORITY: ("core object" OR variants) AND ("field-defining construct/data phrase" OR variants)
+
+BUDGETING:
+- authority: 2 queries (EN + DE or bilingual fallback) + up to 2 boosters
+- match: global match EN + at least one DE or bilingual core query
+- match: for each facet with weight>=4 -> 1 EN query, plus DE only when the phrasing is likely to survive title/abstract search
+- if budget remains -> extra object-anchored expansions only
+
+EMPTY-QUERY TARGET:
+- some narrow zero-yield probes are acceptable
+- core authority and core object+construct families should usually have a plausible hit path
+- avoid stacking rare exact phrases, brittle exclusions, and literal DE mirroring in the same query
 
 SELF-CHECK (must enforce silently):
-- No * ? ~
-- AND/OR/NOT uppercase
-- No slash tokens X/Y
-- Every query includes a primary_context_anchors term
-- Exclusions are atomic or omitted
-- Filters are comma-separated and safe
-If anything fails, fix it and output corrected JSON only.
+- Would this query still retrieve many generic method surveys if the object phrase were removed? If yes, strengthen it.
+- Does every query include an object anchor, not only a method term? If not, fix it.
+- Are exclusions atomic and provider-safe? If not, omit them.
+- Are boolean operators uppercase and filters safe? If not, fix them.
+- Are `*` or `~` used only on `search` and only when clearly justified? If not, simplify.
 
 Return ONLY JSON.
 """
 
 
 S2_BULK_QUERY_BUILDER_SYSTEM_PROMPT = """You generate Semantic Scholar Academic Graph bulk search queries for scientific literature retrieval.
-Output ONLY valid JSON that matches the given schema. No prose.
-Be deterministic and conservative: prefer correctness and anchoring over breadth.
-Never mix context anchors and facet terms in the same OR-group."""
+Reliability and chapter anchoring are more important than clever syntax.
+
+Priority order:
+1) Keep every query inside the chapter object, corpus, or domain.
+2) Cover the main constructs, data/proxy constraints, and required facets.
+3) Use title/abstract-plausible wording and simple, provider-safe syntax first.
+4) Use advanced syntax only when it clearly solves a recall problem.
+
+Never mix context anchors and facet terms in the same OR-group.
+Keep every query interpretable by a human reviewer.
+Output ONLY valid JSON. No prose.
+Be deterministic."""
 
 
 S2_BULK_QUERY_BUILDER_USER_PROMPT_TEMPLATE = """CHAPTER_TITLE:
@@ -3081,10 +3124,25 @@ OUTPUT JSON:
   ]
 }
 
-CONTEXT:
-CHAPTER_TITLE is the title of a chapter in a scientific paper.
-CHAPTER_SPEC_TEXT describes exactly what information the chapter must cover.
-Your job: produce provider-safe Semantic Scholar BULK search queries that retrieve relevant literature candidates.
+GOAL HIERARCHY:
+- authority: broad but still chapter-anchored
+- match: strongest chapter fit with good recall
+- do not spend budget on generic method queries that are weakly tied to the chapter object
+
+PROVIDER REALITY:
+- Semantic Scholar bulk keyword search matches titles and abstracts, so use phrases likely to appear in titles/abstracts.
+- Prefer full lexical forms over acronym-only shorthand.
+- Do not mirror every English query into German mechanically.
+
+LANGUAGE STRATEGY:
+- English should carry the recall backbone.
+- Use German selectively, only where the object phrase and facet phrase are both likely to appear in German titles/abstracts.
+- If the German rendering is literal, brittle, or niche, use a bilingual or English fallback instead of forcing DE parity.
+
+LEXICALITY POLICY:
+- prefer direct object phrases and standard literature wording
+- prefer full forms before acronyms or shorthand
+- avoid implementation-jargon translations that are unlikely to appear in titles/abstracts
 
 ALLOWED OPERATORS (ONLY THESE):
 - Required: +term or +("a" | "b")
@@ -3101,70 +3159,81 @@ B) PRIMARY_CONTEXT_OR_GROUP MUST be built ONLY from primary_context_anchors for 
 C) FACET_OR_GROUP MUST be built ONLY from facet canonical_terms + neighbor_terms (plus safe bilingual variants).
 D) If a term is not explicitly in primary_context_anchors, it is NOT allowed in PRIMARY_CONTEXT_OR_GROUP.
 
-Examples of WRONG primary context groups (do NOT do this):
-- +("Late Antiquity" | taxation | coinage)      # taxation/coinage are facet terms, not anchors
-- +("Spätantike" | "öffentliche Finanzen")      # public finance is a facet term
-- +("COVID-19" | "randomized trial")            # randomized trial is method/facet, not context anchor
-
 MANDATORY STRUCTURE:
 
 MATCH queries MUST have:
-  +(PRIMARY_CONTEXT_OR_GROUP) +(FACET_OR_GROUP) [optional NEGATIVES]
+  +(PRIMARY_CONTEXT_OR_GROUP) +(FACET_OR_GROUP) [optional NEGATIVE]
 
-Recommended stronger MATCH form (use when possible):
-  +(PRIMARY_CONTEXT_OR_GROUP) +(SECOND_CONTEXT_OR_GROUP) +(FACET_OR_GROUP) [optional NEGATIVES]
+DEFAULT STRONG MATCH FORM:
+  +(PRIMARY_CONTEXT_OR_GROUP) +(FACET_OR_GROUP) [optional NEGATIVE]
+
+OPTIONAL DRIFT-REDUCING FORM:
+  +(PRIMARY_CONTEXT_OR_GROUP) +(SECOND_CONTEXT_OR_GROUP) +(FACET_OR_GROUP) [optional NEGATIVE]
 
 PRIMARY_CONTEXT_OR_GROUP:
-- Parenthesized OR-group of 2–6 terms taken ONLY from primary_context_anchors[language].
-- Must include at least 2 distinct anchors when available.
+- 2-5 terms
+- use terms that name the chapter object/corpus/domain, not only methods
+- when available, include at least 2 distinct object/context anchors
+- prefer direct object phrases such as `online reviews`, `user reviews`, `customer reviews`, `review platforms`
+- avoid abstract substitutes such as `user generated content` unless paired with a direct object phrase
 
-SECOND_CONTEXT_OR_GROUP (optional but recommended when it reduces drift):
-- Parenthesized OR-group of 2–6 terms taken ONLY from primary_context_anchors OR global_canonical_terms that are ALSO true context anchors.
-- NEVER include facet terms here.
+SECOND_CONTEXT_OR_GROUP:
+- optional but recommended only when it clearly reduces drift
+- may use anchors or global canonical terms that are still true context anchors
+- do NOT place generic facet/method terms here
 
 FACET_OR_GROUP:
-- Parenthesized OR-group of 5–12 terms from the target facet's canonical_terms + neighbor_terms.
-- May include bilingual variants inside the facet group ONLY (to improve recall).
+- 5-10 terms
+- only target-facet canonical_terms + neighbor_terms
+- bilingual variants are allowed inside this group when they improve recall
+- front-load standard literature wording before niche or implementation-like wording
+- avoid filling the whole group with rare translated compounds that are unlikely to appear in titles/abstracts
 
-AMBIGUOUS TERM HYGIENE (CRITICAL ANTI-DRIFT):
-Some tokens are highly ambiguous across science (examples: coinage, currency, finance, growth, model, system, dynamics, metals).
-If such an ambiguous token appears in FACET_OR_GROUP, you MUST:
-- replace it with a more specific phrase (e.g. "Roman coinage", "ancient coinage") OR
-- pair it with 1–3 disambiguating facet terms in the same group (e.g. numismatic, hoard, mint, denarius/solidus; or domain equivalents).
-Never use ambiguous standalone tokens in a way that can match unrelated fields (e.g. "coinage" matching "coinage metals").
+ANTI-DRIFT RULES:
+- Pure method-only queries are NOT allowed.
+- If a query could retrieve broad NLP/LLM/economics/method papers with no chapter object, strengthen it.
+- Ambiguous standalone tokens must be rewritten as more specific phrases or paired with disambiguating terms.
 
-EXCLUSIONS (NEGATIVES):
-- Use at most 3 negatives per query, only if they prevent wrong senses.
-- Atomic negatives ONLY: <=3 words, no commas, no parentheses, no “e.g.”.
-- Format: -term or -"two words"
-- Do not use OR inside negatives.
+NEGATIVE RULES:
+- default to 0 or 1 negatives
+- use at most 2 negatives unless there is a very clear wrong-sense problem
+- negatives must be atomic and provider-safe
+- if a negative is messy, omit it
+
+EMPTY-QUERY TARGET:
+- some narrow zero-yield probes are acceptable
+- most authority, global-match, and weight>=4 facet families should keep a plausible title/abstract hit path
+- avoid combining literal DE phrasing, 3 required groups, and multiple negatives unless the payoff is clear
 
 AUTHORITY POLICY:
-Authority queries are broader but MUST remain anchored:
-  +(PRIMARY_CONTEXT_OR_GROUP) +(HIGH_LEVEL_OR_GROUP) [optional NEGATIVES]
+Authority queries are broader but MUST remain chapter-anchored:
+  +(PRIMARY_CONTEXT_OR_GROUP) +(HIGH_LEVEL_OR_GROUP) [optional NEGATIVE]
 
 HIGH_LEVEL_OR_GROUP:
-- Topic-specific terms only: pick from global_canonical_terms and/or weight>=4 facets.
-- MUST NOT be generic standalone econ/method words (e.g., "public finance", "currency", "policy") unless paired with disambiguating terms that keep it inside the chapter context.
+- use topic-specific construct/data/proxy terms
+- avoid generic standalone method or field terms
+- keep authority queries interpretable and obviously on-topic
+- avoid acronym-only terms unless the full phrase is also present
 
-Also include ONE bilingual fallback authority query:
-  +("DE primary anchor" | "EN primary anchor") +(HIGH_LEVEL_OR_GROUP)
-
-BUDGETING (DETERMINISTIC):
-- Always: authority EN + authority DE + authority bilingual fallback
-- Always: global match EN + global match DE
-- For each facet with weight>=4: match EN + match DE
-- If budget exceeded: drop lowest-weight facets first, keep bilingual authority fallback.
+ALWAYS INCLUDE:
+- authority EN
+- authority bilingual fallback
+- at least 1 DE query that uses clearly standard German academic phrasing when such phrasing exists
+- global match EN
+- match EN for each weight>=4 facet while budget permits
+- spend remaining budget first on object+data/proxy and object+limitations families before DE clones or extra method families
 
 SELF-CHECK (MUST DO, FIX SILENTLY):
-- PRIMARY_CONTEXT_OR_GROUP contains ONLY primary_context_anchors terms (no facet terms).
-- FACET_OR_GROUP contains ONLY facet canonical/neighbor terms (plus bilingual variants).
-- Every '|' is inside parentheses.
-- Wildcard only suffix and stem>=4.
-- ~ only within allowed N.
-- MATCH has >=2 required groups (+(...) +(...)).
-- No slash tokens X/Y (rewrite as ("X" | "Y")).
-If any check fails, regenerate and output corrected JSON only.
+- PRIMARY_CONTEXT_OR_GROUP contains only true anchors
+- FACET_OR_GROUP contains only facet terms
+- every '|' is inside parentheses
+- MATCH has at least two required groups and at most three
+- negatives are atomic and <=2
+- wildcard only suffix and stem>=4
+- ~ only within allowed N
+- if the German version is a literal translation that is unlikely to appear in titles/abstracts, replace it with a bilingual or English fallback
+- if the query depends on acronym-only shorthand, rewrite it with full terms
+- if advanced syntax is unnecessary, simplify it
 
 Return ONLY JSON: { "s2_bulk_queries": [ ... ] }
 """
@@ -3341,7 +3410,7 @@ def _lint_openalex_not_clauses_atomic(qs: str) -> None:
 def _lint_s2_negative_terms_atomic(qs: str) -> None:
     s = str(qs or "")
     bad: List[str] = []
-    for m in re.finditer(r'-(\"[^\"]+\"|[^\s()|]+)', s):
+    for m in re.finditer(r'(?:^|\s)-\s*(\"[^\"]+\"|[^\s()|]+)', s):
         raw = m.group(1).strip()
         if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
             raw = raw[1:-1].strip()
@@ -3378,6 +3447,33 @@ def _validate_s2_advanced_ops(qs: str) -> None:
         n = int(m.group(1))
         if n > 4:
             raise ValueError(f"S2: proximity too large: {m.group(0)!r}")
+
+
+def _count_s2_required_components(qs: str) -> int:
+    return len(re.findall(r"(?:^|\s)\+(?=(?:\(|\"|[\w]))", str(qs or ""), flags=re.UNICODE))
+
+
+def _count_s2_negative_components(qs: str) -> int:
+    return len(re.findall(r"(?:^|\s)-\s*(?:(?:\"[^\"]+\")|[^\s()|]+)", str(qs or ""), flags=re.UNICODE))
+
+
+def _has_s2_advanced_syntax(qs: str) -> bool:
+    s = str(qs or "")
+    if "*" in s or "?" in s:
+        return True
+    if re.search(r"\w+~\d+", s):
+        return True
+    if re.search(r'"[^"]+"\s*~\s*\d+', s):
+        return True
+    return False
+
+
+def _plan_language_terms(plan: QueryPlan, attr_name: str, language: str) -> List[str]:
+    obj = getattr(plan, attr_name, None)
+    if obj is None:
+        return []
+    terms = getattr(obj, language, None) or []
+    return [str(t).strip() for t in terms if str(t or "").strip()]
 
 
 _UNICODE_INVISIBLE_CHARS = [
@@ -3530,21 +3626,22 @@ def _canonicalize_openalex_filters(filters: str, *, language: str) -> str:
 
 
 def _normalize_openalex_query(q: OpenAlexQuery) -> OpenAlexQuery:
+    raw_search_field = getattr(q, "search_field", None) or ("search" if q.intent == "authority" else "title_and_abstract.search")
+    if raw_search_field == "default.search":
+        raw_search_field = "search"
+    search_field = raw_search_field
+
     qs = _normalize_unicode_query_text(str(q.query_string or "")).strip()
-    if any(ch in qs for ch in ("*", "?", "~")):
-        raise ValueError(f"OpenAlex forbidden character in query_string: {qs!r}")
     qs = _expand_slash_tokens(qs, or_operator="OR")
     qs = _uppercase_boolean_ops_outside_quotes(qs)
     qs = re.sub(r"\s+", " ", qs).strip()
+    if "?" in qs:
+        raise ValueError(f"OpenAlex unsupported character in query_string: {qs!r}")
+    if search_field != "search" and any(ch in qs for ch in ("*", "~")):
+        raise ValueError(f"OpenAlex advanced syntax allowed only on search field: {qs!r}")
     _lint_openalex_not_clauses_atomic(qs)
 
     filters = _canonicalize_openalex_filters(q.filters, language=q.language)
-
-    search_field = getattr(q, "search_field", None) or "title_and_abstract.search"
-    if q.intent == "match":
-        search_field = "title_and_abstract.search"
-    elif search_field not in ("default.search", "title_and_abstract.search"):
-        search_field = "title_and_abstract.search"
 
     sort = q.sort
     if q.intent == "authority":
@@ -3578,7 +3675,12 @@ def _normalize_s2_query(q: S2BulkQuery) -> S2BulkQuery:
     if not re.search(r"\+\s*(?:\(|\")", qs):
         raise ValueError(f"S2 query_string must contain at least one +anchor: {qs!r}")
 
-    plus_count = len(re.findall(r"(?:^|\s)\+", qs))
+    plus_count = _count_s2_required_components(qs)
+    neg_count = _count_s2_negative_components(qs)
+    if neg_count > 2:
+        raise ValueError(f"S2 negative budget exceeded (>2): {qs!r}")
+    if plus_count > 3:
+        raise ValueError(f"S2 query_string has too many required components (>{3}): {qs!r}")
     if q.intent == "match" and plus_count < 2:
         raise ValueError(f"S2 match query_string must contain >=2 required components (+): {qs!r}")
 
@@ -3656,6 +3758,20 @@ def _validate_s2_anchor_presence(queries: List[S2BulkQuery], *, plan: QueryPlan)
             raise ValueError(f"S2: query missing required primary anchor (lang={q.language}, intent={q.intent}): {q.query_string!r}")
 
 
+def _validate_match_core_object_presence(queries: List[Any], *, plan: QueryPlan, provider: str) -> None:
+    for q in queries:
+        if getattr(q, "intent", None) != "match":
+            continue
+        core_terms = _plan_language_terms(plan, "core_object_terms", getattr(q, "language", ""))
+        if not core_terms:
+            continue
+        hits = _find_anchor_terms_in_text(getattr(q, "query_string", ""), core_terms)
+        if not hits:
+            raise ValueError(
+                f"{provider}: match query missing core object term (lang={getattr(q, 'language', '')}): {getattr(q, 'query_string', '')!r}"
+            )
+
+
 def _validate_openalex_match_anchor_fingerprint_diversity(
     queries: List[OpenAlexQuery],
     *,
@@ -3692,6 +3808,55 @@ def _validate_openalex_match_anchor_fingerprint_diversity(
             raise ValueError(
                 f"OpenAlex: anchor fingerprint concentration too high (lang={lang}, share={share:.2f}, fp={most_fp}): regenerate"
             )
+
+
+def _validate_openalex_search_field_budget(
+    queries: List[OpenAlexQuery],
+    *,
+    max_match_search_queries: int = 2,
+    max_match_search_share: float = 0.20,
+) -> None:
+    match_queries = [q for q in queries if q.intent == "match"]
+    if not match_queries:
+        return
+    match_search = [q for q in match_queries if q.search_field == "search"]
+    share = float(len(match_search)) / float(max(1, len(match_queries)))
+    if len(match_search) > int(max_match_search_queries) or share > float(max_match_search_share):
+        raise ValueError(
+            f"OpenAlex: too many broad match queries on search field (count={len(match_search)}/{len(match_queries)}, share={share:.2f}): regenerate"
+        )
+
+
+def _validate_s2_match_required_group_budget(
+    queries: List[S2BulkQuery],
+    *,
+    max_three_group_share: float = 0.35,
+) -> None:
+    match_queries = [q for q in queries if q.intent == "match"]
+    if len(match_queries) < 4:
+        return
+    three_group = [q for q in match_queries if _count_s2_required_components(q.query_string) == 3]
+    share = float(len(three_group)) / float(max(1, len(match_queries)))
+    if share > float(max_three_group_share):
+        raise ValueError(
+            f"S2: too many 3-group match queries (share={share:.2f}, count={len(three_group)}/{len(match_queries)}): regenerate"
+        )
+
+
+def _validate_s2_advanced_syntax_budget(
+    queries: List[S2BulkQuery],
+    *,
+    max_queries_with_advanced: int = 2,
+    max_share: float = 0.20,
+) -> None:
+    advanced = [q for q in queries if _has_s2_advanced_syntax(q.query_string)]
+    if not advanced:
+        return
+    share = float(len(advanced)) / float(max(1, len(queries)))
+    if len(advanced) > int(max_queries_with_advanced) or share > float(max_share):
+        raise ValueError(
+            f"S2: advanced syntax overused (count={len(advanced)}/{len(queries)}, share={share:.2f}): regenerate"
+        )
 
 # -----------------------------
 # Phase C.3 — LLM query builders with caching
@@ -3732,7 +3897,9 @@ def build_openalex_queries_llm(
             _validate_language_coverage(queries, provider="OpenAlex")
             _validate_intent_coverage(queries, provider="OpenAlex")
             _validate_openalex_anchor_presence(queries, plan=plan)
+            _validate_match_core_object_presence(queries, plan=plan, provider="OpenAlex")
             _validate_openalex_match_anchor_fingerprint_diversity(queries, plan=plan)
+            _validate_openalex_search_field_budget(queries)
 
             write_json(cache_path, {"openalex_queries": [q.model_dump(mode="json") for q in queries]})
             log_event(run_ctx, stage=stage, event="cache_hit", path=str(cache_path), query_count=len(queries))
@@ -3831,7 +3998,9 @@ def build_openalex_queries_llm(
                 _validate_language_coverage(queries, provider="OpenAlex")
                 _validate_intent_coverage(queries, provider="OpenAlex")
                 _validate_openalex_anchor_presence(queries, plan=plan)
+                _validate_match_core_object_presence(queries, plan=plan, provider="OpenAlex")
                 _validate_openalex_match_anchor_fingerprint_diversity(queries, plan=plan)
+                _validate_openalex_search_field_budget(queries)
 
                 # Success: keep stable "latest" files for downstream cells.
                 write_json(run_ctx.run_dir / "openalex_queries.raw_output.json", obj)
@@ -3909,6 +4078,9 @@ def build_s2_bulk_queries_llm(
             _validate_language_coverage(queries, provider="S2")
             _validate_intent_coverage(queries, provider="S2")
             _validate_s2_anchor_presence(queries, plan=plan)
+            _validate_match_core_object_presence(queries, plan=plan, provider="S2")
+            _validate_s2_match_required_group_budget(queries)
+            _validate_s2_advanced_syntax_budget(queries)
 
             write_json(cache_path, {"s2_bulk_queries": [q.model_dump(mode="json") for q in queries]})
             log_event(run_ctx, stage=stage, event="cache_hit", path=str(cache_path), query_count=len(queries))
@@ -4007,6 +4179,9 @@ def build_s2_bulk_queries_llm(
                 _validate_language_coverage(queries, provider="S2")
                 _validate_intent_coverage(queries, provider="S2")
                 _validate_s2_anchor_presence(queries, plan=plan)
+                _validate_match_core_object_presence(queries, plan=plan, provider="S2")
+                _validate_s2_match_required_group_budget(queries)
+                _validate_s2_advanced_syntax_budget(queries)
 
                 write_json(run_ctx.run_dir / "s2_bulk_queries.raw_output.json", obj)
                 write_json(run_ctx.run_dir / "s2_bulk_queries.openai_meta.json", meta)
@@ -4141,8 +4316,14 @@ def _validate_forbidden_openalex(items):
     bad = []
     for i, q in enumerate(items, start=1):
         qs = str(getattr(q, 'query_string', '') or '')
-        if any(ch in qs for ch in ('*', '?', '~')):
-            bad.append({'i': i, 'intent': q.intent, 'lang': q.language, 'bad_chars': ''.join(sorted({ch for ch in '*?~' if ch in qs})), 'query': _truncate(qs, 220)})
+        sf = str(getattr(q, 'search_field', '') or '')
+        unsupported = set()
+        if '?' in qs:
+            unsupported.add('?')
+        if sf != 'search':
+            unsupported.update(ch for ch in ('*', '~') if ch in qs)
+        if unsupported:
+            bad.append({'i': i, 'intent': q.intent, 'lang': q.language, 'search_field': sf, 'bad_chars': ''.join(sorted(unsupported)), 'query': _truncate(qs, 220)})
     return bad
 
 
@@ -4159,6 +4340,14 @@ oa_anchor_hits, oa_anchor_total = _anchor_coverage([q for q in openalex_queries 
 s2_anchor_hits, s2_anchor_total = _anchor_coverage([q for q in s2_bulk_queries if q.intent == 'match'])
 
 oa_forbidden = _validate_forbidden_openalex(openalex_queries)
+oa_match_n = sum(1 for q in openalex_queries if q.intent == 'match')
+oa_match_search_n = sum(1 for q in openalex_queries if q.intent == 'match' and q.search_field == 'search')
+oa_match_search_share = (float(oa_match_search_n) / float(max(1, oa_match_n))) if oa_match_n else 0.0
+s2_three_group_n = sum(1 for q in s2_bulk_queries if q.intent == 'match' and _count_s2_required_components(q.query_string) == 3)
+s2_match_n = sum(1 for q in s2_bulk_queries if q.intent == 'match')
+s2_three_group_share = (float(s2_three_group_n) / float(max(1, s2_match_n))) if s2_match_n else 0.0
+s2_advanced_n = sum(1 for q in s2_bulk_queries if _has_s2_advanced_syntax(q.query_string))
+s2_advanced_share = (float(s2_advanced_n) / float(max(1, n_s2))) if n_s2 else 0.0
 
 qc = []
 qc.append(qc_row('openalex_query_count', 'OK' if n_oa <= cfg.max_queries_per_provider else 'FAIL', str(n_oa), f"<= {cfg.max_queries_per_provider}", 'budget hard cap', 'reduce facets / tighten query builder'))
@@ -4217,8 +4406,38 @@ qc.append(
         'FAIL' if oa_forbidden else 'OK',
         _fmt_int(len(oa_forbidden)),
         '0',
-        'OpenAlex forbids * ? ~ in boolean search',
-        'fix query builder/validator to strip forbidden ops',
+        'unsupported OpenAlex syntax should not survive validation',
+        'fix query builder/validator to keep * and ~ only on search and reject ?',
+    )
+)
+qc.append(
+    qc_row(
+        'openalex_match_search_field_budget',
+        'FAIL' if (oa_match_search_n > 2 or oa_match_search_share > 0.20) else ('WARN' if oa_match_search_n > 0 else 'OK'),
+        f"{oa_match_search_n}/{oa_match_n} ({oa_match_search_share*100:.1f}%)",
+        '<= 2 queries and <= 20%',
+        'top-level OpenAlex search can help recall, but too many broad match queries increase drift risk',
+        'keep search-field usage mostly for authority and rare recall-repair match queries',
+    )
+)
+qc.append(
+    qc_row(
+        's2_three_group_share',
+        'FAIL' if s2_three_group_share > 0.35 else ('WARN' if s2_three_group_share > 0.20 else 'OK'),
+        f"{s2_three_group_n}/{s2_match_n} ({s2_three_group_share*100:.1f}%)",
+        '<= 20% preferred, <= 35% hard cap',
+        'too many 3-group match queries usually over-constrains S2 title/abstract retrieval',
+        'reduce SECOND_CONTEXT usage; keep 3-group queries for drift-control edge cases only',
+    )
+)
+qc.append(
+    qc_row(
+        's2_advanced_syntax_budget',
+        'FAIL' if (s2_advanced_n > 2 or s2_advanced_share > 0.20) else ('WARN' if s2_advanced_n > 0 else 'OK'),
+        f"{s2_advanced_n}/{n_s2} ({s2_advanced_share*100:.1f}%)",
+        '<= 2 queries and <= 20%',
+        'S2 advanced syntax is supported but live behavior was unstable on edge cases',
+        'prefer plain quoted phrases and required groups unless advanced syntax solves a concrete recall problem',
     )
 )
 
@@ -4553,7 +4772,7 @@ def _openalex_params(cfg: PipelineConfig, q: OpenAlexQuery, *, cursor: str) -> D
         params["api_key"] = cfg.openalex_api_key
 
     base_filters = str(getattr(q, "filters", "") or "").strip().strip(",")
-    if q.search_field == "default.search":
+    if q.search_field in {"default.search", "search"}:
         params["search"] = q.query_string
         if base_filters:
             params["filter"] = base_filters
@@ -5125,10 +5344,12 @@ def _provider_metrics(label: str, rows: List[Dict[str, Any]], stats: Dict[str, A
 
     de_records = sum(int(r.get('records') or 0) for r in rows if str(r.get('lang') or '') == 'de')
     de_queries = sum(1 for r in rows if str(r.get('lang') or '') == 'de')
+    de_zero_q = sum(1 for r in rows if str(r.get('lang') or '') == 'de' and int(r.get('records') or 0) == 0)
 
     failed = int(stats.get('query_failed') or 0)
     failed_rate = float(failed) / float(max(1, total))
     zero_rate = float(zeros) / float(max(1, total))
+    de_zero_rate = float(de_zero_q) / float(max(1, de_queries))
 
     return {
         'provider': label,
@@ -5145,6 +5366,8 @@ def _provider_metrics(label: str, rows: List[Dict[str, Any]], stats: Dict[str, A
         'dominance': dominance,
         'de_records': de_records,
         'de_queries': de_queries,
+        'de_zero_q': de_zero_q,
+        'de_zero_rate': de_zero_rate,
     }
 
 
@@ -5162,6 +5385,18 @@ for m in [m_oa, m_s2]:
 
     failed = int(m.get('failed') or 0)
     failed_rate = float(failed) / float(max(1, total))
+    if prov == 'openalex':
+        zero_warn = OPENALEX_ZERO_Q_WARN
+        zero_fail = OPENALEX_ZERO_Q_FAIL
+        zero_expected = f"< {OPENALEX_ZERO_Q_WARN*100:.0f}%"
+        zero_why = 'some empty OpenAlex probes are acceptable, but core families should stay alive'
+        zero_fix = 'inspect zero-hit core families; relax brittle phrase pairs; keep narrow long-tail probes only where intentional'
+    else:
+        zero_warn = S2_ZERO_Q_WARN
+        zero_fail = S2_ZERO_Q_FAIL
+        zero_expected = f"< {S2_ZERO_Q_WARN*100:.0f}%"
+        zero_why = 'S2 title/abstract search collapses quickly when queries become too lexical, too literal, or too constrained'
+        zero_fix = 'simplify S2 queries; reduce 3-group forms and negatives; prefer object-first EN or bilingual fallbacks over literal DE clones'
 
     qc.append(
         qc_row(
@@ -5177,11 +5412,11 @@ for m in [m_oa, m_s2]:
     qc.append(
         qc_row(
             check=f'{prov}:zero_query_rate',
-            status='FAIL' if zero_rate >= ZERO_Q_FAIL else ('WARN' if zero_rate >= ZERO_Q_WARN else 'OK'),
+            status='FAIL' if zero_rate >= zero_fail else ('WARN' if zero_rate >= zero_warn else 'OK'),
             value=f"{zeros}/{total} ({zero_rate*100:.1f}%)",
-            expected=f"< {ZERO_Q_WARN*100:.0f}%",
-            why='many zero queries suggests anchors/terms too strict or provider mismatch',
-            fix='inspect zero queries; relax clauses; adjust anchors/canonical terms',
+            expected=zero_expected,
+            why=zero_why,
+            fix=zero_fix,
         )
     )
 
@@ -5207,6 +5442,19 @@ for m in [m_oa, m_s2]:
                 expected='> 0',
                 why='German lane requires some DE results if DE queries exist',
                 fix='inspect DE queries; consider DE anchors; relax language filters',
+            )
+        )
+    if prov == 'semanticscholar' and de_q > 0:
+        de_zero_q = int(m.get('de_zero_q') or 0)
+        de_zero_rate = float(m.get('de_zero_rate') or 0.0)
+        qc.append(
+            qc_row(
+                check='semanticscholar:de_zero_query_rate',
+                status='FAIL' if de_zero_rate >= S2_DE_ZERO_Q_FAIL else ('WARN' if de_zero_rate >= S2_DE_ZERO_Q_WARN else 'OK'),
+                value=f"{de_zero_q}/{de_q} ({de_zero_rate*100:.1f}%)",
+                expected=f"< {S2_DE_ZERO_Q_WARN*100:.0f}%",
+                why='near-total collapse of German S2 queries usually means literal or lexically implausible phrasing',
+                fix='reduce literal DE mirroring; keep DE queries selective and object-first; use bilingual or EN fallback for fragile facets',
             )
         )
 
@@ -5240,6 +5488,9 @@ print_table(
             'records': _fmt_int(m_oa['records']),
             'zero_q': m_oa['zero_q'],
             'zero_rate': f"{m_oa['zero_rate']*100:.1f}%",
+            'de_q': m_oa['de_queries'],
+            'de_zero_q': m_oa['de_zero_q'],
+            'de_zero_rate': f"{m_oa['de_zero_rate']*100:.1f}%",
             'mean': f"{m_oa['mean']:.1f}",
             'median': f"{m_oa['median']:.1f}",
             'p90': f"{m_oa['p90']:.1f}",
@@ -5254,6 +5505,9 @@ print_table(
             'records': _fmt_int(m_s2['records']),
             'zero_q': m_s2['zero_q'],
             'zero_rate': f"{m_s2['zero_rate']*100:.1f}%",
+            'de_q': m_s2['de_queries'],
+            'de_zero_q': m_s2['de_zero_q'],
+            'de_zero_rate': f"{m_s2['de_zero_rate']*100:.1f}%",
             'mean': f"{m_s2['mean']:.1f}",
             'median': f"{m_s2['median']:.1f}",
             'p90': f"{m_s2['p90']:.1f}",
@@ -5261,7 +5515,7 @@ print_table(
             'dominance': f"{m_s2['dominance']*100:.1f}%",
         },
     ],
-    columns=['provider','queries','failed','failed_rate','records','zero_q','zero_rate','mean','median','p90','max','dominance'],
+    columns=['provider','queries','failed','failed_rate','records','zero_q','zero_rate','de_q','de_zero_q','de_zero_rate','mean','median','p90','max','dominance'],
     max_rows=10,
     max_col_width=40,
 )
