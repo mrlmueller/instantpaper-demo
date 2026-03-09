@@ -1205,6 +1205,51 @@ class BilingualTerms(BaseModel):
     de: List[str] = Field(default_factory=list)
 
 
+QUERY_FAMILY_ENUM = [
+    "object_core",
+    "object_plus_construct",
+    "object_plus_data_proxy",
+    "object_plus_method",
+    "object_plus_limitation",
+    "object_plus_context",
+]
+
+LANGUAGE_STRATEGY_ENUM = [
+    "en_core_only",
+    "en_plus_bilingual_fallback",
+    "en_plus_selective_de",
+    "en_de_parallel",
+]
+
+AUTHORITY_ROLE_ENUM = [
+    "none",
+    "core",
+    "booster",
+]
+
+AUTHORITY_KIND_ENUM = [
+    "core",
+    "booster",
+]
+
+AUTHORITY_SEARCH_BREADTH_ENUM = [
+    "tight",
+    "broad_ok",
+]
+
+
+class AuthorityBlueprint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authority_kind: str
+    label_en: str
+    label_de: str
+    target_facet_ids: List[str] = Field(default_factory=list)
+    language_strategy: str
+    search_breadth: str
+    notes_en: str
+
+
 class Facet(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1213,6 +1258,9 @@ class Facet(BaseModel):
     facet_label_de: str
     facet_type: str
     facet_group: str
+    query_family_preference: str
+    language_strategy: str
+    authority_role: str
     importance_weight: int = Field(ge=1, le=5)
     text_en: str
     text_de: str
@@ -1230,6 +1278,7 @@ class QueryPlan(BaseModel):
     core_object_terms: BilingualTerms
     must_keep_constraints: List[str] = Field(default_factory=list)
     drift_risks: List[str] = Field(default_factory=list)
+    authority_blueprints: List[AuthorityBlueprint] = Field(default_factory=list)
     facets: List[Facet]
     global_canonical_terms: BilingualTerms
     global_exclusions: BilingualTerms
@@ -1614,6 +1663,23 @@ FACET_GROUP_ENUM = [
     "limitation",
 ]
 
+FACET_GROUP_TO_QUERY_FAMILY = {
+    "object": {"object_core", "object_plus_context"},
+    "construct": {"object_plus_construct"},
+    "data_proxy": {"object_plus_data_proxy", "object_plus_method"},
+    "method": {"object_plus_method"},
+    "context": {"object_plus_context", "object_core"},
+    "limitation": {"object_plus_limitation", "object_plus_context"},
+}
+DEFAULT_QUERY_FAMILY_BY_GROUP = {
+    "object": "object_core",
+    "construct": "object_plus_construct",
+    "data_proxy": "object_plus_data_proxy",
+    "method": "object_plus_method",
+    "context": "object_plus_context",
+    "limitation": "object_plus_limitation",
+}
+
 
 QUERY_PLAN_JSON_SCHEMA = {
     "type": "object",
@@ -1625,6 +1691,7 @@ QUERY_PLAN_JSON_SCHEMA = {
         "core_object_terms",
         "must_keep_constraints",
         "drift_risks",
+        "authority_blueprints",
         "facets",
         "global_canonical_terms",
         "global_exclusions",
@@ -1658,6 +1725,31 @@ QUERY_PLAN_JSON_SCHEMA = {
             "type": "array",
             "items": {"type": "string"},
         },
+        "authority_blueprints": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "authority_kind",
+                    "label_en",
+                    "label_de",
+                    "target_facet_ids",
+                    "language_strategy",
+                    "search_breadth",
+                    "notes_en",
+                ],
+                "properties": {
+                    "authority_kind": {"type": "string", "enum": AUTHORITY_KIND_ENUM},
+                    "label_en": {"type": "string"},
+                    "label_de": {"type": "string"},
+                    "target_facet_ids": {"type": "array", "items": {"type": "string"}},
+                    "language_strategy": {"type": "string", "enum": LANGUAGE_STRATEGY_ENUM},
+                    "search_breadth": {"type": "string", "enum": AUTHORITY_SEARCH_BREADTH_ENUM},
+                    "notes_en": {"type": "string"},
+                },
+            },
+        },
         "global_canonical_terms": {
             "type": "object",
             "additionalProperties": False,
@@ -1687,6 +1779,9 @@ QUERY_PLAN_JSON_SCHEMA = {
                     "facet_label_de",
                     "facet_type",
                     "facet_group",
+                    "query_family_preference",
+                    "language_strategy",
+                    "authority_role",
                     "importance_weight",
                     "text_en",
                     "text_de",
@@ -1715,6 +1810,9 @@ QUERY_PLAN_JSON_SCHEMA = {
                         ],
                     },
                     "facet_group": {"type": "string", "enum": FACET_GROUP_ENUM},
+                    "query_family_preference": {"type": "string", "enum": QUERY_FAMILY_ENUM},
+                    "language_strategy": {"type": "string", "enum": LANGUAGE_STRATEGY_ENUM},
+                    "authority_role": {"type": "string", "enum": AUTHORITY_ROLE_ENUM},
                     "importance_weight": {"type": "integer", "minimum": 1, "maximum": 5},
                     "text_en": {"type": "string"},
                     "text_de": {"type": "string"},
@@ -1754,19 +1852,22 @@ QUERY_PLAN_JSON_SCHEMA = {
 
 PLANNER_SYSTEM_PROMPT = """
 You are a scientific literature search planner for a multi-stage academic retrieval pipeline.
-Your job is not to describe a topic in generic academic language. Your job is to preserve the chapter's exact retrieval target so downstream query builders can find the right literature.
+Your job is not to describe a topic in generic academic language. Your job is to preserve the chapter's exact retrieval target and to define how downstream query builders should search for it.
 
 Priority order:
 1) Preserve the chapter's core object, corpus, domain, or context exactly.
 2) Preserve the main constructs, questions, outcomes, or debates.
 3) Preserve data-source, proxy, measurement, and validity constraints.
-4) Add useful neighboring facets without diluting the core object.
-5) Add exclusions only for true wrong-sense confounders.
+4) Control query-family shape so generic method drift is hard downstream.
+5) Split authority into tight core authority vs optional broader boosters.
+6) Add useful neighboring facets without diluting the core object.
+7) Add exclusions only for true wrong-sense confounders.
 
 Rules:
 - If a phrase is central to the chapter object, keep it even if one token inside the phrase is generic.
 - Do not replace concrete chapter nouns with broader abstractions.
 - Method terms are supporting context unless the chapter is explicitly about methods.
+- Do not leave Phase C to guess whether a facet should become object+data, object+method, or a broader authority booster.
 - Do not name specific papers, authors, or venues. Do not invent citations.
 - Be deterministic and return only valid JSON.
 """
@@ -1778,7 +1879,7 @@ CHAPTER_SPEC (retrieval contract):
 {{chapter_spec_text}}
 
 TASK:
-Return a QueryPlan JSON object with the existing schema.
+Return a QueryPlan JSON object with the schema required by this pipeline.
 
 HOW TO INTERPRET THE CHAPTER:
 Preserve these distinctions in the plan:
@@ -1792,8 +1893,10 @@ PRIORITY ORDER:
 1) preserve the chapter's core object/corpus/domain exactly
 2) preserve the main constructs/questions/outcomes
 3) preserve data/proxy/measurement constraints
-4) add useful neighboring facets without diluting the object
-5) add exclusions only for true wrong-sense confounders
+4) control query-family shape so downstream query builders do not invent generic method-heavy families
+5) split authority into tight core authority and optional broader boosters
+6) add useful neighboring facets without diluting the object
+7) add exclusions only for true wrong-sense confounders
 
 Return a QueryPlan JSON object with these keys:
 
@@ -1801,6 +1904,7 @@ Return a QueryPlan JSON object with these keys:
 2) topic_summary_de: 2-3 sentences (natural German)
 
 Summary rules:
+- The first sentence must name the chapter object/corpus/domain before any methods framing.
 - State the chapter object, the main construct/question, and the role of data/proxies/methods.
 - Do not generalize away the named corpus/object.
 
@@ -1837,7 +1941,25 @@ Summary rules:
    - Include generic method drift when relevant.
    - Keep each item short and concrete.
 
-7) global_canonical_terms:
+7) authority_blueprints:
+   - 1-4 items total
+   - MUST include at least 1 core blueprint
+   Each item has:
+   - authority_kind: "core" | "booster"
+   - label_en: <= 8 words
+   - label_de: <= 8 words
+   - target_facet_ids: 1-4 existing facet_ids
+   - language_strategy: one of ["en_core_only","en_plus_bilingual_fallback","en_plus_selective_de","en_de_parallel"]
+   - search_breadth: "tight" | "broad_ok"
+   - notes_en: <= 18 words
+   RULES:
+   - core authority is the chapter's non-negotiable authoritative literature family; it should stay tight and object-led.
+   - booster authority is broader, but must still remain chapter-anchored.
+   - search_breadth="broad_ok" is allowed only for boosters.
+   - core blueprints should usually target object / construct / data_proxy facets, not generic methods facets.
+   - booster blueprints may add context or limitation angles, but must still preserve the chapter object.
+
+8) global_canonical_terms:
    - en: 12-30 terms/phrases
    - de: 12-30 terms/phrases
    TERM HYGIENE:
@@ -1847,7 +1969,7 @@ Summary rules:
    - Preserve important chapter wording if it is likely to appear in titles/abstracts.
    - Ensure the list includes object terms first, then construct/data/proxy terms, then method terms.
 
-8) global_exclusions:
+9) global_exclusions:
    - en: 0-12 atomic confounder terms
    - de: 0-12 atomic confounder terms
    EXCLUSION RULES:
@@ -1856,11 +1978,14 @@ Summary rules:
    - No punctuation except hyphen
    - If unsure, omit the exclusion
 
-9) facets: 8-18 ATOMIC facets.
+10) facets: 8-18 ATOMIC facets.
 For each facet:
 - facet_id: lower_snake_case, 3-6 words, stable
 - facet_type: one of ["background","theory","mechanism","methods","data","measurement","evaluation","case_context","debate","limitations","applications"]
 - facet_group: one of ["object","construct","data_proxy","method","context","limitation"]
+- query_family_preference: one of ["object_core","object_plus_construct","object_plus_data_proxy","object_plus_method","object_plus_limitation","object_plus_context"]
+- language_strategy: one of ["en_core_only","en_plus_bilingual_fallback","en_plus_selective_de","en_de_parallel"]
+- authority_role: one of ["none","core","booster"]
 - importance_weight: integer 1..5
 - facet_label_en: <= 8 words
 - facet_label_de: <= 8 words
@@ -1876,12 +2001,28 @@ FACET RULES:
 - If the chapter is not primarily a methods chapter, generic methods facets must not dominate the weight>=4 set.
 - For any methods/data/measurement facet, write it as methods/data/measurement FOR this chapter object, not as a generic field overview.
 - Use facet_group to mark the facet's coarse retrieval role.
+- Use query_family_preference to tell Phase C what shape the query should have, not just what words to use.
+- Use the smallest query family that preserves meaning:
+  - object -> usually object_core
+  - construct -> usually object_plus_construct
+  - data/proxy/measurement -> usually object_plus_data_proxy
+  - methods -> usually object_plus_method
+  - limitation/bias/validity -> usually object_plus_limitation
+  - domain/platform/context -> usually object_plus_context
+- Use language_strategy to say whether the facet should stay EN-core, use bilingual fallback, or support selective DE.
+- Do not mark a facet as en_de_parallel unless the object phrase and facet phrase are both likely to exist in real literature in both languages.
+- authority_role="core" means this facet deserves tight authority coverage.
+- authority_role="booster" means this facet can support a broader authority booster if budget remains.
+- authority_role="none" means the facet is match-oriented only.
+- Generic methods facets should rarely be authority_role="core".
 - If the chapter mentions proxies, secondary data, validity, bias, or representativeness, add the relevant facets when supported by the spec.
 - Keep facets non-overlapping as much as possible.
 
 QUALITY CHECKS:
 - If your top anchors would retrieve generic method papers but not the chapter object, revise them.
 - If core_object_terms are weak, generic, or method-heavy, revise them.
+- If Phase C could build a generic workflow/evaluation query from this facet with weak object conditioning, change query_family_preference or lower its priority.
+- If authority is still a single flat concept rather than core vs booster, revise the authority_blueprints.
 - If the plan drops the concrete object/corpus in favor of abstractions, revise it.
 - If an exclusion is not a clear wrong-sense confounder, omit it.
 
@@ -2007,6 +2148,294 @@ def _is_hygienic_term(term: str, *, max_words: int) -> bool:
     return True
 
 
+def _dedupe_keep_order(items: List[str]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for item in items or []:
+        s = str(item or "").strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+    return out
+
+
+def _clean_short_text(text: str, *, fallback: str, max_words: int, max_chars: int) -> str:
+    s = re.sub(r"\s+", " ", str(text or "").strip())
+    if not s:
+        s = fallback
+    words = s.split()
+    if len(words) > int(max_words):
+        s = " ".join(words[: int(max_words)]).strip()
+    if len(s) > int(max_chars):
+        s = s[: int(max_chars)].rstrip()
+    return s or fallback
+
+
+def _choose_blueprint_language_strategy(kind: str, target_ids: List[str], facet_by_id: Dict[str, Facet]) -> str:
+    strategies = [
+        str(getattr(facet_by_id.get(fid), "language_strategy", "") or "")
+        for fid in (target_ids or [])
+        if facet_by_id.get(fid) is not None
+    ]
+    strategies = [x for x in strategies if x in LANGUAGE_STRATEGY_ENUM]
+    if kind == "core":
+        for pref in ["en_de_parallel", "en_plus_bilingual_fallback", "en_plus_selective_de", "en_core_only"]:
+            if pref in strategies:
+                return pref
+        return "en_plus_bilingual_fallback"
+    for pref in ["en_plus_selective_de", "en_plus_bilingual_fallback", "en_core_only", "en_de_parallel"]:
+        if pref in strategies:
+            return pref
+    return "en_plus_selective_de"
+
+
+def _authority_target_sort_key(fid: str, *, kind: str, facet_by_id: Dict[str, Facet]) -> Tuple[int, int, str]:
+    facet = facet_by_id.get(fid)
+    if facet is None:
+        return (99, 99, fid)
+    group = str(getattr(facet, "facet_group", "") or "")
+    if kind == "core":
+        group_rank = {"object": 0, "construct": 1, "data_proxy": 2, "context": 3, "limitation": 4, "method": 5}
+    else:
+        group_rank = {"context": 0, "limitation": 1, "data_proxy": 2, "method": 3, "construct": 4, "object": 5}
+    return (group_rank.get(group, 9), -int(getattr(facet, "importance_weight", 0) or 0), fid)
+
+
+def _make_authority_blueprint(
+    *,
+    kind: str,
+    ordinal: int,
+    target_ids: List[str],
+    facet_by_id: Dict[str, Facet],
+) -> AuthorityBlueprint:
+    target_ids = _dedupe_keep_order(target_ids)[:4]
+    label_seed = None
+    if target_ids:
+        facet0 = facet_by_id.get(target_ids[0])
+        if facet0 is not None:
+            label_seed = str(getattr(facet0, "facet_label_en", "") or "").strip()
+    label_seed = label_seed or ("core authority" if kind == "core" else "booster authority")
+    label_en = _clean_short_text(
+        f"{'Core' if kind == 'core' else 'Booster'} {label_seed}",
+        fallback=f"{'Core' if kind == 'core' else 'Booster'} authority {ordinal}",
+        max_words=8,
+        max_chars=80,
+    )
+    label_de = _clean_short_text(
+        f"{'Kern' if kind == 'core' else 'Booster'} {label_seed}",
+        fallback=f"{'Kern' if kind == 'core' else 'Booster'} Literatur {ordinal}",
+        max_words=8,
+        max_chars=80,
+    )
+    notes_en = _clean_short_text(
+        (
+            "Tight authority coverage for the chapter object."
+            if kind == "core"
+            else "Broader authority coverage that remains chapter-anchored."
+        ),
+        fallback="Authority blueprint",
+        max_words=18,
+        max_chars=120,
+    )
+    return AuthorityBlueprint(
+        authority_kind=kind,
+        label_en=label_en,
+        label_de=label_de,
+        target_facet_ids=target_ids,
+        language_strategy=_choose_blueprint_language_strategy(kind, target_ids, facet_by_id),
+        search_breadth="tight" if kind == "core" else "broad_ok",
+        notes_en=notes_en,
+    )
+
+
+def _repair_query_plan(plan: QueryPlan) -> Tuple[QueryPlan, List[str]]:
+    repair_notes: List[str] = []
+
+    repaired_facets: List[Facet] = []
+    for facet in list(plan.facets or []):
+        fg = str(getattr(facet, "facet_group", "") or "")
+        qfp = str(getattr(facet, "query_family_preference", "") or "")
+        allowed = FACET_GROUP_TO_QUERY_FAMILY.get(fg) or set()
+        if allowed and qfp not in allowed:
+            new_qfp = DEFAULT_QUERY_FAMILY_BY_GROUP.get(fg) or sorted(allowed)[0]
+            if new_qfp != qfp:
+                repair_notes.append(
+                    f"facet[{facet.facet_id}] query_family_preference repaired from {qfp!r} to {new_qfp!r}"
+                )
+                facet = facet.model_copy(update={"query_family_preference": new_qfp})
+        repaired_facets.append(facet)
+
+    if not any(str(getattr(f, "authority_role", "") or "") == "core" for f in repaired_facets):
+        candidates = sorted(
+            repaired_facets,
+            key=lambda f: (
+                {"object": 0, "construct": 1, "data_proxy": 2, "context": 3, "limitation": 4, "method": 5}.get(
+                    str(getattr(f, "facet_group", "") or ""),
+                    9,
+                ),
+                -int(getattr(f, "importance_weight", 0) or 0),
+                str(getattr(f, "facet_id", "") or ""),
+            ),
+        )
+        if candidates:
+            chosen = candidates[0]
+            repair_notes.append(f"facet[{chosen.facet_id}] authority_role promoted to 'core' to guarantee core authority coverage")
+            repaired_facets = [
+                (f.model_copy(update={"authority_role": "core"}) if f.facet_id == chosen.facet_id else f)
+                for f in repaired_facets
+            ]
+
+    facet_by_id: Dict[str, Facet] = {
+        str(f.facet_id or "").strip(): f
+        for f in repaired_facets
+        if str(getattr(f, "facet_id", "") or "").strip()
+    }
+    role_to_ids = {
+        "core": [
+            f.facet_id
+            for f in repaired_facets
+            if str(getattr(f, "authority_role", "") or "") == "core" and str(getattr(f, "facet_id", "") or "").strip()
+        ],
+        "booster": [
+            f.facet_id
+            for f in repaired_facets
+            if str(getattr(f, "authority_role", "") or "") == "booster" and str(getattr(f, "facet_id", "") or "").strip()
+        ],
+    }
+
+    repaired_blueprints: List[AuthorityBlueprint] = []
+    kind_counter = {"core": 0, "booster": 0}
+    for bp in list(plan.authority_blueprints or []):
+        kind = str(getattr(bp, "authority_kind", "") or "")
+        if kind not in AUTHORITY_KIND_ENUM:
+            kind = "core" if kind_counter["core"] == 0 else "booster"
+            repair_notes.append(
+                f"authority_blueprint[{getattr(bp, 'label_en', '?')}] authority_kind repaired to {kind!r}"
+            )
+        raw_target_ids = _dedupe_keep_order(
+            [str(x or "").strip() for x in (getattr(bp, "target_facet_ids", None) or []) if str(x or "").strip()]
+        )
+        filtered_target_ids = [fid for fid in raw_target_ids if fid in facet_by_id and fid in role_to_ids.get(kind, [])]
+        filtered_target_ids = sorted(
+            filtered_target_ids,
+            key=lambda fid: _authority_target_sort_key(fid, kind=kind, facet_by_id=facet_by_id),
+        )[:4]
+        if raw_target_ids != filtered_target_ids:
+            repair_notes.append(
+                f"authority_blueprint[{getattr(bp, 'label_en', '?')}] target_facet_ids normalized to {filtered_target_ids}"
+            )
+
+        if not filtered_target_ids and role_to_ids.get(kind):
+            continue
+
+        kind_counter[kind] += 1
+        fallback_bp = _make_authority_blueprint(
+            kind=kind,
+            ordinal=kind_counter[kind],
+            target_ids=filtered_target_ids,
+            facet_by_id=facet_by_id,
+        )
+        repaired_blueprints.append(
+            AuthorityBlueprint(
+                authority_kind=kind,
+                label_en=_clean_short_text(
+                    getattr(bp, "label_en", ""),
+                    fallback=fallback_bp.label_en,
+                    max_words=8,
+                    max_chars=80,
+                ),
+                label_de=_clean_short_text(
+                    getattr(bp, "label_de", ""),
+                    fallback=fallback_bp.label_de,
+                    max_words=8,
+                    max_chars=80,
+                ),
+                target_facet_ids=filtered_target_ids,
+                language_strategy=(
+                    str(getattr(bp, "language_strategy", "") or "")
+                    if str(getattr(bp, "language_strategy", "") or "") in LANGUAGE_STRATEGY_ENUM
+                    else fallback_bp.language_strategy
+                ),
+                search_breadth=(
+                    "tight"
+                    if kind == "core"
+                    else (
+                        str(getattr(bp, "search_breadth", "") or "")
+                        if str(getattr(bp, "search_breadth", "") or "") in AUTHORITY_SEARCH_BREADTH_ENUM
+                        else fallback_bp.search_breadth
+                    )
+                ),
+                notes_en=_clean_short_text(
+                    getattr(bp, "notes_en", ""),
+                    fallback=fallback_bp.notes_en,
+                    max_words=18,
+                    max_chars=120,
+                ),
+            )
+        )
+
+    if role_to_ids["core"] and not any(bp.authority_kind == "core" for bp in repaired_blueprints):
+        kind_counter["core"] += 1
+        repaired_blueprints.append(
+            _make_authority_blueprint(
+                kind="core",
+                ordinal=kind_counter["core"],
+                target_ids=sorted(
+                    role_to_ids["core"],
+                    key=lambda fid: _authority_target_sort_key(fid, kind="core", facet_by_id=facet_by_id),
+                )[:4],
+                facet_by_id=facet_by_id,
+            )
+        )
+        repair_notes.append("created core authority blueprint to cover core authority facets")
+
+    assigned_by_kind = {"core": set(), "booster": set()}
+    for bp in repaired_blueprints:
+        assigned_by_kind.setdefault(bp.authority_kind, set()).update(bp.target_facet_ids or [])
+
+    for kind in ("core", "booster"):
+        unassigned = [fid for fid in role_to_ids.get(kind, []) if fid not in assigned_by_kind.get(kind, set())]
+        if not unassigned:
+            continue
+
+        for idx, bp in enumerate(list(repaired_blueprints)):
+            if not unassigned or bp.authority_kind != kind:
+                continue
+            current = list(bp.target_facet_ids or [])
+            capacity = 4 - len(current)
+            if capacity <= 0:
+                continue
+            additions = unassigned[:capacity]
+            repaired_blueprints[idx] = bp.model_copy(update={"target_facet_ids": current + additions})
+            assigned_by_kind.setdefault(kind, set()).update(additions)
+            unassigned = unassigned[capacity:]
+            repair_notes.append(
+                f"authority_blueprint[{bp.label_en}] extended with {additions} to cover {kind} authority facets"
+            )
+
+        while unassigned and len(repaired_blueprints) < 4:
+            kind_counter[kind] += 1
+            chunk = sorted(
+                unassigned[:4],
+                key=lambda fid: _authority_target_sort_key(fid, kind=kind, facet_by_id=facet_by_id),
+            )
+            repaired_blueprints.append(
+                _make_authority_blueprint(
+                    kind=kind,
+                    ordinal=kind_counter[kind],
+                    target_ids=chunk,
+                    facet_by_id=facet_by_id,
+                )
+            )
+            assigned_by_kind.setdefault(kind, set()).update(chunk)
+            repair_notes.append(f"created {kind} authority blueprint for facets {chunk}")
+            unassigned = [fid for fid in unassigned if fid not in set(chunk)]
+
+    repaired_plan = plan.model_copy(update={"facets": repaired_facets, "authority_blueprints": repaired_blueprints})
+    return repaired_plan, repair_notes
+
+
 def diagnose_query_plan(plan: QueryPlan) -> Dict[str, Any]:
     issues: List[str] = []
 
@@ -2093,6 +2522,50 @@ def diagnose_query_plan(plan: QueryPlan) -> Dict[str, Any]:
     if bad_drift:
         issues.append(f"CRITICAL: drift_risks contains invalid items: {bad_drift[:6]}")
 
+    authority_blueprints = list(plan.authority_blueprints or [])
+    if len(authority_blueprints) < 1 or len(authority_blueprints) > 4:
+        issues.append(f"CRITICAL: authority_blueprints has {len(authority_blueprints)} items (expected 1–4).")
+
+    facet_id_set = {str(f.facet_id or "").strip() for f in plan.facets if str(f.facet_id or "").strip()}
+    core_bp_n = 0
+    booster_bp_n = 0
+    for bp in authority_blueprints:
+        if str(getattr(bp, "authority_kind", "") or "") not in AUTHORITY_KIND_ENUM:
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] has invalid authority_kind.")
+        if str(getattr(bp, "language_strategy", "") or "") not in LANGUAGE_STRATEGY_ENUM:
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] has invalid language_strategy.")
+        if str(getattr(bp, "search_breadth", "") or "") not in AUTHORITY_SEARCH_BREADTH_ENUM:
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] has invalid search_breadth.")
+        if not _is_short_plain_text(getattr(bp, "label_en", ""), min_words=1, max_words=8, max_chars=80):
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] label_en is invalid.")
+        if not _is_short_plain_text(getattr(bp, "label_de", ""), min_words=1, max_words=8, max_chars=80):
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] label_de is invalid.")
+        if not _is_short_plain_text(getattr(bp, "notes_en", ""), min_words=2, max_words=18, max_chars=120):
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] notes_en is invalid.")
+
+        target_ids = [str(x or "").strip() for x in (getattr(bp, "target_facet_ids", None) or []) if str(x or "").strip()]
+        if len(target_ids) < 1 or len(target_ids) > 4:
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] target_facet_ids has {len(target_ids)} items (expected 1–4).")
+        missing_target_ids = [x for x in target_ids if x not in facet_id_set]
+        if missing_target_ids:
+            issues.append(
+                f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] references unknown facet_ids: {missing_target_ids[:6]}"
+            )
+
+        kind = str(getattr(bp, "authority_kind", "") or "")
+        breadth = str(getattr(bp, "search_breadth", "") or "")
+        if kind == "core":
+            core_bp_n += 1
+            if breadth != "tight":
+                issues.append(
+                    f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] core authority must use search_breadth='tight'."
+                )
+        elif kind == "booster":
+            booster_bp_n += 1
+
+    if core_bp_n < 1:
+        issues.append("CRITICAL: authority_blueprints must include at least one core blueprint.")
+
     # Term hygiene checks
     def check_term_list(name: str, terms: List[str], *, max_words: int) -> None:
         bad_terms = [t for t in (terms or []) if not _is_hygienic_term(t, max_words=max_words)]
@@ -2114,6 +2587,20 @@ def diagnose_query_plan(plan: QueryPlan) -> Dict[str, Any]:
     for f in plan.facets:
         if str(getattr(f, "facet_group", "") or "") not in FACET_GROUP_ENUM:
             issues.append(f"CRITICAL: facet[{f.facet_id}] has invalid facet_group: {getattr(f, 'facet_group', None)!r}")
+        qfp = str(getattr(f, "query_family_preference", "") or "")
+        if qfp not in QUERY_FAMILY_ENUM:
+            issues.append(f"CRITICAL: facet[{f.facet_id}] has invalid query_family_preference: {qfp!r}")
+        ls = str(getattr(f, "language_strategy", "") or "")
+        if ls not in LANGUAGE_STRATEGY_ENUM:
+            issues.append(f"CRITICAL: facet[{f.facet_id}] has invalid language_strategy: {ls!r}")
+        ar = str(getattr(f, "authority_role", "") or "")
+        if ar not in AUTHORITY_ROLE_ENUM:
+            issues.append(f"CRITICAL: facet[{f.facet_id}] has invalid authority_role: {ar!r}")
+        fg = str(getattr(f, "facet_group", "") or "")
+        if fg in FACET_GROUP_TO_QUERY_FAMILY and qfp and qfp not in FACET_GROUP_TO_QUERY_FAMILY[fg]:
+            issues.append(
+                f"CRITICAL: facet[{f.facet_id}] query_family_preference={qfp!r} is inconsistent with facet_group={fg!r}."
+            )
         check_term_list(f"facet[{f.facet_id}].canonical_terms.en", f.canonical_terms.en, max_words=4)
         check_term_list(f"facet[{f.facet_id}].canonical_terms.de", f.canonical_terms.de, max_words=4)
         check_term_list(f"facet[{f.facet_id}].neighbor_terms.en", f.neighbor_terms.en, max_words=4)
@@ -2139,6 +2626,34 @@ def diagnose_query_plan(plan: QueryPlan) -> Dict[str, Any]:
         issues.append(
             "Method-heavy weighting detected: weight>=4 method facets outnumber object/construct/data_proxy facets."
         )
+
+    core_authority_facets = [
+        f for f in plan.facets if str(getattr(f, "authority_role", "") or "") == "core"
+    ]
+    booster_authority_facets = [
+        f for f in plan.facets if str(getattr(f, "authority_role", "") or "") == "booster"
+    ]
+    if not core_authority_facets:
+        issues.append("CRITICAL: no facets are marked authority_role='core'.")
+    core_authority_groups = {str(getattr(f, "facet_group", "") or "") for f in core_authority_facets}
+    if core_authority_groups and not any(g in {"object", "construct", "data_proxy", "context"} for g in core_authority_groups):
+        issues.append("CRITICAL: authority_role='core' facets are not object/construct/data_proxy/context-led.")
+    if all(str(getattr(f, "facet_group", "") or "") == "method" for f in core_authority_facets):
+        issues.append("CRITICAL: all authority_role='core' facets are method facets.")
+
+    bp_targets_by_kind = {"core": set(), "booster": set()}
+    for bp in authority_blueprints:
+        kind = str(getattr(bp, "authority_kind", "") or "")
+        target_ids = {str(x or "").strip() for x in (getattr(bp, "target_facet_ids", None) or []) if str(x or "").strip()}
+        bp_targets_by_kind.setdefault(kind, set()).update(target_ids)
+    for f in core_authority_facets:
+        if f.facet_id not in bp_targets_by_kind.get("core", set()):
+            issues.append(f"CRITICAL: facet[{f.facet_id}] authority_role='core' is not referenced by any core authority blueprint.")
+    for f in booster_authority_facets:
+        if f.facet_id not in bp_targets_by_kind.get("booster", set()):
+            issues.append(
+                f"CRITICAL: facet[{f.facet_id}] authority_role='booster' is not referenced by any booster authority blueprint."
+            )
 
     # Very rough overlap heuristic: identical canonical term sets.
     canon_sets: Dict[Tuple[Tuple[str, ...], Tuple[str, ...]], str] = {}
@@ -2184,6 +2699,7 @@ def plan_queries_llm(
                 log_event(run_ctx, stage=stage, event="cache_placeholder_ignored", path=str(cache_path))
             else:
                 plan = QueryPlan.model_validate(cached_obj)
+                plan, repair_notes = _repair_query_plan(plan)
                 meta = {
                     "cache_hit": True,
                     "usage": {
@@ -2194,7 +2710,11 @@ def plan_queries_llm(
                     },
                     "cost_estimate": {"total_cost_usd": 0.0},
                     "diagnostics": diagnose_query_plan(plan),
+                    "repair_notes": repair_notes,
                 }
+                if repair_notes:
+                    write_json(cache_path, plan.model_dump(mode="json"))
+                    log_event(run_ctx, stage=stage, event="cache_repaired", path=str(cache_path), repairs=repair_notes[:8])
                 log_event(run_ctx, stage=stage, event="cache_hit", path=str(cache_path))
                 return plan, meta
         except Exception as e:
@@ -2213,6 +2733,7 @@ def plan_queries_llm(
     obj: Dict[str, Any] = {}
     meta: Dict[str, Any] = {}
     plan: Optional[QueryPlan] = None
+    repair_notes: List[str] = []
 
     with stage_timer(run_ctx, stage):
         for attempt in range(1, max_attempts + 1):
@@ -2263,10 +2784,14 @@ def plan_queries_llm(
 
             try:
                 plan = QueryPlan.model_validate(obj)
+                plan, repair_notes = _repair_query_plan(plan)
                 diag = diagnose_query_plan(plan)
                 critical = diag.get("critical_issues") or []
                 if critical:
                     raise ValueError("QueryPlan failed hygiene checks: " + "; ".join([str(x) for x in critical[:6]]))
+
+                if repair_notes:
+                    log_event(run_ctx, stage=stage, event="plan_repaired", attempt=attempt, repairs=repair_notes[:8])
 
                 # Success: keep stable "latest" files.
                 write_json(run_ctx.run_dir / "query_plan.raw_output.json", obj)
@@ -2308,6 +2833,7 @@ def plan_queries_llm(
     meta = dict(meta)
     meta["cache_hit"] = False
     meta["diagnostics"] = diagnose_query_plan(plan)
+    meta["repair_notes"] = repair_notes
     return plan, meta
 
 
@@ -2399,6 +2925,7 @@ plan, meta = plan_queries_llm(
 )
 
 diag = meta.get("diagnostics") or diagnose_query_plan(plan)
+repair_notes = list(meta.get("repair_notes") or [])
 
 # -----------------------------
 # Reporting (print-first)
@@ -2411,6 +2938,13 @@ obj_terms_en = safe_len(getattr(getattr(plan, 'core_object_terms', None), 'en', 
 obj_terms_de = safe_len(getattr(getattr(plan, 'core_object_terms', None), 'de', []) or [])
 must_keep_n = safe_len(getattr(plan, 'must_keep_constraints', []) or [])
 drift_risks_n = safe_len(getattr(plan, 'drift_risks', []) or [])
+authority_blueprints = list(getattr(plan, 'authority_blueprints', []) or [])
+authority_core_n = sum(
+    1 for bp in authority_blueprints if str(getattr(bp, 'authority_kind', '') or '') == 'core'
+)
+authority_booster_n = sum(
+    1 for bp in authority_blueprints if str(getattr(bp, 'authority_kind', '') or '') == 'booster'
+)
 
 # Build facet rows (verbose, but scannable)
 facet_rows = []
@@ -2421,6 +2955,9 @@ for f in (getattr(plan, 'facets', []) or []):
             'weight': int(getattr(f, 'importance_weight', 0) or 0),
             'facet_type': str(getattr(f, 'facet_type', '') or ''),
             'facet_group': str(getattr(f, 'facet_group', '') or ''),
+            'query_family_preference': str(getattr(f, 'query_family_preference', '') or ''),
+            'language_strategy': str(getattr(f, 'language_strategy', '') or ''),
+            'authority_role': str(getattr(f, 'authority_role', '') or ''),
             'label_en': _truncate(getattr(f, 'facet_label_en', '') or '', 70),
             'canon_en_n': safe_len(getattr(getattr(f, 'canonical_terms', None), 'en', []) or []),
             'canon_de_n': safe_len(getattr(getattr(f, 'canonical_terms', None), 'de', []) or []),
@@ -2440,6 +2977,15 @@ missing_canon = [
     r for r in facet_rows if int(r.get('canon_en_n') or 0) == 0 or int(r.get('canon_de_n') or 0) == 0
 ]
 missing_ratio = float(len(missing_canon)) / float(max(1, facet_count))
+missing_query_controls = [
+    r
+    for r in facet_rows
+    if not str(r.get('query_family_preference') or '').strip()
+    or not str(r.get('language_strategy') or '').strip()
+    or not str(r.get('authority_role') or '').strip()
+]
+core_authority_facets = [r for r in facet_rows if str(r.get('authority_role') or '') == 'core']
+booster_authority_facets = [r for r in facet_rows if str(r.get('authority_role') or '') == 'booster']
 
 weights = [int(r.get('weight') or 0) for r in facet_rows]
 weight_variety = len(set(weights))
@@ -2495,6 +3041,36 @@ qc.append(
         expected='must_keep>=3, drift_risks>=2',
         why='these fields explicitly communicate what later stages must preserve and how retrieval can drift',
         fix='Tighten Phase B prompt/schema so non-negotiable constraints and drift risks are always emitted',
+    )
+)
+
+qc.append(
+    qc_row(
+        check='query_family_controls',
+        status='OK' if not missing_query_controls else 'FAIL',
+        value=f"missing={len(missing_query_controls)}",
+        expected='0 missing facets',
+        why='Phase C now depends on per-facet query shape, language policy, and authority role controls.',
+        fix='Reject planner outputs that omit query_family_preference, language_strategy, or authority_role.',
+    )
+)
+
+authority_split_status = 'OK'
+if authority_core_n < 1:
+    authority_split_status = 'FAIL'
+elif booster_authority_facets and authority_booster_n < 1:
+    authority_split_status = 'WARN'
+qc.append(
+    qc_row(
+        check='authority_split',
+        status=authority_split_status,
+        value=(
+            f"blueprints core/booster={authority_core_n}/{authority_booster_n}; "
+            f"facets core/booster={len(core_authority_facets)}/{len(booster_authority_facets)}"
+        ),
+        expected='>=1 core blueprint; boosters only when planner marks booster facets',
+        why='authority must be split upstream into tight core coverage and optional broader boosters.',
+        fix='Add authority_blueprints and align facet authority_role assignments to them.',
     )
 )
 
@@ -2572,6 +3148,9 @@ section_at_a_glance(
         'anchors(en/de)': f"{anchors_en}/{anchors_de}",
         'core_object_terms(en/de)': f"{obj_terms_en}/{obj_terms_de}",
         'must_keep/drift_risks': f"{must_keep_n}/{drift_risks_n}",
+        'authority_blueprints(core/booster)': f"{authority_core_n}/{authority_booster_n}",
+        'authority_facets(core/booster)': f"{len(core_authority_facets)}/{len(booster_authority_facets)}",
+        'planner_repairs': len(repair_notes),
     },
     qc,
     {'query_plan.json': run_ctx.artifacts.query_plan_json},
@@ -2612,6 +3191,11 @@ else:
 if issues:
     print_section('Facet Diagnostics — Issues (top)')
     for x in issues[:TOP_N_ISSUES]:
+        print(f"- {x}")
+
+if repair_notes:
+    print_section('Planner Repairs')
+    for x in repair_notes[:TOP_N_ISSUES]:
         print(f"- {x}")
 
 # Facet overview by type
@@ -2659,6 +3243,86 @@ for fg, a in sorted(agg_group.items(), key=lambda kv: (-kv[1]['n'], kv[0])):
     )
 print_table(rows_group, columns=['facet_group', 'n', 'avg_weight', 'weight_4_plus'], max_rows=50, max_col_width=50)
 
+print_section('Facets — Overview (by authority_role)')
+agg_role: dict[str, dict[str, float]] = {}
+for r in facet_rows:
+    role = str(r.get('authority_role') or '')
+    a = agg_role.setdefault(role, {'n': 0, 'w_sum': 0.0, 'w4p': 0})
+    a['n'] += 1
+    a['w_sum'] += float(r.get('weight') or 0)
+    if int(r.get('weight') or 0) >= 4:
+        a['w4p'] += 1
+
+rows_role = []
+for role, a in sorted(agg_role.items(), key=lambda kv: (-kv[1]['n'], kv[0])):
+    rows_role.append(
+        {
+            'authority_role': role or '<empty>',
+            'n': _fmt_int(a['n']),
+            'avg_weight': f"{(a['w_sum'] / float(max(1, a['n']))):.2f}",
+            'weight_4_plus': _fmt_int(a['w4p']),
+        }
+    )
+print_table(rows_role, columns=['authority_role', 'n', 'avg_weight', 'weight_4_plus'], max_rows=50, max_col_width=50)
+
+print_section('Facets — Overview (by language_strategy)')
+agg_lang_strategy: dict[str, dict[str, float]] = {}
+for r in facet_rows:
+    ls = str(r.get('language_strategy') or '')
+    a = agg_lang_strategy.setdefault(ls, {'n': 0, 'w_sum': 0.0, 'w4p': 0})
+    a['n'] += 1
+    a['w_sum'] += float(r.get('weight') or 0)
+    if int(r.get('weight') or 0) >= 4:
+        a['w4p'] += 1
+
+rows_lang_strategy = []
+for ls, a in sorted(agg_lang_strategy.items(), key=lambda kv: (-kv[1]['n'], kv[0])):
+    rows_lang_strategy.append(
+        {
+            'language_strategy': ls or '<empty>',
+            'n': _fmt_int(a['n']),
+            'avg_weight': f"{(a['w_sum'] / float(max(1, a['n']))):.2f}",
+            'weight_4_plus': _fmt_int(a['w4p']),
+        }
+    )
+print_table(
+    rows_lang_strategy,
+    columns=['language_strategy', 'n', 'avg_weight', 'weight_4_plus'],
+    max_rows=50,
+    max_col_width=50,
+)
+
+print_section('Authority Blueprints')
+if not authority_blueprints:
+    print('<none>')
+else:
+    facet_label_by_id = {
+        str(getattr(f, 'facet_id', '') or ''): _truncate(getattr(f, 'facet_label_en', '') or '', 50)
+        for f in (getattr(plan, 'facets', []) or [])
+    }
+    authority_rows = []
+    for bp in authority_blueprints:
+        target_ids = [str(x or '').strip() for x in (getattr(bp, 'target_facet_ids', []) or []) if str(x or '').strip()]
+        target_preview = ", ".join(
+            f"{fid}:{facet_label_by_id.get(fid, '<missing>')}" for fid in target_ids[:4]
+        )
+        authority_rows.append(
+            {
+                'authority_kind': str(getattr(bp, 'authority_kind', '') or ''),
+                'label_en': _truncate(getattr(bp, 'label_en', '') or '', 45),
+                'language_strategy': str(getattr(bp, 'language_strategy', '') or ''),
+                'search_breadth': str(getattr(bp, 'search_breadth', '') or ''),
+                'target_facets': _truncate(target_preview, 140),
+                'notes_en': _truncate(getattr(bp, 'notes_en', '') or '', 90),
+            }
+        )
+    print_table(
+        authority_rows,
+        columns=['authority_kind', 'label_en', 'language_strategy', 'search_breadth', 'target_facets', 'notes_en'],
+        max_rows=20,
+        max_col_width=160,
+    )
+
 print_section('Facets — Table')
 facet_rows_sorted = sorted(facet_rows, key=lambda r: (-int(r.get('weight') or 0), str(r.get('facet_id') or '')))
 print_table(
@@ -2668,6 +3332,9 @@ print_table(
         'weight',
         'facet_type',
         'facet_group',
+        'query_family_preference',
+        'language_strategy',
+        'authority_role',
         'label_en',
         'canon_en_n',
         'canon_de_n',
@@ -2793,6 +3460,9 @@ for f in (getattr(plan, 'facets', []) or []):
                 'weight': w,
                 'facet_type': str(getattr(f, 'facet_type', '') or ''),
                 'facet_group': str(getattr(f, 'facet_group', '') or ''),
+                'query_family_preference': str(getattr(f, 'query_family_preference', '') or ''),
+                'language_strategy': str(getattr(f, 'language_strategy', '') or ''),
+                'authority_role': str(getattr(f, 'authority_role', '') or ''),
                 'reasons': ', '.join(reasons[:5]),
                 'canon_en': _join_terms(ce, max_terms=8, max_chars=180),
                 'canon_de': _join_terms(cd, max_terms=8, max_chars=180),
@@ -2804,7 +3474,18 @@ if not risk_rows:
 else:
     print_table(
         sorted(risk_rows, key=lambda r: (-int(r.get('weight') or 0), str(r.get('facet_id') or ''))),
-        columns=['facet_id', 'weight', 'facet_type', 'facet_group', 'reasons', 'canon_en', 'canon_de'],
+        columns=[
+            'facet_id',
+            'weight',
+            'facet_type',
+            'facet_group',
+            'query_family_preference',
+            'language_strategy',
+            'authority_role',
+            'reasons',
+            'canon_en',
+            'canon_de',
+        ],
         max_rows=50,
         max_col_width=220,
     )
@@ -2988,6 +3669,15 @@ GOAL HIERARCHY:
 - match: strongest topical fit for the chapter, including strong partial matches on required facets
 - do not spend budget on queries that are mainly about a generic method with weak chapter-object anchoring
 
+PLANNER-CONTROLLED INPUT FIELDS:
+- Each facet includes:
+  - query_family_preference: the dominant query shape Phase C should use
+  - language_strategy: whether the facet should stay EN-core, use bilingual fallback, or support selective DE
+  - authority_role: none | core | booster
+- authority_blueprints is the canonical upstream authority split.
+- authority_blueprints_expanded repeats each blueprint with its target facet controls for easier use.
+- Generate authority queries from authority_blueprints first. Do not invent flat authority families that ignore this split.
+
 OUTPUT JSON SCHEMA:
 {
   "openalex_queries": [
@@ -3038,15 +3728,24 @@ FILTER POLICY:
 search_field policy:
 - authority -> "search"
 - match -> "title_and_abstract.search"
+- authority blueprint with authority_kind="core" and search_breadth="tight":
+  use object-led phrasing, avoid speculative broadening, and avoid wildcard/fuzzy unless recall would otherwise collapse
+- authority blueprint with authority_kind="booster" and search_breadth="broad_ok":
+  broader `search` is allowed, but the chapter object must still remain explicit
 
 QUERY FAMILIES TO COVER:
-- authority core EN + DE or bilingual fallback
-- optional authority boosters EN + DE when both are lexically plausible
+- emit all core authority blueprints first
+- emit booster authority blueprints only after core authority coverage is satisfied
 - global object+construct match EN + at least one DE or bilingual core query
-- object+facet queries for weight>=4 facets, with DE used selectively
-- if budget remains, prefer object+data/proxy or object+limitations expansions before generic method expansions
+- object+facet queries for weight>=4 facets, using each facet's query_family_preference
+- if budget remains, prefer object+data/proxy or object+limitations expansions before object+method expansions
 
 LANGUAGE POLICY:
+- obey the planner's language_strategy for each facet or authority blueprint
+- en_core_only -> emit EN only
+- en_plus_bilingual_fallback -> emit EN and use one bilingual rescue query instead of fragile DE clones when needed
+- en_plus_selective_de -> emit EN plus DE only when the phrasing is likely to survive title/abstract search
+- en_de_parallel -> emit both EN and DE
 - do not mirror every English query into German mechanically
 - if the German rendering becomes too literal, niche, or implementation-like, prefer one strongly object-anchored DE core query over multiple dead DE clones
 - keep DE coverage for queries whose object phrase and facet phrase are both likely to appear in German titles/abstracts
@@ -3057,15 +3756,20 @@ LEXICALITY POLICY:
 - prefer full forms before acronyms or project-local shorthand
 
 QUERY SHAPES:
-- CORE: ("core object" OR variants) AND ("construct" OR variants)
-- OBJECT+DATA: ("core object" OR variants) AND ("data" OR "proxy" OR "measurement" variants)
-- OBJECT+METHOD: ("core object" OR variants) AND ("specific method" OR close variants)
-- AUTHORITY: ("core object" OR variants) AND ("field-defining construct/data phrase" OR variants)
+- object_core -> ("core object" OR variants) AND ("construct" OR close object-defining context)
+- object_plus_construct -> ("core object" OR variants) AND ("construct" OR variants)
+- object_plus_data_proxy -> ("core object" OR variants) AND ("data" OR "proxy" OR "measurement" variants)
+- object_plus_method -> ("core object" OR variants) AND ("specific method" OR close variants)
+- object_plus_limitation -> ("core object" OR variants) AND ("bias" OR "validity" OR "limitation" variants)
+- object_plus_context -> ("core object" OR variants) AND ("domain" OR "platform" OR "setting" variants)
+- authority core -> object-led, tight, field-defining construct/data/context phrasing
+- authority booster -> broader but still chapter-anchored authority expansion
 
 BUDGETING:
-- authority: 2 queries (EN + DE or bilingual fallback) + up to 2 boosters
+- authority: 1 query per core authority blueprint first
+- authority: then up to 1 query per booster authority blueprint if budget remains and lexicality is plausible
 - match: global match EN + at least one DE or bilingual core query
-- match: for each facet with weight>=4 -> 1 EN query, plus DE only when the phrasing is likely to survive title/abstract search
+- match: for each facet with weight>=4 -> 1 EN query, plus DE only when the facet language_strategy supports it
 - if budget remains -> extra object-anchored expansions only
 
 EMPTY-QUERY TARGET:
@@ -3076,6 +3780,8 @@ EMPTY-QUERY TARGET:
 SELF-CHECK (must enforce silently):
 - Would this query still retrieve many generic method surveys if the object phrase were removed? If yes, strengthen it.
 - Does every query include an object anchor, not only a method term? If not, fix it.
+- Did this authority query come from a core or booster authority blueprint? If not, fix it.
+- Does the query shape match the facet's query_family_preference? If not, fix it.
 - Are exclusions atomic and provider-safe? If not, omit them.
 - Are boolean operators uppercase and filters safe? If not, fix them.
 - Are `*` or `~` used only on `search` and only when clearly justified? If not, simplify.
@@ -3125,9 +3831,18 @@ OUTPUT JSON:
 }
 
 GOAL HIERARCHY:
-- authority: broad but still chapter-anchored
+- authority: tight core authority first, optional broader boosters second
 - match: strongest chapter fit with good recall
 - do not spend budget on generic method queries that are weakly tied to the chapter object
+
+PLANNER-CONTROLLED INPUT FIELDS:
+- Each facet includes:
+  - query_family_preference
+  - language_strategy
+  - authority_role
+- authority_blueprints is the canonical upstream authority split.
+- authority_blueprints_expanded repeats each blueprint with its target facet controls for easier use.
+- Generate authority queries from authority_blueprints first. Do not collapse them into one flat authority notion.
 
 PROVIDER REALITY:
 - Semantic Scholar bulk keyword search matches titles and abstracts, so use phrases likely to appear in titles/abstracts.
@@ -3135,6 +3850,11 @@ PROVIDER REALITY:
 - Do not mirror every English query into German mechanically.
 
 LANGUAGE STRATEGY:
+- obey the planner's language_strategy for each facet or authority blueprint
+- en_core_only -> emit EN only
+- en_plus_bilingual_fallback -> emit EN and use bilingual rescue only when it improves recall
+- en_plus_selective_de -> emit EN plus selective DE only when the phrasing is plausible
+- en_de_parallel -> emit both EN and DE
 - English should carry the recall backbone.
 - Use German selectively, only where the object phrase and facet phrase are both likely to appear in German titles/abstracts.
 - If the German rendering is literal, brittle, or niche, use a bilingual or English fallback instead of forcing DE parity.
@@ -3189,6 +3909,21 @@ FACET_OR_GROUP:
 - front-load standard literature wording before niche or implementation-like wording
 - avoid filling the whole group with rare translated compounds that are unlikely to appear in titles/abstracts
 
+QUERY-FAMILY SHAPE CONTROL:
+- object_core -> PRIMARY_CONTEXT + object-defining construct/context facet group
+- object_plus_construct -> PRIMARY_CONTEXT + construct facet group
+- object_plus_data_proxy -> PRIMARY_CONTEXT + data/proxy facet group
+- object_plus_method -> PRIMARY_CONTEXT + specific method facet group; add SECOND_CONTEXT only when it clearly reduces drift
+- object_plus_limitation -> PRIMARY_CONTEXT + limitation/validity facet group
+- object_plus_context -> PRIMARY_CONTEXT + context/domain/platform facet group
+- The query's dominant structure must match the facet's query_family_preference.
+
+AUTHORITY SPLIT:
+- Emit all core authority blueprints first.
+- Core authority queries should usually use 2 required groups: +(PRIMARY_CONTEXT_OR_GROUP) +(field-defining authority facet group)
+- Booster authority queries may broaden OR-groups, but must remain object-led and interpretable.
+- Do not create authority queries for facets with authority_role="none".
+
 ANTI-DRIFT RULES:
 - Pure method-only queries are NOT allowed.
 - If a query could retrieve broad NLP/LLM/economics/method papers with no chapter object, strengthen it.
@@ -3202,7 +3937,7 @@ NEGATIVE RULES:
 
 EMPTY-QUERY TARGET:
 - some narrow zero-yield probes are acceptable
-- most authority, global-match, and weight>=4 facet families should keep a plausible title/abstract hit path
+- most core authority, global-match, and weight>=4 facet families should keep a plausible title/abstract hit path
 - avoid combining literal DE phrasing, 3 required groups, and multiple negatives unless the payoff is clear
 
 AUTHORITY POLICY:
@@ -3234,6 +3969,8 @@ SELF-CHECK (MUST DO, FIX SILENTLY):
 - if the German version is a literal translation that is unlikely to appear in titles/abstracts, replace it with a bilingual or English fallback
 - if the query depends on acronym-only shorthand, rewrite it with full terms
 - if advanced syntax is unnecessary, simplify it
+- Did this authority query come from a core or booster blueprint? If not, fix it.
+- Does the query shape match the facet's query_family_preference? If not, fix it.
 
 Return ONLY JSON: { "s2_bulk_queries": [ ... ] }
 """
@@ -3282,6 +4019,53 @@ def _sanitize_plan_for_query_builders(plan: QueryPlan) -> Dict[str, Any]:
                 terms = list(ex.get(lang) or [])
                 ex[lang] = [t for t in terms if _is_atomic_exclusion(t)]
             f["exclusion_terms"] = ex
+
+        facet_lookup = {
+            str(f.get("facet_id") or ""): f
+            for f in facets
+            if isinstance(f, dict) and str(f.get("facet_id") or "").strip()
+        }
+        obj["phase_c_guidance"] = {
+            "facet_query_controls": [
+                {
+                    "facet_id": str(f.get("facet_id") or ""),
+                    "facet_label_en": str(f.get("facet_label_en") or ""),
+                    "importance_weight": int(f.get("importance_weight") or 0),
+                    "facet_group": str(f.get("facet_group") or ""),
+                    "query_family_preference": str(f.get("query_family_preference") or ""),
+                    "language_strategy": str(f.get("language_strategy") or ""),
+                    "authority_role": str(f.get("authority_role") or ""),
+                }
+                for f in facets
+            ],
+            "authority_blueprints_expanded": [
+                {
+                    "authority_kind": str(bp.get("authority_kind") or ""),
+                    "label_en": str(bp.get("label_en") or ""),
+                    "label_de": str(bp.get("label_de") or ""),
+                    "language_strategy": str(bp.get("language_strategy") or ""),
+                    "search_breadth": str(bp.get("search_breadth") or ""),
+                    "notes_en": str(bp.get("notes_en") or ""),
+                    "target_facets": [
+                        {
+                            "facet_id": facet_id,
+                            "facet_label_en": str((facet_lookup.get(facet_id) or {}).get("facet_label_en") or ""),
+                            "facet_group": str((facet_lookup.get(facet_id) or {}).get("facet_group") or ""),
+                            "query_family_preference": str((facet_lookup.get(facet_id) or {}).get("query_family_preference") or ""),
+                            "language_strategy": str((facet_lookup.get(facet_id) or {}).get("language_strategy") or ""),
+                            "authority_role": str((facet_lookup.get(facet_id) or {}).get("authority_role") or ""),
+                        }
+                        for facet_id in [
+                            str(fid or "").strip()
+                            for fid in (bp.get("target_facet_ids") or [])
+                            if str(fid or "").strip()
+                        ]
+                    ],
+                }
+                for bp in (obj.get("authority_blueprints") or [])
+                if isinstance(bp, dict)
+            ],
+        }
     except Exception:
         return obj
     return obj
@@ -7828,6 +8612,10 @@ write_json(
     facet_index_path,
     {
         'facet_ids': facet_ids,
+        'authority_blueprints': [
+            bp.model_dump(mode='json')
+            for bp in (getattr(plan, 'authority_blueprints', []) or [])
+        ],
         'facets': [
             {
                 'facet_id': f.facet_id,
@@ -7836,6 +8624,9 @@ write_json(
                 'importance_weight': int(f.importance_weight),
                 'facet_type': f.facet_type,
                 'facet_group': f.facet_group,
+                'query_family_preference': getattr(f, 'query_family_preference', ''),
+                'language_strategy': getattr(f, 'language_strategy', ''),
+                'authority_role': getattr(f, 'authority_role', ''),
             }
             for f in facets
         ],
