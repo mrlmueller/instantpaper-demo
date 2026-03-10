@@ -626,6 +626,9 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
+OPENAI_REQUEST_DEBUG_DIR = ensure_dir((NOTEBOOK_DIR / "openai_request_debug").resolve())
+
+
 def _json_default(o: Any):
     if isinstance(o, Path):
         return str(o)
@@ -686,6 +689,20 @@ class PipelineConfig(BaseModel):
     # Embeddings (later phases)
     embedding_model: str = "text-embedding-3-small"
     embedding_batch_size: int = 256
+    embedding_candidate_abstract_chars_main: int = 800
+    embedding_candidate_include_venue: bool = True
+    embedding_candidate_include_year: bool = True
+    embedding_candidate_include_authors: bool = False
+    embedding_shortlist_stage2: int = 400
+    embedding_chunk_target_min: int = 260
+    embedding_chunk_target_max: int = 420
+    embedding_stage2_weight: float = 0.45
+    embedding_stage1_weight: float = 0.55
+    embedding_apply_mmr: bool = True
+    embedding_mmr_lambda: float = 0.82
+    embedding_mmr_top_k: int = 40
+    embedding_max_no_abstract_share: float = 0.15
+    embedding_apply_hygiene: bool = True
 
     # Pruning (later phases)
     prune_n1: int = 600
@@ -8377,13 +8394,78 @@ def facet_embed_text(f: Facet, *, lang: str) -> str:
     return (f.text_de or '').strip() + "\nKanonische Begriffe: " + ", ".join(terms)
 
 
+_PHASE_F_JUNK_TITLES = {
+    'index',
+    'references',
+    'table of contents',
+    'contents',
+    'editorial',
+    'book review',
+    'book reviews',
+    'bibliography',
+    'preface',
+    'foreword',
+    'acknowledgements',
+    'acknowledgments',
+    'conclusion',
+    'conclusions',
+    'introduction',
+}
+
+
+def _phase_f_clean_text(text: Any) -> str:
+    import html as _html
+
+    s = _html.unescape(str(text or ''))
+    s = re.sub(r'<[^>]+>', ' ', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
+
+
+def _phase_f_clean_list(items: Any, *, limit: Optional[int] = None) -> List[str]:
+    out: List[str] = []
+    for item in list(items or []):
+        s = _phase_f_clean_text(item)
+        if s:
+            out.append(s)
+        if limit is not None and len(out) >= int(limit):
+            break
+    return out
+
+
+def _phase_f_normalized_title(text: Any) -> str:
+    s = _phase_f_clean_text(text).casefold()
+    s = re.sub(r'[^\w\s]+', ' ', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
+
+
+def _phase_f_is_junk_title(text: Any) -> bool:
+    t = _phase_f_normalized_title(text)
+    if not t:
+        return True
+    return t in _PHASE_F_JUNK_TITLES
+
+
+def _phase_f_sanitize_candidate_dict(c: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(c)
+    out['title'] = _phase_f_clean_text(out.get('title'))
+    out['venue'] = (_phase_f_clean_text(out.get('venue')) or None)
+    out['abstract'] = (_phase_f_clean_text(out.get('abstract')) or None)
+    out['authors'] = _phase_f_clean_list(out.get('authors') or [], limit=80)
+    out['url'] = (str(out.get('url') or '').strip() or None)
+    out['language'] = (str(out.get('language') or '').strip() or None)
+    out['languages'] = [str(x).strip() for x in (out.get('languages') or []) if str(x).strip()]
+    return out
+
+
 def candidate_meta_view(c: Dict[str, Any], *, rich: bool = False) -> str:
-    title = (c.get('title') or '').strip()
-    venue = (c.get('venue') or '').strip()
+    title = _phase_f_clean_text(c.get('title'))
+    venue = _phase_f_clean_text(c.get('venue'))
     year = c.get('year')
     doi = (c.get('doi') or '').strip()
     url = (c.get('url') or '').strip()
-    authors = c.get('authors') or []
+    authors = _phase_f_clean_list(c.get('authors') or [], limit=12)
     authors_s = ', '.join([a for a in authors[:12] if a])
     ext = c.get('external_ids') or {}
     lang = c.get('language') or ''
@@ -8414,9 +8496,9 @@ def candidate_meta_view(c: Dict[str, Any], *, rich: bool = False) -> str:
 def candidate_meta_segments(c: Dict[str, Any]) -> List[str]:
     # 2–4 small segments for metadata-only candidates
     segs = [
-        (c.get('title') or '').strip(),
-        f"{(c.get('venue') or '').strip()}\n{c.get('year') or ''}".strip(),
-        ('Authors: ' + ', '.join((c.get('authors') or [])[:12])).strip(),
+        _phase_f_clean_text(c.get('title')),
+        f"{_phase_f_clean_text(c.get('venue'))}\n{c.get('year') or ''}".strip(),
+        ('Authors: ' + ', '.join(_phase_f_clean_list((c.get('authors') or [])[:12]))).strip(),
     ]
     doi = (c.get('doi') or '').strip()
     url = (c.get('url') or '').strip()
@@ -8424,6 +8506,134 @@ def candidate_meta_segments(c: Dict[str, Any]) -> List[str]:
         segs.append('\n'.join([x for x in [f"DOI: {doi}" if doi else '', f"URL: {url}" if url else ''] if x]))
     segs = [s for s in segs if s]
     return segs[:4]
+
+
+def chapter_target_embed_text(
+    plan: QueryPlan,
+    *,
+    chapter_title: str,
+    chapter_spec_text: str,
+) -> str:
+    core = getattr(plan, 'core_object_terms', None)
+    anchors = getattr(plan, 'primary_context_anchors', None)
+    must_keep = _phase_f_clean_list(getattr(plan, 'must_keep_constraints', None) or [], limit=10)
+    drift = _phase_f_clean_list(getattr(plan, 'drift_risks', None) or [], limit=8)
+
+    parts = [
+        f"Chapter title: {_phase_f_clean_text(chapter_title)}",
+        f"Chapter spec: {_phase_f_clean_text(chapter_spec_text)}",
+        "Core object terms EN: " + ", ".join(_phase_f_clean_list(getattr(core, 'en', None) or [], limit=12)),
+        "Core object terms DE: " + ", ".join(_phase_f_clean_list(getattr(core, 'de', None) or [], limit=12)),
+        f"Topic summary EN: {_phase_f_clean_text(getattr(plan, 'topic_summary_en', ''))}",
+        f"Topic summary DE: {_phase_f_clean_text(getattr(plan, 'topic_summary_de', ''))}",
+        "Primary anchors EN: " + ", ".join(_phase_f_clean_list(getattr(anchors, 'en', None) or [], limit=10)),
+        "Primary anchors DE: " + ", ".join(_phase_f_clean_list(getattr(anchors, 'de', None) or [], limit=10)),
+        "Must keep constraints: " + ", ".join(must_keep),
+        "Drift risks: " + ", ".join(drift),
+    ]
+    return '\n'.join([p for p in parts if _phase_f_clean_text(p)])
+
+
+def candidate_embed_text_main(
+    c: Dict[str, Any],
+    *,
+    abstract_chars: int,
+    include_venue: bool,
+    include_year: bool,
+    include_authors: bool,
+) -> str:
+    title = _phase_f_clean_text(c.get('title'))
+    venue = _phase_f_clean_text(c.get('venue'))
+    abstract = _phase_f_clean_text(c.get('abstract'))[: max(0, int(abstract_chars))]
+    authors = _phase_f_clean_list(c.get('authors') or [], limit=8)
+
+    lines = [f"Title: {title}"]
+    if include_year:
+        lines.append(f"Year: {c.get('year') or ''}")
+    if include_venue:
+        lines.append(f"Venue: {venue}")
+    if include_authors and authors:
+        lines.append(f"Authors: {', '.join(authors)}")
+    if abstract:
+        lines.append(f"Abstract: {abstract}")
+    return '\n'.join([ln for ln in lines if _phase_f_clean_text(ln)])
+
+
+def _phase_f_apply_hygiene_order(
+    ids: List[str],
+    *,
+    cand_by_id: Dict[str, Dict[str, Any]],
+    stats: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    seen_ids: set[str] = set()
+    seen_titles: set[str] = set()
+    out: List[str] = []
+    for cid in ids:
+        cid = str(cid or '').strip()
+        if not cid or cid in seen_ids:
+            continue
+        seen_ids.add(cid)
+        cand = cand_by_id.get(cid) or {}
+        title_norm = _phase_f_normalized_title(cand.get('title'))
+        if _phase_f_is_junk_title(cand.get('title')):
+            if stats is not None:
+                stats['junk_title_dropped'] = int(stats.get('junk_title_dropped') or 0) + 1
+            continue
+        if title_norm and title_norm in seen_titles:
+            if stats is not None:
+                stats['duplicate_title_suppressed'] = int(stats.get('duplicate_title_suppressed') or 0) + 1
+            continue
+        if title_norm:
+            seen_titles.add(title_norm)
+        out.append(cid)
+    return out
+
+
+def _phase_f_apply_mmr_order(
+    ids: List[str],
+    *,
+    score_by_id: Dict[str, float],
+    vec_by_id: Dict[str, array],
+    invnorm_by_id: Dict[str, float],
+    top_k: int,
+    lambda_mult: float,
+) -> List[str]:
+    ids = [str(cid or '').strip() for cid in ids if str(cid or '').strip()]
+    if not ids or top_k <= 1:
+        return ids
+
+    pool = ids[: max(int(top_k) * 6, int(top_k))]
+    selectable = [cid for cid in pool if cid in vec_by_id]
+    if len(selectable) < 2:
+        return ids
+
+    selected: List[str] = []
+    while selectable and len(selected) < int(top_k):
+        best_cid = None
+        best_val = None
+        for cid in selectable:
+            rel = float(score_by_id.get(cid) or 0.0)
+            div = 0.0
+            if selected:
+                v = vec_by_id[cid]
+                inv_v = invnorm_by_id.get(cid, 1.0 / (_f32_norm(v) or 1.0))
+                div = max(
+                    _cos(v, inv_v, vec_by_id[sid], invnorm_by_id.get(sid, 1.0 / (_f32_norm(vec_by_id[sid]) or 1.0)))
+                    for sid in selected
+                    if sid in vec_by_id
+                )
+            mmr = float(lambda_mult) * rel - (1.0 - float(lambda_mult)) * float(div)
+            if best_val is None or mmr > best_val:
+                best_val = mmr
+                best_cid = cid
+        if not best_cid:
+            break
+        selected.append(best_cid)
+        selectable = [cid for cid in selectable if cid != best_cid]
+
+    selected_set = set(selected)
+    remainder = [cid for cid in ids if cid not in selected_set]
+    return selected + remainder
 
 
 def compute_match(
@@ -8591,13 +8801,27 @@ candidates = list(_iter_jsonl_dicts(run_ctx.artifacts.candidates_normalized_json
 if not candidates:
     raise RuntimeError('No candidates found. Run Phase E first.')
 
+raw_candidates = [dict(c) for c in candidates]
+title_cleaned_count = 0
+abstract_cleaned_count = 0
+for raw in raw_candidates:
+    if _phase_f_clean_text(raw.get('title')) != str(raw.get('title') or '').strip():
+        title_cleaned_count += 1
+    if _phase_f_clean_text(raw.get('abstract')) != str(raw.get('abstract') or '').strip():
+        abstract_cleaned_count += 1
+candidates = [_phase_f_sanitize_candidate_dict(c) for c in candidates]
+
 print_section('Phase F — Embeddings + staged scoring')
 print_kv(
     {
         'embedding_model': cfg.embedding_model,
         'batch_size': cfg.embedding_batch_size,
+        'abstract_chars_main': cfg.embedding_candidate_abstract_chars_main,
         'prune_n1_with_abs': cfg.prune_n1,
         'prune_n1_no_abs': cfg.prune_n1_without_abstract,
+        'stage2_shortlist': cfg.embedding_shortlist_stage2,
+        'mmr(lambda/topk)': f"{cfg.embedding_mmr_lambda:.2f}/{int(cfg.embedding_mmr_top_k)}",
+        'noabs_share_max': f"{100.0 * float(cfg.embedding_max_no_abstract_share):.0f}%",
         't': cfg.scoring_t,
         't_noabs': cfg.scoring_t_noabs,
         'facets': len(facets),
@@ -8675,20 +8899,56 @@ for meta, vec in zip(facet_meta, facet_vecs):
 
 
 # -----------------------------
-# F3/F7: Metadata embeddings + Stage 1 scoring
+# F3: Deterministic chapter-target embedding
+# -----------------------------
+
+chapter_target_text = chapter_target_embed_text(
+    plan,
+    chapter_title=chapter_title,
+    chapter_spec_text=chapter_spec_text,
+)
+chapter_target_path = run_ctx.run_dir / 'chapter_target_embed_text.txt'
+chapter_target_path.write_text(chapter_target_text + '\n', encoding='utf-8')
+
+with stage_timer(run_ctx, 'phase_f_chapter_target_embedding'):
+    chapter_vecs, chapter_embed_stats = embed_texts_cached(
+        run_ctx=run_ctx,
+        cfg=cfg,
+        texts=[chapter_target_text],
+        model=cfg.embedding_model,
+        kind='chapter_target',
+        force_rebuild=False,
+    )
+
+chapter_target_vec = chapter_vecs[0]
+chapter_target_invnorm = 1.0 / (_f32_norm(chapter_target_vec) or 1.0)
+
+
+# -----------------------------
+# F3/F7: Candidate embeddings + Stage 1 scoring
 # -----------------------------
 
 meta_texts: List[str] = []
 meta_kinds: List[str] = []
+meta_ids: List[str] = []
 for c in candidates:
     pool = str(c.get('pool') or '')
     if pool == 'without_abstract':
         # richer view for metadata-only
         meta_texts.append(candidate_meta_view(c, rich=True))
-        meta_kinds.append('meta_rich')
+        meta_kinds.append('meta_noabs')
     else:
-        meta_texts.append(candidate_meta_view(c, rich=False))
-        meta_kinds.append('meta')
+        meta_texts.append(
+            candidate_embed_text_main(
+                c,
+                abstract_chars=int(cfg.embedding_candidate_abstract_chars_main),
+                include_venue=bool(cfg.embedding_candidate_include_venue),
+                include_year=bool(cfg.embedding_candidate_include_year),
+                include_authors=bool(cfg.embedding_candidate_include_authors),
+            )
+        )
+        meta_kinds.append('doc_main')
+    meta_ids.append(str(c.get('id') or ''))
 
 with stage_timer(run_ctx, 'phase_f_metadata_embeddings'):
     meta_vecs, meta_embed_stats = embed_texts_cached(
@@ -8701,14 +8961,23 @@ with stage_timer(run_ctx, 'phase_f_metadata_embeddings'):
     )
 
 meta_embed_stats_recs: Optional[Dict[str, Any]] = None
+stage1_text_by_id = {cid: txt for cid, txt in zip(meta_ids, meta_texts) if cid}
+stage1_kind_by_id = {cid: kind for cid, kind in zip(meta_ids, meta_kinds) if cid}
 
 # Precompute per-candidate authority
 authority_by_id = compute_authority_scores(candidates)
+candidate_vec_by_id: Dict[str, array] = {}
+candidate_invnorm_by_id: Dict[str, float] = {}
+for cid, vec in zip(meta_ids, meta_vecs):
+    if not cid:
+        continue
+    candidate_vec_by_id[cid] = vec
+    candidate_invnorm_by_id[cid] = 1.0 / (_f32_norm(vec) or 1.0)
 
 stage1_records: List[Dict[str, Any]] = []
 
 with stage_timer(run_ctx, 'phase_f_stage1_scoring'):
-    for c, v_meta in zip(candidates, meta_vecs):
+    for c, v_meta, view_kind in zip(candidates, meta_vecs, meta_kinds):
         cid = str(c.get('id') or '')
         pool = str(c.get('pool') or '')
         inv_meta = 1.0 / (_f32_norm(v_meta) or 1.0)
@@ -8720,6 +8989,7 @@ with stage_timer(run_ctx, 'phase_f_stage1_scoring'):
             s_de = _cos(facet_de[fid], facet_de_invnorm[fid], v_meta, inv_meta)
             scores.append(max(float(s_en), float(s_de)))
 
+        semantic_stage1 = float(_cos(chapter_target_vec, chapter_target_invnorm, v_meta, inv_meta))
         t = float(cfg.scoring_t_noabs if pool == 'without_abstract' else cfg.scoring_t)
         m = int(cfg.match_m)
         parts = compute_match(
@@ -8732,7 +9002,7 @@ with stage_timer(run_ctx, 'phase_f_stage1_scoring'):
             w_cov=float(cfg.match_weight_cov),
         )
 
-        match = float(parts['match'])
+        match = semantic_stage1
         auth = float(authority_by_id.get(cid, 0.0))
         match_lane = 0.80 * match + 0.20 * auth
         authority_lane = 0.80 * auth + 0.20 * match
@@ -8743,6 +9013,9 @@ with stage_timer(run_ctx, 'phase_f_stage1_scoring'):
                 'pool': pool,
                 'year': c.get('year'),
                 'citations': int(c.get('citations') or 0),
+                'semantic_view_kind': view_kind,
+                'semantic_stage1': semantic_stage1,
+                'facet_match_stage1': float(parts['match']),
                 'match_stage1': match,
                 'authority': auth,
                 'match_lane': match_lane,
@@ -8751,6 +9024,8 @@ with stage_timer(run_ctx, 'phase_f_stage1_scoring'):
                 'top_m': float(parts['top_m']),
                 'cov': float(parts['cov']),
                 'facet_scores_stage1': scores,
+                'title_norm': _phase_f_normalized_title(c.get('title')),
+                'junk_title': bool(_phase_f_is_junk_title(c.get('title'))),
             }
         )
 
@@ -9151,7 +9426,7 @@ if seed_count > 0 and recs_limit > 0:
                 merged_by_id[hit] = _merge_candidate_dict(merged_by_id[hit], cand)
                 merged += 1
 
-        expanded_candidates = list(merged_by_id.values())
+        expanded_candidates = [_phase_f_sanitize_candidate_dict(c) for c in merged_by_id.values()]
 
         # Persist expanded pool (for traceability; does not overwrite Phase E outputs)
         candidates_expanded_path = run_ctx.run_dir / 'candidates_expanded.jsonl'
@@ -9161,16 +9436,52 @@ if seed_count > 0 and recs_limit > 0:
                 f.write(json.dumps(cc, ensure_ascii=False, default=_json_default) + '\n')
         tmpx.replace(candidates_expanded_path)
 
-        # Score newly added candidates only
-        existing_ids = {str(r.get('id') or '') for r in stage1_records}
-        new_ids = [str(c.get('id') or '') for c in expanded_candidates if str(c.get('id') or '') not in existing_ids]
+        # Re-score new candidates plus any existing candidates whose semantic text changed after merging.
+        rescore_cands: List[Dict[str, Any]] = []
+        for c in expanded_candidates:
+            cid = str(c.get('id') or '')
+            if not cid:
+                continue
+            pool = str(c.get('pool') or '')
+            if pool == 'without_abstract':
+                desired_text = candidate_meta_view(c, rich=True)
+                desired_kind = 'meta_noabs'
+            else:
+                desired_text = candidate_embed_text_main(
+                    c,
+                    abstract_chars=int(cfg.embedding_candidate_abstract_chars_main),
+                    include_venue=bool(cfg.embedding_candidate_include_venue),
+                    include_year=bool(cfg.embedding_candidate_include_year),
+                    include_authors=bool(cfg.embedding_candidate_include_authors),
+                )
+                desired_kind = 'doc_main'
+            if stage1_text_by_id.get(cid) != desired_text or stage1_kind_by_id.get(cid) != desired_kind:
+                stage1_text_by_id[cid] = desired_text
+                stage1_kind_by_id[cid] = desired_kind
+                rescore_cands.append(c)
 
-        if new_ids:
-            new_cands = [c for c in expanded_candidates if str(c.get('id') or '') in set(new_ids)]
+        if rescore_cands:
+            new_cands = list(rescore_cands)
             new_meta_texts = []
+            new_meta_ids = []
+            new_meta_kinds = []
             for c in new_cands:
                 pool = str(c.get('pool') or '')
-                new_meta_texts.append(candidate_meta_view(c, rich=(pool == 'without_abstract')))
+                if pool == 'without_abstract':
+                    new_meta_texts.append(candidate_meta_view(c, rich=True))
+                    new_meta_kinds.append('meta_noabs')
+                else:
+                    new_meta_texts.append(
+                        candidate_embed_text_main(
+                            c,
+                            abstract_chars=int(cfg.embedding_candidate_abstract_chars_main),
+                            include_venue=bool(cfg.embedding_candidate_include_venue),
+                            include_year=bool(cfg.embedding_candidate_include_year),
+                            include_authors=bool(cfg.embedding_candidate_include_authors),
+                        )
+                    )
+                    new_meta_kinds.append('doc_main')
+                new_meta_ids.append(str(c.get('id') or ''))
 
             new_vecs, stats_new = embed_texts_cached(
                 run_ctx=run_ctx,
@@ -9183,7 +9494,13 @@ if seed_count > 0 and recs_limit > 0:
 
             meta_embed_stats_recs = stats_new
 
-            for c, v_meta in zip(new_cands, new_vecs):
+            for cid0, vec0 in zip(new_meta_ids, new_vecs):
+                if cid0:
+                    candidate_vec_by_id[cid0] = vec0
+                    candidate_invnorm_by_id[cid0] = 1.0 / (_f32_norm(vec0) or 1.0)
+
+            stage1_by_id_existing = {str(r.get('id') or ''): r for r in stage1_records}
+            for c, v_meta, view_kind in zip(new_cands, new_vecs, new_meta_kinds):
                 cid = str(c.get('id') or '')
                 pool = str(c.get('pool') or '')
                 inv_meta = 1.0 / (_f32_norm(v_meta) or 1.0)
@@ -9195,6 +9512,7 @@ if seed_count > 0 and recs_limit > 0:
                     s_de = _cos(facet_de[fid], facet_de_invnorm[fid], v_meta, inv_meta)
                     scores.append(max(float(s_en), float(s_de)))
 
+                semantic_stage1 = float(_cos(chapter_target_vec, chapter_target_invnorm, v_meta, inv_meta))
                 t = float(cfg.scoring_t_noabs if pool == 'without_abstract' else cfg.scoring_t)
                 parts = compute_match(
                     facet_scores=scores,
@@ -9206,22 +9524,30 @@ if seed_count > 0 and recs_limit > 0:
                     w_cov=float(cfg.match_weight_cov),
                 )
 
-                stage1_records.append(
-                    {
-                        'id': cid,
-                        'pool': pool,
-                        'year': c.get('year'),
-                        'citations': int(c.get('citations') or 0),
-                        'match_stage1': float(parts['match']),
-                        'authority': 0.0,  # set below
-                        'match_lane': 0.0,
-                        'authority_lane': 0.0,
-                        'best': float(parts['best']),
-                        'top_m': float(parts['top_m']),
-                        'cov': float(parts['cov']),
-                        'facet_scores_stage1': scores,
-                    }
-                )
+                row = {
+                    'id': cid,
+                    'pool': pool,
+                    'year': c.get('year'),
+                    'citations': int(c.get('citations') or 0),
+                    'semantic_view_kind': view_kind,
+                    'semantic_stage1': semantic_stage1,
+                    'facet_match_stage1': float(parts['match']),
+                    'match_stage1': semantic_stage1,
+                    'authority': 0.0,  # set below
+                    'match_lane': 0.0,
+                    'authority_lane': 0.0,
+                    'best': float(parts['best']),
+                    'top_m': float(parts['top_m']),
+                    'cov': float(parts['cov']),
+                    'facet_scores_stage1': scores,
+                    'title_norm': _phase_f_normalized_title(c.get('title')),
+                    'junk_title': bool(_phase_f_is_junk_title(c.get('title'))),
+                }
+                prev = stage1_by_id_existing.get(cid)
+                if prev is None:
+                    stage1_records.append(row)
+                else:
+                    prev.update(row)
 
         # Recompute authority percentile ranks over expanded pool
         candidates = expanded_candidates
@@ -9251,7 +9577,9 @@ _tmp.replace(scores_stage1_path)
 # -----------------------------
 
 N1_WITH_ABS = int(cfg.prune_n1)
-N1_NO_ABS = int(getattr(cfg, 'prune_n1_without_abstract', 300) or 300)
+NOABS_SHARE_MAX = float(getattr(cfg, 'embedding_max_no_abstract_share', 0.15) or 0.15)
+N1_NO_ABS_REQUESTED = int(getattr(cfg, 'prune_n1_without_abstract', 300) or 300)
+N1_NO_ABS = min(N1_NO_ABS_REQUESTED, max(1, int(math.floor(float(N1_WITH_ABS) * max(0.01, NOABS_SHARE_MAX)))))
 
 # Keep Phase E intent provenance for debugging only (do NOT use for lane eligibility).
 intents_by_id = {str(c.get('id') or ''): set(c.get('intents') or []) for c in candidates}
@@ -9279,7 +9607,8 @@ def _anchor_hit_meta(cid: str) -> bool:
     return False
 
 
-NOABS_AUTH_MIN_MATCH = 0.22
+NOABS_MIN_MATCH = max(float(cfg.scoring_t_noabs), 0.25)
+NOABS_AUTH_MIN_MATCH = max(NOABS_MIN_MATCH, 0.28)
 
 shortlists = {
     'match': {'with_abstract': [], 'without_abstract': []},
@@ -9300,6 +9629,20 @@ available_after_gate = {
 kept_intent_mix = {
     'match': {'with_abstract': {'match_only': 0, 'authority_only': 0, 'both': 0, 'none': 0}, 'without_abstract': {'match_only': 0, 'authority_only': 0, 'both': 0, 'none': 0}},
     'authority': {'with_abstract': {'match_only': 0, 'authority_only': 0, 'both': 0, 'none': 0}, 'without_abstract': {'match_only': 0, 'authority_only': 0, 'both': 0, 'none': 0}},
+}
+hygiene_stats = {
+    'title_cleaned': int(title_cleaned_count),
+    'abstract_cleaned': int(abstract_cleaned_count),
+    'junk_candidates_total': sum(1 for c in candidates if _phase_f_is_junk_title(c.get('title'))),
+    'junk_title_dropped': 0,
+    'duplicate_title_suppressed': 0,
+    'noabs_rows_gated_out': 0,
+    'noabs_keep_requested': int(N1_NO_ABS_REQUESTED),
+    'noabs_keep_effective': int(N1_NO_ABS),
+    'stage2_shortlist_limit': int(cfg.embedding_shortlist_stage2),
+    'mmr_enabled': bool(cfg.embedding_apply_mmr),
+    'mmr_lambda': float(cfg.embedding_mmr_lambda),
+    'mmr_top_k': int(cfg.embedding_mmr_top_k),
 }
 
 pool_by_id = {
@@ -9333,25 +9676,20 @@ for lane in ['match', 'authority']:
         ]
         available_total[lane][pool] = len(rows)
 
-        # Gate: avoid off-topic, high-citation metadata-only papers in authority/no-abs
-        if lane == 'authority' and pool == 'without_abstract':
+        if pool == 'without_abstract':
+            before_gate = len(rows)
             rows = [
                 r
                 for r in rows
-                if float(r.get('match_stage1') or 0.0) >= NOABS_AUTH_MIN_MATCH
+                if float(r.get('match_stage1') or 0.0) >= (NOABS_AUTH_MIN_MATCH if lane == 'authority' else NOABS_MIN_MATCH)
                 or _anchor_hit_meta(str(r.get('id') or ''))
             ]
+            hygiene_stats['noabs_rows_gated_out'] = int(hygiene_stats.get('noabs_rows_gated_out') or 0) + max(0, before_gate - len(rows))
 
         available_after_gate[lane][pool] = len(rows)
         rows_sorted = sorted(rows, key=lambda x: float(x.get(key) or 0.0), reverse=True)
-        ids = [str(r.get('id') or '').strip() for r in rows_sorted[:keep] if str(r.get('id') or '').strip()]
-        # De-dup while preserving order
-        seen = set()
-        ids2 = []
-        for cid in ids:
-            if cid and cid not in seen:
-                seen.add(cid)
-                ids2.append(cid)
+        ids = [str(r.get('id') or '').strip() for r in rows_sorted if str(r.get('id') or '').strip()]
+        ids2 = _phase_f_apply_hygiene_order(ids, cand_by_id=cand_by_id, stats=hygiene_stats)[:keep]
         shortlists[lane][pool] = ids2
 
         mix = {'match_only': 0, 'authority_only': 0, 'both': 0, 'none': 0}
@@ -9373,33 +9711,49 @@ for lane in ['match', 'authority']:
         assert not bad_pool, f"pool leak detected in {lane}/{pool}: {bad_pool[:5]}"
 
 shortlists_path = run_ctx.run_dir / 'shortlists_stage1.json'
-write_json(shortlists_path, shortlists)
 
 
 # -----------------------------
 # F6: Stage 2 (with_abstract shortlist only)
 # -----------------------------
 
-# Candidates to process in Stage2 = union of pruned with_abstract from both lanes
-stage2_ids = set(shortlists['match']['with_abstract']) | set(shortlists['authority']['with_abstract'])
+# Candidates to process in Stage2 = semantic top subset from the union of pruned with_abstract candidates.
+stage2_union = set(shortlists['match']['with_abstract']) | set(shortlists['authority']['with_abstract'])
+record_by_id = {str(r.get('id') or ''): r for r in stage1_records}
+stage2_ids = [
+    cid
+    for cid in sorted(
+        stage2_union,
+        key=lambda cid: max(
+            float(record_by_id.get(cid, {}).get('match_lane') or 0.0),
+            float(record_by_id.get(cid, {}).get('authority_lane') or 0.0),
+        ),
+        reverse=True,
+    )[: int(cfg.embedding_shortlist_stage2)]
+]
 
 cand_by_id = {str(c.get('id') or ''): c for c in candidates}
-record_by_id = {str(r.get('id') or ''): r for r in stage1_records}
 
 chunk_texts: List[str] = []
 chunk_owner: List[Tuple[str, int]] = []  # (candidate_id, chunk_i)
 
-for cid in sorted(stage2_ids):
+for cid in stage2_ids:
     c = cand_by_id.get(cid) or {}
     abstract = (c.get('abstract') or '').strip()
     if not abstract:
         continue
-    chunks = chunk_abstract(abstract)[:25]
+    title = _phase_f_clean_text(c.get('title'))
+    chunks = chunk_abstract(
+        abstract,
+        target_min=int(cfg.embedding_chunk_target_min),
+        target_max=int(cfg.embedding_chunk_target_max),
+    )[:25]
     for j, ch in enumerate(chunks):
-        chunk_texts.append(ch)
+        chunk_texts.append(f"Title: {title}\nAbstract chunk: {ch}")
         chunk_owner.append((cid, j))
 
 stage2_records: Dict[str, Dict[str, Any]] = {}
+chunk_embed_stats: Optional[Dict[str, Any]] = None
 
 if chunk_texts:
     with stage_timer(run_ctx, 'phase_f_chunk_embeddings'):
@@ -9426,6 +9780,14 @@ if chunk_texts:
 
             facet_scores2: List[float] = []
             evidence: List[Optional[str]] = []
+            best_chunk_similarity = -1.0
+            best_semantic_chunk = None
+
+            for (txt, v), inv_v in zip(items, chunk_inv):
+                sim = float(_cos(chapter_target_vec, chapter_target_invnorm, v, inv_v))
+                if sim > best_chunk_similarity:
+                    best_chunk_similarity = sim
+                    best_semantic_chunk = txt
 
             for f in facets:
                 fid = f.facet_id
@@ -9462,12 +9824,20 @@ if chunk_texts:
                 w_topm=float(cfg.match_weight_top_m),
                 w_cov=float(cfg.match_weight_cov),
             )
+            stage1_sem = float(record_by_id.get(cid, {}).get('semantic_stage1') or record_by_id.get(cid, {}).get('match_stage1') or 0.0)
+            match2 = (
+                float(cfg.embedding_stage1_weight) * stage1_sem
+                + float(cfg.embedding_stage2_weight) * max(0.0, float(best_chunk_similarity))
+            )
 
             stage2_records[cid] = {
                 'id': cid,
                 'facet_scores_stage2': facet_scores2,
                 'evidence_chunks': evidence,
-                'match_stage2': float(parts2['match']),
+                'semantic_evidence_chunk': (_truncate(best_semantic_chunk, 240) if best_semantic_chunk else None),
+                'best_chunk_similarity': float(best_chunk_similarity),
+                'semantic_stage2': float(match2),
+                'match_stage2': float(match2),
                 'best2': float(parts2['best']),
                 'top_m2': float(parts2['top_m']),
                 'cov2': float(parts2['cov']),
@@ -9481,9 +9851,12 @@ if chunk_texts:
         match2 = float(r2.get('match_stage2') or 0.0)
         auth = float(r1.get('authority') or 0.0)
         r1['match'] = match2
+        r1['semantic_stage2'] = float(r2.get('semantic_stage2') or match2)
+        r1['best_chunk_similarity'] = float(r2.get('best_chunk_similarity') or 0.0)
         r1['match_lane'] = 0.80 * match2 + 0.20 * auth
         r1['authority_lane'] = 0.80 * auth + 0.20 * match2
         r1['facet_scores_stage2'] = r2.get('facet_scores_stage2')
+        r1['semantic_evidence_chunk'] = r2.get('semantic_evidence_chunk')
 
     # Refresh ordering for with_abstract shortlists after Stage 2 updates.
     for lane in ['match', 'authority']:
@@ -9491,7 +9864,61 @@ if chunk_texts:
         ids_sorted = sorted(ids, key=lambda cid: float(record_by_id.get(cid, {}).get(f"{lane}_lane") or 0.0), reverse=True)
         shortlists[lane]['with_abstract'] = ids_sorted
 
-    write_json(shortlists_path, shortlists)
+# Final shortlist hygiene + optional MMR diversification.
+mmr_debug: Dict[str, Any] = {
+    'enabled': bool(cfg.embedding_apply_mmr),
+    'lambda': float(cfg.embedding_mmr_lambda),
+    'top_k': int(cfg.embedding_mmr_top_k),
+    'lane_pool': {},
+}
+for lane in ['match', 'authority']:
+    for pool in ['with_abstract', 'without_abstract']:
+        keep = N1_WITH_ABS if pool == 'with_abstract' else N1_NO_ABS
+        ids = list(shortlists.get(lane, {}).get(pool, []) or [])
+        ids = _phase_f_apply_hygiene_order(ids, cand_by_id=cand_by_id, stats=hygiene_stats)
+        ids = sorted(ids, key=lambda cid: float(record_by_id.get(cid, {}).get(f"{lane}_lane") or 0.0), reverse=True)
+        before_mmr = ids[: int(cfg.embedding_mmr_top_k)]
+        if bool(cfg.embedding_apply_mmr):
+            ids = _phase_f_apply_mmr_order(
+                ids,
+                score_by_id={cid: float(record_by_id.get(cid, {}).get(f"{lane}_lane") or 0.0) for cid in ids},
+                vec_by_id=candidate_vec_by_id,
+                invnorm_by_id=candidate_invnorm_by_id,
+                top_k=min(int(cfg.embedding_mmr_top_k), int(keep), len(ids)),
+                lambda_mult=float(cfg.embedding_mmr_lambda),
+            )
+        shortlists[lane][pool] = ids[:keep]
+        after_mmr = shortlists[lane][pool][: int(cfg.embedding_mmr_top_k)]
+        mmr_debug['lane_pool'][f'{lane}/{pool}'] = {
+            'kept': int(len(shortlists[lane][pool])),
+            'before_mmr_top_ids': before_mmr,
+            'after_mmr_top_ids': after_mmr,
+        }
+
+write_json(shortlists_path, shortlists)
+
+phase_f_hygiene_report_path = run_ctx.run_dir / 'phase_f_candidate_hygiene_report.json'
+write_json(
+    phase_f_hygiene_report_path,
+    {
+        'candidates_total': int(len(candidates)),
+        'title_cleaned': int(hygiene_stats.get('title_cleaned') or 0),
+        'abstract_cleaned': int(hygiene_stats.get('abstract_cleaned') or 0),
+        'junk_candidates_total': int(hygiene_stats.get('junk_candidates_total') or 0),
+        'junk_title_dropped': int(hygiene_stats.get('junk_title_dropped') or 0),
+        'duplicate_title_suppressed': int(hygiene_stats.get('duplicate_title_suppressed') or 0),
+        'noabs_rows_gated_out': int(hygiene_stats.get('noabs_rows_gated_out') or 0),
+        'noabs_keep_requested': int(hygiene_stats.get('noabs_keep_requested') or 0),
+        'noabs_keep_effective': int(hygiene_stats.get('noabs_keep_effective') or 0),
+        'stage2_shortlist_limit': int(hygiene_stats.get('stage2_shortlist_limit') or 0),
+        'mmr_enabled': bool(hygiene_stats.get('mmr_enabled')),
+        'mmr_lambda': float(hygiene_stats.get('mmr_lambda') or 0.0),
+        'mmr_top_k': int(hygiene_stats.get('mmr_top_k') or 0),
+    },
+)
+
+phase_f_mmr_debug_path = run_ctx.run_dir / 'phase_f_mmr_debug.json'
+write_json(phase_f_mmr_debug_path, mmr_debug)
 
 # Persist stage2 scores (only those computed)
 scores_stage2_path = run_ctx.run_dir / 'scores_stage2.jsonl'
@@ -9500,6 +9927,37 @@ with _tmp2.open('w', encoding='utf-8') as f:
     for cid in sorted(stage2_records.keys()):
         f.write(json.dumps(stage2_records[cid], ensure_ascii=False) + '\n')
 _tmp2.replace(scores_stage2_path)
+
+phase_f_scoring_debug_path = run_ctx.run_dir / 'phase_f_scoring_debug.jsonl'
+_tmp3 = phase_f_scoring_debug_path.with_suffix(phase_f_scoring_debug_path.suffix + '.tmp')
+with _tmp3.open('w', encoding='utf-8') as f:
+    for r in sorted(stage1_records, key=lambda x: (str(x.get('pool') or ''), -float(x.get('match_lane') or 0.0), str(x.get('id') or ''))):
+        f.write(
+            json.dumps(
+                {
+                    'id': r.get('id'),
+                    'pool': r.get('pool'),
+                    'semantic_view_kind': r.get('semantic_view_kind'),
+                    'semantic_stage1': r.get('semantic_stage1'),
+                    'semantic_stage2': r.get('semantic_stage2'),
+                    'best_chunk_similarity': r.get('best_chunk_similarity'),
+                    'facet_match_stage1': r.get('facet_match_stage1'),
+                    'match_stage1': r.get('match_stage1'),
+                    'match': r.get('match'),
+                    'authority': r.get('authority'),
+                    'match_lane': r.get('match_lane'),
+                    'authority_lane': r.get('authority_lane'),
+                    'best': r.get('best'),
+                    'top_m': r.get('top_m'),
+                    'cov': r.get('cov'),
+                    'junk_title': r.get('junk_title'),
+                    'title_norm': r.get('title_norm'),
+                },
+                ensure_ascii=False,
+            )
+            + '\n'
+        )
+_tmp3.replace(phase_f_scoring_debug_path)
 
 
 # -----------------------------
@@ -9547,7 +10005,7 @@ except Exception:
     t_noabs = float(COVER_T_NOABS)
 
 # Total embedding cost/tokens (estimated)
-rows_embed = [facet_embed_stats, meta_embed_stats]
+rows_embed = [chapter_embed_stats, facet_embed_stats, meta_embed_stats]
 if meta_embed_stats_recs is not None:
     rows_embed.append(meta_embed_stats_recs)
 if chunk_embed_stats is not None:
@@ -9570,6 +10028,7 @@ print_kv(
     {
         'embedding_model': cfg.embedding_model,
         'batch_size': cfg.embedding_batch_size,
+        'chapter_target_chars': _fmt_int(len(chapter_target_text)),
         'facets': _fmt_int(len(facets)),
         'candidates': _fmt_int(len(candidates)),
         'stage2_candidates': _fmt_int(len(stage2_ids)),
@@ -9822,13 +10281,31 @@ for lane in ['match','authority']:
         rows_sum.append({'lane': lane, 'pool': pool, 'available': _fmt_int(available_total.get(lane, {}).get(pool, 0)), 'after_gate': _fmt_int(available_after_gate.get(lane, {}).get(pool, 0)), 'kept': _fmt_int(len(ids)), 'm_only': _fmt_int(mix.get('match_only', 0)), 'a_only': _fmt_int(mix.get('authority_only', 0)), 'both': _fmt_int(mix.get('both', 0)), 'top_score': f"{(max(scs) if scs else 0.0):.3f}", 'min_score': f"{(min(scs) if scs else 0.0):.3f}"})
 print_table(rows_sum, columns=['lane','pool','available','after_gate','kept','m_only','a_only','both','top_score','min_score'], max_rows=10, max_col_width=40)
 
+print_section('Phase F — Hygiene')
+print_kv(
+    {
+        'title_cleaned': _fmt_int(hygiene_stats.get('title_cleaned') or 0),
+        'abstract_cleaned': _fmt_int(hygiene_stats.get('abstract_cleaned') or 0),
+        'junk_candidates_total': _fmt_int(hygiene_stats.get('junk_candidates_total') or 0),
+        'junk_title_dropped': _fmt_int(hygiene_stats.get('junk_title_dropped') or 0),
+        'duplicate_title_suppressed': _fmt_int(hygiene_stats.get('duplicate_title_suppressed') or 0),
+        'noabs_rows_gated_out': _fmt_int(hygiene_stats.get('noabs_rows_gated_out') or 0),
+        'noabs_keep(requested/effective)': f"{_fmt_int(hygiene_stats.get('noabs_keep_requested') or 0)}/{_fmt_int(hygiene_stats.get('noabs_keep_effective') or 0)}",
+    },
+    key_width=30,
+)
+
 print_section('Phase F — Stage 2')
 print_kv({'stage2_candidates': _fmt_int(len(stage2_ids)), 'chunks_embedded': _fmt_int(chunk_embed_stats.get('texts') if chunk_embed_stats else 0), 'stage2_scored': _fmt_int(len(stage2_records))}, key_width=18)
 
 print_section('Phase F — Artifacts')
 print_kv(
     {
+        'chapter_target_embed_text.txt': chapter_target_path,
         'facets_index.json': facet_index_path,
+        'phase_f_candidate_hygiene_report.json': phase_f_hygiene_report_path,
+        'phase_f_mmr_debug.json': phase_f_mmr_debug_path,
+        'phase_f_scoring_debug.jsonl': phase_f_scoring_debug_path,
         'scores_stage1.jsonl': scores_stage1_path,
         'shortlists_stage1.json': shortlists_path,
         'scores_stage2.jsonl': scores_stage2_path,
@@ -9912,7 +10389,7 @@ if plt is not None:
 # Metrics
 metrics = load_metrics(run_ctx)
 
-emb = {'facet': facet_embed_stats, 'meta': meta_embed_stats}
+emb = {'chapter_target': chapter_embed_stats, 'facet': facet_embed_stats, 'meta': meta_embed_stats}
 if meta_embed_stats_recs is not None:
     emb['meta_recs'] = meta_embed_stats_recs
 if chunk_embed_stats is not None:
@@ -9942,11 +10419,19 @@ metrics['stages']['phase_f']['counts'] = {
     'facets': len(facets),
     'stage2_candidates': len(stage2_ids),
     'stage2_scored': len(stage2_records),
+    'chapter_target_chars': len(chapter_target_text),
     'prune': {
         'available_total': available_total,
         'available_after_gate': available_after_gate,
         'kept': {lane: {pool: len(shortlists.get(lane, {}).get(pool, []) or []) for pool in ['with_abstract','without_abstract']} for lane in ['match','authority']},
         'kept_intent_mix': kept_intent_mix,
+    },
+    'hygiene': hygiene_stats,
+    'artifacts': {
+        'chapter_target_embed_text': str(chapter_target_path),
+        'phase_f_candidate_hygiene_report': str(phase_f_hygiene_report_path),
+        'phase_f_mmr_debug': str(phase_f_mmr_debug_path),
+        'phase_f_scoring_debug': str(phase_f_scoring_debug_path),
     },
 }
 save_metrics(run_ctx, metrics)
@@ -9955,9 +10440,10 @@ save_metrics(run_ctx, metrics)
 # Phase G — Exact scoring formulas and lane fusion
 #
 # Implements Phase G from TWO_LANE_PIPELINE_IMPLEMENTATION_PLAN_FROM_REPORT.md:
-# - G1 match (recomputed from per-facet scores; Stage2 if present else Stage1)
+# - G1 semantic match handoff from Phase F (Stage2 if present else Stage1)
+# - G1b facet aggregation retained as auxiliary coverage diagnostics
 # - G2 authority (recomputed from candidate set; citations/year-normalized)
-# - G3 lane fusion (exact)
+# - G3 lane fusion
 
 import json
 import math
@@ -10181,9 +10667,9 @@ print_kv(
         'scores_stage2.jsonl': scores_stage2_path,
         'shortlists.json': shortlists_path,
         'facets': _fmt_int(len(facet_ids)),
-        'G1 m': _fmt_int(m),
-        'G1 t/t_noabs': f"{t_abs:.2f} / {t_noabs:.2f}",
-        'G1 weights': f"{w_best:.2f}/{w_topm:.2f}/{w_cov:.2f}",
+        'facet_aux m': _fmt_int(m),
+        'facet_aux t/t_noabs': f"{t_abs:.2f} / {t_noabs:.2f}",
+        'facet_aux weights': f"{w_best:.2f}/{w_topm:.2f}/{w_cov:.2f}",
     },
     key_width=20,
 )
@@ -10268,7 +10754,7 @@ for cid in ids_needed:
         else:
             facet_scores = facet_scores + [0.0] * (len(facet_weights) - len(facet_scores))
 
-    # G1: exact match aggregation
+    # Auxiliary facet aggregation for coverage diagnostics
     t = float(t_noabs if pool == 'without_abstract' else t_abs)
     parts = compute_match_g1(
         facet_scores=facet_scores,
@@ -10279,7 +10765,13 @@ for cid in ids_needed:
         w_topm=w_topm,
         w_cov=w_cov,
     )
-    match = float(parts['match'])
+    semantic_stage1 = _f(s1.get('semantic_stage1', s1.get('match_stage1')))
+    semantic_stage2 = (
+        float(s2.get('semantic_stage2'))
+        if use_stage2 and s2.get('semantic_stage2') is not None
+        else None
+    )
+    match = float(semantic_stage2 if semantic_stage2 is not None else semantic_stage1)
     best = float(parts['best'])
     top_m = float(parts['top_m'])
     cov = float(parts['cov'])
@@ -10288,7 +10780,7 @@ for cid in ids_needed:
     authority_lane = 0.80 * authority + 0.20 * match
 
     # Minimal join metadata (keep JSONL compact)
-    title = str(c.get('title') or '')
+    title = _phase_f_clean_text(c.get('title') or '')
     doi = str(c.get('doi') or '')
     year = c.get('year') if c.get('year') is not None else s1.get('year')
     citations = _i(c.get('citations') if c.get('citations') is not None else s1.get('citations'))
@@ -10300,7 +10792,7 @@ for cid in ids_needed:
         'doi': doi or None,
         'year': year,
         'citations': citations,
-        'venue': c.get('venue'),
+        'venue': (_phase_f_clean_text(c.get('venue')) or None),
         'url': c.get('url'),
         'provider_ids': c.get('provider_ids') or {},
         'scores': {
@@ -10308,6 +10800,10 @@ for cid in ids_needed:
             'authority': authority,
             'match_lane': match_lane,
             'authority_lane': authority_lane,
+            'semantic_stage1': semantic_stage1,
+            'semantic_stage2': semantic_stage2,
+            'semantic_source': stage_used,
+            'facet_match_aux': float(parts['match']),
             'best': best,
             'top_m': top_m,
             'cov': cov,
@@ -10338,14 +10834,7 @@ rankings: Dict[str, Dict[str, List[str]]] = {
 for lane in ['match', 'authority']:
     for pool in ['with_abstract', 'without_abstract']:
         ids = [str(x) for x in (shortlists.get(lane, {}).get(pool, []) or [])]
-
-        def _lane_score(cid: str) -> float:
-            r = scores_final_by_id.get(cid) or {}
-            s = (r.get('scores') or {})
-            return _f(s.get('match_lane' if lane == 'match' else 'authority_lane'))
-
-        ids_sorted = sorted(ids, key=_lane_score, reverse=True)
-        rankings[lane][pool] = ids_sorted
+        rankings[lane][pool] = [cid for cid in ids if cid in scores_final_by_id]
 
 rankings_path = run_ctx.run_dir / 'rankings_stageg.json'
 write_json(
@@ -13238,10 +13727,10 @@ print_kv(
         'pool': 'with_abstract = Stage2 chunk evidence; without_abstract = metadata-only (Stage1)',
         'lane_score (match)': 'match_lane = 0.80*match + 0.20*authority (0..1)',
         'lane_score (authority)': 'authority_lane = 0.80*authority + 0.20*match (0..1)',
-        'match': f'match = {w_best:.2f}*best + {w_topm:.2f}*top_m + {w_cov:.2f}*cov (0..1)',
-        'best': 'max facet similarity score (per-facet; Stage2 uses chunks; Stage1 uses metadata)',
-        'top_m': f'mean of the top-{top_m} facet scores (stabilizes against one lucky chunk)',
-        'cov': f'facet coverage term (roughly: share of facets above threshold; t={t_abs:.2f} / {t_noabs:.2f})',
+        'match': f'semantic chapter-target score; with_abstract blends {cfg.embedding_stage1_weight:.2f}*Stage1 + {cfg.embedding_stage2_weight:.2f}*best_chunk',
+        'best': 'auxiliary facet diagnostic: max weighted facet similarity',
+        'top_m': f'auxiliary facet diagnostic: mean of the top-{top_m} weighted facet scores',
+        'cov': f'auxiliary facet coverage term (thresholds {t_abs:.2f} / {t_noabs:.2f})',
         'authority': 'citations-per-year percentile among candidates (0..1; zeros map to 0)',
         'llm': 'LLM rerank score 0..100 using coverage_tags excerpts (pointwise; top-K only)',
         'insuff': 'LLM flags insufficient evidence; sorting prefers insuff=false first',
