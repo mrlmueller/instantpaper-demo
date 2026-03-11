@@ -12,6 +12,13 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
+.dashboard-cache/
+.next-start.out
+.next-start.err
+.next-dev.out
+.next-dev.err
 
 # next.js
 /.next/
