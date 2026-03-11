@@ -17,15 +17,8 @@
 
 chapter_title = "Methodische Grundlagen zu Online-Reviews, Textanalyse und Proxy-Operationalisierung"
 
-chapter_spec_text = """
-Dieses Kapitel behandelt methodische Literatur dazu, wie Online-Reviews als Sekundärdaten in Forschung und angewandten Projekten genutzt werden können und welche methodischen Anforderungen sich 
-daraus ergeben. Ziel ist es, die typischen Stärken und Grenzen solcher Datenquellen darzustellen, inklusive relevanter Verzerrungen, Validitätsfragen und Generalisierbarkeitsprobleme. Darüber
- hinaus soll das Kapitel einen Überblick über etablierte Vorgehenslogiken der Textanalyse geben, die für große Textkorpora geeignet sind, und begründen, wie man aus Rohdaten zu einer begründeten 
- Analysestichprobe gelangt. Ein Schwerpunkt ist die Proxy-Operationalisierung über Textsignale: Es wird erläutert, wie Proxies konzipiert, geprüft und iterativ nachgeschärft werden, 
- welche Fehlerquellen dabei auftreten können und wie Plausibilisierungsschritte gestaltet werden, damit die Ergebnisse nachvollziehbar bleiben. Nicht Bestandteil dieses Kapitels sind 
- die konkreten Kennzahlen und Filterentscheidungen des Projekts, die konkrete Keyword-Liste oder die projektspezifische Analysepipeline, da diese im Methodikkapitel des Projektberichts
-   und im Anwendungsteil umgesetzt und dokumentiert werden.
-""".strip()
+chapter_spec_text = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+.strip()
 
 
 
@@ -1867,185 +1860,9 @@ QUERY_PLAN_JSON_SCHEMA = {
 }
 
 
-PLANNER_SYSTEM_PROMPT = """
-You are a scientific literature search planner for a multi-stage academic retrieval pipeline.
-Your job is not to describe a topic in generic academic language. Your job is to preserve the chapter's exact retrieval target and to define how downstream query builders should search for it.
+PLANNER_SYSTEM_PROMPT = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
 
-Priority order:
-1) Preserve the chapter's core object, corpus, domain, or context exactly.
-2) Preserve the main constructs, questions, outcomes, or debates.
-3) Preserve data-source, proxy, measurement, and validity constraints.
-4) Control query-family shape so generic method drift is hard downstream.
-5) Split authority into tight core authority vs optional broader boosters.
-6) Add useful neighboring facets without diluting the core object.
-7) Add exclusions only for true wrong-sense confounders.
-
-Rules:
-- If a phrase is central to the chapter object, keep it even if one token inside the phrase is generic.
-- Do not replace concrete chapter nouns with broader abstractions.
-- Method terms are supporting context unless the chapter is explicitly about methods.
-- Do not leave Phase C to guess whether a facet should become object+data, object+method, or a broader authority booster.
-- Do not name specific papers, authors, or venues. Do not invent citations.
-- Be deterministic and return only valid JSON.
-"""
-
-PLANNER_USER_PROMPT_TEMPLATE = """CHAPTER_TITLE:
-{{chapter_title}}
-
-CHAPTER_SPEC (retrieval contract):
-{{chapter_spec_text}}
-
-TASK:
-Return a QueryPlan JSON object with the schema required by this pipeline.
-
-HOW TO INTERPRET THE CHAPTER:
-Preserve these distinctions in the plan:
-- chapter object / corpus / domain context
-- target construct / question / outcome
-- data source / proxy / measurement constraints
-- analytical methods
-- exclusions / wrong-sense confounders
-
-PRIORITY ORDER:
-1) preserve the chapter's core object/corpus/domain exactly
-2) preserve the main constructs/questions/outcomes
-3) preserve data/proxy/measurement constraints
-4) control query-family shape so downstream query builders do not invent generic method-heavy families
-5) split authority into tight core authority and optional broader boosters
-6) add useful neighboring facets without diluting the object
-7) add exclusions only for true wrong-sense confounders
-
-Return a QueryPlan JSON object with these keys:
-
-1) topic_summary_en: 2-3 sentences
-2) topic_summary_de: 2-3 sentences (natural German)
-
-Summary rules:
-- The first sentence must name the chapter object/corpus/domain before any methods framing.
-- State the chapter object, the main construct/question, and the role of data/proxies/methods.
-- Do not generalize away the named corpus/object.
-
-3) primary_context_anchors:
-   - en: 4-10 short anchors
-   - de: 4-10 short anchors
-   RULES:
-   - Each anchor must be 1-6 words.
-   - At least 2 anchors per language should name the core object/corpus/domain when available.
-   - Pure method anchors are allowed only if genuinely central; they must never be the majority.
-   - Avoid vague standalone research words such as analysis, study, effects, framework, model, system, approach, dynamics, development, overview.
-   - A full phrase may be kept if the phrase itself is chapter-critical, even if one word inside it is generic.
-   - Avoid long narrative phrases. Avoid parentheses and commas inside anchors.
-
-4) core_object_terms:
-   - en: 3-12 short terms/phrases naming the core object/corpus/domain
-   - de: 3-12 short terms/phrases naming the core object/corpus/domain
-   RULES:
-   - These should be the best retrieval phrases for the chapter's object, not methods or broad abstractions.
-   - Reuse exact chapter wording where helpful.
-   - Each term must be <= 4 words and follow TERM HYGIENE.
-
-5) must_keep_constraints:
-   - 3-10 short English strings
-   RULES:
-   - Each item should capture a non-negotiable retrieval constraint that downstream stages must preserve.
-   - Focus on object, construct, proxy/data, measurement, or scope constraints.
-   - Keep each item short and concrete.
-
-6) drift_risks:
-   - 2-8 short English strings
-   RULES:
-   - List the most likely ways retrieval could drift off-topic.
-   - Include generic method drift when relevant.
-   - Keep each item short and concrete.
-
-7) authority_blueprints:
-   - 1-4 items total
-   - MUST include at least 1 core blueprint
-   Each item has:
-   - authority_kind: "core" | "booster"
-   - label_en: <= 8 words
-   - label_de: <= 8 words
-   - target_facet_ids: 1-4 existing facet_ids
-   - language_strategy: one of ["en_core_only","en_plus_bilingual_fallback","en_plus_selective_de","en_de_parallel"]
-   - search_breadth: "tight" | "broad_ok"
-   - notes_en: <= 18 words
-   RULES:
-   - core authority is the chapter's non-negotiable authoritative literature family; it should stay tight and object-led.
-   - booster authority is broader, but must still remain chapter-anchored.
-   - search_breadth="broad_ok" is allowed only for boosters.
-   - core blueprints should usually target object / construct / data_proxy facets, not generic methods facets.
-   - booster blueprints may add context or limitation angles, but must still preserve the chapter object.
-
-8) global_canonical_terms:
-   - en: 12-30 terms/phrases
-   - de: 12-30 terms/phrases
-   TERM HYGIENE:
-   - Each term must be <= 4 words.
-   - No explanatory text, no "e.g." / "z. B.".
-   - No parentheses, no commas, no semicolons.
-   - Preserve important chapter wording if it is likely to appear in titles/abstracts.
-   - Ensure the list includes object terms first, then construct/data/proxy terms, then method terms.
-
-9) global_exclusions:
-   - en: 0-12 atomic confounder terms
-   - de: 0-12 atomic confounder terms
-   EXCLUSION RULES:
-   - Only include exclusions that are likely to appear in unrelated literature and cause wrong-sense retrieval.
-   - <= 3 words each
-   - No punctuation except hyphen
-   - If unsure, omit the exclusion
-
-10) facets: 8-18 ATOMIC facets.
-For each facet:
-- facet_id: lower_snake_case, 3-6 words, stable
-- facet_type: one of ["background","theory","mechanism","methods","data","measurement","evaluation","case_context","debate","limitations","applications"]
-- facet_group: one of ["object","construct","data_proxy","method","context","limitation"]
-- query_family_preference: one of ["object_core","object_plus_construct","object_plus_data_proxy","object_plus_method","object_plus_limitation","object_plus_context"]
-- language_strategy: one of ["en_core_only","en_plus_bilingual_fallback","en_plus_selective_de","en_de_parallel"]
-- authority_role: one of ["none","core","booster"]
-- importance_weight: integer 1..5
-- facet_label_en: <= 8 words
-- facet_label_de: <= 8 words
-- text_en: 1-2 sentences
-- text_de: 1-2 sentences
-- canonical_terms.en/de: 6-18 terms each
-- neighbor_terms.en/de: 4-12 terms each
-- exclusion_terms.en/de: 0-6 terms each
-
-FACET RULES:
-- Cover every explicit instruction in the chapter spec.
-- Add 2-4 useful neighboring facets that support retrieval, but keep the plan centered on the named chapter object.
-- If the chapter is not primarily a methods chapter, generic methods facets must not dominate the weight>=4 set.
-- For any methods/data/measurement facet, write it as methods/data/measurement FOR this chapter object, not as a generic field overview.
-- Use facet_group to mark the facet's coarse retrieval role.
-- Use query_family_preference to tell Phase C what shape the query should have, not just what words to use.
-- Use the smallest query family that preserves meaning:
-  - object -> usually object_core
-  - construct -> usually object_plus_construct
-  - data/proxy/measurement -> usually object_plus_data_proxy
-  - methods -> usually object_plus_method
-  - limitation/bias/validity -> usually object_plus_limitation
-  - domain/platform/context -> usually object_plus_context
-- Use language_strategy to say whether the facet should stay EN-core, use bilingual fallback, or support selective DE.
-- Do not mark a facet as en_de_parallel unless the object phrase and facet phrase are both likely to exist in real literature in both languages.
-- authority_role="core" means this facet deserves tight authority coverage.
-- authority_role="booster" means this facet can support a broader authority booster if budget remains.
-- authority_role="none" means the facet is match-oriented only.
-- Generic methods facets should rarely be authority_role="core".
-- If the chapter mentions proxies, secondary data, validity, bias, or representativeness, add the relevant facets when supported by the spec.
-- Keep facets non-overlapping as much as possible.
-
-QUALITY CHECKS:
-- If your top anchors would retrieve generic method papers but not the chapter object, revise them.
-- If core_object_terms are weak, generic, or method-heavy, revise them.
-- If Phase C could build a generic workflow/evaluation query from this facet with weak object conditioning, change query_family_preference or lower its priority.
-- If authority is still a single flat concept rather than core vs booster, revise the authority_blueprints.
-- If the plan drops the concrete object/corpus in favor of abstractions, revise it.
-- If an exclusion is not a clear wrong-sense confounder, omit it.
-
-OUTPUT:
-Return ONLY valid JSON. No extra text.
-"""
+PLANNER_USER_PROMPT_TEMPLATE = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
 
 
 def planner_user_prompt(chapter_input: ChapterInput) -> str:
@@ -3650,347 +3467,15 @@ S2_BULK_QUERY_BUILDER_JSON_SCHEMA: Dict[str, Any] = {
 # Phase C.1 — Prompt templates (from the implementation plan)
 # -----------------------------
 
-OPENALEX_QUERY_BUILDER_SYSTEM_PROMPT = """You generate OpenAlex /works query objects for a multi-stage scientific retrieval pipeline.
-Your job is to maximize useful recall without losing the chapter's true object.
+OPENALEX_QUERY_BUILDER_SYSTEM_PROMPT = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
 
-Priority order:
-1) Keep every query inside the chapter object, corpus, or domain.
-2) Cover the main constructs, data/proxy constraints, and required facets.
-3) Add breadth through controlled synonym and facet variation.
-4) Add authority boosters only when they remain chapter-anchored.
-5) Prefer simpler provider-safe syntax over clever but brittle syntax.
-
-Do not output prose. Output only valid JSON.
-Be deterministic.
-"""
-
-OPENALEX_QUERY_BUILDER_USER_PROMPT_TEMPLATE = """PIPELINE CONTEXT:
-You generate provider-safe OpenAlex /works query objects for a two-lane retrieval pipeline.
-These queries only collect candidates, but you must still prevent generic-method drift now.
-
-CHAPTER_TITLE:
-{{chapter_title}}
-
-CHAPTER_SPEC_TEXT:
-{{chapter_spec_text}}
-
-INPUT_QUERY_PLAN_JSON:
-{{query_plan_json}}
-
-BUDGET:
-max_queries = {{max_queries}}
-languages = ["en","de"]
-
-GOAL HIERARCHY:
-- authority: canonical/high-impact literature that is still clearly about the chapter object
-- match: strongest topical fit for the chapter, including strong partial matches on required facets
-- do not spend budget on queries that are mainly about a generic method with weak chapter-object anchoring
-
-PLANNER-CONTROLLED INPUT FIELDS:
-- Each facet includes:
-  - query_family_preference: the dominant query shape Phase C should use
-  - language_strategy: whether the facet should stay EN-core, use bilingual fallback, or support selective DE
-  - authority_role: none | core | booster
-- authority_blueprints is the canonical upstream authority split.
-- authority_blueprints_expanded repeats each blueprint with its target facet controls for easier use.
-- Generate authority queries from authority_blueprints first. Do not invent flat authority families that ignore this split.
-
-OUTPUT JSON SCHEMA:
-{
-  "openalex_queries": [
-    {
-      "intent": "authority" | "match",
-      "language": "en" | "de",
-      "search_field": "search" | "title_and_abstract.search",
-      "query_string": "BOOLEAN QUERY STRING",
-      "filters": "comma,separated,filters",
-      "sort": "cited_by_count:desc" | "relevance_score:desc" | null,
-      "per_page": 200,
-      "notes": "<= 18 words"
-    }
-  ]
-}
-
-IMPORTANT IMPLEMENTATION NOTE:
-The live API probe showed:
-- top-level OpenAlex `search` is much broader than `title_and_abstract.search`
-- wildcard and `~` syntax can work on top-level `search`
-- exact phrase AND can collapse quickly if the phrase pair is too rare
-
-So for THIS task:
-- authority queries should generally use `search`
-- match queries should generally use `title_and_abstract.search`
-- use readable quoted phrases first
-- use `*` or `~` only on `search` and only when they clearly solve a recall problem
-- do NOT use `?`
-- AND/OR/NOT must be uppercase
-- avoid slash tokens X/Y; rewrite as (X OR Y)
-
-MANDATORY RETRIEVAL RULES:
-1) Every query MUST include at least one term from primary_context_anchors[language].
-2) Every MATCH query must include:
-   - one core object/corpus/domain anchor
-   - and one construct/data/method group that is meaningful only inside that object
-3) Pure method-only queries are NOT allowed.
-4) Authority queries may be broader, but they must still remain about the chapter object.
-5) Use exclusions only for true wrong-sense confounders. If exclusions are weak or messy, omit them.
-
-FILTER POLICY:
-- filters MUST include: is_paratext:false, is_retracted:false, language:<en|de>
-- use only comma-separated filters
-- use only safe keys already supported by the implementation:
-  language,is_paratext,is_retracted,type,from_publication_date,to_publication_date,
-  primary_location.source.is_core,locations.source.is_core
-
-search_field policy:
-- authority -> "search"
-- match -> "title_and_abstract.search"
-- authority blueprint with authority_kind="core" and search_breadth="tight":
-  use object-led phrasing, avoid speculative broadening, and avoid wildcard/fuzzy unless recall would otherwise collapse
-- authority blueprint with authority_kind="booster" and search_breadth="broad_ok":
-  broader `search` is allowed, but the chapter object must still remain explicit
-
-QUERY FAMILIES TO COVER:
-- emit all core authority blueprints first
-- emit booster authority blueprints only after core authority coverage is satisfied
-- global object+construct match EN + at least one DE or bilingual core query
-- object+facet queries for weight>=4 facets, using each facet's query_family_preference
-- if budget remains, prefer object+data/proxy or object+limitations expansions before object+method expansions
-
-LANGUAGE POLICY:
-- obey the planner's language_strategy for each facet or authority blueprint
-- en_core_only -> emit EN only
-- en_plus_bilingual_fallback -> emit EN and use one bilingual rescue query instead of fragile DE clones when needed
-- en_plus_selective_de -> emit EN plus DE only when the phrasing is likely to survive title/abstract search
-- en_de_parallel -> emit both EN and DE
-- do not mirror every English query into German mechanically
-- if the German rendering becomes too literal, niche, or implementation-like, prefer one strongly object-anchored DE core query over multiple dead DE clones
-- keep DE coverage for queries whose object phrase and facet phrase are both likely to appear in German titles/abstracts
-
-LEXICALITY POLICY:
-- prefer literature-native phrases that are likely to appear verbatim in titles/abstracts
-- prefer direct object phrases over implementation jargon or abstract substitutes
-- prefer full forms before acronyms or project-local shorthand
-
-QUERY SHAPES:
-- object_core -> ("core object" OR variants) AND ("construct" OR close object-defining context)
-- object_plus_construct -> ("core object" OR variants) AND ("construct" OR variants)
-- object_plus_data_proxy -> ("core object" OR variants) AND ("data" OR "proxy" OR "measurement" variants)
-- object_plus_method -> ("core object" OR variants) AND ("specific method" OR close variants)
-- object_plus_limitation -> ("core object" OR variants) AND ("bias" OR "validity" OR "limitation" variants)
-- object_plus_context -> ("core object" OR variants) AND ("domain" OR "platform" OR "setting" variants)
-- authority core -> object-led, tight, field-defining construct/data/context phrasing
-- authority booster -> broader but still chapter-anchored authority expansion
-
-BUDGETING:
-- authority: 1 query per core authority blueprint first
-- authority: then up to 1 query per booster authority blueprint if budget remains and lexicality is plausible
-- match: global match EN + at least one DE or bilingual core query
-- match: for each facet with weight>=4 -> 1 EN query, plus DE only when the facet language_strategy supports it
-- if budget remains -> extra object-anchored expansions only
-
-EMPTY-QUERY TARGET:
-- some narrow zero-yield probes are acceptable
-- core authority and core object+construct families should usually have a plausible hit path
-- avoid stacking rare exact phrases, brittle exclusions, and literal DE mirroring in the same query
-
-SELF-CHECK (must enforce silently):
-- Would this query still retrieve many generic method surveys if the object phrase were removed? If yes, strengthen it.
-- Does every query include an object anchor, not only a method term? If not, fix it.
-- Did this authority query come from a core or booster authority blueprint? If not, fix it.
-- Does the query shape match the facet's query_family_preference? If not, fix it.
-- Are exclusions atomic and provider-safe? If not, omit them.
-- Are boolean operators uppercase and filters safe? If not, fix them.
-- Are `*` or `~` used only on `search` and only when clearly justified? If not, simplify.
-
-Return ONLY JSON.
-"""
+OPENALEX_QUERY_BUILDER_USER_PROMPT_TEMPLATE = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
 
 
-S2_BULK_QUERY_BUILDER_SYSTEM_PROMPT = """You generate Semantic Scholar Academic Graph bulk search queries for scientific literature retrieval.
-Reliability and chapter anchoring are more important than clever syntax.
-
-Priority order:
-1) Keep every query inside the chapter object, corpus, or domain.
-2) Cover the main constructs, data/proxy constraints, and required facets.
-3) Use title/abstract-plausible wording and simple, provider-safe syntax first.
-4) Use advanced syntax only when it clearly solves a recall problem.
-
-Never mix context anchors and facet terms in the same OR-group.
-Keep every query interpretable by a human reviewer.
-Output ONLY valid JSON. No prose.
-Be deterministic."""
+S2_BULK_QUERY_BUILDER_SYSTEM_PROMPT = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
 
 
-S2_BULK_QUERY_BUILDER_USER_PROMPT_TEMPLATE = """CHAPTER_TITLE:
-{{chapter_title}}
-
-CHAPTER_SPEC_TEXT:
-{{chapter_spec_text}}
-
-INPUT_QUERY_PLAN_JSON:
-{{query_plan_json}}
-
-BUDGET:
-max_queries = {{max_queries}}
-languages = ["en","de"]
-
-OUTPUT JSON:
-{
-  "s2_bulk_queries": [
-    {
-      "intent": "authority" | "match",
-      "language": "en" | "de",
-      "query_string": "QUERY STRING",
-      "notes": "<= 18 words"
-    }
-  ]
-}
-
-GOAL HIERARCHY:
-- authority: tight core authority first, optional broader boosters second
-- match: strongest chapter fit with good recall
-- do not spend budget on generic method queries that are weakly tied to the chapter object
-
-PLANNER-CONTROLLED INPUT FIELDS:
-- Each facet includes:
-  - query_family_preference
-  - language_strategy
-  - authority_role
-- authority_blueprints is the canonical upstream authority split.
-- authority_blueprints_expanded repeats each blueprint with its target facet controls for easier use.
-- Generate authority queries from authority_blueprints first. Do not collapse them into one flat authority notion.
-
-PROVIDER REALITY:
-- Semantic Scholar bulk keyword search matches titles and abstracts, so use phrases likely to appear in titles/abstracts.
-- Prefer full lexical forms over acronym-only shorthand.
-- Do not mirror every English query into German mechanically.
-
-LANGUAGE STRATEGY:
-- obey the planner's language_strategy for each facet or authority blueprint
-- en_core_only -> emit EN only
-- en_plus_bilingual_fallback -> emit EN and use bilingual rescue only when it improves recall
-- en_plus_selective_de -> emit EN plus selective DE only when the phrasing is plausible
-- en_de_parallel -> emit both EN and DE
-- English should carry the recall backbone.
-- Use German selectively, only where the object phrase and facet phrase are both likely to appear in German titles/abstracts.
-- If the German rendering is literal, brittle, or niche, use a bilingual or English fallback instead of forcing DE parity.
-
-LEXICALITY POLICY:
-- prefer direct object phrases and standard literature wording
-- prefer full forms before acronyms or shorthand
-- avoid implementation-jargon translations that are unlikely to appear in titles/abstracts
-
-ALLOWED OPERATORS (ONLY THESE):
-- Required: +term or +("a" | "b")
-- Exclude: -term or -"phrase"
-- OR: ("a" | "b" | "c")  # ALL | MUST be inside parentheses
-- Quotes: "two words"
-- Wildcard: suffix only, e.g. gene*  (GUARDRAIL: stem length >=4)
-- Fuzzy/edit distance: term~1 or term~2 (GUARDRAIL: N<=2 unless term length>=8; then N<=3)
-- Phrase proximity: "two word phrase" ~2..4 (GUARDRAIL: N<=4)
-
-ABSOLUTE SEPARATION RULE (CRITICAL; DO NOT VIOLATE):
-A) PRIMARY_CONTEXT terms and FACET terms MUST NEVER be mixed in the same OR-group.
-B) PRIMARY_CONTEXT_OR_GROUP MUST be built ONLY from primary_context_anchors for that language.
-C) FACET_OR_GROUP MUST be built ONLY from facet canonical_terms + neighbor_terms (plus safe bilingual variants).
-D) If a term is not explicitly in primary_context_anchors, it is NOT allowed in PRIMARY_CONTEXT_OR_GROUP.
-
-MANDATORY STRUCTURE:
-
-MATCH queries MUST have:
-  +(PRIMARY_CONTEXT_OR_GROUP) +(FACET_OR_GROUP) [optional NEGATIVE]
-
-DEFAULT STRONG MATCH FORM:
-  +(PRIMARY_CONTEXT_OR_GROUP) +(FACET_OR_GROUP) [optional NEGATIVE]
-
-OPTIONAL DRIFT-REDUCING FORM:
-  +(PRIMARY_CONTEXT_OR_GROUP) +(SECOND_CONTEXT_OR_GROUP) +(FACET_OR_GROUP) [optional NEGATIVE]
-
-PRIMARY_CONTEXT_OR_GROUP:
-- 2-5 terms
-- use terms that name the chapter object/corpus/domain, not only methods
-- when available, include at least 2 distinct object/context anchors
-- prefer direct object phrases such as `online reviews`, `user reviews`, `customer reviews`, `review platforms`
-- avoid abstract substitutes such as `user generated content` unless paired with a direct object phrase
-
-SECOND_CONTEXT_OR_GROUP:
-- optional but recommended only when it clearly reduces drift
-- may use anchors or global canonical terms that are still true context anchors
-- do NOT place generic facet/method terms here
-
-FACET_OR_GROUP:
-- 5-10 terms
-- only target-facet canonical_terms + neighbor_terms
-- bilingual variants are allowed inside this group when they improve recall
-- front-load standard literature wording before niche or implementation-like wording
-- avoid filling the whole group with rare translated compounds that are unlikely to appear in titles/abstracts
-
-QUERY-FAMILY SHAPE CONTROL:
-- object_core -> PRIMARY_CONTEXT + object-defining construct/context facet group
-- object_plus_construct -> PRIMARY_CONTEXT + construct facet group
-- object_plus_data_proxy -> PRIMARY_CONTEXT + data/proxy facet group
-- object_plus_method -> PRIMARY_CONTEXT + specific method facet group; add SECOND_CONTEXT only when it clearly reduces drift
-- object_plus_limitation -> PRIMARY_CONTEXT + limitation/validity facet group
-- object_plus_context -> PRIMARY_CONTEXT + context/domain/platform facet group
-- The query's dominant structure must match the facet's query_family_preference.
-
-AUTHORITY SPLIT:
-- Emit all core authority blueprints first.
-- Core authority queries should usually use 2 required groups: +(PRIMARY_CONTEXT_OR_GROUP) +(field-defining authority facet group)
-- Booster authority queries may broaden OR-groups, but must remain object-led and interpretable.
-- Do not create authority queries for facets with authority_role="none".
-
-ANTI-DRIFT RULES:
-- Pure method-only queries are NOT allowed.
-- If a query could retrieve broad NLP/LLM/economics/method papers with no chapter object, strengthen it.
-- Ambiguous standalone tokens must be rewritten as more specific phrases or paired with disambiguating terms.
-
-NEGATIVE RULES:
-- default to 0 or 1 negatives
-- use at most 2 negatives unless there is a very clear wrong-sense problem
-- negatives must be atomic and provider-safe
-- if a negative is messy, omit it
-
-EMPTY-QUERY TARGET:
-- some narrow zero-yield probes are acceptable
-- most core authority, global-match, and weight>=4 facet families should keep a plausible title/abstract hit path
-- avoid combining literal DE phrasing, 3 required groups, and multiple negatives unless the payoff is clear
-
-AUTHORITY POLICY:
-Authority queries are broader but MUST remain chapter-anchored:
-  +(PRIMARY_CONTEXT_OR_GROUP) +(HIGH_LEVEL_OR_GROUP) [optional NEGATIVE]
-
-HIGH_LEVEL_OR_GROUP:
-- use topic-specific construct/data/proxy terms
-- avoid generic standalone method or field terms
-- keep authority queries interpretable and obviously on-topic
-- avoid acronym-only terms unless the full phrase is also present
-
-ALWAYS INCLUDE:
-- authority EN
-- authority bilingual fallback
-- at least 1 DE query that uses clearly standard German academic phrasing when such phrasing exists
-- global match EN
-- match EN for each weight>=4 facet while budget permits
-- spend remaining budget first on object+data/proxy and object+limitations families before DE clones or extra method families
-
-SELF-CHECK (MUST DO, FIX SILENTLY):
-- PRIMARY_CONTEXT_OR_GROUP contains only true anchors
-- FACET_OR_GROUP contains only facet terms
-- every '|' is inside parentheses
-- MATCH has at least two required groups and at most three
-- negatives are atomic and <=2
-- wildcard only suffix and stem>=4
-- ~ only within allowed N
-- if the German version is a literal translation that is unlikely to appear in titles/abstracts, replace it with a bilingual or English fallback
-- if the query depends on acronym-only shorthand, rewrite it with full terms
-- if advanced syntax is unnecessary, simplify it
-- Did this authority query come from a core or booster blueprint? If not, fix it.
-- Does the query shape match the facet's query_family_preference? If not, fix it.
-
-Return ONLY JSON: { "s2_bulk_queries": [ ... ] }
-"""
+S2_BULK_QUERY_BUILDER_USER_PROMPT_TEMPLATE = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
 
 
 # -----------------------------
@@ -6833,11 +6318,7 @@ def _count_lines(path: Path) -> int:
     return n
 
 def reconstruct_abstract_from_inverted_index(inv: Any) -> Optional[str]:
-    """Reconstruct OpenAlex abstract text from `abstract_inverted_index`.
-
-    OpenAlex stores a mapping token -> list[int positions]. We rebuild a best-effort
-    token sequence and join with spaces.
-    """
+    "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
 
     if not isinstance(inv, dict) or not inv:
         return None
@@ -11757,7 +11238,7 @@ metrics.setdefault('stages', {}).setdefault(stage, {})['counts'] = {
 save_metrics(run_ctx, metrics)
 
 # %%
-# Phase I — LLM reranking (pointwise; async; top‑K only)
+# Phase I — LLM reranking (explained pointwise + pairwise top-slice)
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -11791,16 +11272,32 @@ if not api_key:
 MODEL_RERANK = 'gpt-5-nano'
 K = int(getattr(cfg, 'rerank_top_k_pre', 40) or 40)
 CONCURRENCY = int(getattr(cfg, 'rerank_concurrency', 20) or 20)
-RETRIES = 3
+PAIRWISE_TOP_K = int(getattr(cfg, 'rerank_pairwise_top_k', 6) or 6)
+PAIRWISE_ENABLED = bool(PAIRWISE_TOP_K >= 2)
+RETRIES = 5
+POINTWISE_REASONING = 'low'
+POINTWISE_MAX_OUTPUT_TOKENS = int(getattr(cfg, 'rerank_pointwise_max_output_tokens', 2500) or 2500)
+POINTWISE_TIMEOUT_S = float(getattr(cfg, 'rerank_pointwise_timeout_s', 300.0) or 300.0)
+PAIRWISE_REASONING = 'low'
+PAIRWISE_MAX_OUTPUT_TOKENS = int(getattr(cfg, 'rerank_pairwise_max_output_tokens', 1500) or 1500)
+PAIRWISE_TIMEOUT_S = float(getattr(cfg, 'rerank_pairwise_timeout_s', 240.0) or 240.0)
+RERANK_CACHE_VERSION = 'phase_i_v3_explained_full_context_pairwise6'
 
 rankings_i_path = run_ctx.run_dir / 'rankings_stagei.json'
 rerank_results_path = Path(run_ctx.artifacts.rerank_results_jsonl)
 cache_dir = ensure_dir(run_ctx.run_dir / 'cache' / 'rerank')
+pairwise_cache_dir = ensure_dir(run_ctx.run_dir / 'cache' / 'rerank_pairwise')
 
 
 def _cache_path(cid: str, lane: str, pool: str) -> Path:
-    fn = stable_hash('rerank', run_ctx.run_id, lane, pool, cid, length=24) + '.json'
+    fn = stable_hash('rerank', RERANK_CACHE_VERSION, run_ctx.run_id, lane, pool, cid, length=24) + '.json'
     return cache_dir / fn
+
+
+def _pairwise_cache_path(cid_a: str, cid_b: str, lane: str) -> Path:
+    left, right = sorted([str(cid_a or '').strip(), str(cid_b or '').strip()])
+    fn = stable_hash('rerank_pairwise', RERANK_CACHE_VERSION, run_ctx.run_id, lane, 'with_abstract', left, right, length=24) + '.json'
+    return pairwise_cache_dir / fn
 
 
 def _write_jsonl_atomic(path: Path, rows: List[Dict[str, Any]]) -> None:
@@ -11844,12 +11341,17 @@ with stage_timer(run_ctx, stage):
         for f in facets
         if isinstance(f, dict) and f.get('facet_id')
     }
+    query_plan_path = run_ctx.run_dir / 'query_plan.json'
+    query_plan = read_json(query_plan_path) if query_plan_path.exists() else {}
+    original_chapter_title = str(globals().get('chapter_title') or query_plan.get('chapter_title') or '').strip()
+    original_chapter_spec_text = str(globals().get('chapter_spec_text') or '').strip()
 
     required_facet_rows = []
     for fid in facet_ids:
         w = int(weight_by_fid.get(fid) or 0)
         if w >= 4:
             required_facet_rows.append({'facet_id': fid, 'label_en': label_by_fid.get(fid, fid), 'weight': w})
+    required_facet_rows.sort(key=lambda x: (-int(x.get('weight') or 0), str(x.get('label_en') or x.get('facet_id') or '')))
 
     # Load candidates (fallback excerpts / metadata)
     candidates_expanded_path = run_ctx.run_dir / 'candidates_expanded.jsonl'
@@ -11953,137 +11455,466 @@ with stage_timer(run_ctx, stage):
     if not tasks:
         raise RuntimeError('No rerank tasks found. rankings_stageg.json appears empty.')
 
-    # Schema: note OpenAI JSON-schema constraints (uniqueItems is NOT permitted).
-    RERANK_JSON_SCHEMA: Dict[str, Any] = {
-        'type': 'object',
-        'additionalProperties': False,
-        'required': ['llm_score_0_100', 'covered_facets', 'rationale', 'insufficient_info'],
-        'properties': {
-            'llm_score_0_100': {'type': 'integer', 'minimum': 0, 'maximum': 100},
-            'covered_facets': {
-                'type': 'array',
-                'items': {'type': 'string', 'enum': facet_ids},
-                'maxItems': 12,
-            },
-            'rationale': {'type': 'string', 'maxLength': 800},
-            'insufficient_info': {'type': 'boolean'},
-        },
-    }
+    def _clamp_i(v: Any, lo: int, hi: int) -> int:
+        try:
+            return max(int(lo), min(int(hi), int(v)))
+        except Exception:
+            return int(lo)
 
-    SYSTEM_PROMPT = '''You are reranking scientific sources for a chapter in an academic paper.
-You MUST only use the provided evidence excerpts (coverage_tags) and candidate metadata.
-Do NOT infer content that is not supported by the excerpts/metadata.
-If evidence is insufficient, set insufficient_info=true and keep the score conservative.
+    def _normalize_tag_ids(x: Any, max_items: int = 6) -> List[int]:
+        if not isinstance(x, list):
+            return []
+        out: List[int] = []
+        seen = set()
+        for v in x:
+            try:
+                vv = int(v)
+            except Exception:
+                continue
+            if vv < 1 or vv > 99 or vv in seen:
+                continue
+            seen.add(vv)
+            out.append(vv)
+            if len(out) >= int(max_items):
+                break
+        return out
 
-Without-abstract honesty rule:
-- If pool=="without_abstract", set insufficient_info=true unless the metadata/excerpts clearly support MULTIPLE required facets.
+    def _compact_required_facets(rows: List[Dict[str, Any]], max_items: int = 5) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for row in list(rows or [])[: int(max_items)]:
+            fid = str(row.get('facet_id') or '').strip()
+            if not fid:
+                continue
+            out.append(
+                {
+                    'facet_id': fid,
+                    'label': _truncate_i(row.get('label_en') or fid, 80),
+                    'weight': int(row.get('weight') or 0),
+                }
+            )
+        return out
 
-Output ONLY valid JSON matching the provided schema. No Markdown. No extra keys.'''
+    def _compact_contract_text(max_len: int = 1400) -> str:
+        title = original_chapter_title
+        summary = _truncate_i(query_plan.get('topic_summary_en') or '', 260)
+        anchors = [str(x).strip() for x in (((query_plan.get('primary_context_anchors') or {}).get('en')) or []) if str(x).strip()][:6]
+        core_terms = [str(x).strip() for x in (((query_plan.get('core_object_terms') or {}).get('en')) or []) if str(x).strip()][:6]
+        must_keep = [str(x).strip() for x in (query_plan.get('must_keep_constraints') or []) if str(x).strip()][:4]
+        drift = [str(x).strip() for x in (query_plan.get('drift_risks') or []) if str(x).strip()][:4]
+        parts: List[str] = []
+        if title:
+            parts.append(f'Title: {title}')
+        if summary:
+            parts.append(f'Summary: {summary}')
+        if core_terms:
+            parts.append('Core object terms: ' + ', '.join([_truncate_i(x, 48) for x in core_terms]))
+        if anchors:
+            parts.append('Primary anchors: ' + ', '.join([_truncate_i(x, 40) for x in anchors]))
+        if must_keep:
+            parts.append('Must keep: ' + '; '.join([_truncate_i(x, 72) for x in must_keep]))
+        if drift:
+            parts.append('Drift risks: ' + '; '.join([_truncate_i(x, 72) for x in drift]))
+        text = '\n'.join([p for p in parts if str(p).strip()])
+        return _truncate_i(text, max_len)
 
-    def _lane_guidance(lane: str) -> str:
+    def _original_chapter_input_text() -> str:
+        parts: List[str] = []
+        if original_chapter_title:
+            parts.append(f'Original chapter title:\n{original_chapter_title}')
+        if original_chapter_spec_text:
+            parts.append(f'Original chapter specification:\n{original_chapter_spec_text}')
+        return '\n\n'.join([p for p in parts if str(p).strip()])
+
+    def _lane_context_paragraph(lane: str) -> str:
         if lane == 'authority':
             return (
-                'authority lane: allow broader/foundational works, but they must still be relevant to the chapter. '
-                'Reward strong scholarly importance only if relevance is supported by excerpts.'
+                'This is the authority lane. A source should score well here only if it is foundational for this exact '
+                'chapter debate after topical relevance has already been established. Foundational does not mean broadly '
+                'famous, highly cited, or generally important for Late Antiquity. It means that the work would materially '
+                'help a researcher explain, compare, or evaluate economic explanations for the decline or transformation '
+                'of the Western Roman Empire.'
             )
-        return 'match lane: prioritize topical fit + coverage of the required facets; prefer concrete excerpt support.'
+        return (
+            'This is the match lane. A source should score well here when it is directly about the chapter problem or '
+            'when it provides clearly useful source-based evidence for evaluating competing economic explanations. '
+            'Generic background literature should score conservatively even if it concerns Late Antiquity or the Roman world.'
+        )
 
-    def _build_user_prompt(cid: str, lane: str, pool: str) -> str:
+    def _pool_context_paragraph(pool: str) -> str:
+        if pool == 'without_abstract':
+            return (
+                'This candidate has no abstract in the current pipeline data. That means the judgment must rely more on '
+                'title, venue, year, citations, and the evidence-tag excerpts. Be conservative. A metadata-only candidate '
+                'should not receive a strong score unless the available information is unusually direct and specific.'
+            )
+        return (
+            'This candidate has an abstract. The abstract is the main source for judging actual topical fit, argumentative '
+            'centrality, and usefulness for the chapter. Evidence tags can help, but the abstract should carry more weight '
+            'than the mere existence of tags.'
+        )
+
+    def _metadata_explanation_paragraph() -> str:
+        return (
+            'How to read the candidate metadata: the title gives the quickest signal of topic and corpus; the year helps '
+            'situate the work historically but does not determine relevance; the venue can indicate scholarly context but '
+            'is only secondary evidence; the citation count is a weak clue about visibility, not proof of usefulness; and '
+            'the abstract is the main evidence for what the source actually argues or studies.'
+        )
+
+    def _evidence_tags_explanation_paragraph() -> str:
+        return (
+            'How to read the evidence tags: each tag is a noisy hint produced by earlier retrieval and scoring stages. '
+            'The facet_id names the facet that upstream stages thought the excerpt might support. The score tells you how '
+            'strongly earlier stages matched that excerpt. The excerpt itself is the actual local evidence. Do not treat a '
+            'tag as a verified truth claim. Read the excerpt and decide whether it really supports the facet in a way that '
+            'matters for this chapter.'
+        )
+
+    def _dimension_explanation_text(lane: str, pool: str) -> str:
+        return (
+            'Use the dimensions as follows. topical_fit_0_4 should be based mainly on the original chapter title, the full '
+            'chapter specification, and the candidate title and abstract. Ask whether the source is centrally about the '
+            'chapter target problem. evidence_strength_0_4 should be based mainly on the evidence-tag excerpts and the '
+            'candidate abstract. Reward specific and concrete support, not just many tags. chapter_utility_0_4 is a writing-task '
+            'judgment: if you were writing this exact chapter, would this source materially help you reconstruct, compare, or '
+            'test economic explanations? lane_fit_0_4 is secondary and should come after topical relevance; for match it '
+            'means direct fit to the chapter problem, and for authority it means foundational value for this debate after '
+            'relevance is already clear. A source can mention the right period or region and still be only broad context. '
+            'If economic mechanisms are not central, score conservatively.'
+            + (
+                ' Because this is a without-abstract candidate, uncertainty should stay visible in the score.'
+                if pool == 'without_abstract'
+                else ' Because this candidate has an abstract, use the abstract to decide whether the source is centrally '
+                'about economic explanations or only adjacent background.'
+            )
+        )
+
+    def _score_calibration_text() -> str:
+        return (
+            'Calibration: high scores should be rare. A score above 80 should be reserved for sources that are directly '
+            'about the chapter debate or clearly indispensable for evaluating it. Scores around 50 indicate partial but '
+            'real usefulness. Scores around 20 to 30 indicate adjacent background, weak support, or broad contextual '
+            'literature. Presence in the candidate pool is not evidence that a source is good, because earlier stages were '
+            'designed for recall and may have admitted broad or noisy matches.'
+        )
+
+    def _candidate_metadata_block(cid: str, *, abstract_max_len: int = 650) -> str:
         r = scores_by_id.get(cid) or {}
         c = candidates_by_id.get(cid) or {}
-
         title = str(c.get('title') or r.get('title') or '').strip()
         year = c.get('year') if c.get('year') is not None else r.get('year')
         venue = str(c.get('venue') or r.get('venue') or '').strip()
         citations = int(c.get('citations') or r.get('citations') or 0)
-        url = str(c.get('url') or r.get('url') or '').strip()
-        authors = c.get('authors')
-        if isinstance(authors, list):
-            authors = [str(a.get('name') if isinstance(a, dict) else a or '').strip() for a in authors]
-        authors_list = [a for a in (authors or []) if str(a).strip()]
-        authors_list = authors_list[:6]
+        abstract = _truncate_i(c.get('abstract') or '', int(abstract_max_len))
+        abstract_present = bool(str(c.get('abstract') or '').strip())
+        parts = [
+            f'title={title}',
+            f'year={year}',
+            f'venue={venue}',
+            f'citations={citations}',
+            f'abstract_present={abstract_present}',
+        ]
+        if abstract:
+            parts.append(f'abstract={abstract}')
+        return '\n'.join(parts)
 
+    def _compact_tags_json(cid: str, *, max_tags: int = 8, excerpt_max_len: int = 260) -> str:
+        r = scores_by_id.get(cid) or {}
         tags = list((r.get('coverage_tags') or []))
-        tags_compact = []
-        for t in tags:
+        compact = []
+        for idx, t in enumerate(tags, start=1):
             if not isinstance(t, dict):
                 continue
             fid = str(t.get('facet_id') or '').strip()
             if not fid:
                 continue
-            tags_compact.append(
+            compact.append(
                 {
+                    'tag_id': idx,
                     'facet_id': fid,
-                    'score': float(t.get('score') or 0.0),
-                    'excerpt': _truncate_i(t.get('excerpt') or '', 240),
+                    'score': round(float(t.get('score') or 0.0), 4),
+                    'excerpt': _truncate_i(t.get('excerpt') or '', int(excerpt_max_len)),
                 }
             )
-        tags_compact.sort(key=lambda x: -float(x.get('score') or 0.0))
+        compact.sort(key=lambda x: (-float(x.get('score') or 0.0), int(x.get('tag_id') or 0)))
+        return json.dumps(compact[: int(max_tags)], ensure_ascii=False)
 
-        required_facets_json = json.dumps(required_facet_rows, ensure_ascii=False)
-        tags_json = json.dumps(tags_compact, ensure_ascii=False)
+    compact_contract_text = _compact_contract_text()
+    original_chapter_input_text = _original_chapter_input_text()
+    compact_required_facets_json = json.dumps(_compact_required_facets(required_facet_rows, max_items=5), ensure_ascii=False)
 
-        abstract_present = bool(str(c.get('abstract') or '').strip())
+    POINTWISE_JSON_SCHEMA: Dict[str, Any] = {
+        'type': 'object',
+        'additionalProperties': False,
+        'required': [
+            'topical_fit_0_4',
+            'evidence_strength_0_4',
+            'chapter_utility_0_4',
+            'lane_fit_0_4',
+            'covered_facets',
+            'evidence_tag_ids',
+            'off_topic',
+            'insufficient_info',
+            'brief_rationale',
+        ],
+        'properties': {
+            'topical_fit_0_4': {'type': 'integer', 'minimum': 0, 'maximum': 4},
+            'evidence_strength_0_4': {'type': 'integer', 'minimum': 0, 'maximum': 4},
+            'chapter_utility_0_4': {'type': 'integer', 'minimum': 0, 'maximum': 4},
+            'lane_fit_0_4': {'type': 'integer', 'minimum': 0, 'maximum': 4},
+            'covered_facets': {
+                'type': 'array',
+                'items': {'type': 'string', 'enum': facet_ids},
+                'maxItems': 10,
+            },
+            'evidence_tag_ids': {'type': 'array', 'items': {'type': 'integer', 'minimum': 1, 'maximum': 99}, 'maxItems': 6},
+            'off_topic': {'type': 'boolean'},
+            'insufficient_info': {'type': 'boolean'},
+            'brief_rationale': {'type': 'string', 'maxLength': 260},
+        },
+    }
 
+    PAIRWISE_JSON_SCHEMA: Dict[str, Any] = {
+        'type': 'object',
+        'additionalProperties': False,
+        'required': ['winner', 'confidence_0_3', 'brief_rationale'],
+        'properties': {
+            'winner': {'type': 'string', 'enum': ['A', 'B', 'tie']},
+            'confidence_0_3': {'type': 'integer', 'minimum': 0, 'maximum': 3},
+            'brief_rationale': {'type': 'string', 'maxLength': 220},
+        },
+    }
+
+    SYSTEM_PROMPT = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+
+    PAIRWISE_SYSTEM_PROMPT = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+
+    def _lane_guidance(lane: str) -> str:
+        if lane == 'authority':
+            return 'Authority lane: foundational value matters only after clear topical relevance has been established, and foundational means foundational for this chapter debate rather than generally important.'
+        return 'Match lane: prioritize direct chapter fit and concrete usefulness for the chapter over generic importance or neighboring relevance.'
+
+    def _build_user_prompt(cid: str, lane: str, pool: str) -> str:
         return (
-            'CHAPTER_TITLE:\n'
-            f'{chapter_title}\n\n'
-            'LANE:\n'
-            f'{lane}\n\n'
-            'POOL:\n'
-            f'{pool}\n\n'
+            "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+            'ORIGINAL_CHAPTER_INPUT:\n'
+            f'{original_chapter_input_text}\n\n'
+            'CHAPTER_CONTRACT_SUMMARY:\n'
+            f'{compact_contract_text}\n\n'
+            'HOW_TO_INTERPRET_THE_CHAPTER_BLOCKS:\n'
+            "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+            'LANE_AND_POOL:\n'
+            f'lane={lane}\n'
+            f'pool={pool}\n\n'
             'LANE_GUIDANCE:\n'
             f'{_lane_guidance(lane)}\n\n'
-            'FACETS_REQUIRED (weight>=4):\n'
-            f'{required_facets_json}\n\n'
-            'ALL_FACET_IDS:\n'
-            f'{json.dumps(facet_ids, ensure_ascii=False)}\n\n'
+            'LANE_EXPLANATION:\n'
+            f'{_lane_context_paragraph(lane)}\n\n'
+            'POOL_EXPLANATION:\n'
+            f'{_pool_context_paragraph(pool)}\n\n'
+            'REQUIRED_FACETS:\n'
+            f'{compact_required_facets_json}\n\n'
+            'REQUIRED_FACETS_EXPLANATION:\n'
+            "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
             'CANDIDATE_METADATA:\n'
-            f"title={title}\nyear={year}\nvenue={venue}\ncitations={citations}\nurl={url}\n"
-            f"authors={json.dumps(authors_list, ensure_ascii=False)}\nabstract_present={abstract_present}\n\n"
-            'CANDIDATE_EVIDENCE (coverage_tags):\n'
-            f'{tags_json}\n\n'
-            'INSTRUCTIONS:\n'
-            '- Score 0..100 for usefulness for this chapter (higher = better).\n'
-            '- covered_facets: choose ONLY facets explicitly supported by the excerpts; keep it short (<=12).\n'
-            '- rationale: cite the excerpts/metadata you used; do not invent.\n'
-            '- insufficient_info: true if the evidence is too thin to judge confidently.\n'
+            f'{_candidate_metadata_block(cid, abstract_max_len=650)}\n\n'
+            'CANDIDATE_METADATA_EXPLANATION:\n'
+            f'{_metadata_explanation_paragraph()}\n\n'
+            'EVIDENCE_TAGS:\n'
+            f'{_compact_tags_json(cid, max_tags=8, excerpt_max_len=260)}\n\n'
+            'EVIDENCE_TAGS_EXPLANATION:\n'
+            f'{_evidence_tags_explanation_paragraph()}\n\n'
+            'SCORING_DIMENSIONS (0-4 each):\n'
+            '- topical_fit_0_4\n'
+            '- evidence_strength_0_4\n'
+            '- chapter_utility_0_4\n'
+            '- lane_fit_0_4\n\n'
+            'SCORING_DIMENSIONS_EXPLANATION:\n'
+            f'{_dimension_explanation_text(lane, pool)}\n\n'
+            'FOUR CASES TO DISTINGUISH:\n'
+            '1. Direct chapter fit: centrally about economic explanations, mechanisms, or structures relevant to the Western Roman Empire in Late Antiquity.\n'
+            '2. Strong evaluative support: not itself the core synthesis, but clearly useful source-based evidence for testing such explanations.\n'
+            '3. Broad historical context: related to the period or world, but not clearly useful for the chapter’s economic explanatory comparison.\n'
+            '4. Off-topic literature: shares some retrieval language but does not materially help with the chapter.\n\n'
+            'CALIBRATION:\n'
+            f'{_score_calibration_text()}\n\n'
+            'HARD RULES:\n'
+            '- Set off_topic=true if the candidate is clearly outside the chapter target problem or only loosely adjacent.\n'
+            '- Set insufficient_info=true if the available evidence is too thin for a confident judgment.\n'
+            '- covered_facets must include only facets that are explicitly supported by the abstract or the evidence-tag excerpts.\n'
+            '- evidence_tag_ids must list only the tags you actually relied on.\n'
+            '- brief_rationale must be short, concrete, and reflect the real reason for the score.\n'
+            '- Citation count, venue prestige, and broad historical adjacency must never substitute for topical fit.\n'
         )
 
-    def _clean_rerank(obj: Dict[str, Any]) -> Dict[str, Any]:
-        score = int(obj.get('llm_score_0_100') or 0)
-        score = max(0, min(100, score))
-        covered = _coerce_str_list(obj.get('covered_facets'))
-        # Enforce enum + uniqueness (schema cannot use uniqueItems)
+    def _build_pairwise_user_prompt(cid_a: str, cid_b: str, lane: str) -> str:
+        return (
+            "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+            'ORIGINAL_CHAPTER_INPUT:\n'
+            f'{original_chapter_input_text}\n\n'
+            'CHAPTER_CONTRACT_SUMMARY:\n'
+            f'{compact_contract_text}\n\n'
+            'LANE:\n'
+            f'{lane}\n'
+            'POOL:\n'
+            'with_abstract\n\n'
+            'LANE_EXPLANATION:\n'
+            f'{_lane_context_paragraph(lane)}\n\n'
+            'HOW_TO_USE_THE_INPUTS:\n'
+            "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+            'CANDIDATE_A_METADATA:\n'
+            f'{_candidate_metadata_block(cid_a, abstract_max_len=500)}\n\n'
+            'CANDIDATE_A_TAGS:\n'
+            f'{_compact_tags_json(cid_a, max_tags=6, excerpt_max_len=220)}\n\n'
+            'CANDIDATE_B_METADATA:\n'
+            f'{_candidate_metadata_block(cid_b, abstract_max_len=500)}\n\n'
+            'CANDIDATE_B_TAGS:\n'
+            f'{_compact_tags_json(cid_b, max_tags=6, excerpt_max_len=220)}\n\n'
+            'Choose which candidate is more useful for this exact chapter and lane. If both are similarly weak or similarly strong, return tie.\n'
+        )
+
+    def _normalize_covered_facets(covered: Any, max_items: int = 10) -> List[str]:
+        covered_list = _coerce_str_list(covered)
         seen = set()
-        covered2 = []
-        for fid in covered:
+        covered2: List[str] = []
+        for fid in covered_list:
             if fid not in facet_ids:
                 continue
             if fid in seen:
                 continue
             seen.add(fid)
             covered2.append(fid)
-            if len(covered2) >= 12:
+            if len(covered2) >= int(max_items):
                 break
-        rationale = _truncate_i(obj.get('rationale') or '', 800)
-        insuff = bool(obj.get('insufficient_info'))
+        return covered2
+
+    def _clean_rerank(obj: Dict[str, Any], lane: str, pool: str) -> Dict[str, Any]:
+        if not isinstance(obj, dict):
+            obj = {}
+        if any(k in obj for k in ['topical_fit_0_4', 'evidence_strength_0_4', 'chapter_utility_0_4', 'lane_fit_0_4']):
+            topical = _clamp_i(obj.get('topical_fit_0_4'), 0, 4)
+            evid = _clamp_i(obj.get('evidence_strength_0_4'), 0, 4)
+            utility = _clamp_i(obj.get('chapter_utility_0_4'), 0, 4)
+            lane_fit = _clamp_i(obj.get('lane_fit_0_4'), 0, 4)
+            covered2 = _normalize_covered_facets(obj.get('covered_facets'), max_items=10)
+            evidence_tag_ids = _normalize_tag_ids(obj.get('evidence_tag_ids'), max_items=6)
+            off_topic = bool(obj.get('off_topic'))
+            insuff = bool(obj.get('insufficient_info'))
+            rationale = _truncate_i(obj.get('brief_rationale') or obj.get('rationale') or '', 260)
+            score = round((35 * topical + 25 * evid + 25 * utility + 15 * lane_fit) / 4.0)
+            if off_topic:
+                score = min(score, 25)
+            if insuff:
+                score = min(score, 35 if pool == 'without_abstract' else 45)
+            if lane == 'authority' and topical <= 1:
+                score = min(score, 35)
+            if not covered2:
+                score = min(score, 30)
+            return {
+                'llm_score_0_100': int(max(0, min(100, score))),
+                'covered_facets': covered2,
+                'evidence_tag_ids': evidence_tag_ids,
+                'rationale': str(rationale or ''),
+                'brief_rationale': str(rationale or ''),
+                'insufficient_info': insuff,
+                'off_topic': off_topic,
+                'call_failed': bool(obj.get('call_failed')),
+                'rubric': {
+                    'topical_fit_0_4': topical,
+                    'evidence_strength_0_4': evid,
+                    'chapter_utility_0_4': utility,
+                    'lane_fit_0_4': lane_fit,
+                },
+            }
+
+        score = _clamp_i(obj.get('llm_score_0_100'), 0, 100)
+        rationale = _truncate_i(obj.get('rationale') or obj.get('brief_rationale') or '', 260)
+        rubric_obj = obj.get('rubric') if isinstance(obj.get('rubric'), dict) else {}
         return {
             'llm_score_0_100': int(score),
-            'covered_facets': covered2,
+            'covered_facets': _normalize_covered_facets(obj.get('covered_facets'), max_items=10),
+            'evidence_tag_ids': _normalize_tag_ids(obj.get('evidence_tag_ids'), max_items=6),
             'rationale': str(rationale or ''),
-            'insufficient_info': bool(insuff),
+            'brief_rationale': str(rationale or ''),
+            'insufficient_info': bool(obj.get('insufficient_info')),
+            'off_topic': bool(obj.get('off_topic')),
+            'call_failed': bool(obj.get('call_failed')),
+            'rubric': {
+                'topical_fit_0_4': _clamp_i(rubric_obj.get('topical_fit_0_4'), 0, 4),
+                'evidence_strength_0_4': _clamp_i(rubric_obj.get('evidence_strength_0_4'), 0, 4),
+                'chapter_utility_0_4': _clamp_i(rubric_obj.get('chapter_utility_0_4'), 0, 4),
+                'lane_fit_0_4': _clamp_i(rubric_obj.get('lane_fit_0_4'), 0, 4),
+            },
+        }
+
+    def _clean_pairwise_result(obj: Dict[str, Any], cid_a: str, cid_b: str) -> Dict[str, Any]:
+        if not isinstance(obj, dict):
+            obj = {}
+        if 'winner_cid' in obj:
+            winner_cid = str(obj.get('winner_cid') or 'tie').strip() or 'tie'
+            if winner_cid not in {cid_a, cid_b, 'tie'}:
+                winner_cid = 'tie'
+            return {
+                'winner_cid': winner_cid,
+                'confidence_0_3': _clamp_i(obj.get('confidence_0_3'), 0, 3),
+                'brief_rationale': _truncate_i(obj.get('brief_rationale') or '', 220),
+                'call_failed': bool(obj.get('call_failed')),
+            }
+        winner = str(obj.get('winner') or 'tie').strip()
+        if winner == 'A':
+            winner_cid = cid_a
+        elif winner == 'B':
+            winner_cid = cid_b
+        else:
+            winner_cid = 'tie'
+        return {
+            'winner_cid': winner_cid,
+            'confidence_0_3': _clamp_i(obj.get('confidence_0_3'), 0, 3),
+            'brief_rationale': _truncate_i(obj.get('brief_rationale') or '', 220),
+            'call_failed': bool(obj.get('call_failed')),
+        }
+
+    def _pointwise_failure_result(error: Exception) -> Dict[str, Any]:
+        msg = _truncate_i(f'call_failed: {error}', 260)
+        return {
+            'llm_score_0_100': 0,
+            'covered_facets': [],
+            'evidence_tag_ids': [],
+            'rationale': msg,
+            'brief_rationale': msg,
+            'insufficient_info': True,
+            'off_topic': False,
+            'call_failed': True,
+            'rubric': {
+                'topical_fit_0_4': 0,
+                'evidence_strength_0_4': 0,
+                'chapter_utility_0_4': 0,
+                'lane_fit_0_4': 0,
+            },
+        }
+
+    def _pairwise_failure_result(error: Exception) -> Dict[str, Any]:
+        return {
+            'winner_cid': 'tie',
+            'confidence_0_3': 0,
+            'brief_rationale': _truncate_i(f'call_failed: {error}', 220),
+            'call_failed': True,
         }
 
     def _should_retry(exc: Exception) -> bool:
         msg = str(exc)
+        msg_l = msg.lower()
         if isinstance(exc, json.JSONDecodeError):
             return True
-        if '429' in msg or 'rate limit' in msg.lower():
+        if '429' in msg or 'rate limit' in msg_l:
             return True
-        if 'timeout' in msg.lower() or 'timed out' in msg.lower():
+        if 'timeout' in msg_l or 'timed out' in msg_l:
             return True
         if '500' in msg or '502' in msg or '503' in msg or '504' in msg:
+            return True
+        if 'max_output_tokens' in msg_l or "status='incomplete'" in msg_l or 'incomplete_reason' in msg_l:
+            return True
+        if 'no output_text' in msg_l:
             return True
         return False
 
@@ -12098,19 +11929,74 @@ Output ONLY valid JSON matching the provided schema. No Markdown. No extra keys.
                     system_prompt=SYSTEM_PROMPT,
                     user_prompt=user_prompt,
                     schema_name='rerank_result',
-                    schema=RERANK_JSON_SCHEMA,
-                    reasoning_effort='medium',
-                    max_output_tokens=8000,
-                    timeout_s=180.0,
+                    schema=POINTWISE_JSON_SCHEMA,
+                    reasoning_effort=POINTWISE_REASONING,
+                    max_output_tokens=POINTWISE_MAX_OUTPUT_TOKENS,
+                    timeout_s=POINTWISE_TIMEOUT_S,
+                    debug_dir=OPENAI_REQUEST_DEBUG_DIR / run_ctx.run_id / stage,
+                    debug_prefix=f'rerank_{lane}_{pool}_{stable_hash(cid, length=12)}_attempt{attempt + 1}',
                 )
-                return _clean_rerank(obj), meta
+                return _clean_rerank(obj, lane=lane, pool=pool), meta
             except Exception as e:
                 last_exc = e
                 if attempt + 1 >= RETRIES or not _should_retry(e):
-                    raise
+                    break
                 sleep_s = (2.0 ** attempt) + random.uniform(0.0, 0.5)
                 time.sleep(sleep_s)
-        raise RuntimeError(f'Phase I rerank failed after {RETRIES} attempts: {last_exc}')
+        meta = {
+            'model_requested': MODEL_RERANK,
+            'model_used': MODEL_RERANK,
+            'usage': {'input_tokens': 0, 'cached_input_tokens': 0, 'output_tokens': 0},
+            'cost_estimate': {'total_cost_usd': 0.0},
+            'status': 'failed',
+            'error': str(last_exc),
+        }
+        return _pointwise_failure_result(last_exc or RuntimeError('unknown pointwise failure')), meta
+
+    def _pairwise_compare(cid_a: str, cid_b: str, lane: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        swap = int(stable_hash(RERANK_CACHE_VERSION, run_ctx.run_id, lane, cid_a, cid_b, length=8), 16) % 2 == 1
+        left = cid_b if swap else cid_a
+        right = cid_a if swap else cid_b
+        user_prompt = _build_pairwise_user_prompt(left, right, lane)
+        last_exc: Optional[Exception] = None
+        for attempt in range(RETRIES):
+            try:
+                obj, meta = openai_json_schema_call(
+                    api_key=api_key,
+                    model=MODEL_RERANK,
+                    system_prompt=PAIRWISE_SYSTEM_PROMPT,
+                    user_prompt=user_prompt,
+                    schema_name='rerank_pairwise_result',
+                    schema=PAIRWISE_JSON_SCHEMA,
+                    reasoning_effort=PAIRWISE_REASONING,
+                    max_output_tokens=PAIRWISE_MAX_OUTPUT_TOKENS,
+                    timeout_s=PAIRWISE_TIMEOUT_S,
+                    debug_dir=OPENAI_REQUEST_DEBUG_DIR / run_ctx.run_id / stage,
+                    debug_prefix=f'pairwise_{lane}_{stable_hash(cid_a, cid_b, length=12)}_attempt{attempt + 1}',
+                )
+                cleaned = _clean_pairwise_result(obj, left, right)
+                if swap:
+                    winner_cid = str(cleaned.get('winner_cid') or 'tie')
+                    if winner_cid == left:
+                        cleaned['winner_cid'] = cid_b
+                    elif winner_cid == right:
+                        cleaned['winner_cid'] = cid_a
+                return cleaned, meta
+            except Exception as e:
+                last_exc = e
+                if attempt + 1 >= RETRIES or not _should_retry(e):
+                    break
+                sleep_s = (2.0 ** attempt) + random.uniform(0.0, 0.5)
+                time.sleep(sleep_s)
+        meta = {
+            'model_requested': MODEL_RERANK,
+            'model_used': MODEL_RERANK,
+            'usage': {'input_tokens': 0, 'cached_input_tokens': 0, 'output_tokens': 0},
+            'cost_estimate': {'total_cost_usd': 0.0},
+            'status': 'failed',
+            'error': str(last_exc),
+        }
+        return _pairwise_failure_result(last_exc or RuntimeError('unknown pairwise failure')), meta
 
     # Load caches first
     cached_rows: List[Dict[str, Any]] = []
@@ -12124,9 +12010,11 @@ Output ONLY valid JSON matching the provided schema. No Markdown. No extra keys.
                 obj = read_json(cp)
                 rerank = obj.get('rerank') or {}
                 openai_meta = obj.get('openai') or {}
-                rerank = _clean_rerank(rerank) if isinstance(rerank, dict) else None
+                rerank = _clean_rerank(rerank, lane=lane, pool=pool) if isinstance(rerank, dict) else None
                 if not rerank:
                     raise ValueError('empty rerank')
+                if bool(rerank.get('call_failed')):
+                    raise ValueError('cached rerank is call_failed; force retry')
                 cached_rows.append(
                     {
                         'ts': utc_now_iso(),
@@ -12239,69 +12127,246 @@ Output ONLY valid JSON matching the provided schema. No Markdown. No extra keys.
         if cid and lane and pool and isinstance(rr, dict):
             rerank_by_key[(cid, lane, pool)] = rr
 
-    # Construct rankings_stagei.json (two-tier sort)
-    rankings_i: Dict[str, Dict[str, List[str]]] = {'match': {}, 'authority': {}}
+    def _usage_cost_from_meta(meta: Dict[str, Any]) -> Tuple[int, int, int, float, float]:
+        usage = meta.get('usage') or {}
+        ce = meta.get('cost_estimate') or {}
+        tin = int(usage.get('input_tokens') or 0)
+        tc = int(usage.get('cached_input_tokens') or 0)
+        tout = int(usage.get('output_tokens') or 0)
+        cost = float(ce.get('total_cost_usd') or 0.0)
+        lat = float(meta.get('latency_s') or 0.0)
+        return tin, tc, tout, cost, lat
+
+    def _usage_cost_from_row(row: Dict[str, Any]) -> Tuple[int, int, int, float, float]:
+        return _usage_cost_from_meta((row.get('openai') or {}))
 
     def _stageg_lane_score(cid: str, lane: str) -> float:
         r = scores_by_id.get(cid) or {}
         sc = r.get('scores') or {}
         return float(sc.get('match_lane' if lane == 'match' else 'authority_lane') or 0.0)
 
+    def _sort_key(cids: str, lane: str, pool: str):
+        rr = rerank_by_key.get((cids, lane, pool)) or {}
+        return (
+            bool(rr.get('call_failed')),
+            bool(rr.get('insufficient_info')),
+            bool(rr.get('off_topic')),
+            -int(rr.get('llm_score_0_100') or 0),
+            -_stageg_lane_score(cids, lane),
+        )
+
+    pairwise_rows: List[Dict[str, Any]] = []
+    pairwise_stats = {
+        'cache_hits': 0,
+        'bad_cache': 0,
+        'api_calls': 0,
+        'failures': 0,
+        'tokens_in_new': 0,
+        'tokens_cached_in_new': 0,
+        'tokens_out_new': 0,
+        'cost_usd_new': 0.0,
+    }
+    pairwise_latencies: List[float] = []
+
+    def _load_or_run_pairwise(cid_a: str, cid_b: str, lane: str) -> Dict[str, Any]:
+        left, right = sorted([str(cid_a or '').strip(), str(cid_b or '').strip()])
+        cp = _pairwise_cache_path(left, right, lane)
+        if cp.exists():
+            try:
+                obj = read_json(cp)
+                pairwise = obj.get('pairwise') or {}
+                openai_meta = obj.get('openai') or {}
+                pairwise = _clean_pairwise_result(pairwise, left, right) if isinstance(pairwise, dict) else None
+                if not pairwise:
+                    raise ValueError('empty pairwise result')
+                if bool(pairwise.get('call_failed')):
+                    raise ValueError('cached pairwise is call_failed; force retry')
+                pairwise_stats['cache_hits'] = int(pairwise_stats['cache_hits']) + 1
+                log_event(run_ctx, stage=stage, event='pairwise_cache_hit', lane=lane, id_left=left, id_right=right, path=str(cp))
+                return {
+                    'ts': utc_now_iso(),
+                    'run_id': run_ctx.run_id,
+                    'lane': lane,
+                    'pool': 'with_abstract',
+                    'id_left': left,
+                    'id_right': right,
+                    'cache_hit': True,
+                    'pairwise': pairwise,
+                    'openai': openai_meta,
+                }
+            except Exception:
+                pairwise_stats['bad_cache'] = int(pairwise_stats['bad_cache']) + 1
+
+        pairwise, meta = _pairwise_compare(left, right, lane)
+        tin, tc, tout, cost, lat = _usage_cost_from_meta(meta)
+        pairwise_stats['api_calls'] = int(pairwise_stats['api_calls']) + 1
+        pairwise_stats['tokens_in_new'] = int(pairwise_stats['tokens_in_new']) + tin
+        pairwise_stats['tokens_cached_in_new'] = int(pairwise_stats['tokens_cached_in_new']) + tc
+        pairwise_stats['tokens_out_new'] = int(pairwise_stats['tokens_out_new']) + tout
+        pairwise_stats['cost_usd_new'] = float(pairwise_stats['cost_usd_new']) + cost
+        if float(lat or 0.0) > 0:
+            pairwise_latencies.append(float(lat))
+        if bool((pairwise or {}).get('call_failed')):
+            pairwise_stats['failures'] = int(pairwise_stats['failures']) + 1
+        row = {
+            'ts': utc_now_iso(),
+            'run_id': run_ctx.run_id,
+            'lane': lane,
+            'pool': 'with_abstract',
+            'id_left': left,
+            'id_right': right,
+            'cache_hit': False,
+            'pairwise': pairwise,
+            'openai': meta,
+        }
+        write_json(cp, row)
+        log_event(run_ctx, stage=stage, event='pairwise_cache_write', lane=lane, id_left=left, id_right=right, path=str(cp))
+        return row
+
+    rankings_i: Dict[str, Dict[str, List[str]]] = {'match': {}, 'authority': {}}
+    pairwise_summary: Dict[str, Dict[str, Any]] = {}
+
     for lane in ['match', 'authority']:
         for pool in ['with_abstract', 'without_abstract']:
-            ids_g = list((((rankings.get(lane) or {}).get(pool)) or []))
+            ids_g = [str(x) for x in ((((rankings.get(lane) or {}).get(pool)) or [])) if str(x or '').strip()]
             top = ids_g[:K]
             tail = ids_g[K:]
-            top_ok = []
-            top_fail = []
+            top_ok: List[str] = []
+            top_fail: List[str] = []
             for cid in top:
-                cids = str(cid or '').strip()
-                rr = rerank_by_key.get((cids, lane, pool))
+                rr = rerank_by_key.get((cid, lane, pool))
                 if rr is None:
-                    top_fail.append(cids)
+                    top_fail.append(cid)
                 else:
-                    top_ok.append(cids)
+                    top_ok.append(cid)
 
-            def _sort_key(cids: str):
-                rr = rerank_by_key.get((cids, lane, pool)) or {}
-                insuff = bool(rr.get('insufficient_info'))
-                llm = int(rr.get('llm_score_0_100') or 0)
-                sg = _stageg_lane_score(cids, lane)
-                return (insuff, -llm, -sg)
+            top_ok_sorted = sorted(top_ok, key=lambda cid: _sort_key(cid, lane, pool))
+            pair_key = f'{lane}/{pool}'
+            pair_info: Dict[str, Any] = {
+                'enabled': bool(PAIRWISE_ENABLED and pool == 'with_abstract'),
+                'eligible_top_k': 0,
+                'comparisons': 0,
+                'cache_hits': 0,
+                'api_calls': 0,
+                'failures': 0,
+                'ids_before': [],
+                'ids_after': [],
+            }
 
-            top_ok_sorted = sorted(top_ok, key=_sort_key)
-            rankings_i[lane][pool] = top_ok_sorted + top_fail + [str(x) for x in tail if str(x or '').strip()]
+            if bool(PAIRWISE_ENABLED) and pool == 'with_abstract':
+                pair_ids = list(top_ok_sorted[: max(0, int(PAIRWISE_TOP_K))])
+                pair_info['eligible_top_k'] = int(len(pair_ids))
+                pair_info['ids_before'] = list(pair_ids)
+                if len(pair_ids) >= 2:
+                    pair_scores = {cid: 0.0 for cid in pair_ids}
+                    cache_hits_before = int(pairwise_stats['cache_hits'])
+                    api_calls_before = int(pairwise_stats['api_calls'])
+                    comparisons = 0
+                    pair_failures = 0
+                    for i in range(len(pair_ids)):
+                        for j in range(i + 1, len(pair_ids)):
+                            a = pair_ids[i]
+                            b = pair_ids[j]
+                            row = _load_or_run_pairwise(a, b, lane)
+                            pairwise_rows.append(row)
+                            comparisons += 1
+                            pr = row.get('pairwise') or {}
+                            if bool(pr.get('call_failed')):
+                                pair_failures += 1
+                            winner_cid = str(pr.get('winner_cid') or 'tie').strip() or 'tie'
+                            conf = _clamp_i(pr.get('confidence_0_3'), 0, 3)
+                            if winner_cid == 'tie':
+                                pair_scores[a] += 0.5
+                                pair_scores[b] += 0.5
+                            elif winner_cid in pair_scores:
+                                pair_scores[winner_cid] += 1.0 + (0.1 * float(conf))
+                    pair_info['comparisons'] = int(comparisons)
+                    pair_info['cache_hits'] = int(pairwise_stats['cache_hits']) - cache_hits_before
+                    pair_info['api_calls'] = int(pairwise_stats['api_calls']) - api_calls_before
+                    pair_info['failures'] = int(pair_failures)
+                    pair_sorted = sorted(
+                        pair_ids,
+                        key=lambda cid: (-float(pair_scores.get(cid) or 0.0),) + _sort_key(cid, lane, pool),
+                    )
+                    top_ok_sorted = pair_sorted + top_ok_sorted[len(pair_ids) :]
+                    pair_info['ids_after'] = list(pair_sorted)
+                    pair_info['scores'] = {cid: round(float(pair_scores.get(cid) or 0.0), 3) for cid in pair_sorted}
+                else:
+                    pair_info['ids_after'] = list(pair_ids)
+                    pair_info['scores'] = {cid: 0.0 for cid in pair_ids}
 
-    write_json(rankings_i_path, {'run_id': run_ctx.run_id, 'generated_at_utc': utc_now_iso(), 'rankings': rankings_i})
+            rankings_i[lane][pool] = top_ok_sorted + top_fail + tail
+            pairwise_summary[pair_key] = pair_info
 
-    # Aggregate usage + cost
-    def _usage_cost_from_row(row: Dict[str, Any]) -> Tuple[int, int, int, float, float]:
-        oa = row.get('openai') or {}
-        usage = oa.get('usage') or {}
-        ce = oa.get('cost_estimate') or {}
-        tin = int(usage.get('input_tokens') or 0)
-        tc = int(usage.get('cached_input_tokens') or 0)
-        tout = int(usage.get('output_tokens') or 0)
-        cost = float(ce.get('total_cost_usd') or 0.0)
-        lat = float(oa.get('latency_s') or 0.0)
-        return tin, tc, tout, cost, lat
+    write_json(
+        rankings_i_path,
+        {
+            'run_id': run_ctx.run_id,
+            'generated_at_utc': utc_now_iso(),
+            'rankings': rankings_i,
+            'pairwise_refinement': {
+                'enabled': bool(PAIRWISE_ENABLED),
+                'top_k': int(PAIRWISE_TOP_K),
+                'summary': pairwise_summary,
+            },
+        },
+    )
 
     tokens_in_total = 0
     tokens_cached_in_total = 0
     tokens_out_total = 0
     cost_total = 0.0
     insuff_by_lp: Dict[str, int] = {}
+    off_topic_by_lp: Dict[str, int] = {}
+    pointwise_failures_total = 0
+    pointwise_failures_new = 0
+    pointwise_latencies: List[float] = []
 
     for row in rows_all:
-        tin, tc, tout, cost, _lat = _usage_cost_from_row(row)
+        tin, tc, tout, cost, lat = _usage_cost_from_row(row)
         tokens_in_total += tin
         tokens_cached_in_total += tc
         tokens_out_total += tout
         cost_total += cost
+        if float(lat or 0.0) > 0:
+            pointwise_latencies.append(float(lat))
         rr = row.get('rerank') or {}
-        if isinstance(rr, dict) and bool(rr.get('insufficient_info')):
-            k = f"{row.get('lane')}/{row.get('pool')}"
-            insuff_by_lp[k] = int(insuff_by_lp.get(k) or 0) + 1
+        if isinstance(rr, dict):
+            key = f"{row.get('lane')}/{row.get('pool')}"
+            if bool(rr.get('insufficient_info')):
+                insuff_by_lp[key] = int(insuff_by_lp.get(key) or 0) + 1
+            if bool(rr.get('off_topic')):
+                off_topic_by_lp[key] = int(off_topic_by_lp.get(key) or 0) + 1
+            if bool(rr.get('call_failed')):
+                pointwise_failures_total += 1
+                if not bool(row.get('cache_hit')):
+                    pointwise_failures_new += 1
+
+    pairwise_tokens_in_total = 0
+    pairwise_tokens_cached_total = 0
+    pairwise_tokens_out_total = 0
+    pairwise_cost_total = 0.0
+    pairwise_failures_total = 0
+    for row in pairwise_rows:
+        tin, tc, tout, cost, _lat = _usage_cost_from_row(row)
+        pairwise_tokens_in_total += tin
+        pairwise_tokens_cached_total += tc
+        pairwise_tokens_out_total += tout
+        pairwise_cost_total += cost
+        pr = row.get('pairwise') or {}
+        if isinstance(pr, dict) and bool(pr.get('call_failed')):
+            pairwise_failures_total += 1
+
+    tokens_in_total += pairwise_tokens_in_total
+    tokens_cached_in_total += pairwise_tokens_cached_total
+    tokens_out_total += pairwise_tokens_out_total
+    cost_total += pairwise_cost_total
+
+    stage_failures_total = int(pointwise_failures_total) + int(pairwise_failures_total)
+    total_cache_hits = int(len(cached_rows)) + int(pairwise_stats['cache_hits'])
+    total_bad_cache = int(bad_cache) + int(pairwise_stats['bad_cache'])
+    total_api_calls = int(len(new_rows)) + int(pairwise_stats['api_calls'])
+    total_tasks = int(len(tasks)) + int(len(pairwise_rows))
 
     # Metrics
     metrics = load_metrics(run_ctx)
@@ -12310,26 +12375,52 @@ Output ONLY valid JSON matching the provided schema. No Markdown. No extra keys.
         'model_used': MODEL_RERANK,
         'rerank_top_k_pre': int(K),
         'rerank_concurrency': int(CONCURRENCY),
-        'tasks_total': int(len(tasks)),
-        'cache_hits': int(len(cached_rows)),
-        'bad_cache': int(bad_cache),
-        'api_calls': int(len(new_rows)),
-        'failures': int(failures),
+        'rerank_cache_version': str(RERANK_CACHE_VERSION),
+        'pointwise_reasoning': str(POINTWISE_REASONING),
+        'pointwise_max_output_tokens': int(POINTWISE_MAX_OUTPUT_TOKENS),
+        'pointwise_timeout_s': float(POINTWISE_TIMEOUT_S),
+        'pairwise_reasoning': str(PAIRWISE_REASONING),
+        'pairwise_max_output_tokens': int(PAIRWISE_MAX_OUTPUT_TOKENS),
+        'pairwise_timeout_s': float(PAIRWISE_TIMEOUT_S),
+        'tasks_total': int(total_tasks),
+        'cache_hits': int(total_cache_hits),
+        'bad_cache': int(total_bad_cache),
+        'api_calls': int(total_api_calls),
+        'failures': int(stage_failures_total),
         'tokens_in_total': int(tokens_in_total),
         'tokens_cached_in_total': int(tokens_cached_in_total),
         'tokens_out_total': int(tokens_out_total),
-        'tokens_in_new': int(tokens_in_new),
-        'tokens_cached_in_new': int(tokens_cached_in_new),
-        'tokens_out_new': int(tokens_out_new),
+        'tokens_in_new': int(tokens_in_new + int(pairwise_stats['tokens_in_new'])),
+        'tokens_cached_in_new': int(tokens_cached_in_new + int(pairwise_stats['tokens_cached_in_new'])),
+        'tokens_out_new': int(tokens_out_new + int(pairwise_stats['tokens_out_new'])),
         'cost_usd_total': float(cost_total),
-        'cost_usd_new': float(usd_new),
+        'cost_usd_new': float(float(usd_new) + float(pairwise_stats['cost_usd_new'])),
         # Backward-compat keys for older rollups
         'cost_usd_est_total': float(cost_total),
-        'cost_usd_est_new': float(usd_new),
+        'cost_usd_est_new': float(float(usd_new) + float(pairwise_stats['cost_usd_new'])),
         'rerank_results_jsonl': str(rerank_results_path),
         'rankings_stagei_json': str(rankings_i_path),
         'insufficient_by_lane_pool': insuff_by_lp,
-        'latency_s_p50': (None if not latencies else float(statistics.median(latencies))),
+        'off_topic_by_lane_pool': off_topic_by_lp,
+        'pointwise_tasks_total': int(len(tasks)),
+        'pointwise_cache_hits': int(len(cached_rows)),
+        'pointwise_bad_cache': int(bad_cache),
+        'pointwise_api_calls': int(len(new_rows)),
+        'pointwise_runtime_exceptions': int(failures),
+        'pointwise_failures_total': int(pointwise_failures_total),
+        'pointwise_failures_new': int(pointwise_failures_new),
+        'pairwise_enabled': bool(PAIRWISE_ENABLED),
+        'pairwise_top_k': int(PAIRWISE_TOP_K),
+        'pairwise_comparisons_total': int(len(pairwise_rows)),
+        'pairwise_cache_hits': int(pairwise_stats['cache_hits']),
+        'pairwise_bad_cache': int(pairwise_stats['bad_cache']),
+        'pairwise_api_calls': int(pairwise_stats['api_calls']),
+        'pairwise_failures_total': int(pairwise_failures_total),
+        'pairwise_cost_usd_total': float(pairwise_cost_total),
+        'pairwise_cost_usd_new': float(pairwise_stats['cost_usd_new']),
+        'pairwise_summary': pairwise_summary,
+        'latency_s_p50': (None if not pointwise_latencies else float(statistics.median(pointwise_latencies))),
+        'pairwise_latency_s_p50': (None if not pairwise_latencies else float(statistics.median(pairwise_latencies))),
     }
     save_metrics(run_ctx, metrics)
 
@@ -12339,12 +12430,15 @@ Output ONLY valid JSON matching the provided schema. No Markdown. No extra keys.
         {
             'model': MODEL_RERANK,
             'top_k_per_lane_pool': int(K),
+            'pairwise_top_k(with_abs)': int(PAIRWISE_TOP_K),
             'concurrency': int(CONCURRENCY),
-            'tasks_total': int(len(tasks)),
-            'cache_hits': int(len(cached_rows)),
-            'api_calls(new_ok)': int(len(new_rows)),
-            'failures': int(failures),
-            'cost_usd_new(list_price)': round(float(usd_new), 6),
+            'pointwise_tasks_total': int(len(tasks)),
+            'pairwise_comparisons': int(len(pairwise_rows)),
+            'cache_hits(total)': int(total_cache_hits),
+            'api_calls(total)': int(total_api_calls),
+            'pointwise_failures': int(pointwise_failures_total),
+            'pairwise_failures': int(pairwise_failures_total),
+            'cost_usd_new(list_price)': round(float(usd_new) + float(pairwise_stats['cost_usd_new']), 6),
             'cost_usd_total(list_price)': round(float(cost_total), 6),
             'rerank_results.jsonl': str(rerank_results_path),
             'rankings_stagei.json': str(rankings_i_path),
@@ -12571,8 +12665,13 @@ def _card(cid: str, lane: str, pool: str) -> Dict[str, Any]:
         rr = {
             'llm_score_0_100': int(rr.get('llm_score_0_100') or 0),
             'covered_facets': list(rr.get('covered_facets') or []),
+            'evidence_tag_ids': list(rr.get('evidence_tag_ids') or []),
             'rationale': _truncate(str(rr.get('rationale') or '').strip(), 800),
+            'brief_rationale': _truncate(str(rr.get('brief_rationale') or rr.get('rationale') or '').strip(), 260),
             'insufficient_info': bool(rr.get('insufficient_info')),
+            'off_topic': bool(rr.get('off_topic')),
+            'call_failed': bool(rr.get('call_failed')),
+            'rubric': rr.get('rubric') if isinstance(rr.get('rubric'), dict) else {},
         }
     else:
         rr = None
