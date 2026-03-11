@@ -135,8 +135,10 @@ Impact:
 Evidence:
 - Config default uses `embedding_model = 'text-embedding-3-small'`.
 
-Impact:
-- Given the stated priority on recall/quality over cost/runtime, the current embedding setup is likely optimized more for efficiency than for maximum semantic quality.
+Updated interpretation after the 2026-03-09 Phase F probe:
+- `text-embedding-3-large` did not show enough ranking benefit to justify its extra cost/runtime.
+- The bigger Phase F issues are packaging, chunk rerank, dedup, and metadata hygiene.
+- So the model choice itself is not currently the main bottleneck.
 
 ## Follow-up After The Phase B Update
 
@@ -154,6 +156,30 @@ Interpretation:
 
 Evidence from `17d29aaee1fecc8cf1a34025/query_plan.json`:
 - 13 of 15 facets are weight `>=4`
+
+## Follow-up After The Phase F Probe
+
+### 14. Candidate hygiene is now a clear bottleneck
+
+Evidence from the Phase F probe:
+- Roman run rebuilt candidate pool still had `24` duplicate normalized titles.
+- Online-reviews run rebuilt candidate pool still had `654` duplicate normalized titles.
+- Larger candidate pool still contains obvious junk-like titles such as `index`, `references`, `table of contents`, `editorial`, and `book reviews`.
+- Some titles still contain raw HTML artifacts.
+
+Impact:
+- Even a good embedding setup can waste shortlist slots on duplicates or low-value records.
+- This is now a more important problem than switching to a larger embedding model.
+
+### 15. Phase F benefits more from staged ranking than from model escalation
+
+Evidence from the Phase F probe:
+- `staged_small` gave the best cross-topic balance.
+- `summary_doc_small` and `topic_doc_small` were strong stage-1 signals.
+- `hybrid_large` underperformed the best small-model variants.
+
+Impact:
+- The right next change is better chapter-target text plus chunk rerank, not simply `small -> large`.
 - among those high-priority facets, `facet_group="method"` appears 6 times
 - `topic_summary_en` still opens with a methods-first framing
 
@@ -171,6 +197,47 @@ Cross-run cache counts:
 Interpretation:
 - some empty queries are a healthy by-product of narrow exploratory coverage
 - the bigger problem is not the raw count alone, but whether entire query families or entire provider-language slices collapse at once
+
+## Follow-up After The Phase I Probe
+
+### 16. The best rerank design is a compact rubric, not the current long single-score prompt
+
+Evidence from the 2026-03-10 Phase I probe:
+- `baseline_current`: `mean_ndcg20 = 0.889`, `mean_p10 = 0.762`
+- `rubric_low`: `mean_ndcg20 = 0.904`, `mean_p10 = 0.787`
+- `rubric_low_pairwise_top6`: `mean_ndcg20 = 0.919`, `mean_p10 = 0.787`
+
+Interpretation:
+- the current baseline is no longer the best production choice
+- a compact rubric prompt plus deterministic score aggregation is better
+- a small pairwise pass on the top `with_abstract` slice improves ordering again
+
+### 17. Nano rerank quality depends heavily on prompt size and reasoning settings
+
+Evidence from the probe:
+- short structured prompts with `reasoning_effort="low"` were operationally stable
+- longer prompts or `reasoning_effort="medium"` often produced empty structured output
+- `rubric_medium` had `call_failed_rate = 0.031` in the main pass and `0.156` in the stability sample
+
+Interpretation:
+- Phase I should stay compact
+- `medium` reasoning is not a good default for nano here
+- retries and conservative fallback behavior should be treated as part of the production contract, not as an optional debug layer
+
+### 18. Prompt-only hard object gating does not solve the remaining authority noise
+
+Evidence from the object-gate follow-up:
+- `rubric_object_gate` did not beat `rubric_low`
+- it introduced new ranking mistakes in both runs
+
+Examples:
+- `Topic modeling in software engineering research`
+- `Cultural Landscapes: Exploring the Imprint of the Roman Empire on Modern Identities`
+- `The phonetics and phonology of Eastern Andalusian Spanish`
+
+Interpretation:
+- the remaining authority-lane problem is not fixable by prompt severity alone
+- upstream candidate-pool quality and Phase H evidence quality still matter materially
 
 ### 15. The S2 empty-query problem is strongly concentrated in German lexical designs
 

@@ -822,112 +822,190 @@ This is especially valuable here because the failure mode is frequently syntax h
 
 ### Diagnosis
 
-Main issues:
-- rerank is too willing to score generic method papers as useful
-- with-abstract tasks almost never admit uncertainty
-- prompt lacks a strong enough chapter-target summary
-- prompt does not penalize missing chapter-object evidence hard enough
+The Phase I probe on 2026-03-10 materially changed my recommendation.
 
-This matters because the rerank stage is deciding the top segment the user will actually see.
+Main empirical findings:
+- the best pure pointwise design was not the current long single-score prompt
+- the best pointwise design was a compact rubric prompt with `gpt-5-nano` and `reasoning_effort="low"`
+- a small pairwise pass on the top `with_abstract` slice improved that again
+- medium reasoning on nano was worse on quality, worse on stability, and more expensive
+- a stronger prompt-level object gate did not become the best variant
 
-### Drop-in replacement: `SYSTEM_PROMPT`
+Final comparison on two runs (`ca79147de41f8edbfb47c9e5`, `25e6243ac55a5904fb1fcdfe`):
+
+| variant | mean_ndcg20 | mean_p10 | call_failed_rate |
+| --- | ---: | ---: | ---: |
+| `baseline_current` | `0.889` | `0.762` | `0.000` |
+| `rubric_low` | `0.904` | `0.787` | `0.000` |
+| `rubric_low_pairwise_top6` | `0.919` | `0.787` | `0.000` |
+| `rubric_medium` | `0.847` | `0.750` | `0.031` |
+| `rubric_object_gate` | `0.885` | `0.750` | `0.013` |
+
+Interpretation:
+- the current baseline is not bad, but it is no longer the best option
+- the best production-shape design is:
+  - compact rubric pointwise scoring
+  - deterministic score aggregation in code
+  - pairwise refinement on the top `6` `with_abstract` items per lane
+
+### Recommended production design
+
+1. Keep `gpt-5-nano`.
+2. Replace the current long free-form 0-100 prompt with a compact rubric prompt.
+3. Use `reasoning_effort="low"`.
+4. Compute the final score deterministically from rubric dimensions.
+5. Add pairwise top-6 refinement for `with_abstract` only.
+6. Add explicit retry + fallback handling because nano occasionally emits empty or malformed structured output.
+
+### Recommended pointwise system prompt
 
 ```text
-You are judging whether a scientific source is genuinely useful for a specific chapter in an academic paper.
-Use ONLY the provided candidate metadata and evidence excerpts.
-
-This is a chapter-fit ranking task, not a generic paper-quality task.
-
-Priority order:
-1) Is the candidate clearly about the chapter object, corpus, or domain?
-2) Does the evidence support one or more required facets?
-3) Is the support direct and concrete rather than merely method-adjacent?
-4) Only then consider broader authority or scholarly importance.
-
-Rules:
-- Do NOT infer content that is not supported by the excerpts/metadata.
-- Generic method surveys, benchmark papers, and broad field overviews should score conservatively unless the evidence clearly ties them to the chapter target.
-- If the evidence does not support the chapter object or is too thin to judge, set insufficient_info=true and keep the score conservative.
-- For pool=="without_abstract", high scores should be rare and require unusually strong metadata evidence.
-
-Output ONLY valid JSON matching the provided schema. No Markdown. No extra keys.
+You are a careful scientific-source judge.
+Use ONLY the chapter contract, candidate metadata, and numbered evidence tags.
+Your job is to score dimensions consistently, not to write an essay.
+Treat generic but high-status papers as weak unless they clearly help this exact chapter.
+Return strict JSON only.
 ```
 
-### Recommended replacement for `_build_user_prompt(...)`
-
-The current function should pass more chapter-target context. Below is the recommended prompt body.
+### Recommended pointwise user prompt
 
 ```text
-CHAPTER_TITLE:
-{chapter_title}
-
-CHAPTER_TARGET_SUMMARY:
-{topic_summary_en}
-
-MUST_HAVE_CONTEXT:
-{top_object_anchors_and_core_context_terms_json}
+CHAPTER_CONTRACT:
+{compact_chapter_contract}
 
 LANE:
 {lane}
-
 POOL:
 {pool}
 
 LANE_GUIDANCE:
 {lane_guidance}
 
-FACETS_REQUIRED (weight>=4):
-{required_facets_json}
-
-ALL_FACET_IDS:
-{all_facet_ids_json}
+REQUIRED_FACETS:
+{compact_required_facets_json}
 
 CANDIDATE_METADATA:
-title={title}
-year={year}
-venue={venue}
-citations={citations}
-url={url}
-authors={authors_json}
-abstract_present={abstract_present}
+{compact_candidate_metadata}
 
-CANDIDATE_EVIDENCE (coverage_tags):
-{coverage_tags_json}
+EVIDENCE_TAGS:
+{compact_numbered_evidence_tags_json}
 
-SCORING RUBRIC:
-- 90-100: directly about the chapter target and strongly supports multiple required facets
-- 70-89: strong chapter-specific support, but not fully comprehensive
-- 40-69: plausible supporting source or method paper with some chapter relevance, but object fit is partial or thin
-- 0-39: generic, weakly supported, wrong-level, wrong-sense, or too uncertain
+DIMENSION DEFINITIONS (0-4 each):
+- topical_fit_0_4: how directly the source matches the chapter object/question.
+- evidence_strength_0_4: how strong and specific the provided evidence tags are.
+- chapter_utility_0_4: how likely the source is to help write this chapter.
+- lane_fit_0_4: for match, direct topical fit; for authority, foundational value AFTER relevance.
 
-INSTRUCTIONS:
-- Score usefulness for this chapter, not generic importance.
-- A high score requires evidence that the paper is about the chapter target, not merely about an adjacent method.
-- covered_facets: choose ONLY facets explicitly supported by the excerpts.
-- If the candidate lacks clear chapter-object evidence, it should usually score below 60 in the match lane.
-- In the authority lane, broader foundational work may score well only if it is clearly foundational for this chapter's object/construct.
-- If the evidence is generic, metadata-only, or ambiguous, set insufficient_info=true.
-- For pool=="without_abstract", scores above 70 should be rare.
-- In rationale, mention the exact evidence used and the main gap or limitation if any.
+HARD RULES:
+- off_topic=true if the candidate is clearly outside the chapter's target problem.
+- insufficient_info=true if evidence is too thin for a confident score.
+- Without-abstract items should usually be conservative unless multiple strong evidence tags support them.
+- covered_facets must be explicitly supported only.
+- evidence_tag_ids must only include tags you actually used.
+- brief_rationale must be short and concrete.
 ```
 
-### What I would tune further
+### Recommended pointwise JSON schema
 
-- Add explicit negative examples:
-  - generic survey paper that should score low
-  - chapter-specific empirical paper that should score higher
-- Use a stronger rerank model if cost is irrelevant.
-- If top-40 quality is the primary target, strongly consider pairwise rerank for the top slice.
+```json
+{
+  "topical_fit_0_4": 0,
+  "evidence_strength_0_4": 0,
+  "chapter_utility_0_4": 0,
+  "lane_fit_0_4": 0,
+  "covered_facets": [],
+  "evidence_tag_ids": [],
+  "off_topic": false,
+  "insufficient_info": false,
+  "brief_rationale": ""
+}
+```
 
-### Optional stronger upgrade for later
+### Deterministic final score
 
-Best future algorithm if you are willing to change the implementation:
-- pointwise prefilter to top 20-40
-- pairwise rerank top 15-30
+Do not ask the model for the final 0-100 score directly.
+Compute it in code:
+
+```text
+score = round((35 * topical_fit + 25 * evidence_strength + 25 * chapter_utility + 15 * lane_fit) / 4.0)
+```
+
+Then apply caps:
+- if `off_topic=true`: `score <= 25`
+- if `insufficient_info=true`:
+  - `with_abstract`: `score <= 45`
+  - `without_abstract`: `score <= 35`
+- if `lane=="authority"` and `topical_fit_0_4 <= 1`: `score <= 35`
+- if `covered_facets` is empty: `score <= 30`
+
+### Pairwise top-slice refinement
+
+The probe supports keeping pairwise refinement because the user does not care about runtime.
+
+Recommended pairwise scope:
+- only `with_abstract`
+- top `6`
+- `match` and `authority`
+
+Pairwise system prompt:
+
+```text
+You are comparing two scientific sources for one chapter.
+Use ONLY the chapter contract, metadata, and evidence tags.
+Choose the source that is more useful for this exact chapter and lane.
+Return strict JSON only.
+```
+
+Pairwise schema:
+
+```json
+{
+  "winner": "A",
+  "confidence_0_3": 0,
+  "brief_rationale": ""
+}
+```
+
+Pairwise implementation notes:
+- use low reasoning
+- randomize A/B order deterministically by hash to reduce position bias
+- winner gets `1.0 + 0.1 * confidence`
+- ties give `0.5` to each
+- reorder only the top `6`; keep the rest unchanged
+
+### What the probe ruled out
+
+Not recommended:
+- `contract_low` as the main design
+- `rubric_medium` as the main design
+- prompt-only hard object gating as the main design
+- long free-form rationales
+- pairwise rerank for `without_abstract`
 
 Why:
-- pairwise ranking prompting is better supported in the literature than naive pointwise 0..100 scoring
-- it directly addresses the "generic prestigious methods paper vs chapter-specific paper" choice
+- `contract_low` underperformed
+- `rubric_medium` was both more expensive and less stable
+- the object-gate follow-up introduced new ranking mistakes and did not beat the simpler compact rubric
+
+### Remaining limitation
+
+Authority-lane noise is still partly upstream.
+
+The rerank improvements are real, but Phase I alone cannot fully fix:
+- overly broad authority candidate pools
+- overly generous Phase H coverage tags
+
+So the right expectation is:
+- materially better ranking
+- not total immunity from upstream drift
+
+### Concrete next step
+
+If you want to implement Phase I now, the implementation-ready spec is in:
+- `PHASE_I_IMPLEMENTATION_PLAN.md`
+
+The empirical findings are documented in:
+- `PHASE_I_RERANK_PROBE_FINDINGS.md`
 
 ## Phase F — Embeddings and text packaging
 
@@ -935,37 +1013,81 @@ No prompt lives here, but this phase affects prompt performance downstream.
 
 ### Main issues
 
-- `facet_embed_text(...)` is too minimal
-- `candidate_meta_view(...)` is functional but thin
-- semantic similarity can over-weight generic methods because the chapter object is underrepresented in the embedding text
+- `facet_embed_text(...)` is too minimal when used as a primary query representation
+- `candidate_meta_view(...)` is too thin to be a reliable main representation
+- candidate hygiene is not strong enough yet:
+  - duplicate papers still leak into the pool
+  - junk titles such as `index`, `references`, `table of contents`, and `editorial` still exist in the larger run
+  - raw HTML artifacts still appear in titles
+- semantic similarity can still over-weight broad contextual literature when the chapter-target text is under-specified
 
 ### Recommendations
 
-1. Create a richer chapter-target or facet-target text for embeddings.
-2. Include object/corpus/domain context explicitly in facet text.
-3. Include more candidate evidence in metadata embeddings when available:
+1. Keep `text-embedding-3-small` as the default embedding model for now.
+2. Add a richer chapter-target embedding text that includes:
+   - chapter title
+   - chapter spec / retrieval contract
+   - planner summary
+   - core object terms / anchors
+3. Use candidate doc text as the main representation:
    - title
-   - abstract snippet
-   - venue
    - year
-   - source provenance
-   - language
-   - key metadata fields
-4. If cost truly does not matter, use the stronger embedding model available in your stack.
-5. Consider a pseudo-document or pseudo-abstract representation inspired by Query2doc / HyDE.
+   - venue
+   - authors
+   - abstract snippet
+4. Keep metadata-only embeddings only as fallback for no-abstract candidates.
+5. Keep a two-stage design:
+   - stage 1 doc-level ranking
+   - stage 2 abstract-chunk rerank on a shortlist
+6. Add light diversity control plus stronger duplicate suppression before the final top-k.
+7. Clean candidates before embedding:
+   - strip HTML markup artifacts
+   - filter obvious non-paper titles
+   - improve dedup / identity resolution
+8. Treat facet-only matching as a supporting signal, not the sole signal.
 
 ### Concrete local suggestion
 
-Current facet text:
-- essentially `facet narrative + canonical terms`
+The best empirical probe result was not “switch to the larger model.” It was:
+- use `text-embedding-3-small`
+- rank against a richer chapter-target text
+- keep candidate doc packaging richer than metadata-only
+- add shortlist chunk rerank
+- add light diversity control
 
-Better facet text:
-- chapter object
-- facet goal
-- positive terms
-- exclusions / ambiguity note when needed
+Empirical probe summary from 2026-03-09:
+- total Phase F probe spend stayed under `$1` at about `$0.85`
+- `text-embedding-3-large` did not materially outperform `text-embedding-3-small`
+- `staged_small` gave the best cross-topic balance
+- `summary_doc_small` and `topic_doc_small` were strong stage-1 signals
+- metadata-only and pure facet-only variants were weaker
 
-That should make generic method similarity less dominant.
+Cross-run averages from the probe:
+- `summary_doc_small`:
+  - title-core hit rate `0.525`
+  - abstract-core hit rate `0.825`
+  - but it drifted too easily into broad contextual literature on the hard chapter
+- `staged_small`:
+  - title-core hit rate `0.525`
+  - abstract-core hit rate `0.825`
+  - lowest top-20 pairwise similarity among the strong variants: `0.515`
+- `hybrid_large`:
+  - title-core hit rate `0.350`
+  - abstract-core hit rate `0.625`
+  - not good enough to justify the extra cost/runtime
+
+Practical conclusion:
+- Phase F should be improved by better packaging, chunk rerank, and hygiene
+- model-size escalation is not the first lever to pull
+
+Second-pass design probe on 2026-03-09 refined this further:
+- deterministic `chapter_target_doc` is the right new default query representation
+- `abstract[:800]` is the best current default candidate text budget
+- HyDE is useful enough to keep as a fallback idea, but not stable enough for the default path
+- hygiene should be mandatory
+
+Concrete implementation-ready plan:
+- see `PHASE_F_IMPLEMENTATION_PLAN.md`
 
 ## Phase H — Coverage tags
 
@@ -1028,9 +1150,14 @@ If your stated goal is top-40 quality and runtime/cost do not matter, this is on
 
 Current code uses `text-embedding-3-small`.
 
-If quality dominates cost:
-- try the stronger embedding model in the same family
-- evaluate it on recall and top-k quality, not just intuition
+After the empirical probe on 2026-03-09, my recommendation changed:
+- keep `text-embedding-3-small` as the default
+- the larger model did not show enough ranking benefit to justify its extra runtime/cost
+- spend effort first on:
+  - chapter-target embedding text
+  - candidate text packaging
+  - chunk rerank
+  - dedup / hygiene
 
 ### 5. Semantic Scholar bulk `limit` semantics look unreliable
 

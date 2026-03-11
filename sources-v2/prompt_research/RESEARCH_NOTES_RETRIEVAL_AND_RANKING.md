@@ -193,6 +193,78 @@ Future-self note:
 - this is especially relevant for Phase F
 - if you stay with embeddings, richer facet text is likely a higher-value change than endless synonym tweaking
 
+## Phase F empirical probe
+
+Probe date:
+- 2026-03-09
+
+Runs tested:
+- `ed2e3d3304d5ed9587592f4d` (online reviews / proxy-operationalization chapter)
+- `ca79147de41f8edbfb47c9e5` (late-antique / Western Roman Empire hard-topic chapter)
+
+Cost:
+- full known probe spend stayed under the `$1` cap at about `$0.85`
+
+Main empirical findings:
+- `text-embedding-3-large` did not materially outperform `text-embedding-3-small`
+- metadata-only candidate embeddings are too weak as a main scorer
+- richer chapter-target query text outperformed pure facet-only matching
+- a staged shortlist + abstract-chunk rerank was the best cross-topic compromise
+- light diversity control helped reduce redundancy in the final top 20
+
+Cross-run averages from the probe:
+- `summary_doc_small`:
+  - `top20_title_core_hit_rate = 0.525`
+  - `top20_abstract_core_hit_rate = 0.825`
+  - but it still drifted toward broad contextual literature on the hard historical chapter
+- `staged_small`:
+  - `top20_title_core_hit_rate = 0.525`
+  - `top20_abstract_core_hit_rate = 0.825`
+  - `top20_mean_pairwise_similarity = 0.515`
+  - best overall balance after qualitative inspection
+- `hybrid_small`:
+  - `top20_title_core_hit_rate = 0.475`
+  - `top20_abstract_core_hit_rate = 0.750`
+- `hybrid_large`:
+  - `top20_title_core_hit_rate = 0.350`
+  - `top20_abstract_core_hit_rate = 0.625`
+
+Interpretation:
+- packaging and staging matter more than switching from `small` to `large`
+- Phase F should focus on:
+  - richer chapter-target text
+  - good candidate text packaging
+  - chunk rerank
+  - dedup / hygiene
+
+Future-self note:
+- this materially weakens the earlier speculative recommendation to “just try the stronger embedding model”
+- the stronger model is not the first lever to pull here
+
+## Phase F design probe
+
+Second-pass probe date:
+- 2026-03-09
+
+What changed from the first probe:
+- tested implementation-level design choices rather than only model choice
+- focused on:
+  - deterministic chapter-target query text
+  - candidate text length
+  - richer vs leaner candidate packaging
+  - HyDE-style query expansion
+  - staged rerank plus hygiene
+
+Key findings:
+- deterministic `chapter_target_doc` is the right new default query representation
+- `abstract[:800]` is the best current default candidate text budget
+- HyDE is interesting for sparse chapters but not stable enough for default use
+- hygiene should be mandatory
+- staged rerank remains the strongest overall design
+
+Implementation note:
+- a concrete build plan now exists in `PHASE_F_IMPLEMENTATION_PLAN.md`
+
 ### Promptagator
 
 Core idea:
@@ -240,6 +312,96 @@ Current local symptom:
 Likely cause:
 - pointwise prompts often over-score individually plausible papers
 - they do not force the model to make difficult relative choices between a chapter-specific paper and a generic high-prestige methods paper
+
+## Phase I empirical probe
+
+Probe date:
+- 2026-03-10
+
+Runs tested:
+- `ca79147de41f8edbfb47c9e5`
+- `25e6243ac55a5904fb1fcdfe`
+
+Primary result:
+- the best overall design was a compact pointwise rubric with `gpt-5-nano`, `reasoning_effort="low"`, followed by a small pairwise refinement on the top `with_abstract` slice
+
+Best variant:
+- `rubric_low_pairwise_top6`
+
+Main metrics from the final pass:
+- `baseline_current`
+  - `mean_ndcg20 = 0.889`
+  - `mean_p10 = 0.762`
+- `rubric_low`
+  - `mean_ndcg20 = 0.904`
+  - `mean_p10 = 0.787`
+- `rubric_low_pairwise_top6`
+  - `mean_ndcg20 = 0.919`
+  - `mean_p10 = 0.787`
+- `rubric_medium`
+  - `mean_ndcg20 = 0.847`
+  - `mean_p10 = 0.750`
+  - `call_failed_rate = 0.031`
+
+Interpretation:
+- a compact rubric is better than the current long single-score prompt
+- pairwise refinement on the top slice adds real ranking value
+- medium reasoning on nano is a bad default: worse quality, higher cost, and worse operational stability
+
+### Nano operational lesson
+
+Most important implementation finding:
+- nano can spend the full output budget on hidden reasoning and emit no JSON at all
+
+This happened repeatedly when:
+- prompts were long
+- output-token ceilings were too small
+- reasoning effort was `medium`
+
+Practical implication:
+- keep Phase I prompts compact
+- use `reasoning_effort="low"` by default
+- use explicit retries and conservative fallback behavior
+
+### Cost profile
+
+Main pointwise pass only:
+- `baseline_current`
+  - mean output tokens: `1868.4`
+  - mean cost per call: `$0.000811`
+- `rubric_low`
+  - mean output tokens: `586.3`
+  - mean cost per call: `$0.000293`
+- `rubric_medium`
+  - mean output tokens: `2287.8`
+  - mean cost per call: `$0.000982`
+
+Interpretation:
+- `rubric_low` is both better and much cheaper than the baseline
+- `rubric_medium` is more expensive than the baseline and still worse
+
+### Pairwise refinement result
+
+Pairwise top-6 refinement:
+- improved the best variant from `0.904` to `0.919` mean `nDCG@20`
+- cost per pairwise call stayed low, about `$0.000249`
+- no pairwise failures in the final winning variant
+
+Practical implication:
+- if runtime does not matter, pairwise top-6 on `with_abstract` is worth keeping
+- do not pairwise-rerank `without_abstract`
+
+### Object-gate follow-up
+
+I also tested a stronger prompt-level object gate.
+
+Result:
+- it did not beat the compact rubric design
+- it introduced new ranking mistakes
+
+Interpretation:
+- do not try to solve the remaining authority noise by prompt-only overcorrection
+- the remaining authority problem is partly upstream pool quality, not only rerank prompt wording
 
 ## Systematic-review search guidance
 
