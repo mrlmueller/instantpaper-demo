@@ -31,27 +31,31 @@ class FirebaseService:
         """Lazy initialization - only initialize when actually needed"""
         if not self._initialized:
             try:
-                # Check if credentials are configured
-                if not config.FIREBASE_PRIVATE_KEY or config.FIREBASE_PRIVATE_KEY == '':
-                    raise ValueError(
-                        "Firebase credentials not configured. Please add your Firebase Admin SDK "
-                        "credentials to the .env file. Get them from: "
-                        "Firebase Console > Project Settings > Service Accounts > Generate New Private Key"
-                    )
+                options = {}
+                if config.FIREBASE_PROJECT_ID:
+                    options["projectId"] = config.FIREBASE_PROJECT_ID
+                if config.FIREBASE_STORAGE_BUCKET:
+                    options["storageBucket"] = config.FIREBASE_STORAGE_BUCKET
 
-                # Create credentials from config
-                cred_dict = {
-                    "type": "service_account",
-                    "project_id": config.FIREBASE_PROJECT_ID,
-                    "private_key": config.FIREBASE_PRIVATE_KEY.replace('\\n', '\n'),
-                    "client_email": config.FIREBASE_CLIENT_EMAIL,
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                }
+                has_key_pair = bool(config.FIREBASE_PRIVATE_KEY and config.FIREBASE_CLIENT_EMAIL)
+                if has_key_pair:
+                    cred_dict = {
+                        "type": "service_account",
+                        "project_id": config.FIREBASE_PROJECT_ID,
+                        "private_key": config.FIREBASE_PRIVATE_KEY.replace('\\n', '\n'),
+                        "client_email": config.FIREBASE_CLIENT_EMAIL,
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                    }
 
-                cred = credentials.Certificate(cred_dict)
-                firebase_admin.initialize_app(cred, {"storageBucket": config.FIREBASE_STORAGE_BUCKET})
+                    cred = credentials.Certificate(cred_dict)
+                    firebase_admin.initialize_app(cred, options or None)
+                    logger.info("Firebase Admin SDK initialized with explicit service account credentials")
+                else:
+                    cred = credentials.ApplicationDefault()
+                    firebase_admin.initialize_app(cred, options or None)
+                    logger.info("Firebase Admin SDK initialized with Application Default Credentials")
 
                 # Initialize Firestore client
                 self._db = firestore.client()

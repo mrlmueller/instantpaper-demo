@@ -85,6 +85,7 @@ class QuellenFinderFirestoreService:
         kapitel_snapshots: Optional[list[dict]] = None,
         model: str | None = None,
         pdf_ids: Optional[list[str]] = None,
+        extra: Optional[dict] = None,
     ) -> str:
         doc_ref = self.runs_col(user_id, projekt_id).document()
 
@@ -105,9 +106,108 @@ class QuellenFinderFirestoreService:
         }
         if pdf_ids is not None:
             payload["pdfIds"] = list(pdf_ids or [])
+        if isinstance(extra, dict) and extra:
+            payload.update(extra)
 
         doc_ref.set(payload)
         return str(doc_ref.id)
+
+    def get_run(self, *, user_id: str, projekt_id: str, run_id: str) -> dict[str, Any]:
+        snap = self.run_ref(user_id, projekt_id, run_id).get()
+        if snap is None or not getattr(snap, "exists", False):
+            raise ValueError("Run not found.")
+        data = snap.to_dict()
+        return data if isinstance(data, dict) else {}
+
+    def find_active_two_lane_run_for_kapitel(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        kapitel_id: str,
+    ) -> dict[str, Any] | None:
+        kapitel_id_norm = _as_str(kapitel_id)
+        if not kapitel_id_norm:
+            return None
+
+        q = self.runs_col(user_id, projekt_id).where("kind", "==", "sources_two_lane")
+        found: dict[str, Any] | None = None
+        found_created = None
+
+        for snap in q.stream():
+            if snap is None or not getattr(snap, "exists", False):
+                continue
+            data = snap.to_dict() if snap is not None else {}
+            if not isinstance(data, dict):
+                continue
+
+            kapitel_ids = data.get("kapitelIds")
+            if not isinstance(kapitel_ids, list) or kapitel_id_norm not in [str(x) for x in kapitel_ids]:
+                continue
+
+            status_now = str((data or {}).get("status") or "").strip()
+            if status_now not in {"queued", "running"}:
+                continue
+
+            created_at = (data or {}).get("createdAt")
+            if found is None or (created_at is not None and (found_created is None or created_at > found_created)):
+                found = {"run_id": str(snap.id), "data": data}
+                found_created = created_at
+
+        return found
+
+    def attach_job_execution(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        job_name: str,
+        region: str,
+        operation_name: str | None = None,
+        execution_name: str | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "updatedAt": SERVER_TIMESTAMP,
+            "job": {
+                "provider": "cloud_run_jobs",
+                "jobName": _as_str(job_name),
+                "region": _as_str(region),
+                "operationName": _as_str(operation_name),
+                "executionName": _as_str(execution_name),
+                "launchedAt": SERVER_TIMESTAMP,
+                "launchError": None,
+            },
+        }
+        self.run_ref(user_id, projekt_id, run_id).set(payload, merge=True)
+
+    def mark_launch_failed(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        error_message: str,
+        job_name: str | None = None,
+        region: str | None = None,
+        operation_name: str | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "status": "error",
+            "errorMessage": str(error_message or "")[:1000] or "Failed to launch Cloud Run Job.",
+            "hadPartialFailures": False,
+            "finishedAt": SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP,
+            "progress": {"stage": "error", "message": "Error"},
+            "job": {
+                "provider": "cloud_run_jobs",
+                "jobName": _as_str(job_name),
+                "region": _as_str(region),
+                "operationName": _as_str(operation_name),
+                "launchError": str(error_message or "")[:1000] or "Failed to launch Cloud Run Job.",
+            },
+        }
+        self.run_ref(user_id, projekt_id, run_id).set(payload, merge=True)
 
     def set_progress(
         self,
@@ -142,9 +242,6 @@ class QuellenFinderFirestoreService:
                 "status": "running",
                 "errorMessage": None,
                 "hadPartialFailures": False,
-                "cancelRequestedAt": None,
-                "cancelledAt": None,
-                "finishedAt": None,
                 "startedAt": SERVER_TIMESTAMP,
                 "updatedAt": SERVER_TIMESTAMP,
             },

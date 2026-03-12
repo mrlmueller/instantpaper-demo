@@ -11,6 +11,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py ./main.py
+COPY run_two_lane_job.py ./run_two_lane_job.py
 COPY middleware ./middleware
 COPY models ./models
 COPY services ./services
@@ -19,4 +20,3 @@ COPY utils ./utils
 EXPOSE 8080
 
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
-

@@ -28,6 +28,11 @@ class Config:
 
     # Firebase Admin SDK
     FIREBASE_PROJECT_ID: str = os.getenv("FIREBASE_PROJECT_ID", "").strip()
+    GOOGLE_CLOUD_PROJECT: str = (
+        os.getenv("GOOGLE_CLOUD_PROJECT", "").strip()
+        or os.getenv("GCP_PROJECT_ID", "").strip()
+        or FIREBASE_PROJECT_ID
+    )
     FIREBASE_PRIVATE_KEY: str = os.getenv("FIREBASE_PRIVATE_KEY", "").strip()
     FIREBASE_CLIENT_EMAIL: str = os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()
     FIREBASE_STORAGE_BUCKET: str = os.getenv(
@@ -61,6 +66,14 @@ class Config:
     # Development
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
     IS_CLOUD_RUN: bool = bool(os.getenv("K_SERVICE", "").strip())
+
+    # Cloud Run Job launcher
+    TWO_LANE_CLOUD_RUN_JOB_NAME: str = os.getenv(
+        "TWO_LANE_CLOUD_RUN_JOB_NAME", "instantpaper-two-lane-sources"
+    ).strip()
+    TWO_LANE_CLOUD_RUN_JOB_REGION: str = os.getenv(
+        "TWO_LANE_CLOUD_RUN_JOB_REGION", "europe-west3"
+    ).strip()
 
     # Admin access endpoint (Basic Auth)
     # Used to set Firebase Auth custom claims (e.g. {"fullAccess": true}) for gating user access.
@@ -99,18 +112,27 @@ class Config:
     @classmethod
     def validate(cls) -> None:
         """Validate that all required configuration is present"""
-        required_fields = [
-            "FIREBASE_PROJECT_ID",
-            "FIREBASE_PRIVATE_KEY",
-            "FIREBASE_CLIENT_EMAIL",
-            "OPENAI_API_KEY",
-        ]
+        required_fields = ["FIREBASE_PROJECT_ID", "OPENAI_API_KEY"]
 
         missing_fields = []
         for field in required_fields:
             value = getattr(cls, field)
             if not value:
                 missing_fields.append(field)
+
+        has_key_pair = bool(cls.FIREBASE_PRIVATE_KEY and cls.FIREBASE_CLIENT_EMAIL)
+        has_partial_key_pair = bool(cls.FIREBASE_PRIVATE_KEY or cls.FIREBASE_CLIENT_EMAIL)
+        has_adc_hint = bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip())
+
+        if has_partial_key_pair and not has_key_pair:
+            if not cls.FIREBASE_PRIVATE_KEY:
+                missing_fields.append("FIREBASE_PRIVATE_KEY")
+            if not cls.FIREBASE_CLIENT_EMAIL:
+                missing_fields.append("FIREBASE_CLIENT_EMAIL")
+        elif not cls.IS_CLOUD_RUN and not has_key_pair and not has_adc_hint:
+            missing_fields.append(
+                "FIREBASE_PRIVATE_KEY/FIREBASE_CLIENT_EMAIL or GOOGLE_APPLICATION_CREDENTIALS"
+            )
 
         if missing_fields:
             raise ValueError(

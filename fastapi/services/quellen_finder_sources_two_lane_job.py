@@ -143,6 +143,98 @@ def _build_two_lane_telemetry_docs(*, telemetry: Dict[str, Any]) -> List[Tuple[s
     return docs
 
 
+def _build_runtime_settings_from_run_doc(data: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+    chapter_input = data.get("chapterInputSnapshot")
+    if not isinstance(chapter_input, dict):
+        chapter_input = {}
+
+    kapitel_snapshots = data.get("kapitelSnapshots")
+    kapitel_snapshot = (
+        kapitel_snapshots[0]
+        if isinstance(kapitel_snapshots, list) and kapitel_snapshots and isinstance(kapitel_snapshots[0], dict)
+        else {}
+    )
+
+    chapter_title = str(
+        (chapter_input or {}).get("chapterTitle")
+        or (kapitel_snapshot or {}).get("title")
+        or (kapitel_snapshot or {}).get("ueberschrift")
+        or ""
+    ).strip()
+    chapter_spec_text = str(
+        (chapter_input or {}).get("chapterSpecText")
+        or (kapitel_snapshot or {}).get("thema")
+        or ""
+    ).strip()
+
+    if not chapter_title:
+        raise RuntimeError("Run is missing chapter title snapshot.")
+    if not chapter_spec_text:
+        raise RuntimeError("Run is missing chapter spec snapshot.")
+
+    pipeline_settings = data.get("twoLaneSettingsRequested")
+    if not isinstance(pipeline_settings, dict):
+        pipeline_settings = {}
+
+    kapitel_ids = data.get("kapitelIds")
+    kapitel_id = (
+        str(kapitel_ids[0]).strip()
+        if isinstance(kapitel_ids, list) and kapitel_ids and str(kapitel_ids[0]).strip()
+        else ""
+    )
+    if not kapitel_id:
+        raise RuntimeError("Run is missing kapitelIds[0].")
+
+    return kapitel_id, {
+        "chapter_title": chapter_title,
+        "chapter_spec_text": chapter_spec_text,
+        "pipeline_settings": pipeline_settings,
+    }
+
+
+async def run_quellen_finder_sources_two_lane_job_from_run_doc(
+    *,
+    user_id: str,
+    projekt_id: str,
+    run_id: str,
+) -> None:
+    fs = QuellenFinderFirestoreService()
+
+    def _load() -> tuple[dict[str, Any], str | None]:
+        data = fs.get_run(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+        status_now = str((data or {}).get("status") or "").strip()
+        if status_now in {"success", "error", "cancelled"}:
+            return data, "terminal"
+        if status_now == "running":
+            return data, "already_running"
+        if bool((data or {}).get("cancelRequestedAt")):
+            fs.mark_cancelled(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+            return data, "cancelled_before_start"
+        return data, None
+
+    data, skip_reason = await asyncio.to_thread(_load)
+    if skip_reason:
+        logger.info(
+            "QF two-lane worker no-op | run_id=%s projekt_id=%s reason=%s",
+            run_id,
+            projekt_id,
+            skip_reason,
+        )
+        return
+
+    if str((data or {}).get("kind") or "") != "sources_two_lane":
+        raise RuntimeError("Run is not a two-lane sources run.")
+
+    kapitel_id, settings = _build_runtime_settings_from_run_doc(data)
+    await run_quellen_finder_sources_two_lane_job(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        kapitel_id=kapitel_id,
+        run_id=run_id,
+        settings=settings,
+    )
+
+
 async def run_quellen_finder_sources_two_lane_job(
     *,
     user_id: str,

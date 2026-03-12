@@ -43,8 +43,8 @@ from services.firebase_service import firebase_service
 from services.credits_service import get_credits_service
 from services.prompt_service import prompt_service
 from services.export_service import export_service
+from services.cloud_run_job_launcher import cloud_run_job_launcher
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
-from services.quellen_finder_sources_two_lane_job import run_quellen_finder_sources_two_lane_job
 from services.quellen_finder_pdf_scan_job import run_quellen_finder_pdf_scan_job, _download_pdf_from_firebase_storage
 from services.quellen_finder_pdf_extract_service import extract_quellen_finder_pdf_section
 from firebase_admin import auth, storage
@@ -53,6 +53,7 @@ from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 from google.cloud import firestore
 from pydantic import BaseModel
 import logging
+import asyncio
 import base64
 import json
 import secrets
@@ -5162,7 +5163,6 @@ async def refine_gliederung(
 @app.post("/api/quellen-finder/sources-two-lane/start", status_code=status.HTTP_202_ACCEPTED)
 async def quellen_finder_sources_two_lane_start(
     request: QuellenFinderTwoLaneStartRequest,
-    background_tasks: BackgroundTasks,
     user_id: str = Depends(verify_firebase_token),
 ):
     """
@@ -5208,6 +5208,16 @@ async def quellen_finder_sources_two_lane_start(
     await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
 
     fs = QuellenFinderFirestoreService()
+    active_run = fs.find_active_two_lane_run_for_kapitel(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        kapitel_id=kapitel_id,
+    )
+    if active_run is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Für dieses Kapitel läuft bereits ein Quellen-Finder-Run ({active_run['run_id']}).",
+        )
 
     kapitel_snapshot = {
         "id": kapitel_id,
@@ -5216,15 +5226,6 @@ async def quellen_finder_sources_two_lane_start(
         "ueberschrift": str((kapitel or {}).get("title") or "").strip() or None,
         "thema": str((kapitel or {}).get("thema") or "").strip() or None,
     }
-
-    run_id = fs.create_run(
-        user_id=user_id,
-        projekt_id=projekt_id,
-        kind="sources_two_lane",
-        kapitel_ids=[kapitel_id],
-        kapitel_snapshots=[kapitel_snapshot],
-        model=str(request.planner_model or "").strip() or "gpt-5-mini",
-    )
 
     pipeline_settings = {
         "openai_model_planner": str(request.planner_model),
@@ -5235,18 +5236,60 @@ async def quellen_finder_sources_two_lane_start(
         "openai_reasoning_effort": str(request.reasoning_effort),
         "rerank_concurrency": int(request.rerank_concurrency),
     }
+    chapter_input_snapshot = {
+        "chapterTitle": chapter_title,
+        "chapterSpecText": chapter_spec_text,
+    }
 
-    background_tasks.add_task(
-        run_quellen_finder_sources_two_lane_job,
+    run_id = fs.create_run(
         user_id=user_id,
         projekt_id=projekt_id,
-        kapitel_id=kapitel_id,
-        run_id=run_id,
-        settings={
-            "chapter_title": chapter_title,
-            "chapter_spec_text": chapter_spec_text,
-            "pipeline_settings": pipeline_settings,
+        kind="sources_two_lane",
+        kapitel_ids=[kapitel_id],
+        kapitel_snapshots=[kapitel_snapshot],
+        model=str(request.planner_model or "").strip() or "gpt-5-mini",
+        extra={
+            "chapterInputSnapshot": chapter_input_snapshot,
+            "twoLaneSettingsRequested": pipeline_settings,
+            "job": {
+                "provider": "cloud_run_jobs",
+                "jobName": str(config.TWO_LANE_CLOUD_RUN_JOB_NAME or "").strip() or None,
+                "region": str(config.TWO_LANE_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                "operationName": None,
+                "executionName": None,
+                "launchedAt": None,
+                "launchError": None,
+            },
         },
+    )
+
+    try:
+        launch = await asyncio.to_thread(
+            cloud_run_job_launcher.execute_two_lane_sources_job,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+        )
+    except Exception as exc:
+        msg = str(exc or "Cloud Run Job launch failed.")[:1000]
+        fs.mark_launch_failed(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            error_message=msg,
+            job_name=str(config.TWO_LANE_CLOUD_RUN_JOB_NAME or "").strip() or None,
+            region=str(config.TWO_LANE_CLOUD_RUN_JOB_REGION or "").strip() or None,
+        )
+        raise HTTPException(status_code=502, detail=msg) from exc
+
+    fs.attach_job_execution(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        job_name=str((launch or {}).get("job_name") or config.TWO_LANE_CLOUD_RUN_JOB_NAME or ""),
+        region=str((launch or {}).get("region") or config.TWO_LANE_CLOUD_RUN_JOB_REGION or ""),
+        operation_name=(launch or {}).get("operation_name"),
+        execution_name=(launch or {}).get("execution_name"),
     )
 
     return {
@@ -5254,6 +5297,8 @@ async def quellen_finder_sources_two_lane_start(
         "run_id": run_id,
         "projekt_id": projekt_id,
         "kapitel_id": kapitel_id,
+        "job_execution_name": (launch or {}).get("execution_name"),
+        "job_operation_name": (launch or {}).get("operation_name"),
         "queued_at": datetime.utcnow().isoformat() + "Z",
     }
 

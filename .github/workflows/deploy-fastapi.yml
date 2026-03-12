@@ -1,14 +1,22 @@
-name: Deploy FastAPI to Cloud Run
+name: Deploy FastAPI and Two-Lane Job
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
+      - feature/source-search
+
+permissions:
+  contents: read
+  id-token: write
 
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
   GCP_REGION: europe-west3
   CLOUD_RUN_SERVICE: instantpaper-api
+  CLOUD_RUN_JOB: instantpaper-two-lane-sources
   IMAGE_REPOSITORY: cloud-run-source-deploy
 
 jobs:
@@ -22,7 +30,8 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
@@ -40,11 +49,35 @@ jobs:
           docker build -t "$IMAGE" ./fastapi
           docker push "$IMAGE"
 
-      - name: Deploy to Cloud Run
+      - name: Deploy FastAPI service
         run: |
           gcloud run deploy "$CLOUD_RUN_SERVICE" \
             --region "$GCP_REGION" \
             --image "$IMAGE" \
             --allow-unauthenticated \
             --service-account "instantpaper-api-runtime@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
-            --set-secrets "FIREBASE_PROJECT_ID=FIREBASE_PROJECT_ID:latest,FIREBASE_CLIENT_EMAIL=FIREBASE_CLIENT_EMAIL:latest,FIREBASE_PRIVATE_KEY=FIREBASE_PRIVATE_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest,USER_KEY_ENCRYPTION_KEY=USER_KEY_ENCRYPTION_KEY:latest,ADMIN_UIDS=ADMIN_UIDS:latest"
+            --set-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,TWO_LANE_CLOUD_RUN_JOB_NAME=${CLOUD_RUN_JOB},TWO_LANE_CLOUD_RUN_JOB_REGION=${GCP_REGION}" \
+            --set-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest,USER_KEY_ENCRYPTION_KEY=USER_KEY_ENCRYPTION_KEY:latest,ADMIN_UIDS=ADMIN_UIDS:latest"
+
+      - name: Deploy two-lane Cloud Run Job
+        run: |
+          COMMON_FLAGS=(
+            --region "$GCP_REGION"
+            --image "$IMAGE"
+            --service-account "instantpaper-two-lane-job@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
+            --cpu 4
+            --memory 16Gi
+            --tasks 1
+            --parallelism 1
+            --max-retries 0
+            --task-timeout 2h
+            --command python
+            --set-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app"
+            --set-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENALEX_API_KEY=OPENALEX_API_KEY:latest,OPENALEX_EMAIL=OPENALEX_EMAIL:latest,SEMANTICSCHOLAR_API_KEY=SEMANTICSCHOLAR_API_KEY:latest"
+          )
+
+          if gcloud run jobs describe "$CLOUD_RUN_JOB" --region "$GCP_REGION" >/dev/null 2>&1; then
+            gcloud run jobs update "$CLOUD_RUN_JOB" "${COMMON_FLAGS[@]}"
+          else
+            gcloud run jobs create "$CLOUD_RUN_JOB" "${COMMON_FLAGS[@]}"
+          fi
