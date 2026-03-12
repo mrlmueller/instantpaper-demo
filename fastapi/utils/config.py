@@ -74,6 +74,10 @@ class Config:
     TWO_LANE_CLOUD_RUN_JOB_REGION: str = os.getenv(
         "TWO_LANE_CLOUD_RUN_JOB_REGION", "europe-west3"
     ).strip()
+    TWO_LANE_SOURCES_EXECUTION_BACKEND: str = os.getenv(
+        "TWO_LANE_SOURCES_EXECUTION_BACKEND",
+        "cloud_run_job" if IS_CLOUD_RUN else "local_background",
+    ).strip().lower()
 
     # Admin access endpoint (Basic Auth)
     # Used to set Firebase Auth custom claims (e.g. {"fullAccess": true}) for gating user access.

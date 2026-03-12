@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - master
-      - feature/source-search
 
 permissions:
   contents: read
@@ -62,7 +61,7 @@ jobs:
             --image "$IMAGE" \
             --allow-unauthenticated \
             --service-account "instantpaper-api-runtime@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
-            --update-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,TWO_LANE_CLOUD_RUN_JOB_NAME=${CLOUD_RUN_JOB},TWO_LANE_CLOUD_RUN_JOB_REGION=${GCP_REGION}" \
+            --update-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,TWO_LANE_CLOUD_RUN_JOB_NAME=${CLOUD_RUN_JOB},TWO_LANE_CLOUD_RUN_JOB_REGION=${GCP_REGION},TWO_LANE_SOURCES_EXECUTION_BACKEND=cloud_run_job" \
             --update-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest,USER_KEY_ENCRYPTION_KEY=USER_KEY_ENCRYPTION_KEY:latest,ADMIN_UIDS=ADMIN_UIDS:latest"
 
       - name: Deploy two-lane Cloud Run Job

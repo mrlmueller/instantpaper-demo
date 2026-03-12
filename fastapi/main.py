@@ -45,6 +45,7 @@ from services.prompt_service import prompt_service
 from services.export_service import export_service
 from services.cloud_run_job_launcher import cloud_run_job_launcher
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
+from services.quellen_finder_sources_two_lane_job import run_quellen_finder_sources_two_lane_job_from_run_doc
 from services.quellen_finder_pdf_scan_job import run_quellen_finder_pdf_scan_job, _download_pdf_from_firebase_storage
 from services.quellen_finder_pdf_extract_service import extract_quellen_finder_pdf_section
 from firebase_admin import auth, storage
@@ -5163,6 +5164,7 @@ async def refine_gliederung(
 @app.post("/api/quellen-finder/sources-two-lane/start", status_code=status.HTTP_202_ACCEPTED)
 async def quellen_finder_sources_two_lane_start(
     request: QuellenFinderTwoLaneStartRequest,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(verify_firebase_token),
 ):
     """
@@ -5240,6 +5242,9 @@ async def quellen_finder_sources_two_lane_start(
         "chapterTitle": chapter_title,
         "chapterSpecText": chapter_spec_text,
     }
+    execution_backend = str(config.TWO_LANE_SOURCES_EXECUTION_BACKEND or "").strip().lower()
+    if execution_backend not in {"cloud_run_job", "local_background"}:
+        execution_backend = "cloud_run_job" if config.IS_CLOUD_RUN else "local_background"
 
     run_id = fs.create_run(
         user_id=user_id,
@@ -5252,9 +5257,17 @@ async def quellen_finder_sources_two_lane_start(
             "chapterInputSnapshot": chapter_input_snapshot,
             "twoLaneSettingsRequested": pipeline_settings,
             "job": {
-                "provider": "cloud_run_jobs",
-                "jobName": str(config.TWO_LANE_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                "region": str(config.TWO_LANE_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                "provider": "cloud_run_jobs" if execution_backend == "cloud_run_job" else "local_background_task",
+                "jobName": (
+                    str(config.TWO_LANE_CLOUD_RUN_JOB_NAME or "").strip() or None
+                    if execution_backend == "cloud_run_job"
+                    else None
+                ),
+                "region": (
+                    str(config.TWO_LANE_CLOUD_RUN_JOB_REGION or "").strip() or None
+                    if execution_backend == "cloud_run_job"
+                    else None
+                ),
                 "operationName": None,
                 "executionName": None,
                 "launchedAt": None,
@@ -5262,6 +5275,22 @@ async def quellen_finder_sources_two_lane_start(
             },
         },
     )
+
+    if execution_backend == "local_background":
+        background_tasks.add_task(
+            run_quellen_finder_sources_two_lane_job_from_run_doc,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+        )
+        return {
+            "status": "queued",
+            "run_id": run_id,
+            "projekt_id": projekt_id,
+            "kapitel_id": kapitel_id,
+            "execution_backend": execution_backend,
+            "queued_at": datetime.utcnow().isoformat() + "Z",
+        }
 
     try:
         launch = await asyncio.to_thread(
@@ -5297,6 +5326,7 @@ async def quellen_finder_sources_two_lane_start(
         "run_id": run_id,
         "projekt_id": projekt_id,
         "kapitel_id": kapitel_id,
+        "execution_backend": execution_backend,
         "job_execution_name": (launch or {}).get("execution_name"),
         "job_operation_name": (launch or {}).get("operation_name"),
         "queued_at": datetime.utcnow().isoformat() + "Z",
