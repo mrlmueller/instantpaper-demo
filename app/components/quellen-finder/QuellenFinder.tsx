@@ -3,7 +3,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Cookies from "js-cookie";
-import { AlertTriangle, ArrowLeft, Ban, BarChart3, Check, ChevronDown, ExternalLink, Loader2, Play, SlidersHorizontal, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Ban, BarChart3, BookOpen, Check, ChevronDown, ExternalLink, Loader2, Play, Search, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 import { limit, onSnapshot, query, where } from "firebase/firestore";
 
@@ -185,6 +185,39 @@ const PaperDetailsSkeleton = memo(function PaperDetailsSkeleton() {
       </div>
 
       <Skeleton className="h-4 w-48" />
+    </div>
+  );
+});
+
+const SidebarEmptyState = memo(function SidebarEmptyState({ hasSelectedKapitel }: { hasSelectedKapitel: boolean }) {
+  return (
+    <div className="flex h-full min-h-[280px] items-center justify-center px-6 py-10">
+      <div className="flex max-w-[220px] flex-col items-center text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/40">
+          <Search className="h-5 w-5 text-muted-foreground/60" />
+        </div>
+        <div className="mt-5 text-[28px] font-semibold leading-none text-sidebar-foreground/75">Noch keine Suchen</div>
+        <div className="mt-3 text-sm leading-6 text-sidebar-foreground/60">
+          {hasSelectedKapitel ? "Starte eine Suche für dieses Kapitel." : "Wähle ein Kapitel und starte die Suche."}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+const MainEmptyState = memo(function MainEmptyState() {
+  return (
+    <div className="flex h-full min-h-[560px] items-center justify-center px-8">
+      <div className="flex max-w-[540px] flex-col items-center text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted/30">
+          <BookOpen className="h-8 w-8 text-muted-foreground/40" />
+        </div>
+        <div className="mt-6 text-[42px] font-semibold leading-tight tracking-[-0.02em] text-foreground/90">Literatursuche starten</div>
+        <div className="mt-4 text-lg leading-9 text-muted-foreground">
+          Wähle links ein Kapitel aus und starte eine Suche. Die Pipeline durchläuft mehrere Phasen, um die relevantesten
+          wissenschaftlichen Arbeiten zu finden.
+        </div>
+      </div>
     </div>
   );
 });
@@ -424,17 +457,8 @@ export function QuellenFinder({
     if (selectedKapitelId) {
       return twoLaneRuns.find((r) => Array.isArray(r.kapitelIds) && r.kapitelIds.includes(selectedKapitelId)) ?? null;
     }
-    return twoLaneRuns[0] ?? null;
+    return null;
   }, [twoLaneRuns, activeTwoLaneRunId, selectedKapitelId]);
-
-  useEffect(() => {
-    if (selectedKapitelId) return;
-    if (activeTwoLaneRun?.kapitelIds?.[0]) {
-      setSelectedKapitelId(activeTwoLaneRun.kapitelIds[0]);
-      return;
-    }
-    if (kapitels.length) setSelectedKapitelId(kapitels[0]?.id ?? null);
-  }, [selectedKapitelId, activeTwoLaneRun?.kapitelIds, kapitels]);
 
   useEffect(() => {
     if (!activeTwoLaneRunId) return;
@@ -517,7 +541,11 @@ export function QuellenFinder({
     };
   }, [user?.uid, projektId, activeTwoLaneRun?.id]);
 
-  const facets = useMemo(() => asRecordArray(asRecord(twoLanePlan)["facets"]), [twoLanePlan]);
+  const visibleTwoLaneResults = useMemo(() => (activeTwoLaneRun ? twoLaneResults : []), [activeTwoLaneRun, twoLaneResults]);
+  const visibleTwoLaneReport = useMemo(() => (activeTwoLaneRun ? twoLaneReport : null), [activeTwoLaneRun, twoLaneReport]);
+  const visibleTwoLanePlan = useMemo(() => (activeTwoLaneRun ? twoLanePlan : null), [activeTwoLaneRun, twoLanePlan]);
+
+  const facets = useMemo(() => asRecordArray(asRecord(visibleTwoLanePlan)["facets"]), [visibleTwoLanePlan]);
   const facetLabelById = useMemo(() => {
     const map = new Map<string, string>();
     for (const f of facets) {
@@ -538,16 +566,16 @@ export function QuellenFinder({
       authority_with_abstract: 0,
       authority_without_abstract: 0,
     };
-    for (const r of twoLaneResults) {
+    for (const r of visibleTwoLaneResults) {
       const k = `${r.lane}_${r.pool}` as TwoLaneViewKey;
       if (k in counts) counts[k] += 1;
     }
     return counts;
-  }, [twoLaneResults]);
+  }, [visibleTwoLaneResults]);
 
   const twoLaneFiltered = useMemo(() => {
     const { lane, pool } = parseTwoLaneViewKey(twoLaneViewKey);
-    const rows = twoLaneResults.filter((r) => r.lane === lane && r.pool === pool);
+    const rows = visibleTwoLaneResults.filter((r) => r.lane === lane && r.pool === pool);
 
     const dir: 1 | -1 = resultsSortDir === "asc" ? 1 : -1;
 
@@ -567,7 +595,7 @@ export function QuellenFinder({
       if (resultsSortKey === "citations") return cmpNum(numOrNull(a.citations), numOrNull(b.citations));
       return cmpNum(llmScore(a), llmScore(b));
     });
-  }, [twoLaneResults, twoLaneViewKey, resultsSortDir, resultsSortKey]);
+  }, [visibleTwoLaneResults, twoLaneViewKey, resultsSortDir, resultsSortKey]);
 
   useEffect(() => {
     if (!activePaperDocId) return;
@@ -748,7 +776,7 @@ export function QuellenFinder({
   const activeKapitelSnapshot = activeTwoLaneRun?.kapitelSnapshots?.[0] ?? null;
   const chapterNummer = String(activeKapitelSnapshot?.nummer ?? selectedKapitel?.nummer ?? "").trim();
   const chapterTitle = String(activeKapitelSnapshot?.title ?? selectedKapitel?.title ?? "").trim();
-  const chapterHeading = `${chapterNummer ? `${chapterNummer} ` : ""}${chapterTitle || "Kapitel"}`.trim();
+  const chapterHeading = `${chapterNummer ? `${chapterNummer} ` : ""}${chapterTitle}`.trim();
 
   const runStartedAt = toDateOrNull(activeTwoLaneRun?.startedAt) ?? toDateOrNull(activeTwoLaneRun?.createdAt);
   const runFinishedAt = toDateOrNull(activeTwoLaneRun?.finishedAt);
@@ -759,11 +787,11 @@ export function QuellenFinder({
   const stageElapsedMs = Math.max(0, nowMs - stageStartMs);
 
   const summaryRec = asRecord(activeTwoLaneRun?.summary);
-  const reportKpis = asRecord(asRecord(twoLaneReport)["kpis"]);
+  const reportKpis = asRecord(asRecord(visibleTwoLaneReport)["kpis"]);
   const totalCostUsd = asNumberOrNull(summaryRec["total_cost_usd"]) ?? asNumberOrNull(reportKpis["total_cost_usd"]);
   const secondsTotal = asNumberOrNull(summaryRec["seconds_total"]);
   const resultCount =
-    typeof activeTwoLaneRun?.resultCount === "number" ? activeTwoLaneRun.resultCount : twoLaneResults.length ? twoLaneResults.length : null;
+    typeof activeTwoLaneRun?.resultCount === "number" ? activeTwoLaneRun.resultCount : visibleTwoLaneResults.length ? visibleTwoLaneResults.length : null;
   const candidatesTotal = typeof reportKpis["candidates_total"] === "number" ? (reportKpis["candidates_total"] as number) : null;
 
   const stageKey = String(activeTwoLaneRun?.progress?.stage || "");
@@ -778,6 +806,33 @@ export function QuellenFinder({
   const completedSteps = isDone ? TWO_LANE_PIPELINE_STEPS.length : Math.max(0, stageIdx);
   const activeStep = !isDone && stageIdx >= 0 ? stageIdx : -1;
   const activeStepLabel = activeStep >= 0 ? TWO_LANE_PIPELINE_STEPS[activeStep]?.label ?? "" : "";
+  const pipelineStatusLabel = activeTwoLaneRun
+    ? isDone
+      ? "Abgeschlossen"
+      : isError
+        ? "Fehler"
+        : isCancelled
+          ? "Abgebrochen"
+          : isCancelRequested
+            ? "Abbruch angefordert"
+            : activeStepLabel || "Wartet…"
+    : selectedKapitel
+      ? "Noch kein Run für dieses Kapitel."
+      : "Kein Kapitel ausgewählt.";
+  const pipelineStatusIcon = activeTwoLaneRun ? (
+    isDone ? (
+      <Check className="h-4 w-4 text-emerald-600" />
+    ) : isError ? (
+      <AlertTriangle className="h-4 w-4 text-red-600" />
+    ) : isCancelled ? (
+      <Ban className="h-4 w-4 text-muted-foreground" />
+    ) : (
+      <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+    )
+  ) : (
+    <div className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" aria-hidden />
+  );
+  const pipelineCompletedSteps = activeTwoLaneRun ? completedSteps : 0;
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -808,7 +863,7 @@ export function QuellenFinder({
                           {selectedKapitel.title}
                         </div>
                       ) : (
-                        <span className="text-muted-foreground">Kapitel auswählen</span>
+                        <span className="text-muted-foreground">Kapitel wählen...</span>
                       )}
                     </div>
                   </SelectTrigger>
@@ -951,289 +1006,269 @@ export function QuellenFinder({
             </div>
 
             <div className="flex-1 overflow-auto divide-y divide-sidebar-border">
-              {twoLaneRuns.map((r) => {
-                const snap = r.kapitelSnapshots?.[0] ?? null;
-                const num = String(snap?.nummer || "").trim();
-                const title = String(snap?.title || "").trim();
-                const label = `${num ? `${num} ` : ""}${title || ""}`.trim() || r.id;
+              {twoLaneRuns.length === 0 ? (
+                <SidebarEmptyState hasSelectedKapitel={Boolean(selectedKapitel)} />
+              ) : (
+                twoLaneRuns.map((r) => {
+                  const snap = r.kapitelSnapshots?.[0] ?? null;
+                  const num = String(snap?.nummer || "").trim();
+                  const title = String(snap?.title || "").trim();
+                  const label = `${num ? `${num} ` : ""}${title || ""}`.trim() || r.id;
 
-                const time = formatTimeHm(r.startedAt ?? r.createdAt);
-                const sub =
-                  r.status === "running" || r.status === "queued"
-                    ? `${time}  Läuft…`
-                    : r.status === "success"
-                      ? `${time}  ${formatIntDe(r.resultCount ?? 0)} Ergebnisse`
-                      : r.status === "cancelled"
-                        ? `${time}  Abgebrochen`
-                        : `${time}  Fehler`;
+                  const time = formatTimeHm(r.startedAt ?? r.createdAt);
+                  const sub =
+                    r.status === "running" || r.status === "queued"
+                      ? `${time}  Läuft…`
+                      : r.status === "success"
+                        ? `${time}  ${formatIntDe(r.resultCount ?? 0)} Ergebnisse`
+                        : r.status === "cancelled"
+                          ? `${time}  Abgebrochen`
+                          : `${time}  Fehler`;
 
-                const active = r.id === activeTwoLaneRun?.id;
+                  const active = r.id === activeTwoLaneRun?.id;
 
-                const icon =
-                  r.status === "running" || r.status === "queued" ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
-                  ) : r.status === "success" ? (
-                    <Check className="h-4 w-4 text-emerald-600" />
-                  ) : r.status === "cancelled" ? (
-                    <Ban className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <AlertTriangle className="h-4 w-4 text-red-600" />
-                  );
+                  const icon =
+                    r.status === "running" || r.status === "queued" ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                    ) : r.status === "success" ? (
+                      <Check className="h-4 w-4 text-emerald-600" />
+                    ) : r.status === "cancelled" ? (
+                      <Ban className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-red-600" />
+                    );
 
-                return (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => selectRun(r)}
-                    className={`w-full text-left px-5 py-3 hover:bg-sidebar-accent/70 transition-colors ${active ? "bg-sidebar-accent" : ""}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium truncate">{label}</div>
-                        <div className="text-xs text-sidebar-foreground/70 truncate">{sub}</div>
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => selectRun(r)}
+                      className={`w-full text-left px-5 py-3 hover:bg-sidebar-accent/70 transition-colors ${active ? "bg-sidebar-accent" : ""}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate">{label}</div>
+                          <div className="text-xs text-sidebar-foreground/70 truncate">{sub}</div>
+                        </div>
+                        <div className="pt-0.5 shrink-0">{icon}</div>
                       </div>
-                      <div className="pt-0.5 shrink-0">{icon}</div>
-                    </div>
-                  </button>
-                );
-              })}
-              {twoLaneRuns.length === 0 ? <div className="px-5 py-3 text-xs text-sidebar-foreground/70">Noch keine Runs.</div> : null}
+                    </button>
+                  );
+                })
+              )}
             </div>
           </aside>
 
-          <div className="flex-1 min-w-0 overflow-auto p-6">
-            <div className="space-y-4 min-w-0">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="text-xl font-semibold truncate">{chapterHeading || "Kapitel auswählen"}</div>
-                {activeTwoLaneRun ? (
-                  <div className="text-xs text-muted-foreground">
-                    Gestartet: {formatDateTimeWithSeconds(runStartedAt)}{" "}
-                    {runFinishedAt ? <>| Abgeschlossen: {formatDateTimeWithSeconds(runFinishedAt)}</> : null}
+          <div className="flex-1 min-w-0 overflow-auto">
+            {activeTwoLaneRun ? (
+              <div className="space-y-4 min-w-0 p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-xl font-semibold truncate">{chapterHeading || "Kapitel auswählen"}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Gestartet: {formatDateTimeWithSeconds(runStartedAt)}{" "}
+                      {runFinishedAt ? <>| Abgeschlossen: {formatDateTimeWithSeconds(runFinishedAt)}</> : null}
+                    </div>
                   </div>
-                ) : (
-                  <div className="text-xs text-muted-foreground">
-                    {selectedKapitel ? "Noch keine Quellen‑Suche für dieses Kapitel. Starte links eine neue Suche." : "Wähle links ein Kapitel und starte eine neue Quellen‑Suche."}
-                  </div>
-                )}
-              </div>
 
-              {activeTwoLaneRun ? (
-                <div className="flex items-center gap-3 flex-wrap justify-end">
-                  {runningTwoLane ? (
-                    <>
-                      <div className="text-xs text-muted-foreground tabular-nums">
-                        {formatElapsedShort(elapsedMs)} | Phase: {formatElapsedShort(stageElapsedMs)} | {formatUsd(totalCostUsd)}
-                      </div>
-                      <Button size="sm" variant="outline" onClick={cancelTwoLaneSources} disabled={!runningTwoLane || isCancelRequested}>
-                        {isCancelRequested ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <X className="h-4 w-4 mr-2" />}
-                        {isCancelRequested ? "Wird abgebrochen…" : "Abbrechen"}
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-xs text-muted-foreground tabular-nums">{formatUsd(totalCostUsd)}</div>
-                      {typeof resultCount === "number" ? (
-                        <Badge variant="outline" className="tabular-nums">
-                          {formatIntDe(resultCount)} Ergebnisse
-                        </Badge>
-                      ) : null}
-                    </>
-                  )}
-                </div>
-              ) : null}
-            </div>
-
-            <Card className="p-4">
-              <div className="text-sm font-semibold">Pipeline-Status</div>
-
-              <div className="mt-3 space-y-3">
-                <div className="flex gap-1">
-                  {TWO_LANE_PIPELINE_STEPS.map((s, idx) => {
-                    const isCompleted = isDone || (activeStep >= 0 && idx < activeStep);
-                    const isActive = !isDone && idx === activeStep;
-                    const cls = isCompleted
-                      ? "bg-primary"
-                      : isActive
-                        ? isError
-                          ? "bg-red-500"
-                          : "bg-orange-400"
-                        : "bg-muted/60";
-                    return (
-                      <Tooltip key={s.key}>
-                        <TooltipTrigger asChild>
-                          <div className={`h-2 flex-1 rounded-sm ${cls}`} aria-label={s.label} />
-                        </TooltipTrigger>
-                        <TooltipContent side="top">{s.label}</TooltipContent>
-                      </Tooltip>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
-                    {isDone ? (
-                      <Check className="h-4 w-4 text-emerald-600" />
-                    ) : isError ? (
-                      <AlertTriangle className="h-4 w-4 text-red-600" />
-                    ) : isCancelled ? (
-                      <Ban className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex items-center gap-3 flex-wrap justify-end">
+                    {runningTwoLane ? (
+                      <>
+                        <div className="text-xs text-muted-foreground tabular-nums">
+                          {formatElapsedShort(elapsedMs)} | Phase: {formatElapsedShort(stageElapsedMs)} | {formatUsd(totalCostUsd)}
+                        </div>
+                        <Button size="sm" variant="outline" onClick={cancelTwoLaneSources} disabled={!runningTwoLane || isCancelRequested}>
+                          {isCancelRequested ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <X className="h-4 w-4 mr-2" />}
+                          {isCancelRequested ? "Wird abgebrochen…" : "Abbrechen"}
+                        </Button>
+                      </>
                     ) : (
-                      <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                      <>
+                        <div className="text-xs text-muted-foreground tabular-nums">{formatUsd(totalCostUsd)}</div>
+                        {typeof resultCount === "number" ? (
+                          <Badge variant="outline" className="tabular-nums">
+                            {formatIntDe(resultCount)} Ergebnisse
+                          </Badge>
+                        ) : null}
+                      </>
                     )}
-                    <span className="truncate">
-                      {isDone
-                        ? "Abgeschlossen"
-                        : isError
-                          ? "Fehler"
-                          : isCancelled
-                            ? "Abgebrochen"
-                            : isCancelRequested
-                              ? "Abbruch angefordert"
-                              : activeStepLabel || "Wartet…"}
-                    </span>
-                  </div>
-                  <div className="text-xs text-muted-foreground tabular-nums shrink-0">
-                    {completedSteps} / {TWO_LANE_PIPELINE_STEPS.length} Schritte
                   </div>
                 </div>
-              </div>
 
-            </Card>
+                <Card className="p-4">
+                  <div className="text-sm font-semibold">Pipeline-Status</div>
 
-            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-              <Button size="sm" variant="outline" onClick={() => setTelemetryDialogOpen(true)} disabled={!activeTwoLaneRun?.id}>
-                <BarChart3 className="h-4 w-4 mr-2" />
-                Pipeline Details
-              </Button>
-              <div className="tabular-nums">
-                {runningTwoLane ? formatElapsedShort(elapsedMs) : formatSecondsShort(secondsTotal ?? (runFinishedAt ? (runFinishedAt.getTime() - runStartMs) / 1000 : null))}
-              </div>
-              <span>|</span>
-              <div className="tabular-nums">{formatUsd(totalCostUsd)}</div>
-              <span>|</span>
-              <div className="tabular-nums">{candidatesTotal !== null ? `${formatIntDe(candidatesTotal)} Kandidaten` : "— Kandidaten"}</div>
-            </div>
+                  <div className="mt-3 space-y-3">
+                    <div className="flex gap-1">
+                      {TWO_LANE_PIPELINE_STEPS.map((s, idx) => {
+                        const isCompleted = isDone || (activeStep >= 0 && idx < activeStep);
+                        const isActive = !isDone && idx === activeStep;
+                        const cls = isCompleted
+                          ? "bg-primary"
+                          : isActive
+                            ? isError
+                              ? "bg-red-500"
+                              : "bg-orange-400"
+                            : "bg-muted/60";
+                        return (
+                          <Tooltip key={s.key}>
+                            <TooltipTrigger asChild>
+                              <div className={`h-2 flex-1 rounded-sm ${cls}`} aria-label={s.label} />
+                            </TooltipTrigger>
+                            <TooltipContent side="top">{s.label}</TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+                    </div>
 
-            <Card className="p-4">
-              <div className="space-y-3">
-                <div className="text-sm font-semibold">Suchergebnisse</div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
+                        {pipelineStatusIcon}
+                        <span className="truncate">{pipelineStatusLabel}</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground tabular-nums shrink-0">
+                        {pipelineCompletedSteps} / {TWO_LANE_PIPELINE_STEPS.length} Schritte
+                      </div>
+                    </div>
+                  </div>
+                </Card>
 
-                <Tabs
-                  value={twoLaneViewKey}
-                  onValueChange={(v) => {
-                    if (v in TWO_LANE_VIEW_LABELS) {
-                      setTwoLaneViewKey(v as TwoLaneViewKey);
-                      resetPaperDetails();
-                    }
-                  }}
-                >
-                  <TabsList className="h-9 bg-muted/40 p-1 flex flex-wrap">
-                    {(Object.keys(TWO_LANE_VIEW_LABELS) as TwoLaneViewKey[]).map((k) => (
-                      <TabsTrigger key={k} value={k} className="text-xs">
-                        <span className="flex items-center gap-2">
-                          {TWO_LANE_VIEW_LABELS[k]}
-                          <span className="tabular-nums text-muted-foreground">{twoLaneCountsByView[k] ?? 0}</span>
-                        </span>
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                  <Button size="sm" variant="outline" onClick={() => setTelemetryDialogOpen(true)} disabled={!activeTwoLaneRun?.id}>
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                    Pipeline Details
+                  </Button>
+                  <div className="tabular-nums">
+                    {runningTwoLane ? formatElapsedShort(elapsedMs) : formatSecondsShort(secondsTotal ?? (runFinishedAt ? (runFinishedAt.getTime() - runStartMs) / 1000 : null))}
+                  </div>
+                  <span>|</span>
+                  <div className="tabular-nums">{formatUsd(totalCostUsd)}</div>
+                  <span>|</span>
+                  <div className="tabular-nums">{candidatesTotal !== null ? `${formatIntDe(candidatesTotal)} Kandidaten` : "— Kandidaten"}</div>
+                </div>
 
-                <div className="rounded-md border border-border overflow-hidden">
-                  <div className="overflow-auto">
-                    <Table className="table-fixed">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[56px]">#</TableHead>
-                          <TableHead>Titel</TableHead>
-                          <TableHead className="w-[90px]">
-                            <button type="button" onClick={() => toggleResultsSort("year")} className="flex items-center gap-1">
-                              Jahr
-                              <ChevronDown
-                                className={`h-3 w-3 transition-transform ${resultsSortKey === "year" ? "opacity-100" : "opacity-30"} ${resultsSortKey === "year" && resultsSortDir === "asc" ? "rotate-180" : ""}`}
-                              />
-                            </button>
-                          </TableHead>
-                          <TableHead className="w-[120px]">
-                            <button type="button" onClick={() => toggleResultsSort("citations")} className="flex items-center gap-1">
-                              Zitierungen
-                              <ChevronDown
-                                className={`h-3 w-3 transition-transform ${resultsSortKey === "citations" ? "opacity-100" : "opacity-30"} ${resultsSortKey === "citations" && resultsSortDir === "asc" ? "rotate-180" : ""}`}
-                              />
-                            </button>
-                          </TableHead>
-                          <TableHead className="w-[90px]">
-                            <button type="button" onClick={() => toggleResultsSort("llmScore")} className="flex items-center gap-1">
-                              Score
-                              <ChevronDown
-                                className={`h-3 w-3 transition-transform ${resultsSortKey === "llmScore" ? "opacity-100" : "opacity-30"} ${resultsSortKey === "llmScore" && resultsSortDir === "asc" ? "rotate-180" : ""}`}
-                              />
-                            </button>
-                          </TableHead>
-                          <TableHead className="w-[220px]">Venue</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {twoLaneFiltered.map((r) => {
-                          const llm =
-                           typeof r.rerank?.llm_score_0_100 === "number" && Number.isFinite(r.rerank.llm_score_0_100)
-                              ? Math.round(r.rerank.llm_score_0_100)
-                              : null;
-                          const rowSelected = r.docId === activePaperDocId;
-                          const rowOpen = rowSelected && paperDetailsOpen;
-                          const rowReady = rowSelected && paperDetailsReadyDocId === r.docId;
-                          return (
-                            <Fragment key={r.docId}>
-                              <TableRow
-                                className={`cursor-pointer ${rowOpen ? "bg-muted/40" : ""}`}
-                                onClick={() => togglePaperDetails(r.docId)}
-                              >
-                                <TableCell className="tabular-nums">{r.rank}</TableCell>
-                                <TableCell className="max-w-0">
-                                  <div className="truncate font-medium">{r.title || "(ohne Titel)"}</div>
-                                </TableCell>
-                                <TableCell className="tabular-nums">{r.year ?? ""}</TableCell>
-                                <TableCell className="tabular-nums">{typeof r.citations === "number" ? formatIntDe(r.citations) : ""}</TableCell>
-                                <TableCell className="tabular-nums">
-                                  <span
-                                    className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-xs font-semibold tabular-nums ${llmScorePillClasses(
-                                      llm
-                                    )}`}
+                <Card className="p-4">
+                  <div className="space-y-3">
+                    <div className="text-sm font-semibold">Suchergebnisse</div>
+
+                    <Tabs
+                      value={twoLaneViewKey}
+                      onValueChange={(v) => {
+                        if (v in TWO_LANE_VIEW_LABELS) {
+                          setTwoLaneViewKey(v as TwoLaneViewKey);
+                          resetPaperDetails();
+                        }
+                      }}
+                    >
+                      <TabsList className="h-9 bg-muted/40 p-1 flex flex-wrap">
+                        {(Object.keys(TWO_LANE_VIEW_LABELS) as TwoLaneViewKey[]).map((k) => (
+                          <TabsTrigger key={k} value={k} className="text-xs">
+                            <span className="flex items-center gap-2">
+                              {TWO_LANE_VIEW_LABELS[k]}
+                              <span className="tabular-nums text-muted-foreground">{twoLaneCountsByView[k] ?? 0}</span>
+                            </span>
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                    </Tabs>
+
+                    <div className="rounded-md border border-border overflow-hidden">
+                      <div className="overflow-auto">
+                        <Table className="table-fixed">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-[56px]">#</TableHead>
+                              <TableHead>Titel</TableHead>
+                              <TableHead className="w-[90px]">
+                                <button type="button" onClick={() => toggleResultsSort("year")} className="flex items-center gap-1">
+                                  Jahr
+                                  <ChevronDown
+                                    className={`h-3 w-3 transition-transform ${resultsSortKey === "year" ? "opacity-100" : "opacity-30"} ${resultsSortKey === "year" && resultsSortDir === "asc" ? "rotate-180" : ""}`}
+                                  />
+                                </button>
+                              </TableHead>
+                              <TableHead className="w-[120px]">
+                                <button type="button" onClick={() => toggleResultsSort("citations")} className="flex items-center gap-1">
+                                  Zitierungen
+                                  <ChevronDown
+                                    className={`h-3 w-3 transition-transform ${resultsSortKey === "citations" ? "opacity-100" : "opacity-30"} ${resultsSortKey === "citations" && resultsSortDir === "asc" ? "rotate-180" : ""}`}
+                                  />
+                                </button>
+                              </TableHead>
+                              <TableHead className="w-[90px]">
+                                <button type="button" onClick={() => toggleResultsSort("llmScore")} className="flex items-center gap-1">
+                                  Score
+                                  <ChevronDown
+                                    className={`h-3 w-3 transition-transform ${resultsSortKey === "llmScore" ? "opacity-100" : "opacity-30"} ${resultsSortKey === "llmScore" && resultsSortDir === "asc" ? "rotate-180" : ""}`}
+                                  />
+                                </button>
+                              </TableHead>
+                              <TableHead className="w-[220px]">Venue</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {twoLaneFiltered.map((r) => {
+                              const llm =
+                                typeof r.rerank?.llm_score_0_100 === "number" && Number.isFinite(r.rerank.llm_score_0_100)
+                                  ? Math.round(r.rerank.llm_score_0_100)
+                                  : null;
+                              const rowSelected = r.docId === activePaperDocId;
+                              const rowOpen = rowSelected && paperDetailsOpen;
+                              const rowReady = rowSelected && paperDetailsReadyDocId === r.docId;
+                              return (
+                                <Fragment key={r.docId}>
+                                  <TableRow
+                                    className={`cursor-pointer ${rowOpen ? "bg-muted/40" : ""}`}
+                                    onClick={() => togglePaperDetails(r.docId)}
                                   >
-                                    {llm !== null ? llm : "—"}
-                                  </span>
-                                </TableCell>
-                                <TableCell className="max-w-0">
-                                  <div className="truncate text-sm text-muted-foreground">{r.venue || ""}</div>
+                                    <TableCell className="tabular-nums">{r.rank}</TableCell>
+                                    <TableCell className="max-w-0">
+                                      <div className="truncate font-medium">{r.title || "(ohne Titel)"}</div>
+                                    </TableCell>
+                                    <TableCell className="tabular-nums">{r.year ?? ""}</TableCell>
+                                    <TableCell className="tabular-nums">{typeof r.citations === "number" ? formatIntDe(r.citations) : ""}</TableCell>
+                                    <TableCell className="tabular-nums">
+                                      <span
+                                        className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-xs font-semibold tabular-nums ${llmScorePillClasses(
+                                          llm
+                                        )}`}
+                                      >
+                                        {llm !== null ? llm : "—"}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell className="max-w-0">
+                                      <div className="truncate text-sm text-muted-foreground">{r.venue || ""}</div>
+                                    </TableCell>
+                                  </TableRow>
+                                  {rowSelected ? (
+                                    <TableRow className={`bg-background ${rowOpen ? "" : "hidden"}`}>
+                                      <TableCell colSpan={6} className="p-0">
+                                        <div className="border-t border-border p-4 bg-background">
+                                          {rowReady ? <PaperDetails paper={r} facetLabelById={facetLabelById} /> : <PaperDetailsSkeleton />}
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  ) : null}
+                                </Fragment>
+                              );
+                            })}
+                            {twoLaneFiltered.length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={6} className="text-sm text-muted-foreground">
+                                  Keine Ergebnisse.
                                 </TableCell>
                               </TableRow>
-                              {rowSelected ? (
-                                <TableRow className={`bg-background ${rowOpen ? "" : "hidden"}`}>
-                                  <TableCell colSpan={6} className="p-0">
-                                    <div className="border-t border-border p-4 bg-background">
-                                      {rowReady ? <PaperDetails paper={r} facetLabelById={facetLabelById} /> : <PaperDetailsSkeleton />}
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              ) : null}
-                            </Fragment>
-                          );
-                        })}
-                        {twoLaneFiltered.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={6} className="text-sm text-muted-foreground">
-                              Keine Ergebnisse.
-                            </TableCell>
-                          </TableRow>
-                        ) : null}
-                      </TableBody>
-                    </Table>
+                            ) : null}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
                   </div>
-                </div>
-
+                </Card>
               </div>
-            </Card>
+            ) : (
+              <MainEmptyState />
+            )}
 
             <PipelineDetailsDialog
               key={activeTwoLaneRun?.id ?? "none"}
@@ -1244,12 +1279,9 @@ export function QuellenFinder({
               run={activeTwoLaneRun}
               kapitel={selectedKapitel}
             />
-
-
           </div>
         </div>
       </div>
-          </div>
         <ViewportWarning />
       </TooltipProvider>
   );
