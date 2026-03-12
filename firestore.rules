@@ -28,6 +28,33 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(userId)).data.canViewUsageInsights == true;
     }
 
+    function canUseQuellenFinder(userId) {
+      return isOwner(userId)
+        && exists(/databases/$(database)/documents/users/$(userId))
+        && get(/databases/$(database)/documents/users/$(userId)).data.canUseQuellenFinder == true;
+    }
+
+    function canUsePdfScan(userId) {
+      return isOwner(userId)
+        && exists(/databases/$(database)/documents/users/$(userId))
+        && get(/databases/$(database)/documents/users/$(userId)).data.canUsePdfScan == true;
+    }
+
+    function canReadResearchRun(userId, projectId, runId) {
+      return isOwner(userId)
+        && exists(/databases/$(database)/documents/users/$(userId)/projects/$(projectId)/researchRuns/$(runId))
+        && (
+          (
+            get(/databases/$(database)/documents/users/$(userId)/projects/$(projectId)/researchRuns/$(runId)).data.kind == 'sources_two_lane'
+            && canUseQuellenFinder(userId)
+          )
+          || (
+            get(/databases/$(database)/documents/users/$(userId)/projects/$(projectId)/researchRuns/$(runId)).data.kind == 'pdf_scan'
+            && canUsePdfScan(userId)
+          )
+        );
+    }
+
     function isTs(x) {
       return x is timestamp;
     }
@@ -361,9 +388,9 @@ service cloud.firestore {
         // -----------------------------------------------------------------
 
         match /pdfs/{pdfId} {
-          allow read: if isOwner(userId);
+          allow read: if canUsePdfScan(userId);
 
-          allow create: if isOwner(userId)
+          allow create: if canUsePdfScan(userId)
             && projectExists(userId, projectId)
             && request.resource.data.keys().hasAll(['filename', 'storagePath', 'size', 'contentType', 'createdAt', 'updatedAt'])
             && request.resource.data.keys().hasOnly(['filename', 'storagePath', 'size', 'contentType', 'createdAt', 'updatedAt'])
@@ -378,7 +405,7 @@ service cloud.firestore {
             && isTs(request.resource.data.updatedAt);
 
           // PDFs are immutable (replace by deleting + uploading again).
-          allow update: if isOwner(userId)
+          allow update: if canUsePdfScan(userId)
             && request.resource.data.createdAt == resource.data.createdAt
             && request.resource.data.storagePath == resource.data.storagePath
             && request.resource.data.size == resource.data.size
@@ -387,7 +414,7 @@ service cloud.firestore {
             && isNonEmptyString(request.resource.data.filename, 500)
             && isTs(request.resource.data.updatedAt);
 
-          allow delete: if isOwner(userId);
+          allow delete: if canUsePdfScan(userId);
         }
 
         // -----------------------------------------------------------------
@@ -395,11 +422,15 @@ service cloud.firestore {
         // -----------------------------------------------------------------
 
         match /researchRuns/{runId} {
-          allow read: if isOwner(userId);
+          allow read: if isOwner(userId)
+            && (
+              (resource.data.kind == 'sources_two_lane' && canUseQuellenFinder(userId))
+              || (resource.data.kind == 'pdf_scan' && canUsePdfScan(userId))
+            );
           allow write: if false;
 
           match /{doc=**} {
-            allow read: if isOwner(userId);
+            allow read: if canReadResearchRun(userId, projectId, runId);
             allow write: if false;
           }
         }

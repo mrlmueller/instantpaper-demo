@@ -5,7 +5,7 @@ import Link from "next/link";
 import Cookies from "js-cookie";
 import { AlertTriangle, ArrowLeft, Check, ExternalLink, FileUp, Loader2, Play, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Timestamp, addDoc, deleteDoc, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { Timestamp, addDoc, deleteDoc, doc, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { deleteObject, getDownloadURL, getStorage, ref as storageRef, uploadBytes } from "firebase/storage";
 
 import { Badge } from "@/components/ui/badge";
@@ -259,11 +259,20 @@ export function PdfScanWorkspace({
 
   useEffect(() => {
     if (!user?.uid || !projektId) return;
-    const q = query(projectResearchRunsCol(firestoreClient, user.uid, projektId), orderBy("createdAt", "desc"), limit(50));
+    const q = query(
+      projectResearchRunsCol(firestoreClient, user.uid, projektId),
+      where("kind", "==", "pdf_scan"),
+      limit(50)
+    );
     return onSnapshot(
       q,
       (snap) => {
-        const next = snap.docs.map((d) => ({ id: d.id, ...(d.data() as QuellenFinderRunDoc) }));
+        const next = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as QuellenFinderRunDoc) }))
+          .sort(
+            (a, b) =>
+              (toDateOrNull(b.createdAt)?.getTime() ?? 0) - (toDateOrNull(a.createdAt)?.getTime() ?? 0)
+          );
         setRuns(next);
       },
       (err) => {

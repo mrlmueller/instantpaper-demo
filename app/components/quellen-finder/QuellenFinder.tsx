@@ -5,7 +5,7 @@ import Link from "next/link";
 import Cookies from "js-cookie";
 import { AlertTriangle, ArrowLeft, Ban, BarChart3, Check, ChevronDown, ExternalLink, Loader2, Play, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
-import { limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { limit, onSnapshot, query, where } from "firebase/firestore";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -444,11 +444,20 @@ export function QuellenFinder({
 
   useEffect(() => {
     if (!user?.uid || !projektId) return;
-    const q = query(projectResearchRunsCol(firestoreClient, user.uid, projektId), orderBy("createdAt", "desc"), limit(50));
+    const q = query(
+      projectResearchRunsCol(firestoreClient, user.uid, projektId),
+      where("kind", "==", "sources_two_lane"),
+      limit(50)
+    );
     return onSnapshot(
       q,
       (snap) => {
-        const next = snap.docs.map((d) => ({ id: d.id, ...(d.data() as QuellenFinderRunDoc) }));
+        const next = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as QuellenFinderRunDoc) }))
+          .sort(
+            (a, b) =>
+              (toDateOrNull(b.createdAt)?.getTime() ?? 0) - (toDateOrNull(a.createdAt)?.getTime() ?? 0)
+          );
         setRuns(next);
       },
       (err) => {

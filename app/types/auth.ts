@@ -13,5 +13,7 @@ export interface AuthContextType {
   access: AccessState;
   effectiveBlocked: boolean;
   canViewUsageInsights: boolean;
+  canUseQuellenFinder: boolean;
+  canUsePdfScan: boolean;
   loading: boolean;
 }

@@ -2,9 +2,11 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { ArrowUpRight, Ban, BarChart3, Check, Copy, UserX } from 'lucide-react';
+import { ArrowUpRight, Ban, BarChart3, Check, Copy, FileText, Search, UserX } from 'lucide-react';
 
 import {
+  adminSetCanUsePdfScan,
+  adminSetCanUseQuellenFinder,
   adminSetCanDuplicateSystemPrompts,
   adminSetCanViewUsageInsights,
   adminSetUserBlocked,
@@ -199,6 +201,70 @@ function UsageInsightsButton({ user, formKey }: { user: AdminUserRow; formKey: s
   );
 }
 
+function QuellenFinderButton({ user, formKey }: { user: AdminUserRow; formKey: string }) {
+  const enabled = user.canUseQuellenFinder === true;
+  return (
+    <ActionForm
+      formId={`quellen-finder-${formKey}`}
+      action={adminSetCanUseQuellenFinder}
+      email={user.email}
+      hiddenInputs={[{ name: 'canUseQuellenFinder', value: enabled ? 'false' : 'true' }]}
+      triggerLabel="Quellen-Finder"
+      triggerAriaLabel={enabled ? 'Quellen-Finder deaktivieren' : 'Quellen-Finder aktivieren'}
+      triggerChildren={
+        <>
+          <Search className="h-4 w-4" />
+          <span>Quellen-Finder</span>
+        </>
+      }
+      triggerVariant={enabled ? 'default' : 'outline'}
+      triggerSize="sm"
+      triggerClassName="h-8"
+      title={enabled ? 'Quellen-Finder deaktivieren?' : 'Quellen-Finder aktivieren?'}
+      description={
+        enabled
+          ? `Soll ${user.email} Quellen-Finder und die zugehörigen Daten nicht mehr sehen oder benutzen können?`
+          : `Soll ${user.email} Zugriff auf Quellen-Finder bekommen?`
+      }
+      confirmLabel={enabled ? 'Deaktivieren' : 'Aktivieren'}
+      confirmVariant={enabled ? 'outline' : 'default'}
+      confirmSize="sm"
+    />
+  );
+}
+
+function PdfScanButton({ user, formKey }: { user: AdminUserRow; formKey: string }) {
+  const enabled = user.canUsePdfScan === true;
+  return (
+    <ActionForm
+      formId={`pdf-scan-${formKey}`}
+      action={adminSetCanUsePdfScan}
+      email={user.email}
+      hiddenInputs={[{ name: 'canUsePdfScan', value: enabled ? 'false' : 'true' }]}
+      triggerLabel="PDF-Scan"
+      triggerAriaLabel={enabled ? 'PDF-Scan deaktivieren' : 'PDF-Scan aktivieren'}
+      triggerChildren={
+        <>
+          <FileText className="h-4 w-4" />
+          <span>PDF-Scan</span>
+        </>
+      }
+      triggerVariant={enabled ? 'default' : 'outline'}
+      triggerSize="sm"
+      triggerClassName="h-8"
+      title={enabled ? 'PDF-Scan deaktivieren?' : 'PDF-Scan aktivieren?'}
+      description={
+        enabled
+          ? `Soll ${user.email} PDF-Scan, Projekt-PDFs und die zugehörigen Daten nicht mehr sehen oder benutzen können?`
+          : `Soll ${user.email} Zugriff auf PDF-Scan und die Projekt-PDFs bekommen?`
+      }
+      confirmLabel={enabled ? 'Deaktivieren' : 'Aktivieren'}
+      confirmVariant={enabled ? 'outline' : 'default'}
+      confirmSize="sm"
+    />
+  );
+}
+
 function FullAccessButton({ user, formKey }: { user: AdminUserRow; formKey: string }) {
   const enabled = user.fullAccess === true;
   const label = enabled ? 'Zugriff entziehen' : 'Freischalten';
@@ -361,6 +427,8 @@ function UserCard({ user }: { user: AdminUserRow }) {
             ) : (
               <>
                 <PromptCopyButton user={user} formKey={formKey} />
+                <QuellenFinderButton user={user} formKey={formKey} />
+                <PdfScanButton user={user} formKey={formKey} />
                 <UsageInsightsButton user={user} formKey={formKey} />
                 {user.fullAccess ? <FullAccessButton user={user} formKey={formKey} /> : null}
                 <BlockButton user={user} formKey={formKey} />

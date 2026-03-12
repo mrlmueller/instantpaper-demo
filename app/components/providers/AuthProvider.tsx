@@ -1,18 +1,32 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { hasFullAccess, onAuthStateChange, type AccessState } from '@/app/lib/firebase/auth';
+import {
+  hasFullAccess,
+  onAuthStateChange,
+  refreshIdTokenAndCookie,
+  type AccessState,
+} from '@/app/lib/firebase/auth';
 import type { User, AuthContextType } from '@/app/types/auth';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [access, setAccess] = useState<AccessState>({ fullAccess: false, legacyApproved: false, blocked: false });
+  const [access, setAccess] = useState<AccessState>({
+    fullAccess: false,
+    legacyApproved: false,
+    blocked: false,
+    canUseQuellenFinder: false,
+    canUsePdfScan: false,
+  });
   const [serverBlocked, setServerBlocked] = useState(false);
   const [canViewUsageInsights, setCanViewUsageInsights] = useState(false);
+  const [canUseQuellenFinder, setCanUseQuellenFinder] = useState(false);
+  const [canUsePdfScan, setCanUsePdfScan] = useState(false);
   const [loading, setLoading] = useState(true);
+  const featureRefreshInFlight = useRef(false);
   const router = useRouter();
   const pathname = usePathname();
   const effectiveBlocked = access.blocked || serverBlocked;
@@ -30,9 +44,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (nextAccess) setAccess(nextAccess);
       } else {
         setUser(null);
-        setAccess({ fullAccess: false, legacyApproved: false, blocked: false });
+        setAccess({
+          fullAccess: false,
+          legacyApproved: false,
+          blocked: false,
+          canUseQuellenFinder: false,
+          canUsePdfScan: false,
+        });
         setServerBlocked(false);
         setCanViewUsageInsights(false);
+        setCanUseQuellenFinder(false);
+        setCanUsePdfScan(false);
       }
       setLoading(false);
     });
@@ -51,8 +73,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .then(({ ok, data }) => {
           if (cancelled || !ok) return;
           const blocked = data.blocked === true || String(data.accountStatus || '').toLowerCase() === 'blocked';
+          const nextCanUseQuellenFinder = data.canUseQuellenFinder === true;
+          const nextCanUsePdfScan = data.canUsePdfScan === true;
           setServerBlocked(blocked);
           setCanViewUsageInsights(data.canViewUsageInsights === true);
+          setCanUseQuellenFinder(nextCanUseQuellenFinder);
+          setCanUsePdfScan(nextCanUsePdfScan);
+
+          if (
+            !featureRefreshInFlight.current &&
+            (access.canUseQuellenFinder !== nextCanUseQuellenFinder || access.canUsePdfScan !== nextCanUsePdfScan)
+          ) {
+            featureRefreshInFlight.current = true;
+            refreshIdTokenAndCookie()
+              .catch(() => {
+                // ignore
+              })
+              .finally(() => {
+                featureRefreshInFlight.current = false;
+              });
+          }
         })
         .catch(() => {
           // ignore
@@ -61,7 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         cancelled = true;
       };
     }
-  }, [loading, user, pathname]);
+  }, [access.canUsePdfScan, access.canUseQuellenFinder, loading, user, pathname]);
 
   useEffect(() => {
     if (loading) return;
@@ -96,10 +136,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Note: We don't redirect unauthenticated users here anymore
     // Protected pages handle their own auth checks via requireAuth() and show loading skeletons
-  }, [loading, user, access, serverBlocked, pathname, router]);
+  }, [loading, user, access, serverBlocked, effectiveBlocked, pathname, router]);
 
   return (
-    <AuthContext.Provider value={{ user, access, effectiveBlocked, canViewUsageInsights, loading }}>
+    <AuthContext.Provider
+      value={{ user, access, effectiveBlocked, canViewUsageInsights, canUseQuellenFinder, canUsePdfScan, loading }}
+    >
       {children}
     </AuthContext.Provider>
   );

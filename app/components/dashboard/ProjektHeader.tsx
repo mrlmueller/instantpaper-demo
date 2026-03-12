@@ -66,7 +66,7 @@ export function ProjektHeader({
   onOpenExport,
   isExporting,
 }: ProjektHeaderProps) {
-  const { user } = useAuth()
+  const { user, canUsePdfScan, canUseQuellenFinder } = useAuth()
   const [newProjektDialogOpen, setNewProjektDialogOpen] = useState(false)
   const [switchDialogOpen, setSwitchDialogOpen] = useState(false)
   const [switchTab, setSwitchTab] = useState<"active" | "archived">("active")
@@ -258,18 +258,22 @@ export function ProjektHeader({
                     Quellen-Manager
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/quellen-finder" className="flex items-center cursor-pointer">
-                    <Search className="mr-2 h-4 w-4" />
-                    Quellen-Finder
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/pdf-scan" className="flex items-center cursor-pointer">
-                    <FileText className="mr-2 h-4 w-4" />
-                    PDF‑Scan
-                  </Link>
-                </DropdownMenuItem>
+                {canUseQuellenFinder ? (
+                  <DropdownMenuItem asChild>
+                    <Link href="/quellen-finder" className="flex items-center cursor-pointer">
+                      <Search className="mr-2 h-4 w-4" />
+                      Quellen-Finder
+                    </Link>
+                  </DropdownMenuItem>
+                ) : null}
+                {canUsePdfScan ? (
+                  <DropdownMenuItem asChild>
+                    <Link href="/pdf-scan" className="flex items-center cursor-pointer">
+                      <FileText className="mr-2 h-4 w-4" />
+                      PDF-Scan
+                    </Link>
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
                   <LogOut className="mr-2 h-4 w-4" />

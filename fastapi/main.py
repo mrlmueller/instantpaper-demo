@@ -171,6 +171,16 @@ class AdminSetUsageInsightsRequest(BaseModel):
     canViewUsageInsights: bool
 
 
+class AdminSetQuellenFinderRequest(BaseModel):
+    email: str
+    canUseQuellenFinder: bool
+
+
+class AdminSetPdfScanRequest(BaseModel):
+    email: str
+    canUsePdfScan: bool
+
+
 class AdminUpsertSystemPromptTemplateRequest(BaseModel):
     stage: str
     templateKey: str
@@ -458,7 +468,7 @@ async def _is_user_blocked(uid: str) -> bool:
     return str(doc.get("accountStatus") or "").strip().lower() == "blocked"
 
 
-async def _can_user_view_usage_insights(uid: str) -> bool:
+async def _user_bool_flag_enabled(uid: str, field_name: str) -> bool:
     uid_norm = (uid or "").strip()
     if not uid_norm:
         return False
@@ -466,7 +476,29 @@ async def _can_user_view_usage_insights(uid: str) -> bool:
         doc = await firebase_service.get_user_doc(uid_norm)
     except Exception:
         return False
-    return bool((doc or {}).get("canViewUsageInsights") is True)
+    return bool((doc or {}).get(field_name) is True)
+
+
+async def _can_user_view_usage_insights(uid: str) -> bool:
+    return await _user_bool_flag_enabled(uid, "canViewUsageInsights")
+
+
+async def _can_user_use_quellen_finder(uid: str) -> bool:
+    return await _user_bool_flag_enabled(uid, "canUseQuellenFinder")
+
+
+async def _can_user_use_pdf_scan(uid: str) -> bool:
+    return await _user_bool_flag_enabled(uid, "canUsePdfScan")
+
+
+async def _require_quellen_finder_enabled(uid: str) -> None:
+    if not await _can_user_use_quellen_finder(uid):
+        raise HTTPException(status_code=404, detail="Not found.")
+
+
+async def _require_pdf_scan_enabled(uid: str) -> None:
+    if not await _can_user_use_pdf_scan(uid):
+        raise HTTPException(status_code=404, detail="Not found.")
 
 
 @app.get("/api/me")
@@ -498,6 +530,8 @@ async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any
         status = "active" if full_access else "pending"
 
     can_view_usage_insights = bool((user_doc or {}).get("canViewUsageInsights") is True)
+    can_use_quellen_finder = bool((user_doc or {}).get("canUseQuellenFinder") is True)
+    can_use_pdf_scan = bool((user_doc or {}).get("canUsePdfScan") is True)
 
     return {
         "uid": uid,
@@ -507,6 +541,8 @@ async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any
         "fullAccess": full_access,
         "legacyApproved": legacy_approved,
         "canViewUsageInsights": can_view_usage_insights,
+        "canUseQuellenFinder": can_use_quellen_finder,
+        "canUsePdfScan": can_use_pdf_scan,
     }
 
 
@@ -1275,6 +1311,8 @@ async def admin_list_users(
 
             can_duplicate_system_prompts = False
             can_view_usage_insights = False
+            can_use_quellen_finder = False
+            can_use_pdf_scan = False
             blocked = False
             account_status = None
             billing_balance = None
@@ -1287,6 +1325,12 @@ async def admin_list_users(
                 can_view_usage_insights = bool(
                     (user_doc or {}).get("canViewUsageInsights") is True
                 )
+                can_use_quellen_finder = bool(
+                    (user_doc or {}).get("canUseQuellenFinder") is True
+                )
+                can_use_pdf_scan = bool(
+                    (user_doc or {}).get("canUsePdfScan") is True
+                )
                 account_status = (
                     str((user_doc or {}).get("accountStatus") or "").strip().lower()
                     or None
@@ -1295,6 +1339,8 @@ async def admin_list_users(
             except Exception:
                 can_duplicate_system_prompts = False
                 can_view_usage_insights = False
+                can_use_quellen_finder = False
+                can_use_pdf_scan = False
                 blocked = False
                 account_status = None
 
@@ -1334,6 +1380,8 @@ async def admin_list_users(
                     "approved": has_access,
                     "canDuplicateSystemPrompts": can_duplicate_system_prompts,
                     "canViewUsageInsights": can_view_usage_insights,
+                    "canUseQuellenFinder": can_use_quellen_finder,
+                    "canUsePdfScan": can_use_pdf_scan,
                     "disabled": bool(user.disabled),
                     "billingBalance": billing_balance,
                     "billingSubscription": billing_subscription,
@@ -2534,6 +2582,64 @@ async def admin_set_usage_insights(
         ) from None
 
 
+@app.post("/api/admin/users/quellen-finder")
+async def admin_set_quellen_finder(
+    payload: AdminSetQuellenFinderRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Allow or block a user from using Quellen-Finder and reading its stored runs/results."""
+    email = (payload.email or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required.")
+
+    try:
+        result = await firebase_service.set_user_can_use_quellen_finder_by_email(
+            email=email,
+            allowed=bool(payload.canUseQuellenFinder),
+        )
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "canUseQuellenFinder": result.get("canUseQuellenFinder"),
+            "note": "Firestore/backend access changes immediately; the client may refresh its token in the background.",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(
+            status_code=500, detail="Failed to update Quellen-Finder permission."
+        ) from None
+
+
+@app.post("/api/admin/users/pdf-scan")
+async def admin_set_pdf_scan(
+    payload: AdminSetPdfScanRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Allow or block a user from using PDF-Scan and the project PDF library."""
+    email = (payload.email or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required.")
+
+    try:
+        result = await firebase_service.set_user_can_use_pdf_scan_by_email(
+            email=email,
+            allowed=bool(payload.canUsePdfScan),
+        )
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "canUsePdfScan": result.get("canUsePdfScan"),
+            "note": "Firestore/backend access changes immediately; Storage access follows the refreshed token.",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(
+            status_code=500, detail="Failed to update PDF-Scan permission."
+        ) from None
+
+
 def _validate_prompt_stage(stage: str) -> str:
     stage_norm = (stage or "").strip()
     if stage_norm not in ALLOWED_PROMPT_STAGES:
@@ -2632,6 +2738,8 @@ async def admin_get_user_detail(
 
     can_duplicate_system_prompts = False
     can_view_usage_insights = False
+    can_use_quellen_finder = False
+    can_use_pdf_scan = False
     account_status = None
     blocked = False
     activated_by_code = None
@@ -2645,6 +2753,10 @@ async def admin_get_user_detail(
         can_view_usage_insights = bool(
             (user_doc or {}).get("canViewUsageInsights") is True
         )
+        can_use_quellen_finder = bool(
+            (user_doc or {}).get("canUseQuellenFinder") is True
+        )
+        can_use_pdf_scan = bool((user_doc or {}).get("canUsePdfScan") is True)
         account_status = (
             str((user_doc or {}).get("accountStatus") or "").strip().lower() or None
         )
@@ -2657,6 +2769,8 @@ async def admin_get_user_detail(
     except Exception:
         can_duplicate_system_prompts = False
         can_view_usage_insights = False
+        can_use_quellen_finder = False
+        can_use_pdf_scan = False
         account_status = None
         blocked = False
         activated_by_code = None
@@ -2710,6 +2824,8 @@ async def admin_get_user_detail(
             "disabled": bool(user.disabled),
             "canDuplicateSystemPrompts": can_duplicate_system_prompts,
             "canViewUsageInsights": can_view_usage_insights,
+            "canUseQuellenFinder": can_use_quellen_finder,
+            "canUsePdfScan": can_use_pdf_scan,
             "spendRate": spend_rate_override,
             "effectiveSpendRate": float(effective_spend_rate),
             "activatedByCode": activated_by_code,
@@ -5066,6 +5182,8 @@ async def quellen_finder_sources_two_lane_start(
     if not kapitel_id:
         raise HTTPException(status_code=400, detail="kapitel_id is required")
 
+    await _require_quellen_finder_enabled(user_id)
+
     projekt = await firebase_service.get_project(user_id, projekt_id)
     if not projekt:
         raise HTTPException(status_code=404, detail="Projekt not found.")
@@ -5151,6 +5269,8 @@ async def quellen_finder_sources_two_lane_cancel(
     if not run_id:
         raise HTTPException(status_code=400, detail="run_id is required")
 
+    await _require_quellen_finder_enabled(user_id)
+
     fs = QuellenFinderFirestoreService()
     snap = fs.run_ref(user_id, projekt_id, run_id).get()
     if snap is None or not getattr(snap, "exists", False):
@@ -5195,6 +5315,8 @@ async def quellen_finder_pdf_scan(
         raise HTTPException(status_code=400, detail="kapitel_id is required")
     if not pdf_ids:
         raise HTTPException(status_code=400, detail="pdf_ids is required")
+
+    await _require_pdf_scan_enabled(user_id)
 
     projekt = await firebase_service.get_project(user_id, projekt_id)
     if not projekt:
@@ -5296,6 +5418,8 @@ async def quellen_finder_pdf_extract(
     if not doc_id:
         raise HTTPException(status_code=400, detail="doc_id is required")
 
+    await _require_pdf_scan_enabled(user_id)
+
     projekt = await firebase_service.get_project(user_id, projekt_id)
     if not projekt:
         raise HTTPException(status_code=404, detail="Projekt not found.")
@@ -5329,6 +5453,8 @@ async def quellen_finder_project_pdf(
         raise HTTPException(status_code=400, detail="projekt_id is required")
     if not pdf_id:
         raise HTTPException(status_code=400, detail="pdf_id is required")
+
+    await _require_pdf_scan_enabled(user_id)
 
     projekt = await firebase_service.get_project(user_id, projekt_id)
     if not projekt:
