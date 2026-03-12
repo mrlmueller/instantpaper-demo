@@ -6,6 +6,9 @@ import type {
   CandidateRow,
   ComparisonOverlap,
   DashboardPayload,
+  DiagnosticScatterPoint,
+  FinalRankSeriesPoint,
+  FinalScatterPoint,
   LabelValue,
   LeaderboardSection,
   OverviewMetric,
@@ -18,6 +21,7 @@ import type {
   RunComparison,
   RunDetail,
   RunListEntry,
+  RankSeriesRow,
   StageCostRow,
 } from "./dashboard-types";
 import {
@@ -81,27 +85,55 @@ function countsFromMetrics(metrics: Record<string, unknown>): RunListEntry["coun
   const candidateCounts = asRecord(candidates.counts);
   const phaseF = asRecord(stages.phase_f);
   const phaseFCounts = asRecord(phaseF.counts);
+  const phaseH = asRecord(stages.phase_h_coverage_tags);
+  const phaseHCounts = asRecord(phaseH.counts);
   const phaseI = asRecord(stages.phase_i_rerank);
   const rerankCounts = asRecord(phaseI.counts);
+  const phaseK = asRecord(stages.phase_k_output);
+  const phaseKCounts = asRecord(phaseK.counts);
 
   return {
     openAlex: asNumber(openAlex.records),
     semanticScholar: asNumber(semanticScholar.records),
-    candidates: asNumber(candidateCounts.deduped_candidates),
-    stage2: asNumber(phaseFCounts.stage2_shortlist),
-    finalScored: asNumber(phaseFCounts.final_scored_rows),
-    rerank: asNumber(rerankCounts.tasks_completed) || asNumber(rerankCounts.cache_hits),
+    candidates: asNumber(candidateCounts.deduped_candidates) || asNumber(phaseFCounts.candidates),
+    stage2: asNumber(phaseFCounts.stage2_shortlist) || asNumber(phaseFCounts.stage2_candidates) || asNumber(phaseFCounts.stage2_scored),
+    finalScored: asNumber(phaseFCounts.final_scored_rows) || asNumber(phaseHCounts.records_scored_final),
+    rerank:
+      asNumber(rerankCounts.tasks_completed) ||
+      asNumber(rerankCounts.pointwise_tasks_total) ||
+      asNumber(phaseKCounts.rerank_rows_loaded) ||
+      asNumber(rerankCounts.tasks_total) ||
+      asNumber(rerankCounts.cache_hits),
   };
+}
+
+function extractStageArtifactCost(stageName: string, stage: Record<string, unknown>): number {
+  const openai = asRecord(stage.openai);
+  if (Object.keys(openai).length > 0) {
+    const costEstimate = asRecord(openai.cost_estimate);
+    const legacyCost = asRecord(openai.cost);
+    return asNumber(costEstimate.total_cost_usd) || asNumber(legacyCost.total_cost_usd);
+  }
+
+  const counts = asRecord(stage.counts);
+  const countCost = asNumber(counts.cost_usd_total) || asNumber(counts.cost_usd_est_total);
+  if (countCost > 0) {
+    return countCost;
+  }
+
+  if (stageName === "phase_f") {
+    const embeddingsTotal = asRecord(stage.embeddings_total);
+    return asNumber(embeddingsTotal.cost_usd) || asNumber(embeddingsTotal.cost_usd_est);
+  }
+
+  return 0;
 }
 
 function sumStageCosts(metrics: Record<string, unknown>): number {
   const stages = asRecord(metrics.stages);
   let total = 0;
-  for (const value of Object.values(stages)) {
-    const stage = asRecord(value);
-    const openai = asRecord(stage.openai);
-    const cost = asRecord(openai.cost);
-    total += asNumber(cost.total_cost_usd);
+  for (const [stageName, value] of Object.entries(stages)) {
+    total += extractStageArtifactCost(stageName, asRecord(value));
   }
   return total;
 }
@@ -317,9 +349,12 @@ function createQueryRow(
   };
 }
 
-function decadeLabel(year: number): string {
-  const decade = Math.floor(year / 10) * 10;
-  return `${decade}s`;
+function quantileFromSorted(values: number[], ratio: number): number {
+  if (!values.length) {
+    return 0;
+  }
+  const index = Math.min(values.length - 1, Math.max(0, Math.ceil(values.length * ratio) - 1));
+  return values[index] ?? 0;
 }
 
 function queryIncludesAnchor(queryText: string, anchorTerms: string[]): boolean {
@@ -331,7 +366,7 @@ async function enrichQueryHits(
   runDir: string,
   provider: "openalex" | "semanticscholar",
   rows: QueryRow[],
-  decadeCounts: Map<string, number>,
+  yearCounts: Map<number, { openalex: number; semanticscholar: number }>,
 ): Promise<void> {
   const fileName = provider === "openalex" ? "openalex_raw.jsonl" : "semanticscholar_raw.jsonl";
   const byIndex = new Map<number, QueryRow>();
@@ -356,22 +391,38 @@ async function enrichQueryHits(
       if (row.sampleYears.length < 4) {
         row.sampleYears.push(year);
       }
-      const bucket = decadeLabel(year);
-      decadeCounts.set(bucket, (decadeCounts.get(bucket) ?? 0) + 1);
+      const bucket = yearCounts.get(year) ?? { openalex: 0, semanticscholar: 0 };
+      if (provider === "openalex") {
+        bucket.openalex += 1;
+      } else {
+        bucket.semanticscholar += 1;
+      }
+      yearCounts.set(year, bucket);
     }
   });
 }
 
-function buildProviderSummary(provider: QueryProviderData): RetrievalProviderSummary {
+function buildProviderSummary(provider: QueryProviderData, failedQueries: number, allProviderRecords: number): RetrievalProviderSummary {
   const strongest = [...provider.rows].sort((left, right) => right.hitCount - left.hitCount)[0];
-  const uniqueYears = unique(provider.rows.flatMap((row) => row.sampleYears)).length;
+  const sortedHits = provider.rows.map((row) => row.hitCount).sort((left, right) => left - right);
+  const meanHits = provider.queryCount ? provider.totalHits / provider.queryCount : 0;
+  const medianHits = provider.queryCount ? quantileFromSorted(sortedHits, 0.5) : 0;
+  const p90Hits = provider.queryCount ? quantileFromSorted(sortedHits, 0.9) : 0;
+  const maxHits = sortedHits[sortedHits.length - 1] ?? 0;
   return {
     provider: provider.provider,
     label: provider.label,
     totalHits: provider.totalHits,
     queryCount: provider.queryCount,
+    failedQueries,
+    failedRate: provider.queryCount ? failedQueries / provider.queryCount : 0,
     zeroHitQueries: provider.zeroHitCount,
-    uniqueYears,
+    zeroHitRate: provider.queryCount ? provider.zeroHitCount / provider.queryCount : 0,
+    meanHits,
+    medianHits,
+    p90Hits,
+    maxHits,
+    dominanceShare: allProviderRecords > 0 ? provider.totalHits / allProviderRecords : null,
     strongestQuery: trimText(strongest?.queryText ?? "", 88),
     strongestHits: strongest?.hitCount ?? 0,
   };
@@ -380,10 +431,11 @@ function buildProviderSummary(provider: QueryProviderData): RetrievalProviderSum
 async function buildQueryAndRetrievalData(
   runDir: string,
   anchorTerms: string[],
+  metrics: Record<string, unknown>,
 ): Promise<{
   queryProviders: QueryProviderData[];
   retrievalProviders: RetrievalProviderSummary[];
-  decadeBuckets: Array<{ decade: string; count: number }>;
+  yearBuckets: Array<{ year: number; openalex: number; semanticscholar: number }>;
   topQueries: QueryRow[];
   zeroHitQueries: QueryRow[];
 }> {
@@ -395,11 +447,11 @@ async function buildQueryAndRetrievalData(
   const s2Rows = asArray<Record<string, unknown>>(asRecord(s2Raw).s2_bulk_queries).map((row, index) =>
     createQueryRow("semanticscholar", index, row),
   );
-  const decadeCounts = new Map<string, number>();
+  const yearCounts = new Map<number, { openalex: number; semanticscholar: number }>();
 
   await Promise.all([
-    enrichQueryHits(runDir, "openalex", openAlexRows, decadeCounts),
-    enrichQueryHits(runDir, "semanticscholar", s2Rows, decadeCounts),
+    enrichQueryHits(runDir, "openalex", openAlexRows, yearCounts),
+    enrichQueryHits(runDir, "semanticscholar", s2Rows, yearCounts),
   ]);
 
   const providers: QueryProviderData[] = [
@@ -431,19 +483,30 @@ async function buildQueryAndRetrievalData(
     },
   ].filter((provider) => provider.queryCount > 0);
 
+  const retrievalMetrics = asRecord(asRecord(metrics.stages).phase_d_retrieval);
+  const openAlexRetrieval = asRecord(retrievalMetrics.openalex);
+  const s2Retrieval = asRecord(retrievalMetrics.semanticscholar);
+  const failedByProvider = {
+    openalex: asNumber(openAlexRetrieval.query_failed),
+    semanticscholar: asNumber(s2Retrieval.query_failed),
+  };
   const queryRows = providers.flatMap((provider) => provider.rows);
-  const retrievalProviders = providers.map(buildProviderSummary);
+  const allProviderRecords = providers.reduce((sum, provider) => sum + provider.totalHits, 0);
+  const retrievalProviders = providers.map((provider) => buildProviderSummary(provider, failedByProvider[provider.provider], allProviderRecords));
   const topQueries = [...queryRows].sort((left, right) => right.hitCount - left.hitCount).slice(0, 8);
   const zeroHitQueries = queryRows.filter((row) => row.hitCount === 0).slice(0, 8);
-  const decadeBuckets = [...decadeCounts.entries()]
-    .sort((left, right) => left[0].localeCompare(right[0]))
-    .map(([decade, count]) => ({ decade, count }))
-    .slice(-12);
+  const yearBuckets = [...yearCounts.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([year, counts]) => ({
+      year,
+      openalex: counts.openalex,
+      semanticscholar: counts.semanticscholar,
+    }));
 
   return {
     queryProviders: providers,
     retrievalProviders,
-    decadeBuckets,
+    yearBuckets,
     topQueries,
     zeroHitQueries,
   };
@@ -666,6 +729,175 @@ function candidateEconHits(row: MutableCandidate, econTerms: string[]): number {
   return econTerms.reduce((sum, term) => (term && text.includes(term.toLowerCase()) ? sum + 1 : sum), 0);
 }
 
+function laneScoreFor(record: MutableCandidate | null | undefined, lane: "match" | "authority"): number | null {
+  if (!record) {
+    return null;
+  }
+  return lane === "match" ? record.matchLane : record.authorityLane;
+}
+
+function rerankScoreFor(record: MutableCandidate | null | undefined, lane: "match" | "authority"): number | null {
+  if (!record) {
+    return null;
+  }
+  return lane === "match" ? record.rerankMatch : record.rerankAuthority;
+}
+
+function buildMatchVsAuthorityDiagnostics(candidateValues: MutableCandidate[], limit = 500): DiagnosticScatterPoint[] {
+  return [...candidateValues]
+    .filter((row) => row.matchLane !== null && row.authorityLane !== null)
+    .sort((left, right) => (right.matchLane ?? -1) - (left.matchLane ?? -1))
+    .slice(0, limit)
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      pool: row.pool,
+      x: row.matchLane ?? 0,
+      y: row.authorityLane ?? 0,
+    }));
+}
+
+function buildLaneScoreByRankDiagnostics(candidateValues: MutableCandidate[], lane: "match" | "authority", limit = 200): RankSeriesRow[] {
+  const withAbstract = [...candidateValues]
+    .filter((row) => row.pool === "with_abstract" && laneScoreFor(row, lane) !== null)
+    .sort((left, right) => (laneScoreFor(right, lane) ?? -1) - (laneScoreFor(left, lane) ?? -1))
+    .slice(0, limit);
+  const withoutAbstract = [...candidateValues]
+    .filter((row) => row.pool === "without_abstract" && laneScoreFor(row, lane) !== null)
+    .sort((left, right) => (laneScoreFor(right, lane) ?? -1) - (laneScoreFor(left, lane) ?? -1))
+    .slice(0, limit);
+  const maxLength = Math.max(withAbstract.length, withoutAbstract.length);
+
+  return Array.from({ length: maxLength }, (_, index) => ({
+    rank: index + 1,
+    withAbstract: laneScoreFor(withAbstract[index] ?? null, lane),
+    withoutAbstract: laneScoreFor(withoutAbstract[index] ?? null, lane),
+  }));
+}
+
+function buildLlmVsLaneDiagnostics(candidateValues: MutableCandidate[]): DiagnosticScatterPoint[] {
+  const points: DiagnosticScatterPoint[] = [];
+
+  candidateValues.forEach((row) => {
+    (["match", "authority"] as const).forEach((lane) => {
+      const laneScore = laneScoreFor(row, lane);
+      const rerankScore = rerankScoreFor(row, lane);
+      if (laneScore === null || rerankScore === null) {
+        return;
+      }
+      points.push({
+        id: `${row.id}:${lane}`,
+        title: row.title,
+        pool: row.pool,
+        lane,
+        x: laneScore,
+        y: rerankScore,
+      });
+    });
+  });
+
+  return points.sort((left, right) => right.x - left.x);
+}
+
+function buildComparableMatchVsAuthorityTop500(stage1Rows: Record<string, unknown>[]): FinalScatterPoint[] {
+  return [...stage1Rows]
+    .map((row) => ({
+      id: asString(row.id),
+      pool: asString(row.pool) || "unknown",
+      matchLane: asNumber(row.match_lane),
+      match: asNumber(row.match_stage1),
+      authority: asNumber(row.authority),
+    }))
+    .filter((row) => row.id && row.pool && Number.isFinite(row.matchLane))
+    .sort((left, right) => {
+      if (right.matchLane !== left.matchLane) {
+        return right.matchLane - left.matchLane;
+      }
+      return right.id.localeCompare(left.id);
+    })
+    .slice(0, 500)
+    .map((row) => ({
+      pool: row.pool,
+      match: row.match,
+      authority: row.authority,
+    }));
+}
+
+function buildComparableLlmVsLaneScore(
+  rerankRows: Record<string, unknown>[],
+  scoreById: Map<string, { matchLane: number | null; authorityLane: number | null }>,
+): FinalScatterPoint[] {
+  const points: FinalScatterPoint[] = [];
+
+  for (const row of rerankRows.slice(0, 160)) {
+    const id = asString(row.id);
+    const lane = asString(row.lane);
+    const pool = asString(row.pool) || "unknown";
+    const rerank = asRecord(row.rerank);
+    const llmScore = asNullableNumber(rerank.llm_score_0_100);
+    if (!id || !lane || llmScore === null) {
+      continue;
+    }
+    const scores = scoreById.get(id);
+    const laneScore = lane === "authority" ? scores?.authorityLane ?? null : scores?.matchLane ?? null;
+    if (laneScore === null) {
+      continue;
+    }
+    points.push({
+      lane,
+      pool,
+      lane_score: laneScore,
+      llm_score: llmScore,
+    });
+  }
+
+  return points;
+}
+
+function buildRankSeriesFromRankingMap(
+  rankingMap: Record<string, unknown>,
+  scoreById: Map<string, { matchLane: number | null; authorityLane: number | null }>,
+  lane: "match" | "authority",
+  pool: "with_abstract" | "without_abstract",
+): FinalRankSeriesPoint[] {
+  const ids = asStringArray(asRecord(asRecord(rankingMap)[lane])[pool]).slice(0, 200);
+  const out: FinalRankSeriesPoint[] = [];
+  ids.forEach((id, index) => {
+    const scores = scoreById.get(id);
+    const laneScore = lane === "authority" ? scores?.authorityLane ?? null : scores?.matchLane ?? null;
+    if (laneScore === null) {
+      return;
+    }
+    out.push({ rank: index + 1, lane_score: laneScore });
+  });
+  return out;
+}
+
+function buildComparableLaneScoreByRankTop200(
+  rankingsStageG: Record<string, unknown>,
+  rankingsStageI: Record<string, unknown>,
+  scoreById: Map<string, { matchLane: number | null; authorityLane: number | null }>,
+): RunDetail["final"]["diagnostics"]["laneScoreByRankTop200"] {
+  const stageIRankings = asRecord(rankingsStageI.rankings);
+  const stageGRankings = asRecord(rankingsStageG.rankings);
+  const useStageI =
+    Object.keys(asRecord(stageIRankings.match)).length > 0 || Object.keys(asRecord(stageIRankings.authority)).length > 0;
+  const rankingSource = useStageI ? stageIRankings : stageGRankings;
+  const source: RunDetail["final"]["diagnostics"]["laneScoreByRankTop200"]["source"] = useStageI
+    ? "stage_i"
+    : Object.keys(rankingSource).length
+      ? "stage_g"
+      : "none";
+
+  return {
+    source,
+    matchWith: buildRankSeriesFromRankingMap(rankingSource, scoreById, "match", "with_abstract"),
+    matchWithout: buildRankSeriesFromRankingMap(rankingSource, scoreById, "match", "without_abstract"),
+    authorityWith: buildRankSeriesFromRankingMap(rankingSource, scoreById, "authority", "with_abstract"),
+    authorityWithout: buildRankSeriesFromRankingMap(rankingSource, scoreById, "authority", "without_abstract"),
+  };
+}
+
 async function buildCandidateData(
   runDir: string,
   options: {
@@ -679,6 +911,7 @@ async function buildCandidateData(
   poolSummary: Array<{ label: string; count: number; detail: string }>;
   providerMix: LabelValue[];
   idCoverage: LabelValue[];
+  diagnostics: RunDetail["candidates"]["diagnostics"];
   topCited: CandidateRow[];
   mergedCandidates: CandidateRow[];
   noAnchorTopCited: CandidateRow[];
@@ -887,6 +1120,25 @@ async function buildCandidateData(
 
   const candidateValues = [...candidateMap.values()];
   const candidateRows = candidateValues.map(candidateRowFromMutable);
+  const candidateDiagnostics: RunDetail["candidates"]["diagnostics"] = {
+    matchVsAuthority: buildMatchVsAuthorityDiagnostics(candidateValues),
+    matchLaneByRank: buildLaneScoreByRankDiagnostics(candidateValues, "match"),
+    authorityLaneByRank: buildLaneScoreByRankDiagnostics(candidateValues, "authority"),
+  };
+  const scoreById = new Map(
+    candidateValues.map((row) => [
+      row.id,
+      {
+        matchLane: row.matchLane,
+        authorityLane: row.authorityLane,
+      },
+    ]),
+  );
+  const finalDiagnostics: RunDetail["final"]["diagnostics"] = {
+    llmScoreVsLaneScore: buildComparableLlmVsLaneScore(rerankRows, scoreById),
+    matchVsAuthorityTop500: buildComparableMatchVsAuthorityTop500(stage1Rows),
+    laneScoreByRankTop200: buildComparableLaneScoreByRankTop200(rankingsStageG ?? {}, rankingsStageI ?? {}, scoreById),
+  };
 
   const topCited = [...candidateRows].sort((left, right) => right.citations - left.citations).slice(0, 12);
   const weakestMetadata = [...candidateRows]
@@ -1116,6 +1368,9 @@ async function buildCandidateData(
 
   const rerank: RunDetail["rerank"] = {
     metrics: rerankMetrics,
+    diagnostics: {
+      llmVsLane: buildLlmVsLaneDiagnostics(candidateValues),
+    },
     laneRankings: Object.entries(stageIRankings).map(([sectionId, ids]) => ({
       id: `stagei:${sectionId}`,
       label: `${sectionId.replace(":", " / ")}`,
@@ -1158,6 +1413,7 @@ async function buildCandidateData(
     poolSummary,
     providerMix,
     idCoverage,
+    diagnostics: candidateDiagnostics,
     topCited,
     mergedCandidates,
     noAnchorTopCited,
@@ -1167,6 +1423,7 @@ async function buildCandidateData(
     coverage,
     rerank,
     final: {
+      diagnostics: finalDiagnostics,
       outputs: outputTopSections,
     },
     comparisonBasis,
@@ -1183,7 +1440,7 @@ function buildHeaderStats(run: RunListEntry): OverviewMetric[] {
     {
       label: "Total cost",
       value: `$${run.totalCostUsd.toFixed(3)}`,
-      detail: "summed from stage OpenAI metadata",
+      detail: "summed from stage metrics across planner, query builder, scoring, and rerank phases",
     },
     {
       label: "Duration",
@@ -1406,7 +1663,7 @@ async function buildRunDetail(run: RunListEntry): Promise<RunDetail> {
     .filter(Boolean);
 
   const [queryData, candidateData] = await Promise.all([
-    buildQueryAndRetrievalData(runDir, anchorTerms),
+    buildQueryAndRetrievalData(runDir, anchorTerms, metrics ?? {}),
     buildCandidateData(runDir, {
       requiredFacetIds,
       anchorTerms,
@@ -1454,10 +1711,13 @@ async function buildRunDetail(run: RunListEntry): Promise<RunDetail> {
         queryFamilyPreference: asString(facet.query_family_preference),
         languageStrategy: asString(facet.language_strategy),
         summary: asString(facet.text_en),
+        summaryDe: asString(facet.text_de),
         canonicalTerms: asStringArray(asRecord(facet.canonical_terms).en).slice(0, 8),
         canonicalTermsDe: asStringArray(asRecord(facet.canonical_terms).de).slice(0, 8),
         neighborTerms: asStringArray(asRecord(facet.neighbor_terms).en).slice(0, 6),
+        neighborTermsDe: asStringArray(asRecord(facet.neighbor_terms).de).slice(0, 6),
         exclusions: asStringArray(asRecord(facet.exclusion_terms).en).slice(0, 6),
+        exclusionsDe: asStringArray(asRecord(facet.exclusion_terms).de).slice(0, 6),
       })),
       blueprints: asArray<Record<string, unknown>>(queryPlanRecord.authority_blueprints).map((blueprint) => ({
         kind: asString(blueprint.authority_kind),
@@ -1476,7 +1736,7 @@ async function buildRunDetail(run: RunListEntry): Promise<RunDetail> {
     },
     retrieval: {
       providers: queryData.retrievalProviders,
-      decadeBuckets: queryData.decadeBuckets,
+      yearBuckets: queryData.yearBuckets,
       topQueries: queryData.topQueries,
       zeroHitQueries: queryData.zeroHitQueries,
     },
@@ -1485,6 +1745,7 @@ async function buildRunDetail(run: RunListEntry): Promise<RunDetail> {
       poolSummary: candidateData.poolSummary,
       providerMix: candidateData.providerMix,
       idCoverage: candidateData.idCoverage,
+      diagnostics: candidateData.diagnostics,
       topCited: candidateData.topCited,
       mergedCandidates: candidateData.mergedCandidates,
       noAnchorTopCited: candidateData.noAnchorTopCited,
@@ -1607,27 +1868,20 @@ function buildComparison(selected: RunDetail, compare: RunDetail, compareRun: Ru
   };
 }
 
+function sortRunsNewestFirst(runs: RunListEntry[]): RunListEntry[] {
+  return [...runs].sort((left, right) => safeDate(right.modifiedAt) - safeDate(left.modifiedAt));
+}
+
 function getDefaultSelectedRunId(runs: RunListEntry[]): string | null {
   if (!runs.length) {
     return null;
   }
-  return [...runs]
-    .sort((left, right) => {
-      if (right.completenessScore !== left.completenessScore) {
-        return right.completenessScore - left.completenessScore;
-      }
-      return safeDate(right.modifiedAt) - safeDate(left.modifiedAt);
-    })[0]?.id ?? null;
+  return sortRunsNewestFirst(runs)[0]?.id ?? null;
 }
 
 export async function getDashboardPayload(selectedRunId?: string | null, compareRunId?: string | null): Promise<DashboardPayload> {
   const runIds = await getRunDirectories();
-  const runs = compact(await Promise.all(runIds.map((runId) => buildRunIndexEntry(runId)))).sort((left, right) => {
-    if (right.completenessScore !== left.completenessScore) {
-      return right.completenessScore - left.completenessScore;
-    }
-    return safeDate(right.modifiedAt) - safeDate(left.modifiedAt);
-  });
+  const runs = sortRunsNewestFirst(compact(await Promise.all(runIds.map((runId) => buildRunIndexEntry(runId)))));
 
   const selectedId = runs.some((run) => run.id === selectedRunId) ? selectedRunId ?? null : getDefaultSelectedRunId(runs);
   const compareId = compareRunId && compareRunId !== selectedId && runs.some((run) => run.id === compareRunId) ? compareRunId : null;

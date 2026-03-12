@@ -1,8 +1,10 @@
 import { DashboardClient } from "./dashboard-client";
 import { getDashboardPayload } from "@/lib/dashboard-data";
 import type { DashboardTab } from "@/lib/dashboard-types";
+import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function readParam(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) {
@@ -21,6 +23,7 @@ export default async function Page({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  noStore();
   const params = await searchParams;
   const runId = readParam(params.run);
   const compareId = readParam(params.compare);

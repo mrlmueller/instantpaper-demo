@@ -7,7 +7,7 @@ import type { PhaseCard, PhaseStatus, RunListEntry, Tone } from "./dashboard-typ
 
 export const RUNS_DIR = "../runs";
 export const DASHBOARD_CACHE_DIR = ".dashboard-cache";
-export const DASHBOARD_CACHE_VERSION = 2;
+export const DASHBOARD_CACHE_VERSION = 8;
 export const TOP_LIMIT = 20;
 export const CATALOG_LIMIT = 180;
 

@@ -33,12 +33,43 @@ test("plan view", async ({ page }) => {
   await capture(page, `/?run=${richRun}&tab=plan`, "test-results/02-plan-view.png");
 });
 
+test("queries view", async ({ page }) => {
+  await capture(page, `/?run=${richRun}&tab=queries`, "test-results/02b-queries-view.png");
+});
+
 test("scoring view", async ({ page }) => {
   await capture(page, `/?run=${richRun}&tab=scoring`, "test-results/03-scoring-view.png");
 });
 
+test("coverage view", async ({ page }) => {
+  await capture(page, `/?run=${richRun}&tab=coverage`, "test-results/03a-coverage-view.png");
+});
+
 test("candidate view", async ({ page }) => {
-  await capture(page, `/?run=${richRun}&tab=candidates`, "test-results/03b-candidate-view.png");
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(message.text());
+    }
+  });
+  page.on("pageerror", (error) => {
+    pageErrors.push(String(error));
+  });
+
+  await page.goto(`/?run=${richRun}&tab=candidates`);
+  await page.waitForSelector(".hero-title");
+  await page.waitForTimeout(1200);
+  await page.locator(".candidate-accordion button[data-state='closed']").first().click();
+  await page.waitForTimeout(500);
+  expect(pageErrors, "page errors for candidate view").toEqual([]);
+  expect(consoleErrors, "console errors for candidate view").toEqual([]);
+  await page.screenshot({ fullPage: true, path: "test-results/03b-candidate-view.png" });
+});
+
+test("rerank view", async ({ page }) => {
+  await capture(page, `/?run=${richRun}&tab=rerank`, "test-results/03bb-rerank-view.png");
 });
 
 test("final view", async ({ page }) => {

@@ -95,10 +95,13 @@ export interface FacetCard {
   queryFamilyPreference: string;
   languageStrategy: string;
   summary: string;
+  summaryDe: string;
   canonicalTerms: string[];
   canonicalTermsDe: string[];
   neighborTerms: string[];
+  neighborTermsDe: string[];
   exclusions: string[];
+  exclusionsDe: string[];
 }
 
 export interface BlueprintCard {
@@ -146,8 +149,15 @@ export interface RetrievalProviderSummary {
   label: string;
   totalHits: number;
   queryCount: number;
+  failedQueries: number;
+  failedRate: number;
   zeroHitQueries: number;
-  uniqueYears: number;
+  zeroHitRate: number;
+  meanHits: number;
+  medianHits: number;
+  p90Hits: number;
+  maxHits: number;
+  dominanceShare: number | null;
   strongestQuery: string;
   strongestHits: number;
 }
@@ -247,6 +257,35 @@ export interface FacetCoverageRow {
   sampleTitle: string;
 }
 
+export interface DiagnosticScatterPoint {
+  id: string;
+  title: string;
+  pool: string;
+  lane?: string;
+  x: number;
+  y: number;
+}
+
+export interface RankSeriesRow {
+  rank: number;
+  withAbstract: number | null;
+  withoutAbstract: number | null;
+}
+
+export interface FinalScatterPoint {
+  pool: string;
+  lane?: string;
+  match?: number;
+  authority?: number;
+  lane_score?: number;
+  llm_score?: number;
+}
+
+export interface FinalRankSeriesPoint {
+  rank: number;
+  lane_score: number;
+}
+
 export interface PairwiseDecision {
   lane: string;
   pool: string;
@@ -312,7 +351,7 @@ export interface RunDetail {
   };
   retrieval: {
     providers: RetrievalProviderSummary[];
-    decadeBuckets: Array<{ decade: string; count: number }>;
+    yearBuckets: Array<{ year: number; openalex: number; semanticscholar: number }>;
     topQueries: QueryRow[];
     zeroHitQueries: QueryRow[];
   };
@@ -321,6 +360,11 @@ export interface RunDetail {
     poolSummary: Array<{ label: string; count: number; detail: string }>;
     providerMix: LabelValue[];
     idCoverage: LabelValue[];
+    diagnostics: {
+      matchVsAuthority: DiagnosticScatterPoint[];
+      matchLaneByRank: RankSeriesRow[];
+      authorityLaneByRank: RankSeriesRow[];
+    };
     topCited: CandidateRow[];
     mergedCandidates: CandidateRow[];
     noAnchorTopCited: CandidateRow[];
@@ -349,6 +393,9 @@ export interface RunDetail {
   };
   rerank: {
     metrics: OverviewMetric[];
+    diagnostics: {
+      llmVsLane: DiagnosticScatterPoint[];
+    };
     laneRankings: LeaderboardSection[];
     highSignal: CandidateRow[];
     offTopic: CandidateRow[];
@@ -357,6 +404,17 @@ export interface RunDetail {
     pairwiseDecisions: PairwiseDecision[];
   };
   final: {
+    diagnostics: {
+      llmScoreVsLaneScore: FinalScatterPoint[];
+      matchVsAuthorityTop500: FinalScatterPoint[];
+      laneScoreByRankTop200: {
+        source: "stage_i" | "stage_g" | "none";
+        matchWith: FinalRankSeriesPoint[];
+        matchWithout: FinalRankSeriesPoint[];
+        authorityWith: FinalRankSeriesPoint[];
+        authorityWithout: FinalRankSeriesPoint[];
+      };
+    };
     outputs: LeaderboardSection[];
   };
   comparisonBasis: {
