@@ -1,25 +1,36 @@
-# %%
 # -----------------------------
 # USER INPUTS (edit this cell)
 # -----------------------------
 
 
-# chapter_title = "Entscheidungspsychologie im Kontext unsicherer Kaufentscheidungen im Webshop-Kontext"
-# 
-# chapter_spec_text = """
-# Entscheidungspsychologie im Kontext unsicherer Kaufentscheidungen (Heuristiken, Biases, Dual-Process-Ansätze) und deren 
-# Rolle bei „decision confidence“ bzw. Entscheidungssicherheit; (2) Choice Architecture / Digital Nudging im digitalen Kontext, 
-# also Gestaltungsprinzipien, Wirkmechanismen, Grenzen sowie Abgrenzung zu manipulativen Mustern (Transparenz, Nutzerautonomie, 
-# ethische Leitplanken); (3) wahrgenommenes Risiko/Unsicherheit im Online-Kauf (perceived risk, uncertainty, trust) speziell bei 
-# komplexen Produkten wie Consumer Electronics sowie Faktoren, die Unsicherheit reduzieren (Informationsdarstellung, 
-# Vergleichbarkeit, Erklärbarkeit, Qualitätssignale).
-# """.strip()
-
-chapter_title = "Methodische Grundlagen zu Online-Reviews, Textanalyse und Proxy-Operationalisierung"
+chapter_title = "Entscheidungspsychologie im Kontext unsicherer Kaufentscheidungen im Webshop-Kontext"
 
 chapter_spec_text = "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
 .strip()
 
+# chapter_title = "Methodische Grundlagen zu Online-Reviews, Textanalyse und Proxy-Operationalisierung"
+# 
+# chapter_spec_text = """
+# Dieses Kapitel behandelt methodische Literatur dazu, wie Online-Reviews als Sekundärdaten in Forschung und angewandten Projekten genutzt werden können und welche methodischen Anforderungen sich 
+# daraus ergeben. Ziel ist es, die typischen Stärken und Grenzen solcher Datenquellen darzustellen, inklusive relevanter Verzerrungen, Validitätsfragen und Generalisierbarkeitsprobleme. Darüber
+#  hinaus soll das Kapitel einen Überblick über etablierte Vorgehenslogiken der Textanalyse geben, die für große Textkorpora geeignet sind, und begründen, wie man aus Rohdaten zu einer begründeten 
+#  Analysestichprobe gelangt. Ein Schwerpunkt ist die Proxy-Operationalisierung über Textsignale: Es wird erläutert, wie Proxies konzipiert, geprüft und iterativ nachgeschärft werden, 
+#  welche Fehlerquellen dabei auftreten können und wie Plausibilisierungsschritte gestaltet werden, damit die Ergebnisse nachvollziehbar bleiben. Nicht Bestandteil dieses Kapitels sind 
+#  die konkreten Kennzahlen und Filterentscheidungen des Projekts, die konkrete Keyword-Liste oder die projektspezifische Analysepipeline, da diese im Methodikkapitel des Projektberichts
+#    und im Anwendungsteil umgesetzt und dokumentiert werden.....
+# """.strip()
+
+
+# chapter_title = "Forschungsstand: Ökonomische Erklärungsansätze zum Zerfalls- bzw. Transformationsprozess des (west-)römischen Reiches"
+# 
+# chapter_spec_text = """
+# Dieses Kapitel arbeitet die Forschungsliteratur zum (west-)römischen Reich in 
+# der Spätantike systematisch danach auf, welche Rolle wirtschaftlichen Faktoren für den Zerfalls- bzw. Transformationsprozess zugeschrieben wird. Es ordnet unterschiedliche 
+# Erklärungsansätze danach, welche wirtschaftlichen Mechanismen, Strukturveränderungen oder Rahmenbedingungen als zentral gelten und wie diese Ansätze politische, soziale und
+#  militärische Entwicklungen in ihre Erklärung einbeziehen. Die Darstellung legt die jeweilige Argumentationslogik so offen, dass Unterschiede zwischen konkurrierenden Deutungen
+# klar erkennbar werden. Abschließend werden explizite Vergleichs- und Prüfkriterien formuliert, mit denen die Tragfähigkeit der Ansätze anhand von Quellen- und Materialaussagen
+# zur spätantiken Wirtschaft des (west-)römischen Reiches bewertet werden kann.
+# """.strip()
 
 
 
@@ -195,7 +206,7 @@ except Exception as e:
     print(f"[WARN] quick sanity failed: {e}")
 
 
-# %%
+
 # Phase A.0 — Imports + env loading
 
 import os
@@ -493,6 +504,8 @@ def find_notebook_path(repo_root: Path, notebook_filename: str) -> Optional[Path
 
 
 REPO_ROOT = find_repo_root(Path.cwd())
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 NOTEBOOK_FILENAME = "sources_two_lane.ipynb"
 
 NOTEBOOK_PATH = find_notebook_path(REPO_ROOT, NOTEBOOK_FILENAME)
@@ -591,7 +604,7 @@ print_qc(qc)
 print_section("Phase A.0 — Env vars (presence only)")
 print_table(env_rows, columns=["env_var", "status"], max_rows=50, max_col_width=40)
 
-# %%
+
 # Phase A.1 — Config + run artifacts + structured logging helpers
 
 from typing import Any, Dict, Optional
@@ -896,7 +909,8 @@ def stage_timer(run_ctx: RunContext, stage: str):
     metrics.setdefault("stages", {}).setdefault(stage, {})["last_duration_s"] = round(dt, 3)
     save_metrics(run_ctx, metrics)
 
-# %%
+
+
 # Phase A.2 — Create run directory + artifact skeleton (no provider calls)
 
 # Build config from env (runs are stored next to the notebook)
@@ -1043,6 +1057,7 @@ section_at_a_glance(
         'prune_n1(with_abs/no_abs)': f"{cfg.prune_n1}/{cfg.prune_n1_without_abstract}",
         'scoring_t(abs/noabs)': f"{cfg.scoring_t:.2f}/{cfg.scoring_t_noabs:.2f}",
         'embedding_model': cfg.embedding_model,
+        'openai_request_debug_dir': OPENAI_REQUEST_DEBUG_DIR,
     },
     qc,
     {
@@ -1202,7 +1217,7 @@ if plt is not None:
     except Exception:
         pass
 
-# %%
+
 # Phase B.1 — Data models (strict) for the Query Planner output
 
 from typing import List
@@ -1305,6 +1320,8 @@ class ChapterInput(BaseModel):
         return compute_run_id(self.chapter_title, self.chapter_spec_text, self.pipeline_version)
 
 # %%
+
+
 # Phase B.2 — OpenAI helpers: strict JSON schema outputs + token/cost tracking
 
 import json
@@ -1314,6 +1331,14 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from openai import OpenAI
+
+from notebook_openai_request_debugger import (
+    OpenAIRequestMarkdownLogger,
+    build_embeddings_request_payload,
+    build_responses_request_payload,
+)
+
+OPENAI_REQUEST_DUMPER = OpenAIRequestMarkdownLogger(OPENAI_REQUEST_DEBUG_DIR)
 
 
 # Model prices (USD per *1M tokens*) — verify periodically.
@@ -1499,6 +1524,16 @@ def _parse_max_output_tokens_limit(msg: str) -> Optional[int]:
     return None
 
 
+def _with_redacted_lint_feedback(base_prompt: str, *, include_feedback: bool) -> str:
+    if not include_feedback:
+        return base_prompt
+    return (
+        base_prompt
+        + "\n\nLINT_FEEDBACK:\n- Previous attempt failed deterministic validation. Fix and regenerate.\n"
+        + "- Error: <REDACTED_PREVIOUS_VALIDATION_ERROR>\n"
+    )
+
+
 def openai_json_schema_call(
     *,
     api_key: str,
@@ -1512,6 +1547,13 @@ def openai_json_schema_call(
     timeout_s: float = 120.0,
     debug_dir: Optional[Path] = None,
     debug_prefix: str = "openai",
+    stage: str = "openai",
+    run_id: Optional[str] = None,
+    instruction_only_system_prompt: Optional[str] = None,
+    instruction_only_user_prompt: Optional[str] = None,
+    instruction_only_schema: Optional[Dict[str, Any]] = None,
+    log_with_data: bool = True,
+    call_id: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Minimal helper: build prompt, send request, parse strict JSON, return usage + cost.
 
@@ -1528,6 +1570,56 @@ def openai_json_schema_call(
 
     http_timeout_create_s = float(min(max(30.0, overall_timeout_s), 600.0))
     http_timeout_poll_s = float(min(60.0, http_timeout_create_s))
+
+    request_payload = build_responses_request_payload(
+        model=model,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        schema_name=schema_name,
+        schema=schema,
+        reasoning_effort=reasoning_effort,
+        max_output_tokens=max_output_tokens,
+        background=True,
+    )
+    instruction_payload = build_responses_request_payload(
+        model=model,
+        system_prompt=(instruction_only_system_prompt if instruction_only_system_prompt is not None else system_prompt),
+        user_prompt=(instruction_only_user_prompt if instruction_only_user_prompt is not None else user_prompt),
+        schema_name=schema_name,
+        schema=(instruction_only_schema if instruction_only_schema is not None else schema),
+        reasoning_effort=reasoning_effort,
+        max_output_tokens=max_output_tokens,
+        background=True,
+    )
+
+    try:
+        OPENAI_REQUEST_DUMPER.dump_request(
+            stage=stage,
+            api_method='responses.create',
+            request_payload=request_payload,
+            instruction_only_payload=instruction_payload,
+            run_id=run_id,
+            call_id=(call_id or debug_prefix),
+            extra_meta={
+                'model_requested': model,
+                'schema_name': schema_name,
+                'reasoning_effort': reasoning_effort,
+                'max_output_tokens': int(max_output_tokens),
+                'timeout_s': float(overall_timeout_s),
+                'client_request_options': {'timeout': http_timeout_create_s},
+            },
+            with_data_sections=[
+                ('System Prompt', system_prompt),
+                ('User Prompt', user_prompt),
+            ],
+            instruction_only_sections=[
+                ('System Prompt', instruction_payload['input'][0]['content'][0]['text']),
+                ('User Prompt', instruction_payload['input'][1]['content'][0]['text']),
+            ],
+            log_with_data=log_with_data,
+        )
+    except Exception:
+        pass
 
     def _dump(*, response=None, raw_text=None, refusal=None, exc=None, call_meta=None):
         if debug_dir is None:
@@ -1551,25 +1643,7 @@ def openai_json_schema_call(
 
     t0 = time.time()
     try:
-        response = client.responses.create(
-            model=model,
-            input=[
-                {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
-                {"role": "user", "content": [{"type": "input_text", "text": user_prompt}]},
-            ],
-            reasoning={"effort": reasoning_effort},
-            max_output_tokens=max_output_tokens,
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": schema_name,
-                    "schema": schema,
-                    "strict": True,
-                }
-            },
-            background=True,
-            timeout=http_timeout_create_s,
-        )
+        response = client.responses.create(**request_payload, timeout=http_timeout_create_s)
 
         response_id = getattr(response, "id", None)
         terminal_statuses = {"completed", "incomplete", "failed", "cancelled", "canceled"}
@@ -1652,11 +1726,10 @@ def openai_json_schema_call(
         _dump(exc=e)
         raise
 
-
     raise RuntimeError("openai_json_schema_call: exhausted attempts without returning")
 
 
-# %%
+
 # Phase B.3 — LLM Query Planner (facet extraction; atomic bilingual facets)
 
 import traceback
@@ -2672,6 +2745,8 @@ def plan_queries_llm(
 
 
 # %%
+
+
 # Phase B.4 — Run the planner + inspect facets
 
 try:
@@ -3372,6 +3447,8 @@ if plt is not None and facet_rows_sorted:
         pass
 
 # %%
+
+
 # Phase C — LLM: Provider-specific query generators (≤50/provider)
 
 import json
@@ -4510,6 +4587,8 @@ def build_s2_bulk_queries_llm(
     return queries, meta
 
 # %%
+
+
 # Phase C.4 — Run query builders + inspect outputs
 
 openalex_queries, openalex_meta = build_openalex_queries_llm(
@@ -4857,7 +4936,7 @@ if plt is not None:
     except Exception:
         pass
 
-# %%
+
 # Phase D — Retrieval orchestrator (initial retrieval)
 #
 # Implements:
@@ -5774,9 +5853,6 @@ print_table(
             'records': _fmt_int(m_oa['records']),
             'zero_q': m_oa['zero_q'],
             'zero_rate': f"{m_oa['zero_rate']*100:.1f}%",
-            'de_q': m_oa['de_queries'],
-            'de_zero_q': m_oa['de_zero_q'],
-            'de_zero_rate': f"{m_oa['de_zero_rate']*100:.1f}%",
             'mean': f"{m_oa['mean']:.1f}",
             'median': f"{m_oa['median']:.1f}",
             'p90': f"{m_oa['p90']:.1f}",
@@ -5791,9 +5867,6 @@ print_table(
             'records': _fmt_int(m_s2['records']),
             'zero_q': m_s2['zero_q'],
             'zero_rate': f"{m_s2['zero_rate']*100:.1f}%",
-            'de_q': m_s2['de_queries'],
-            'de_zero_q': m_s2['de_zero_q'],
-            'de_zero_rate': f"{m_s2['de_zero_rate']*100:.1f}%",
             'mean': f"{m_s2['mean']:.1f}",
             'median': f"{m_s2['median']:.1f}",
             'p90': f"{m_s2['p90']:.1f}",
@@ -5801,7 +5874,7 @@ print_table(
             'dominance': f"{m_s2['dominance']*100:.1f}%",
         },
     ],
-    columns=['provider','queries','failed','failed_rate','records','zero_q','zero_rate','de_q','de_zero_q','de_zero_rate','mean','median','p90','max','dominance'],
+    columns=['provider','queries','failed','failed_rate','records','zero_q','zero_rate','mean','median','p90','max','dominance'],
     max_rows=10,
     max_col_width=40,
 )
@@ -6209,11 +6282,10 @@ def preview_s2_query(query_i: int, n: int = 5) -> List[Dict[str, Any]]:
     print_table(rows, columns=['rank', 'cites', 'infl', 'year', 'title', 'url'], max_rows=int(n), max_col_width=160)
     return rows
 
-# %%
+
 # preview_openalex_query(1, n=10)
 # preview_s2_query(1, n=10)
 
-# %%
 # Phase E — Normalize, deduplicate, and pool split
 #
 # Implements:
@@ -7501,6 +7573,7 @@ assert 'openalex' in (merged.get('provider_ids') or {})
 assert 'semanticscholar' in (merged.get('provider_ids') or {})
 assert _merge_int_max(part_a['citations'], part_b['citations']) == 12
 
+
 # %%
 # Phase F — Embeddings and staged scoring (with partial-match protection)
 #
@@ -8278,6 +8351,123 @@ facets = list(plan.facets)
 facet_ids = [f.facet_id for f in facets]
 facet_weights = [int(f.importance_weight) for f in facets]
 
+
+def _phase_f_temp_precap_terms(plan: QueryPlan, facets: List[Facet]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+
+    def _add_many(items: List[Any]) -> None:
+        for item in list(items or []):
+            s = _phase_f_clean_text(item)
+            s_low = s.casefold()
+            if len(s_low) < 4 or s_low in seen:
+                continue
+            seen.add(s_low)
+            out.append(s)
+
+    try:
+        _add_many(list(getattr(plan.primary_context_anchors, 'en', []) or []))
+        _add_many(list(getattr(plan.primary_context_anchors, 'de', []) or []))
+    except Exception:
+        pass
+    try:
+        _add_many(list(getattr(plan.core_object_terms, 'en', []) or []))
+        _add_many(list(getattr(plan.core_object_terms, 'de', []) or []))
+    except Exception:
+        pass
+
+    for f in list(facets or []):
+        try:
+            if int(getattr(f, 'importance_weight', 0) or 0) < 4:
+                continue
+            _add_many(list(getattr(getattr(f, 'canonical_terms', None), 'en', []) or [])[:6])
+            _add_many(list(getattr(getattr(f, 'canonical_terms', None), 'de', []) or [])[:6])
+        except Exception:
+            continue
+
+    return out[:80]
+
+
+_phase_f_temp_precap_terms_all = _phase_f_temp_precap_terms(plan, facets)
+
+
+def _phase_f_temp_precap_priority(c: Dict[str, Any]) -> Tuple[int, int, int, int, int, int]:
+    title = _phase_f_clean_text(c.get('title') or '')
+    venue = _phase_f_clean_text(c.get('venue') or '')
+    pool = str(c.get('pool') or '').strip()
+    text = f'{title} {venue}'.strip()
+    anchor_hit = 1 if (_phase_f_temp_precap_terms_all and any_term_in_text(text, _phase_f_temp_precap_terms_all)) else 0
+    doi_present = 1 if str(c.get('doi') or '').strip() else 0
+    provider_count = 0
+    for _k, vs in (c.get('provider_ids') or {}).items():
+        if list(vs or []):
+            provider_count += 1
+    try:
+        citations = max(0, int(c.get('citations') or 0))
+    except Exception:
+        citations = 0
+    try:
+        year = int(c.get('year') or 0)
+    except Exception:
+        year = 0
+    abstract_len = len(_phase_f_clean_text(c.get('abstract') or '')) if pool == 'with_abstract' else 0
+    return (anchor_hit, citations, provider_count, doi_present, abstract_len, year)
+
+
+def _phase_f_apply_temp_precap(cands: List[Dict[str, Any]], *, total_cap: int, noabs_share: float) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    total_cap = int(total_cap or 0)
+    if total_cap <= 0:
+        return list(cands or []), {
+            'enabled': False,
+            'cap_total': 0,
+            'noabs_share': float(noabs_share),
+            'before_total': len(cands or []),
+            'after_total': len(cands or []),
+            'dropped_total': 0,
+            'before': {'with_abstract': 0, 'without_abstract': 0},
+            'after': {'with_abstract': 0, 'without_abstract': 0},
+        }
+
+    with_abs = [c for c in list(cands or []) if str(c.get('pool') or '') == 'with_abstract']
+    no_abs = [c for c in list(cands or []) if str(c.get('pool') or '') != 'with_abstract']
+    before = {'with_abstract': len(with_abs), 'without_abstract': len(no_abs)}
+    before_total = len(with_abs) + len(no_abs)
+    if before_total <= total_cap:
+        return list(cands or []), {
+            'enabled': True,
+            'cap_total': int(total_cap),
+            'noabs_share': float(noabs_share),
+            'before_total': int(before_total),
+            'after_total': int(before_total),
+            'dropped_total': 0,
+            'before': before,
+            'after': before,
+        }
+
+    noabs_keep = min(len(no_abs), max(0, int(math.floor(float(total_cap) * max(0.01, min(0.95, float(noabs_share)))))))
+    withabs_keep = min(len(with_abs), max(0, int(total_cap) - int(noabs_keep)))
+
+    with_abs_sorted = sorted(with_abs, key=_phase_f_temp_precap_priority, reverse=True)
+    no_abs_sorted = sorted(no_abs, key=_phase_f_temp_precap_priority, reverse=True)
+    kept_ids = {str(c.get('id') or '') for c in with_abs_sorted[:withabs_keep]}
+    kept_ids.update(str(c.get('id') or '') for c in no_abs_sorted[:noabs_keep])
+    kept = [c for c in list(cands or []) if str(c.get('id') or '') in kept_ids]
+    after = {
+        'with_abstract': sum(1 for c in kept if str(c.get('pool') or '') == 'with_abstract'),
+        'without_abstract': sum(1 for c in kept if str(c.get('pool') or '') != 'with_abstract'),
+    }
+    after_total = len(kept)
+    return kept, {
+        'enabled': True,
+        'cap_total': int(total_cap),
+        'noabs_share': float(noabs_share),
+        'before_total': int(before_total),
+        'after_total': int(after_total),
+        'dropped_total': int(max(0, before_total - after_total)),
+        'before': before,
+        'after': after,
+    }
+
 candidates = list(_iter_jsonl_dicts(run_ctx.artifacts.candidates_normalized_jsonl))
 if not candidates:
     raise RuntimeError('No candidates found. Run Phase E first.')
@@ -8292,6 +8482,17 @@ for raw in raw_candidates:
         abstract_cleaned_count += 1
 candidates = [_phase_f_sanitize_candidate_dict(c) for c in candidates]
 
+temp_precap_total = int(getattr(cfg, 'embedding_temp_precap_total', 100000) or 100000)
+temp_precap_noabs_share = float(getattr(cfg, 'embedding_temp_precap_noabs_share', 0.15) or 0.15)
+candidates_before_temp_precap = len(candidates)
+candidates, temp_precap_stats = _phase_f_apply_temp_precap(
+    candidates,
+    total_cap=temp_precap_total,
+    noabs_share=temp_precap_noabs_share,
+)
+temp_precap_report_path = run_ctx.run_dir / 'phase_f_temp_preembed_cap_report.json'
+write_json(temp_precap_report_path, temp_precap_stats)
+
 print_section('Phase F — Embeddings + staged scoring')
 print_kv(
     {
@@ -8303,10 +8504,11 @@ print_kv(
         'stage2_shortlist': cfg.embedding_shortlist_stage2,
         'mmr(lambda/topk)': f"{cfg.embedding_mmr_lambda:.2f}/{int(cfg.embedding_mmr_top_k)}",
         'noabs_share_max': f"{100.0 * float(cfg.embedding_max_no_abstract_share):.0f}%",
+        'temp_precap(total/noabs)': f"{_fmt_int(temp_precap_total)}/{100.0 * float(temp_precap_noabs_share):.0f}%",
         't': cfg.scoring_t,
         't_noabs': cfg.scoring_t_noabs,
         'facets': len(facets),
-        'candidates': len(candidates),
+        'candidates(before/after)': f"{_fmt_int(candidates_before_temp_precap)}/{_fmt_int(len(candidates))}",
     },
     key_width=18,
 )
@@ -8785,6 +8987,7 @@ recs_limit = int(cfg.s2_recs_limit_per_seed or 0)
 recs_stats = {'enabled': False}
 candidates_expanded_path: Optional[Path] = None
 expanded_candidates = candidates
+temp_precap_stats_after_recs: Optional[Dict[str, Any]] = None
 
 if seed_count > 0 and recs_limit > 0:
     recs_stats['enabled'] = True
@@ -8908,6 +9111,13 @@ if seed_count > 0 and recs_limit > 0:
                 merged += 1
 
         expanded_candidates = [_phase_f_sanitize_candidate_dict(c) for c in merged_by_id.values()]
+        expanded_candidates, temp_precap_stats_after_recs = _phase_f_apply_temp_precap(
+            expanded_candidates,
+            total_cap=temp_precap_total,
+            noabs_share=temp_precap_noabs_share,
+        )
+        temp_precap_stats['after_recommendations'] = temp_precap_stats_after_recs
+        write_json(temp_precap_report_path, temp_precap_stats)
 
         # Persist expanded pool (for traceability; does not overwrite Phase E outputs)
         candidates_expanded_path = run_ctx.run_dir / 'candidates_expanded.jsonl'
@@ -9032,6 +9242,12 @@ if seed_count > 0 and recs_limit > 0:
 
         # Recompute authority percentile ranks over expanded pool
         candidates = expanded_candidates
+        kept_ids_expanded = {str(c.get('id') or '') for c in candidates}
+        stage1_records = [r for r in stage1_records if str(r.get('id') or '') in kept_ids_expanded]
+        stage1_text_by_id = {k: v for k, v in stage1_text_by_id.items() if k in kept_ids_expanded}
+        stage1_kind_by_id = {k: v for k, v in stage1_kind_by_id.items() if k in kept_ids_expanded}
+        candidate_vec_by_id = {k: v for k, v in candidate_vec_by_id.items() if k in kept_ids_expanded}
+        candidate_invnorm_by_id = {k: v for k, v in candidate_invnorm_by_id.items() if k in kept_ids_expanded}
         authority_by_id = compute_authority_scores(candidates)
         for r in stage1_records:
             cid = str(r.get('id') or '')
@@ -9111,12 +9327,23 @@ kept_intent_mix = {
     'match': {'with_abstract': {'match_only': 0, 'authority_only': 0, 'both': 0, 'none': 0}, 'without_abstract': {'match_only': 0, 'authority_only': 0, 'both': 0, 'none': 0}},
     'authority': {'with_abstract': {'match_only': 0, 'authority_only': 0, 'both': 0, 'none': 0}, 'without_abstract': {'match_only': 0, 'authority_only': 0, 'both': 0, 'none': 0}},
 }
+temp_precap_effective_stats = temp_precap_stats_after_recs or temp_precap_stats
 hygiene_stats = {
     'title_cleaned': int(title_cleaned_count),
     'abstract_cleaned': int(abstract_cleaned_count),
     'junk_candidates_total': sum(1 for c in candidates if _phase_f_is_junk_title(c.get('title'))),
     'junk_title_dropped': 0,
     'duplicate_title_suppressed': 0,
+    'temp_precap_enabled': bool(temp_precap_effective_stats.get('enabled')),
+    'temp_precap_total': int(temp_precap_effective_stats.get('cap_total') or 0),
+    'temp_precap_noabs_share': float(temp_precap_effective_stats.get('noabs_share') or 0.0),
+    'temp_precap_before_total': int(temp_precap_effective_stats.get('before_total') or 0),
+    'temp_precap_after_total': int(temp_precap_effective_stats.get('after_total') or 0),
+    'temp_precap_dropped_total': int(temp_precap_effective_stats.get('dropped_total') or 0),
+    'temp_precap_before_with_abs': int(((temp_precap_effective_stats.get('before') or {}).get('with_abstract')) or 0),
+    'temp_precap_before_no_abs': int(((temp_precap_effective_stats.get('before') or {}).get('without_abstract')) or 0),
+    'temp_precap_after_with_abs': int(((temp_precap_effective_stats.get('after') or {}).get('with_abstract')) or 0),
+    'temp_precap_after_no_abs': int(((temp_precap_effective_stats.get('after') or {}).get('without_abstract')) or 0),
     'noabs_rows_gated_out': 0,
     'noabs_keep_requested': int(N1_NO_ABS_REQUESTED),
     'noabs_keep_effective': int(N1_NO_ABS),
@@ -9388,6 +9615,16 @@ write_json(
         'junk_candidates_total': int(hygiene_stats.get('junk_candidates_total') or 0),
         'junk_title_dropped': int(hygiene_stats.get('junk_title_dropped') or 0),
         'duplicate_title_suppressed': int(hygiene_stats.get('duplicate_title_suppressed') or 0),
+        'temp_precap_enabled': bool(hygiene_stats.get('temp_precap_enabled')),
+        'temp_precap_total': int(hygiene_stats.get('temp_precap_total') or 0),
+        'temp_precap_noabs_share': float(hygiene_stats.get('temp_precap_noabs_share') or 0.0),
+        'temp_precap_before_total': int(hygiene_stats.get('temp_precap_before_total') or 0),
+        'temp_precap_after_total': int(hygiene_stats.get('temp_precap_after_total') or 0),
+        'temp_precap_dropped_total': int(hygiene_stats.get('temp_precap_dropped_total') or 0),
+        'temp_precap_before_with_abs': int(hygiene_stats.get('temp_precap_before_with_abs') or 0),
+        'temp_precap_before_no_abs': int(hygiene_stats.get('temp_precap_before_no_abs') or 0),
+        'temp_precap_after_with_abs': int(hygiene_stats.get('temp_precap_after_with_abs') or 0),
+        'temp_precap_after_no_abs': int(hygiene_stats.get('temp_precap_after_no_abs') or 0),
         'noabs_rows_gated_out': int(hygiene_stats.get('noabs_rows_gated_out') or 0),
         'noabs_keep_requested': int(hygiene_stats.get('noabs_keep_requested') or 0),
         'noabs_keep_effective': int(hygiene_stats.get('noabs_keep_effective') or 0),
@@ -9512,6 +9749,7 @@ print_kv(
         'chapter_target_chars': _fmt_int(len(chapter_target_text)),
         'facets': _fmt_int(len(facets)),
         'candidates': _fmt_int(len(candidates)),
+        'temp_precap_dropped': _fmt_int(int(hygiene_stats.get('temp_precap_dropped_total') or 0)),
         'stage2_candidates': _fmt_int(len(stage2_ids)),
         'stage2_scored': _fmt_int(len(stage2_records)),
         'prompt_tokens': _fmt_int(total_tokens),
@@ -9785,6 +10023,7 @@ print_kv(
         'chapter_target_embed_text.txt': chapter_target_path,
         'facets_index.json': facet_index_path,
         'phase_f_candidate_hygiene_report.json': phase_f_hygiene_report_path,
+        'phase_f_temp_preembed_cap_report.json': temp_precap_report_path,
         'phase_f_mmr_debug.json': phase_f_mmr_debug_path,
         'phase_f_scoring_debug.jsonl': phase_f_scoring_debug_path,
         'scores_stage1.jsonl': scores_stage1_path,
@@ -9911,13 +10150,14 @@ metrics['stages']['phase_f']['counts'] = {
     'artifacts': {
         'chapter_target_embed_text': str(chapter_target_path),
         'phase_f_candidate_hygiene_report': str(phase_f_hygiene_report_path),
+        'phase_f_temp_preembed_cap_report': str(temp_precap_report_path),
         'phase_f_mmr_debug': str(phase_f_mmr_debug_path),
         'phase_f_scoring_debug': str(phase_f_scoring_debug_path),
     },
 }
 save_metrics(run_ctx, metrics)
 
-# %%
+
 # Phase G — Exact scoring formulas and lane fusion
 #
 # Implements Phase G from TWO_LANE_PIPELINE_IMPLEMENTATION_PLAN_FROM_REPORT.md:
@@ -10844,7 +11084,8 @@ metrics['stages']['phase_g']['counts'] = {
 }
 save_metrics(run_ctx, metrics)
 
-# %%
+
+
 # Phase H — Coverage tags (evidence-based)
 #
 # Computes per-paper `coverage_tags[]` grounded in embedding evidence:
@@ -11236,6 +11477,7 @@ metrics.setdefault('stages', {}).setdefault(stage, {})['counts'] = {
     'coverage_tags_jsonl': str(coverage_tags_path),
 }
 save_metrics(run_ctx, metrics)
+
 
 # %%
 # Phase I — LLM reranking (explained pointwise + pairwise top-slice)
@@ -12446,6 +12688,7 @@ with stage_timer(run_ctx, stage):
         key_width=26,
     )
 
+
 # %%
 # Phase K — Final lane construction and output formatting
 #
@@ -12986,7 +13229,7 @@ metrics.setdefault('stages', {}).setdefault(stage, {})['counts'] = {
 }
 save_metrics(run_ctx, metrics)
 
-# %%
+
 # Final report — Top results + pipeline cost summary
 
 import html
@@ -13826,10 +14069,10 @@ print_kv(
         'pool': 'with_abstract = Stage2 chunk evidence; without_abstract = metadata-only (Stage1)',
         'lane_score (match)': 'match_lane = 0.80*match + 0.20*authority (0..1)',
         'lane_score (authority)': 'authority_lane = 0.80*authority + 0.20*match (0..1)',
-        'match': f'semantic chapter-target score; with_abstract blends {cfg.embedding_stage1_weight:.2f}*Stage1 + {cfg.embedding_stage2_weight:.2f}*best_chunk',
-        'best': 'auxiliary facet diagnostic: max weighted facet similarity',
-        'top_m': f'auxiliary facet diagnostic: mean of the top-{top_m} weighted facet scores',
-        'cov': f'auxiliary facet coverage term (thresholds {t_abs:.2f} / {t_noabs:.2f})',
+        'match': f'match = {w_best:.2f}*best + {w_topm:.2f}*top_m + {w_cov:.2f}*cov (0..1)',
+        'best': 'max facet similarity score (per-facet; Stage2 uses chunks; Stage1 uses metadata)',
+        'top_m': f'mean of the top-{top_m} facet scores (stabilizes against one lucky chunk)',
+        'cov': f'facet coverage term (roughly: share of facets above threshold; t={t_abs:.2f} / {t_noabs:.2f})',
         'authority': 'citations-per-year percentile among candidates (0..1; zeros map to 0)',
         'llm': 'LLM rerank score 0..100 using coverage_tags excerpts (pointwise; top-K only)',
         'insuff': 'LLM flags insufficient evidence; sorting prefers insuff=false first',
@@ -14539,5 +14782,4 @@ if required_fids:
         except Exception as e:
             print(f"<required facet plot skipped: {e}>")
 
-# %%
 
