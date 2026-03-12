@@ -737,7 +737,13 @@ async def run_two_lane_sources_pipeline(
 
         await _progress("phase_f", "Embedding & scoring candidates")
         _meta_f = await run_phase_f_embeddings_and_scoring(
-            cfg=cfg, run_ctx=run_ctx, llm=llm, force_rebuild=force_rebuild, check_cancel=_check_cancel
+            cfg=cfg,
+            run_ctx=run_ctx,
+            llm=llm,
+            chapter_title=chapter_input.chapter_title,
+            chapter_spec_text=chapter_input.chapter_spec_text,
+            force_rebuild=force_rebuild,
+            check_cancel=_check_cancel,
         )
         await _check_cancel()
         try:
@@ -788,6 +794,7 @@ async def run_two_lane_sources_pipeline(
             run_ctx=run_ctx,
             llm=llm,
             chapter_title=chapter_input.chapter_title,
+            chapter_spec_text=chapter_input.chapter_spec_text,
             check_cancel=_check_cancel,
             force_rebuild=force_rebuild,
         )

@@ -5235,6 +5235,7 @@ async def quellen_finder_sources_two_lane_start(
         "openai_reasoning_effort": str(request.reasoning_effort),
         "rerank_concurrency": int(request.rerank_concurrency),
     }
+
     background_tasks.add_task(
         run_quellen_finder_sources_two_lane_job,
         user_id=user_id,

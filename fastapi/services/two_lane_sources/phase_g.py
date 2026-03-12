@@ -315,7 +315,13 @@ async def run_phase_g_lane_fusion(
                 w_topm=w_topm,
                 w_cov=w_cov,
             )
-            match = float(parts["match"])
+            semantic_stage1 = _f(s1.get("semantic_stage1", s1.get("match_stage1")))
+            semantic_stage2 = (
+                float(s2.get("semantic_stage2"))
+                if use_stage2 and s2.get("semantic_stage2") is not None
+                else None
+            )
+            match = float(semantic_stage2 if semantic_stage2 is not None else semantic_stage1)
             best = float(parts["best"])
             top_m = float(parts["top_m"])
             cov = float(parts["cov"])
@@ -343,6 +349,10 @@ async def run_phase_g_lane_fusion(
                     "authority": authority,
                     "match_lane": match_lane,
                     "authority_lane": authority_lane,
+                    "semantic_stage1": semantic_stage1,
+                    "semantic_stage2": semantic_stage2,
+                    "semantic_source": stage_used,
+                    "facet_match_aux": float(parts["match"]),
                     "best": best,
                     "top_m": top_m,
                     "cov": cov,
@@ -410,4 +420,3 @@ async def run_phase_g_lane_fusion(
         "rankings_stageg_json": str(run_ctx.run_dir / "rankings_stageg.json"),
         "shortlist_unique_ids": int(len(ids_needed)),
     }
-

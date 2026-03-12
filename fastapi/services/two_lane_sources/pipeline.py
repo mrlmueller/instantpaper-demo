@@ -40,6 +40,7 @@ import numpy as np
 import requests
 from fastapi import HTTPException
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
+from openai import APIConnectionError, APIStatusError, APITimeoutError, InternalServerError, RateLimitError
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
@@ -367,6 +368,51 @@ class BilingualTerms(BaseModel):
     de: List[str] = Field(default_factory=list)
 
 
+QUERY_FAMILY_ENUM = [
+    "object_core",
+    "object_plus_construct",
+    "object_plus_data_proxy",
+    "object_plus_method",
+    "object_plus_limitation",
+    "object_plus_context",
+]
+
+LANGUAGE_STRATEGY_ENUM = [
+    "en_core_only",
+    "en_plus_bilingual_fallback",
+    "en_plus_selective_de",
+    "en_de_parallel",
+]
+
+AUTHORITY_ROLE_ENUM = [
+    "none",
+    "core",
+    "booster",
+]
+
+AUTHORITY_KIND_ENUM = [
+    "core",
+    "booster",
+]
+
+AUTHORITY_SEARCH_BREADTH_ENUM = [
+    "tight",
+    "broad_ok",
+]
+
+
+class AuthorityBlueprint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authority_kind: str
+    label_en: str
+    label_de: str
+    target_facet_ids: List[str] = Field(default_factory=list)
+    language_strategy: str
+    search_breadth: str
+    notes_en: str
+
+
 class Facet(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -374,6 +420,10 @@ class Facet(BaseModel):
     facet_label_en: str
     facet_label_de: str
     facet_type: str
+    facet_group: str
+    query_family_preference: str
+    language_strategy: str
+    authority_role: str
     importance_weight: int = Field(ge=1, le=5)
     text_en: str
     text_de: str
@@ -388,6 +438,10 @@ class QueryPlan(BaseModel):
     topic_summary_en: str
     topic_summary_de: str
     primary_context_anchors: BilingualTerms
+    core_object_terms: BilingualTerms
+    must_keep_constraints: List[str] = Field(default_factory=list)
+    drift_risks: List[str] = Field(default_factory=list)
+    authority_blueprints: List[AuthorityBlueprint] = Field(default_factory=list)
     facets: List[Facet]
     global_canonical_terms: BilingualTerms
     global_exclusions: BilingualTerms
@@ -398,6 +452,34 @@ class QueryPlan(BaseModel):
 # -----------------------------
 
 
+FACET_GROUP_ENUM = [
+    "object",
+    "construct",
+    "data_proxy",
+    "method",
+    "context",
+    "limitation",
+]
+
+FACET_GROUP_TO_QUERY_FAMILY = {
+    "object": {"object_core", "object_plus_context"},
+    "construct": {"object_plus_construct"},
+    "data_proxy": {"object_plus_data_proxy", "object_plus_method"},
+    "method": {"object_plus_method"},
+    "context": {"object_plus_context", "object_core"},
+    "limitation": {"object_plus_limitation", "object_plus_context"},
+}
+
+DEFAULT_QUERY_FAMILY_BY_GROUP = {
+    "object": "object_core",
+    "construct": "object_plus_construct",
+    "data_proxy": "object_plus_data_proxy",
+    "method": "object_plus_method",
+    "context": "object_plus_context",
+    "limitation": "object_plus_limitation",
+}
+
+
 QUERY_PLAN_JSON_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -405,6 +487,10 @@ QUERY_PLAN_JSON_SCHEMA = {
         "topic_summary_en",
         "topic_summary_de",
         "primary_context_anchors",
+        "core_object_terms",
+        "must_keep_constraints",
+        "drift_risks",
+        "authority_blueprints",
         "facets",
         "global_canonical_terms",
         "global_exclusions",
@@ -419,6 +505,48 @@ QUERY_PLAN_JSON_SCHEMA = {
             "properties": {
                 "en": {"type": "array", "items": {"type": "string"}},
                 "de": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        "core_object_terms": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["en", "de"],
+            "properties": {
+                "en": {"type": "array", "items": {"type": "string"}},
+                "de": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        "must_keep_constraints": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "drift_risks": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "authority_blueprints": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "authority_kind",
+                    "label_en",
+                    "label_de",
+                    "target_facet_ids",
+                    "language_strategy",
+                    "search_breadth",
+                    "notes_en",
+                ],
+                "properties": {
+                    "authority_kind": {"type": "string", "enum": AUTHORITY_KIND_ENUM},
+                    "label_en": {"type": "string"},
+                    "label_de": {"type": "string"},
+                    "target_facet_ids": {"type": "array", "items": {"type": "string"}},
+                    "language_strategy": {"type": "string", "enum": LANGUAGE_STRATEGY_ENUM},
+                    "search_breadth": {"type": "string", "enum": AUTHORITY_SEARCH_BREADTH_ENUM},
+                    "notes_en": {"type": "string"},
+                },
             },
         },
         "global_canonical_terms": {
@@ -449,6 +577,10 @@ QUERY_PLAN_JSON_SCHEMA = {
                     "facet_label_en",
                     "facet_label_de",
                     "facet_type",
+                    "facet_group",
+                    "query_family_preference",
+                    "language_strategy",
+                    "authority_role",
                     "importance_weight",
                     "text_en",
                     "text_de",
@@ -476,6 +608,10 @@ QUERY_PLAN_JSON_SCHEMA = {
                             "applications",
                         ],
                     },
+                    "facet_group": {"type": "string", "enum": FACET_GROUP_ENUM},
+                    "query_family_preference": {"type": "string", "enum": QUERY_FAMILY_ENUM},
+                    "language_strategy": {"type": "string", "enum": LANGUAGE_STRATEGY_ENUM},
+                    "authority_role": {"type": "string", "enum": AUTHORITY_ROLE_ENUM},
                     "importance_weight": {"type": "integer", "minimum": 1, "maximum": 5},
                     "text_en": {"type": "string"},
                     "text_de": {"type": "string"},
@@ -513,68 +649,182 @@ QUERY_PLAN_JSON_SCHEMA = {
 }
 
 
-PLANNER_SYSTEM_PROMPT = """You are a scientific literature search planner. Convert a chapter title and a ~200-word chapter specification into a bilingual (EN+DE) query plan for downstream APIs.
-You must be deterministic and consistent across any domain.
-Do NOT name specific papers, authors, or venues. Do NOT invent citations.
+PLANNER_SYSTEM_PROMPT = """
+You are a scientific literature search planner for a multi-stage academic retrieval pipeline.
+Your job is not to describe a topic in generic academic language. Your job is to preserve the chapter's exact retrieval target and to define how downstream query builders should search for it.
+
+Priority order:
+1) Preserve the chapter's core object, corpus, domain, or context exactly.
+2) Preserve the main constructs, questions, outcomes, or debates.
+3) Preserve data-source, proxy, measurement, and validity constraints.
+4) Control query-family shape so generic method drift is hard downstream.
+5) Split authority into tight core authority vs optional broader boosters.
+6) Add useful neighboring facets without diluting the core object.
+7) Add exclusions only for true wrong-sense confounders.
+
+Rules:
+- If a phrase is central to the chapter object, keep it even if one token inside the phrase is generic.
+- Do not replace concrete chapter nouns with broader abstractions.
+- Method terms are supporting context unless the chapter is explicitly about methods.
+- Do not leave Phase C to guess whether a facet should become object+data, object+method, or a broader authority booster.
+- Do not name specific papers, authors, or venues. Do not invent citations.
+- Be deterministic and return only valid JSON.
 """
 
 
 PLANNER_USER_PROMPT_TEMPLATE = """CHAPTER_TITLE:
 {{chapter_title}}
 
-CHAPTER_SPEC (instructions):
+CHAPTER_SPEC (retrieval contract):
 {{chapter_spec_text}}
 
 TASK:
+Return a QueryPlan JSON object with the schema required by this pipeline.
+
+HOW TO INTERPRET THE CHAPTER:
+Preserve these distinctions in the plan:
+- chapter object / corpus / domain context
+- target construct / question / outcome
+- data source / proxy / measurement constraints
+- analytical methods
+- exclusions / wrong-sense confounders
+
+PRIORITY ORDER:
+1) preserve the chapter's core object/corpus/domain exactly
+2) preserve the main constructs/questions/outcomes
+3) preserve data/proxy/measurement constraints
+4) control query-family shape so downstream query builders do not invent generic method-heavy families
+5) split authority into tight core authority and optional broader boosters
+6) add useful neighboring facets without diluting the object
+7) add exclusions only for true wrong-sense confounders
+
 Return a QueryPlan JSON object with these keys:
 
-1) topic_summary_en: 2–3 sentences
-2) topic_summary_de: 2–3 sentences (natural German)
+1) topic_summary_en: 2-3 sentences
+2) topic_summary_de: 2-3 sentences (natural German)
+
+Summary rules:
+- The first sentence must name the chapter object/corpus/domain before any methods framing.
+- State the chapter object, the main construct/question, and the role of data/proxies/methods.
+- Do not generalize away the named corpus/object.
 
 3) primary_context_anchors:
-   - en: 3–8 short anchors that uniquely pin the topic (prefer proper nouns, named constructs, standard period/organism/method names)
-   - de: 3–8 short anchors (German equivalents + common English terms used in German literature)
+   - en: 4-10 short anchors
+   - de: 4-10 short anchors
    RULES:
-   - Each anchor must be 1–6 words.
-   - No generic research words: analysis, study, effects, mechanism, framework, model, system, approach, dynamics, development, review, overview
-     German: Analyse, Studie, Effekte, Mechanismus, Rahmen, Modell, System, Ansatz, Dynamik, Entwicklung, Überblick
+   - Each anchor must be 1-6 words.
+   - At least 2 anchors per language should name the core object/corpus/domain when available.
+   - Pure method anchors are allowed only if genuinely central; they must never be the majority.
+   - Avoid vague standalone research words such as analysis, study, effects, framework, model, system, approach, dynamics, development, overview.
+   - A full phrase may be kept if the phrase itself is chapter-critical, even if one word inside it is generic.
    - Avoid long narrative phrases. Avoid parentheses and commas inside anchors.
 
-4) global_canonical_terms:
-   - en: 12–30 terms/phrases (topic terms + synonyms + abbreviations)
-   - de: 12–30 terms/phrases (German equivalents + common English loan terms)
-   TERM HYGIENE (MANDATORY for ALL term lists):
-   - Each term must be <= 4 words.
-   - No explanatory text, no “e.g.” / “z. B.”.
-   - No parentheses, no commas, no semicolons.
-   - No “modern … jargon” type commentary; only tokens likely to appear in titles/abstracts.
+4) core_object_terms:
+   - en: 3-12 short terms/phrases naming the core object/corpus/domain
+   - de: 3-12 short terms/phrases naming the core object/corpus/domain
+   RULES:
+   - These should be the best retrieval phrases for the chapter's object, not methods or broad abstractions.
+   - Reuse exact chapter wording where helpful.
+   - Each term must be <= 4 words and follow TERM HYGIENE.
 
-5) global_exclusions:
-   - en: 0–12 atomic confounder terms (<= 3 words each)
-   - de: 0–12 atomic confounder terms (<= 3 words each)
+5) must_keep_constraints:
+   - 3-10 short English strings
+   RULES:
+   - Each item should capture a non-negotiable retrieval constraint that downstream stages must preserve.
+   - Focus on object, construct, proxy/data, measurement, or scope constraints.
+   - Keep each item short and concrete.
+
+6) drift_risks:
+   - 2-8 short English strings
+   RULES:
+   - List the most likely ways retrieval could drift off-topic.
+   - Include generic method drift when relevant.
+   - Keep each item short and concrete.
+
+7) authority_blueprints:
+   - 1-4 items total
+   - MUST include at least 1 core blueprint
+   Each item has:
+   - authority_kind: "core" | "booster"
+   - label_en: <= 8 words
+   - label_de: <= 8 words
+   - target_facet_ids: 1-4 existing facet_ids
+   - language_strategy: one of ["en_core_only","en_plus_bilingual_fallback","en_plus_selective_de","en_de_parallel"]
+   - search_breadth: "tight" | "broad_ok"
+   - notes_en: <= 18 words
+   RULES:
+   - core authority is the chapter's non-negotiable authoritative literature family; it should stay tight and object-led.
+   - booster authority is broader, but must still remain chapter-anchored.
+   - search_breadth="broad_ok" is allowed only for boosters.
+   - core blueprints should usually target object / construct / data_proxy facets, not generic methods facets.
+   - booster blueprints may add context or limitation angles, but must still preserve the chapter object.
+
+8) global_canonical_terms:
+   - en: 12-30 terms/phrases
+   - de: 12-30 terms/phrases
+   TERM HYGIENE:
+   - Each term must be <= 4 words.
+   - No explanatory text, no "e.g." / "z. B.".
+   - No parentheses, no commas, no semicolons.
+   - Preserve important chapter wording if it is likely to appear in titles/abstracts.
+   - Ensure the list includes object terms first, then construct/data/proxy terms, then method terms.
+
+9) global_exclusions:
+   - en: 0-12 atomic confounder terms
+   - de: 0-12 atomic confounder terms
    EXCLUSION RULES:
    - Only include exclusions that are likely to appear in unrelated literature and cause wrong-sense retrieval.
-   - No punctuation except hyphen. No parentheses. No example phrases.
+   - <= 3 words each
+   - No punctuation except hyphen
+   - If unsure, omit the exclusion
 
-6) facets: 8–20 ATOMIC facets (one requirement each).
+10) facets: 8-18 ATOMIC facets.
 For each facet:
-- facet_id: lower_snake_case, 3–6 words, stable
+- facet_id: lower_snake_case, 3-6 words, stable
 - facet_type: one of ["background","theory","mechanism","methods","data","measurement","evaluation","case_context","debate","limitations","applications"]
-- importance_weight: integer 1..5 (5 = explicitly required, 4 = important support, 3 = common subtopic, 2 peripheral, 1 optional)
+- facet_group: one of ["object","construct","data_proxy","method","context","limitation"]
+- query_family_preference: one of ["object_core","object_plus_construct","object_plus_data_proxy","object_plus_method","object_plus_limitation","object_plus_context"]
+- language_strategy: one of ["en_core_only","en_plus_bilingual_fallback","en_plus_selective_de","en_de_parallel"]
+- authority_role: one of ["none","core","booster"]
+- importance_weight: integer 1..5
 - facet_label_en: <= 8 words
 - facet_label_de: <= 8 words
-- text_en: 1–2 sentences
-- text_de: 1–2 sentences
-- canonical_terms.en/de: 6–18 terms each (must follow TERM HYGIENE)
-- neighbor_terms.en/de: 4–12 terms each (must follow TERM HYGIENE)
-- exclusion_terms.en/de: 0–6 terms each (must follow EXCLUSION RULES)
+- text_en: 1-2 sentences
+- text_de: 1-2 sentences
+- canonical_terms.en/de: 6-18 terms each
+- neighbor_terms.en/de: 4-12 terms each
+- exclusion_terms.en/de: 0-6 terms each
 
-QUALITY RULES:
-- Cover all explicit instructions in the chapter spec via facets (no gaps).
-- Add 2–4 neighbor facets that are commonly necessary but not explicitly listed.
+FACET RULES:
+- Cover every explicit instruction in the chapter spec.
+- Add 2-4 useful neighboring facets that support retrieval, but keep the plan centered on the named chapter object.
+- If the chapter is not primarily a methods chapter, generic methods facets must not dominate the weight>=4 set.
+- For any methods/data/measurement facet, write it as methods/data/measurement FOR this chapter object, not as a generic field overview.
+- Use facet_group to mark the facet's coarse retrieval role.
+- Use query_family_preference to tell Phase C what shape the query should have, not just what words to use.
+- Use the smallest query family that preserves meaning:
+  - object -> usually object_core
+  - construct -> usually object_plus_construct
+  - data/proxy/measurement -> usually object_plus_data_proxy
+  - methods -> usually object_plus_method
+  - limitation/bias/validity -> usually object_plus_limitation
+  - domain/platform/context -> usually object_plus_context
+- Use language_strategy to say whether the facet should stay EN-core, use bilingual fallback, or support selective DE.
+- Do not mark a facet as en_de_parallel unless the object phrase and facet phrase are both likely to exist in real literature in both languages.
+- authority_role="core" means this facet deserves tight authority coverage.
+- authority_role="booster" means this facet can support a broader authority booster if budget remains.
+- authority_role="none" means the facet is match-oriented only.
+- Generic methods facets should rarely be authority_role="core".
+- If the chapter mentions proxies, secondary data, validity, bias, or representativeness, add the relevant facets when supported by the spec.
 - Keep facets non-overlapping as much as possible.
-- Prefer technical terms over vague words.
-- If the topic is ambiguous, add exclusions to disambiguate.
+
+QUALITY CHECKS:
+- If your top anchors would retrieve generic method papers but not the chapter object, revise them.
+- If core_object_terms are weak, generic, or method-heavy, revise them.
+- If Phase C could build a generic workflow/evaluation query from this facet with weak object conditioning, change query_family_preference or lower its priority.
+- If authority is still a single flat concept rather than core vs booster, revise the authority_blueprints.
+- If the plan drops the concrete object/corpus in favor of abstractions, revise it.
+- If an exclusion is not a clear wrong-sense confounder, omit it.
 
 OUTPUT:
 Return ONLY valid JSON. No extra text.
@@ -734,6 +984,595 @@ def diagnose_query_plan(plan: QueryPlan) -> Dict[str, Any]:
     return {"facet_count": n_facets, "issues": issues, "critical_issues": critical}
 
 
+_BAD_EXCL_PAT = re.compile(r"(e\.g\.|z\.\s*b\.|,|\(|\)|;|:)", re.IGNORECASE)
+_BAD_TERM_PAT = re.compile(r"(e\.g\.|z\.\s*b\.|\(|\)|,|;)", re.IGNORECASE)
+_GENERIC_RESEARCH_WORD_SET = {w.casefold() for w in _GENERIC_RESEARCH_WORDS}
+_ANCHOR_JOINER_WORDS = {
+    "and",
+    "or",
+    "of",
+    "for",
+    "the",
+    "a",
+    "an",
+    "und",
+    "oder",
+    "von",
+    "für",
+    "der",
+    "die",
+    "das",
+}
+
+
+def _word_count(text: str) -> int:
+    return len([w for w in re.split(r"\s+", str(text or "").strip()) if w])
+
+
+def _phrase_tokens(text: str) -> List[str]:
+    return [t.casefold() for t in re.findall(r"[\w-]+", str(text or ""), flags=re.UNICODE) if t]
+
+
+def _normalized_phrase(text: str) -> str:
+    return " ".join(_phrase_tokens(text))
+
+
+def _is_vague_anchor(term: str) -> bool:
+    toks = _phrase_tokens(term)
+    if not toks:
+        return True
+    content = [t for t in toks if t not in _ANCHOR_JOINER_WORDS]
+    if not content:
+        return True
+    if len(content) == 1 and content[0] in _GENERIC_RESEARCH_WORD_SET:
+        return True
+    return all(t in _GENERIC_RESEARCH_WORD_SET for t in content)
+
+
+def _is_short_plain_text(text: str, *, min_words: int = 1, max_words: int = 12, max_chars: int = 120) -> bool:
+    s = str(text or "").strip()
+    if not s:
+        return False
+    if len(s) > int(max_chars):
+        return False
+    n_words = _word_count(s)
+    if n_words < int(min_words) or n_words > int(max_words):
+        return False
+    return True
+
+
+def _is_atomic_exclusion(term: str) -> bool:
+    t = str(term or "").strip()
+    if not t:
+        return False
+    if _BAD_EXCL_PAT.search(t):
+        return False
+    if len(t) > 40:
+        return False
+    if _word_count(t) > 3:
+        return False
+    if re.search(r"[^\w\s-]", t, flags=re.UNICODE):
+        return False
+    return True
+
+
+def _is_hygienic_term(term: str, *, max_words: int) -> bool:
+    t = str(term or "").strip()
+    if not t:
+        return False
+    if _BAD_TERM_PAT.search(t):
+        return False
+    if _word_count(t) > int(max_words):
+        return False
+    return True
+
+
+def _dedupe_keep_order(items: List[str]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for item in items or []:
+        s = str(item or "").strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+    return out
+
+
+def _clean_short_text(text: str, *, fallback: str, max_words: int, max_chars: int) -> str:
+    s = re.sub(r"\s+", " ", str(text or "").strip())
+    if not s:
+        s = fallback
+    words = s.split()
+    if len(words) > int(max_words):
+        s = " ".join(words[: int(max_words)]).strip()
+    if len(s) > int(max_chars):
+        s = s[: int(max_chars)].rstrip()
+    return s or fallback
+
+
+def _choose_blueprint_language_strategy(kind: str, target_ids: List[str], facet_by_id: Dict[str, Facet]) -> str:
+    strategies = [
+        str(getattr(facet_by_id.get(fid), "language_strategy", "") or "")
+        for fid in (target_ids or [])
+        if facet_by_id.get(fid) is not None
+    ]
+    strategies = [x for x in strategies if x in LANGUAGE_STRATEGY_ENUM]
+    if kind == "core":
+        for pref in ["en_de_parallel", "en_plus_bilingual_fallback", "en_plus_selective_de", "en_core_only"]:
+            if pref in strategies:
+                return pref
+        return "en_plus_bilingual_fallback"
+    for pref in ["en_plus_selective_de", "en_plus_bilingual_fallback", "en_core_only", "en_de_parallel"]:
+        if pref in strategies:
+            return pref
+    return "en_plus_selective_de"
+
+
+def _authority_target_sort_key(fid: str, *, kind: str, facet_by_id: Dict[str, Facet]) -> Tuple[int, int, str]:
+    facet = facet_by_id.get(fid)
+    if facet is None:
+        return (99, 99, fid)
+    group = str(getattr(facet, "facet_group", "") or "")
+    if kind == "core":
+        group_rank = {"object": 0, "construct": 1, "data_proxy": 2, "context": 3, "limitation": 4, "method": 5}
+    else:
+        group_rank = {"context": 0, "limitation": 1, "data_proxy": 2, "method": 3, "construct": 4, "object": 5}
+    return (group_rank.get(group, 9), -int(getattr(facet, "importance_weight", 0) or 0), fid)
+
+
+def _make_authority_blueprint(
+    *,
+    kind: str,
+    ordinal: int,
+    target_ids: List[str],
+    facet_by_id: Dict[str, Facet],
+) -> AuthorityBlueprint:
+    target_ids = _dedupe_keep_order(target_ids)[:4]
+    label_seed = None
+    if target_ids:
+        facet0 = facet_by_id.get(target_ids[0])
+        if facet0 is not None:
+            label_seed = str(getattr(facet0, "facet_label_en", "") or "").strip()
+    label_seed = label_seed or ("core authority" if kind == "core" else "booster authority")
+    label_en = _clean_short_text(
+        f"{'Core' if kind == 'core' else 'Booster'} {label_seed}",
+        fallback=f"{'Core' if kind == 'core' else 'Booster'} authority {ordinal}",
+        max_words=8,
+        max_chars=80,
+    )
+    label_de = _clean_short_text(
+        f"{'Kern' if kind == 'core' else 'Booster'} {label_seed}",
+        fallback=f"{'Kern' if kind == 'core' else 'Booster'} Literatur {ordinal}",
+        max_words=8,
+        max_chars=80,
+    )
+    notes_en = _clean_short_text(
+        (
+            "Tight authority coverage for the chapter object."
+            if kind == "core"
+            else "Broader authority coverage that remains chapter-anchored."
+        ),
+        fallback="Authority blueprint",
+        max_words=18,
+        max_chars=120,
+    )
+    return AuthorityBlueprint(
+        authority_kind=kind,
+        label_en=label_en,
+        label_de=label_de,
+        target_facet_ids=target_ids,
+        language_strategy=_choose_blueprint_language_strategy(kind, target_ids, facet_by_id),
+        search_breadth="tight" if kind == "core" else "broad_ok",
+        notes_en=notes_en,
+    )
+
+
+def _repair_query_plan(plan: QueryPlan) -> Tuple[QueryPlan, List[str]]:
+    repair_notes: List[str] = []
+
+    repaired_facets: List[Facet] = []
+    for facet in list(plan.facets or []):
+        fg = str(getattr(facet, "facet_group", "") or "")
+        qfp = str(getattr(facet, "query_family_preference", "") or "")
+        allowed = FACET_GROUP_TO_QUERY_FAMILY.get(fg) or set()
+        if allowed and qfp not in allowed:
+            new_qfp = DEFAULT_QUERY_FAMILY_BY_GROUP.get(fg) or sorted(allowed)[0]
+            if new_qfp != qfp:
+                repair_notes.append(
+                    f"facet[{facet.facet_id}] query_family_preference repaired from {qfp!r} to {new_qfp!r}"
+                )
+                facet = facet.model_copy(update={"query_family_preference": new_qfp})
+        repaired_facets.append(facet)
+
+    if not any(str(getattr(f, "authority_role", "") or "") == "core" for f in repaired_facets):
+        candidates = sorted(
+            repaired_facets,
+            key=lambda f: (
+                {"object": 0, "construct": 1, "data_proxy": 2, "context": 3, "limitation": 4, "method": 5}.get(
+                    str(getattr(f, "facet_group", "") or ""),
+                    9,
+                ),
+                -int(getattr(f, "importance_weight", 0) or 0),
+                str(getattr(f, "facet_id", "") or ""),
+            ),
+        )
+        if candidates:
+            chosen = candidates[0]
+            repair_notes.append(f"facet[{chosen.facet_id}] authority_role promoted to 'core' to guarantee core authority coverage")
+            repaired_facets = [
+                (f.model_copy(update={"authority_role": "core"}) if f.facet_id == chosen.facet_id else f)
+                for f in repaired_facets
+            ]
+
+    facet_by_id: Dict[str, Facet] = {
+        str(f.facet_id or "").strip(): f
+        for f in repaired_facets
+        if str(getattr(f, "facet_id", "") or "").strip()
+    }
+    role_to_ids = {
+        "core": [
+            f.facet_id
+            for f in repaired_facets
+            if str(getattr(f, "authority_role", "") or "") == "core" and str(getattr(f, "facet_id", "") or "").strip()
+        ],
+        "booster": [
+            f.facet_id
+            for f in repaired_facets
+            if str(getattr(f, "authority_role", "") or "") == "booster" and str(getattr(f, "facet_id", "") or "").strip()
+        ],
+    }
+
+    repaired_blueprints: List[AuthorityBlueprint] = []
+    kind_counter = {"core": 0, "booster": 0}
+    for bp in list(plan.authority_blueprints or []):
+        kind = str(getattr(bp, "authority_kind", "") or "")
+        if kind not in AUTHORITY_KIND_ENUM:
+            kind = "core" if kind_counter["core"] == 0 else "booster"
+            repair_notes.append(
+                f"authority_blueprint[{getattr(bp, 'label_en', '?')}] authority_kind repaired to {kind!r}"
+            )
+        raw_target_ids = _dedupe_keep_order(
+            [str(x or "").strip() for x in (getattr(bp, "target_facet_ids", None) or []) if str(x or "").strip()]
+        )
+        filtered_target_ids = [fid for fid in raw_target_ids if fid in facet_by_id and fid in role_to_ids.get(kind, [])]
+        filtered_target_ids = sorted(
+            filtered_target_ids,
+            key=lambda fid: _authority_target_sort_key(fid, kind=kind, facet_by_id=facet_by_id),
+        )[:4]
+        if raw_target_ids != filtered_target_ids:
+            repair_notes.append(
+                f"authority_blueprint[{getattr(bp, 'label_en', '?')}] target_facet_ids normalized to {filtered_target_ids}"
+            )
+
+        if not filtered_target_ids and role_to_ids.get(kind):
+            continue
+
+        kind_counter[kind] += 1
+        fallback_bp = _make_authority_blueprint(
+            kind=kind,
+            ordinal=kind_counter[kind],
+            target_ids=filtered_target_ids,
+            facet_by_id=facet_by_id,
+        )
+        repaired_blueprints.append(
+            AuthorityBlueprint(
+                authority_kind=kind,
+                label_en=_clean_short_text(
+                    getattr(bp, "label_en", ""),
+                    fallback=fallback_bp.label_en,
+                    max_words=8,
+                    max_chars=80,
+                ),
+                label_de=_clean_short_text(
+                    getattr(bp, "label_de", ""),
+                    fallback=fallback_bp.label_de,
+                    max_words=8,
+                    max_chars=80,
+                ),
+                target_facet_ids=filtered_target_ids,
+                language_strategy=(
+                    str(getattr(bp, "language_strategy", "") or "")
+                    if str(getattr(bp, "language_strategy", "") or "") in LANGUAGE_STRATEGY_ENUM
+                    else fallback_bp.language_strategy
+                ),
+                search_breadth=(
+                    "tight"
+                    if kind == "core"
+                    else (
+                        str(getattr(bp, "search_breadth", "") or "")
+                        if str(getattr(bp, "search_breadth", "") or "") in AUTHORITY_SEARCH_BREADTH_ENUM
+                        else fallback_bp.search_breadth
+                    )
+                ),
+                notes_en=_clean_short_text(
+                    getattr(bp, "notes_en", ""),
+                    fallback=fallback_bp.notes_en,
+                    max_words=18,
+                    max_chars=120,
+                ),
+            )
+        )
+
+    if role_to_ids["core"] and not any(bp.authority_kind == "core" for bp in repaired_blueprints):
+        kind_counter["core"] += 1
+        repaired_blueprints.append(
+            _make_authority_blueprint(
+                kind="core",
+                ordinal=kind_counter["core"],
+                target_ids=sorted(
+                    role_to_ids["core"],
+                    key=lambda fid: _authority_target_sort_key(fid, kind="core", facet_by_id=facet_by_id),
+                )[:4],
+                facet_by_id=facet_by_id,
+            )
+        )
+        repair_notes.append("created core authority blueprint to cover core authority facets")
+
+    assigned_by_kind = {"core": set(), "booster": set()}
+    for bp in repaired_blueprints:
+        assigned_by_kind.setdefault(bp.authority_kind, set()).update(bp.target_facet_ids or [])
+
+    for kind in ("core", "booster"):
+        unassigned = [fid for fid in role_to_ids.get(kind, []) if fid not in assigned_by_kind.get(kind, set())]
+        if not unassigned:
+            continue
+
+        for idx, bp in enumerate(list(repaired_blueprints)):
+            if not unassigned or bp.authority_kind != kind:
+                continue
+            current = list(bp.target_facet_ids or [])
+            capacity = 4 - len(current)
+            if capacity <= 0:
+                continue
+            additions = unassigned[:capacity]
+            repaired_blueprints[idx] = bp.model_copy(update={"target_facet_ids": current + additions})
+            assigned_by_kind.setdefault(kind, set()).update(additions)
+            unassigned = unassigned[capacity:]
+            repair_notes.append(
+                f"authority_blueprint[{bp.label_en}] extended with {additions} to cover {kind} authority facets"
+            )
+
+        while unassigned and len(repaired_blueprints) < 4:
+            kind_counter[kind] += 1
+            chunk = sorted(
+                unassigned[:4],
+                key=lambda fid: _authority_target_sort_key(fid, kind=kind, facet_by_id=facet_by_id),
+            )
+            repaired_blueprints.append(
+                _make_authority_blueprint(
+                    kind=kind,
+                    ordinal=kind_counter[kind],
+                    target_ids=chunk,
+                    facet_by_id=facet_by_id,
+                )
+            )
+            assigned_by_kind.setdefault(kind, set()).update(chunk)
+            repair_notes.append(f"created {kind} authority blueprint for facets {chunk}")
+            unassigned = [fid for fid in unassigned if fid not in set(chunk)]
+
+    repaired_plan = plan.model_copy(update={"facets": repaired_facets, "authority_blueprints": repaired_blueprints})
+    return repaired_plan, repair_notes
+
+
+def diagnose_query_plan(plan: QueryPlan) -> Dict[str, Any]:
+    issues: List[str] = []
+
+    n_facets = len(plan.facets)
+    if n_facets < 8 or n_facets > 20:
+        issues.append(f"CRITICAL: facet count is {n_facets} (expected 8–20).")
+
+    ids = [f.facet_id for f in plan.facets]
+    dup_ids = sorted({x for x in ids if ids.count(x) > 1})
+    if dup_ids:
+        issues.append(f"CRITICAL: duplicate facet_id(s): {dup_ids}")
+
+    bad_weights = [f.facet_id for f in plan.facets if not (1 <= f.importance_weight <= 5)]
+    if bad_weights:
+        issues.append(f"CRITICAL: facets with invalid importance_weight: {bad_weights}")
+
+    for lang in ("en", "de"):
+        anchors = getattr(plan.primary_context_anchors, lang, []) or []
+        if len(anchors) < 4 or len(anchors) > 10:
+            issues.append(f"CRITICAL: primary_context_anchors.{lang} has {len(anchors)} items (expected 4–10).")
+
+        bad = []
+        for a in anchors:
+            aa = str(a or "").strip()
+            if not aa:
+                bad.append(a)
+                continue
+            if not _is_hygienic_term(aa, max_words=6):
+                bad.append(aa)
+                continue
+            if _is_vague_anchor(aa):
+                bad.append(aa)
+                continue
+        if bad:
+            issues.append(f"CRITICAL: primary_context_anchors.{lang} contains invalid/generic anchors: {bad[:6]}")
+
+    for lang in ("en", "de"):
+        obj_terms = getattr(plan.core_object_terms, lang, []) or []
+        if len(obj_terms) < 3 or len(obj_terms) > 12:
+            issues.append(f"CRITICAL: core_object_terms.{lang} has {len(obj_terms)} items (expected 3–12).")
+        bad = []
+        for t in obj_terms:
+            tt = str(t or "").strip()
+            if not _is_hygienic_term(tt, max_words=4):
+                bad.append(tt)
+                continue
+            if _is_vague_anchor(tt):
+                bad.append(tt)
+                continue
+        if bad:
+            issues.append(f"CRITICAL: core_object_terms.{lang} contains invalid/generic terms: {bad[:6]}")
+
+    anchors_norm = {
+        lang: {_normalized_phrase(x) for x in (getattr(plan.primary_context_anchors, lang, []) or []) if _normalized_phrase(x)}
+        for lang in ("en", "de")
+    }
+    obj_norm = {
+        lang: {_normalized_phrase(x) for x in (getattr(plan.core_object_terms, lang, []) or []) if _normalized_phrase(x)}
+        for lang in ("en", "de")
+    }
+    for lang in ("en", "de"):
+        overlap = any((a == c) or (a in c) or (c in a) for a in anchors_norm[lang] for c in obj_norm[lang])
+        if not overlap:
+            issues.append(f"CRITICAL: primary_context_anchors.{lang} does not preserve any core_object_terms.{lang} phrase.")
+
+    mkc = list(plan.must_keep_constraints or [])
+    if len(mkc) < 3 or len(mkc) > 10:
+        issues.append(f"CRITICAL: must_keep_constraints has {len(mkc)} items (expected 3–10).")
+    bad_mkc = [x for x in mkc if not _is_short_plain_text(x, min_words=2, max_words=12, max_chars=120)]
+    if bad_mkc:
+        issues.append(f"CRITICAL: must_keep_constraints contains invalid items: {bad_mkc[:6]}")
+
+    drift = list(plan.drift_risks or [])
+    if len(drift) < 2 or len(drift) > 8:
+        issues.append(f"CRITICAL: drift_risks has {len(drift)} items (expected 2–8).")
+    bad_drift = [x for x in drift if not _is_short_plain_text(x, min_words=2, max_words=12, max_chars=120)]
+    if bad_drift:
+        issues.append(f"CRITICAL: drift_risks contains invalid items: {bad_drift[:6]}")
+
+    authority_blueprints = list(plan.authority_blueprints or [])
+    if len(authority_blueprints) < 1 or len(authority_blueprints) > 4:
+        issues.append(f"CRITICAL: authority_blueprints has {len(authority_blueprints)} items (expected 1–4).")
+
+    facet_id_set = {str(f.facet_id or "").strip() for f in plan.facets if str(f.facet_id or "").strip()}
+    core_bp_n = 0
+    for bp in authority_blueprints:
+        if str(getattr(bp, "authority_kind", "") or "") not in AUTHORITY_KIND_ENUM:
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] has invalid authority_kind.")
+        if str(getattr(bp, "language_strategy", "") or "") not in LANGUAGE_STRATEGY_ENUM:
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] has invalid language_strategy.")
+        if str(getattr(bp, "search_breadth", "") or "") not in AUTHORITY_SEARCH_BREADTH_ENUM:
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] has invalid search_breadth.")
+        if not _is_short_plain_text(getattr(bp, "label_en", ""), min_words=1, max_words=8, max_chars=80):
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] label_en is invalid.")
+        if not _is_short_plain_text(getattr(bp, "label_de", ""), min_words=1, max_words=8, max_chars=80):
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] label_de is invalid.")
+        if not _is_short_plain_text(getattr(bp, "notes_en", ""), min_words=2, max_words=18, max_chars=120):
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] notes_en is invalid.")
+
+        target_ids = [str(x or "").strip() for x in (getattr(bp, "target_facet_ids", None) or []) if str(x or "").strip()]
+        if len(target_ids) < 1 or len(target_ids) > 4:
+            issues.append(f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] target_facet_ids has {len(target_ids)} items (expected 1–4).")
+        missing_target_ids = [x for x in target_ids if x not in facet_id_set]
+        if missing_target_ids:
+            issues.append(
+                f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] references unknown facet_ids: {missing_target_ids[:6]}"
+            )
+
+        if str(getattr(bp, "authority_kind", "") or "") == "core":
+            core_bp_n += 1
+            if str(getattr(bp, "search_breadth", "") or "") != "tight":
+                issues.append(
+                    f"CRITICAL: authority_blueprint[{getattr(bp, 'label_en', '?')}] core authority must use search_breadth='tight'."
+                )
+
+    if core_bp_n < 1:
+        issues.append("CRITICAL: authority_blueprints must include at least one core blueprint.")
+
+    def check_term_list(name: str, terms: List[str], *, max_words: int) -> None:
+        bad_terms = [t for t in (terms or []) if not _is_hygienic_term(t, max_words=max_words)]
+        if bad_terms:
+            issues.append(f"CRITICAL: {name} contains non-hygienic terms: {bad_terms[:8]}")
+
+    check_term_list("global_canonical_terms.en", plan.global_canonical_terms.en, max_words=4)
+    check_term_list("global_canonical_terms.de", plan.global_canonical_terms.de, max_words=4)
+
+    def check_exclusions(name: str, terms: List[str]) -> None:
+        bad_terms = [t for t in (terms or []) if not _is_atomic_exclusion(t)]
+        if bad_terms:
+            issues.append(f"CRITICAL: {name} contains non-atomic exclusions: {bad_terms[:8]}")
+
+    check_exclusions("global_exclusions.en", plan.global_exclusions.en)
+    check_exclusions("global_exclusions.de", plan.global_exclusions.de)
+
+    for f in plan.facets:
+        fg = str(getattr(f, "facet_group", "") or "")
+        qfp = str(getattr(f, "query_family_preference", "") or "")
+        ls = str(getattr(f, "language_strategy", "") or "")
+        ar = str(getattr(f, "authority_role", "") or "")
+        if fg not in FACET_GROUP_ENUM:
+            issues.append(f"CRITICAL: facet[{f.facet_id}] has invalid facet_group: {getattr(f, 'facet_group', None)!r}")
+        if qfp not in QUERY_FAMILY_ENUM:
+            issues.append(f"CRITICAL: facet[{f.facet_id}] has invalid query_family_preference: {qfp!r}")
+        if ls not in LANGUAGE_STRATEGY_ENUM:
+            issues.append(f"CRITICAL: facet[{f.facet_id}] has invalid language_strategy: {ls!r}")
+        if ar not in AUTHORITY_ROLE_ENUM:
+            issues.append(f"CRITICAL: facet[{f.facet_id}] has invalid authority_role: {ar!r}")
+        if fg in FACET_GROUP_TO_QUERY_FAMILY and qfp and qfp not in FACET_GROUP_TO_QUERY_FAMILY[fg]:
+            issues.append(
+                f"CRITICAL: facet[{f.facet_id}] query_family_preference={qfp!r} is inconsistent with facet_group={fg!r}."
+            )
+        check_term_list(f"facet[{f.facet_id}].canonical_terms.en", f.canonical_terms.en, max_words=4)
+        check_term_list(f"facet[{f.facet_id}].canonical_terms.de", f.canonical_terms.de, max_words=4)
+        check_term_list(f"facet[{f.facet_id}].neighbor_terms.en", f.neighbor_terms.en, max_words=4)
+        check_term_list(f"facet[{f.facet_id}].neighbor_terms.de", f.neighbor_terms.de, max_words=4)
+        check_exclusions(f"facet[{f.facet_id}].exclusion_terms.en", f.exclusion_terms.en)
+        check_exclusions(f"facet[{f.facet_id}].exclusion_terms.de", f.exclusion_terms.de)
+
+    facet_groups_all = [str(getattr(f, "facet_group", "") or "") for f in plan.facets]
+    if "object" not in facet_groups_all:
+        issues.append("CRITICAL: QueryPlan has no object facet_group facet.")
+
+    high_value_groups = [
+        str(getattr(f, "facet_group", "") or "")
+        for f in plan.facets
+        if int(getattr(f, "importance_weight", 0) or 0) >= 4
+    ]
+    if not any(g in {"object", "construct", "data_proxy"} for g in high_value_groups):
+        issues.append("CRITICAL: weight>=4 facets do not include any object/construct/data_proxy facet_group.")
+
+    method_heavy = sum(1 for g in high_value_groups if g == "method")
+    objectish = sum(1 for g in high_value_groups if g in {"object", "construct", "data_proxy"})
+    if high_value_groups and method_heavy > objectish:
+        issues.append("Method-heavy weighting detected: weight>=4 method facets outnumber object/construct/data_proxy facets.")
+
+    core_authority_facets = [f for f in plan.facets if str(getattr(f, "authority_role", "") or "") == "core"]
+    booster_authority_facets = [f for f in plan.facets if str(getattr(f, "authority_role", "") or "") == "booster"]
+    if not core_authority_facets:
+        issues.append("CRITICAL: no facets are marked authority_role='core'.")
+    core_authority_groups = {str(getattr(f, "facet_group", "") or "") for f in core_authority_facets}
+    if core_authority_groups and not any(g in {"object", "construct", "data_proxy", "context"} for g in core_authority_groups):
+        issues.append("CRITICAL: authority_role='core' facets are not object/construct/data_proxy/context-led.")
+    if core_authority_facets and all(str(getattr(f, "facet_group", "") or "") == "method" for f in core_authority_facets):
+        issues.append("CRITICAL: all authority_role='core' facets are method facets.")
+
+    bp_targets_by_kind = {"core": set(), "booster": set()}
+    for bp in authority_blueprints:
+        kind = str(getattr(bp, "authority_kind", "") or "")
+        target_ids = {str(x or "").strip() for x in (getattr(bp, "target_facet_ids", None) or []) if str(x or "").strip()}
+        bp_targets_by_kind.setdefault(kind, set()).update(target_ids)
+    for f in core_authority_facets:
+        if f.facet_id not in bp_targets_by_kind.get("core", set()):
+            issues.append(f"CRITICAL: facet[{f.facet_id}] authority_role='core' is not referenced by any core authority blueprint.")
+    for f in booster_authority_facets:
+        if f.facet_id not in bp_targets_by_kind.get("booster", set()):
+            issues.append(
+                f"CRITICAL: facet[{f.facet_id}] authority_role='booster' is not referenced by any booster authority blueprint."
+            )
+
+    canon_sets: Dict[Tuple[Tuple[str, ...], Tuple[str, ...]], str] = {}
+    overlaps: List[Tuple[str, str]] = []
+    for f in plan.facets:
+        key = (
+            tuple(sorted({t.strip().lower() for t in f.canonical_terms.en if str(t or "").strip()})),
+            tuple(sorted({t.strip().lower() for t in f.canonical_terms.de if str(t or "").strip()})),
+        )
+        if key in canon_sets and key != ((), ()):
+            overlaps.append((canon_sets[key], f.facet_id))
+        else:
+            canon_sets[key] = f.facet_id
+
+    if overlaps:
+        issues.append(f"Potential duplicate facets (identical canonical_terms): {overlaps[:5]}")
+
+    critical = [x for x in issues if str(x).startswith("CRITICAL:")]
+    return {"facet_count": n_facets, "issues": issues, "critical_issues": critical}
+
+
 def _is_placeholder_cache(obj: Any) -> bool:
     if not isinstance(obj, dict):
         return False
@@ -759,6 +1598,7 @@ async def plan_queries_llm(
                 log_event(run_ctx, stage=stage, event="cache_placeholder_ignored", path=str(cache_path))
             else:
                 plan = QueryPlan.model_validate(cached_obj)
+                plan, repair_notes = _repair_query_plan(plan)
                 meta = {
                     "cache_hit": True,
                     "usage": {
@@ -769,7 +1609,11 @@ async def plan_queries_llm(
                     },
                     "cost_usd": 0.0,
                     "diagnostics": diagnose_query_plan(plan),
+                    "repair_notes": repair_notes,
                 }
+                if repair_notes:
+                    write_json(cache_path, plan.model_dump(mode="json"))
+                    log_event(run_ctx, stage=stage, event="cache_repaired", path=str(cache_path), repairs=repair_notes[:8])
                 log_event(run_ctx, stage=stage, event="cache_hit", path=str(cache_path))
                 return plan, meta
         except Exception as e:
@@ -785,6 +1629,7 @@ async def plan_queries_llm(
     obj: Dict[str, Any] = {}
     meta: Dict[str, Any] = {}
     plan: Optional[QueryPlan] = None
+    repair_notes: List[str] = []
 
     with stage_timer(run_ctx, stage):
         for attempt in range(1, max_attempts + 1):
@@ -835,10 +1680,14 @@ async def plan_queries_llm(
 
             try:
                 plan = QueryPlan.model_validate(obj)
+                plan, repair_notes = _repair_query_plan(plan)
                 diag = diagnose_query_plan(plan)
                 critical = diag.get("critical_issues") or []
                 if critical:
                     raise ValueError("QueryPlan failed hygiene checks: " + "; ".join([str(x) for x in critical[:6]]))
+
+                if repair_notes:
+                    log_event(run_ctx, stage=stage, event="plan_repaired", attempt=attempt, repairs=repair_notes[:8])
 
                 write_json(run_ctx.run_dir / "query_plan.raw_output.json", obj)
                 write_json(run_ctx.run_dir / "query_plan.openai_meta.json", meta)
@@ -863,6 +1712,7 @@ async def plan_queries_llm(
     meta = dict(meta)
     meta["cache_hit"] = False
     meta["diagnostics"] = diagnose_query_plan(plan)
+    meta["repair_notes"] = repair_notes
     return plan, meta
 
 
@@ -876,7 +1726,7 @@ class OpenAlexQuery(BaseModel):
 
     intent: Literal["authority", "match"]
     language: Literal["en", "de"]
-    search_field: Literal["default.search", "title_and_abstract.search"] = "title_and_abstract.search"
+    search_field: Literal["search", "default.search", "title_and_abstract.search"] = "title_and_abstract.search"
     query_string: str
     filters: str
     sort: Optional[Literal["cited_by_count:desc", "relevance_score:desc"]] = None
@@ -907,7 +1757,7 @@ OPENALEX_QUERY_BUILDER_JSON_SCHEMA: Dict[str, Any] = {
                 "properties": {
                     "intent": {"type": "string", "enum": ["authority", "match"]},
                     "language": {"type": "string", "enum": ["en", "de"]},
-                    "search_field": {"type": "string", "enum": ["default.search", "title_and_abstract.search"]},
+                    "search_field": {"type": "string", "enum": ["search", "title_and_abstract.search"]},
                     "query_string": {"type": "string"},
                     "filters": {"type": "string"},
                     "sort": {
@@ -948,89 +1798,24 @@ S2_BULK_QUERY_BUILDER_JSON_SCHEMA: Dict[str, Any] = {
 }
 
 
-OPENALEX_QUERY_BUILDER_SYSTEM_PROMPT = """You generate OpenAlex /works query objects. Output ONLY valid JSON.
-Goal: high precision with strong recall across ANY scientific domain.
+OPENALEX_QUERY_BUILDER_SYSTEM_PROMPT = """You generate OpenAlex /works query objects for a multi-stage scientific retrieval pipeline.
+Your job is to maximize useful recall without losing the chapter's true object.
+
+Priority order:
+1) Keep every query inside the chapter object, corpus, or domain.
+2) Cover the main constructs, data/proxy constraints, and required facets.
+3) Add breadth through controlled synonym and facet variation.
+4) Add authority boosters only when they remain chapter-anchored.
+5) Prefer simpler provider-safe syntax over clever but brittle syntax.
+
+Do not output prose. Output only valid JSON.
 Be deterministic.
 """
 
 
-OPENALEX_QUERY_BUILDER_USER_PROMPT_TEMPLATE = """PIPELINE CONTEXT (READ CAREFULLY):
-You generate provider-safe OpenAlex /works query objects for retrieval in a two-lane pipeline.
-These queries only collect candidates; downstream stages deduplicate, embed, and rerank.
-So: keep queries context-anchored and selective, but not ultra-narrow.
-
-CHAPTER_TITLE:
-{{chapter_title}}
-
-CHAPTER_SPEC_TEXT:
-{{chapter_spec_text}}
-
-INPUT_QUERY_PLAN_JSON:
-{{query_plan_json}}
-
-BUDGET:
-max_queries = {{max_queries}}  # hard cap
-languages = [\"en\",\"de\"]
-
-KONTEXT:
-CHAPTER_TITLE is the titel of a chapter that I want to write in my paper and CHAPTER_SPEC_TEXT is a text that describes exactly what the chapter
-should be about. This is one step in a pipeline to find the best sources to write that chapter in my paper about. 
-
-GOALS:
-Return OpenAlex /works query objects supporting:
-- authority intent: canonical/high-impact core literature (still context-anchored)
-- match intent: best topical fit, including strong partial matches on facets
-
-OPENALEX BOOLEAN RULES (MANDATORY):
-- AND/OR/NOT must be UPPERCASE
-- Parentheses and quotes allowed
-- Forbidden: * ? ~ (never output these)
-- Avoid slash tokens X/Y; write (X OR Y) instead
-
-OUTPUT JSON SCHEMA:
-{
-  \"openalex_queries\": [
-    {
-      \"intent\": \"authority\" | \"match\",
-      \"language\": \"en\" | \"de\",
-      \"search_field\": \"default.search\" | \"title_and_abstract.search\",
-      \"query_string\": \"BOOLEAN QUERY STRING\",
-      \"filters\": \"comma,separated,filters\",
-      \"sort\": \"cited_by_count:desc\" | \"relevance_score:desc\" | null,
-      \"per_page\": 200,
-      \"notes\": \"<= 18 words\"
-    }
-  ]
-}
-
-CRITICAL FILTER RULES:
-- filters must be comma-separated OpenAlex filters.
-- Always include a language filter: language:en or language:de.
-- Use publication_year:>=YYYY only when strongly justified.
-
-QUERY BUILDER RULES:
-- Use primary_context_anchors and global_canonical_terms to keep queries on-topic.
-- Each query MUST include at least one anchor term (or close variant) in query_string.
-- For authority intent, bias towards broader canonical literature, but still anchored.
-- For match intent, bias towards facet-level specificity; mix in method/data facets.
-- Include a few exclusion terms if they disambiguate wrong-sense retrieval.
-
-NOTES:
-- notes is for humans; keep it short.
-
-RETURN ONLY JSON.
-"""
-
-
-S2_BULK_QUERY_BUILDER_SYSTEM_PROMPT = """You generate Semantic Scholar bulk search query objects. Output ONLY valid JSON.
-Goal: high precision with strong recall across ANY scientific domain.
-Be deterministic.
-"""
-
-
-S2_BULK_QUERY_BUILDER_USER_PROMPT_TEMPLATE = """PIPELINE CONTEXT:
-You generate provider-safe Semantic Scholar bulk search queries for a two-lane pipeline.
-These queries collect candidates; downstream stages deduplicate, embed, and rerank.
+OPENALEX_QUERY_BUILDER_USER_PROMPT_TEMPLATE = """PIPELINE CONTEXT:
+You generate provider-safe OpenAlex /works query objects for a two-lane retrieval pipeline.
+These queries only collect candidates, but you must still prevent generic-method drift now.
 
 CHAPTER_TITLE:
 {{chapter_title}}
@@ -1043,32 +1828,317 @@ INPUT_QUERY_PLAN_JSON:
 
 BUDGET:
 max_queries = {{max_queries}}
-languages = [\"en\",\"de\"]
+languages = ["en","de"]
 
-S2 ADVANCED QUERY RULES (MANDATORY):
-- Use boolean AND/OR/NOT (UPPERCASE) and parentheses.
-- Use quotes for multi-word phrases.
-- Do NOT use commas or semicolons inside query_string.
-- Negative terms must be atomic (<= 3 words, no punctuation except hyphen).
+GOAL HIERARCHY:
+- authority: canonical/high-impact literature that is still clearly about the chapter object
+- match: strongest topical fit for the chapter, including strong partial matches on required facets
+- do not spend budget on queries that are mainly about a generic method with weak chapter-object anchoring
+
+PLANNER-CONTROLLED INPUT FIELDS:
+- Each facet includes:
+  - query_family_preference: the dominant query shape Phase C should use
+  - language_strategy: whether the facet should stay EN-core, use bilingual fallback, or support selective DE
+  - authority_role: none | core | booster
+- authority_blueprints is the canonical upstream authority split.
+- authority_blueprints_expanded repeats each blueprint with its target facet controls for easier use.
+- Generate authority queries from authority_blueprints first. Do not invent flat authority families that ignore this split.
 
 OUTPUT JSON SCHEMA:
 {
-  \"s2_bulk_queries\": [
+  "openalex_queries": [
     {
-      \"intent\": \"authority\" | \"match\",
-      \"language\": \"en\" | \"de\",
-      \"query_string\": \"BOOLEAN QUERY STRING\",
-      \"notes\": \"<= 18 words\"
+      "intent": "authority" | "match",
+      "language": "en" | "de",
+      "search_field": "search" | "title_and_abstract.search",
+      "query_string": "BOOLEAN QUERY STRING",
+      "filters": "comma,separated,filters",
+      "sort": "cited_by_count:desc" | "relevance_score:desc" | null,
+      "per_page": 200,
+      "notes": "<= 18 words"
     }
   ]
 }
 
-REQUIREMENTS:
-- Each query MUST include at least one primary_context_anchor (or close variant).
-- Balance authority + match intents across both languages.
-- Avoid near-duplicate queries.
+IMPORTANT IMPLEMENTATION NOTE:
+The live API probe showed:
+- top-level OpenAlex `search` is much broader than `title_and_abstract.search`
+- wildcard and `~` syntax can work on top-level `search`
+- exact phrase AND can collapse quickly if the phrase pair is too rare
 
-RETURN ONLY JSON.
+So for THIS task:
+- authority queries should generally use `search`
+- match queries should generally use `title_and_abstract.search`
+- use readable quoted phrases first
+- use `*` or `~` only on `search` and only when they clearly solve a recall problem
+- do NOT use `?`
+- AND/OR/NOT must be uppercase
+- avoid slash tokens X/Y; rewrite as (X OR Y)
+
+MANDATORY RETRIEVAL RULES:
+1) Every query MUST include at least one term from primary_context_anchors[language].
+2) Every MATCH query must include:
+   - one core object/corpus/domain anchor
+   - and one construct/data/method group that is meaningful only inside that object
+3) Pure method-only queries are NOT allowed.
+4) Authority queries may be broader, but they must still remain about the chapter object.
+5) Use exclusions only for true wrong-sense confounders. If exclusions are weak or messy, omit them.
+
+FILTER POLICY:
+- filters MUST include: is_paratext:false, is_retracted:false, language:<en|de>
+- use only comma-separated filters
+- use only safe keys already supported by the implementation:
+  language,is_paratext,is_retracted,type,from_publication_date,to_publication_date,
+  primary_location.source.is_core,locations.source.is_core
+
+search_field policy:
+- authority -> "search"
+- match -> "title_and_abstract.search"
+- authority blueprint with authority_kind="core" and search_breadth="tight":
+  use object-led phrasing, avoid speculative broadening, and avoid wildcard/fuzzy unless recall would otherwise collapse
+- authority blueprint with authority_kind="booster" and search_breadth="broad_ok":
+  broader `search` is allowed, but the chapter object must still remain explicit
+
+QUERY FAMILIES TO COVER:
+- emit all core authority blueprints first
+- emit booster authority blueprints only after core authority coverage is satisfied
+- global object+construct match EN + at least one DE or bilingual core query
+- object+facet queries for weight>=4 facets, using each facet's query_family_preference
+- if budget remains, prefer object+data/proxy or object+limitations expansions before object+method expansions
+
+LANGUAGE POLICY:
+- obey the planner's language_strategy for each facet or authority blueprint
+- en_core_only -> emit EN only
+- en_plus_bilingual_fallback -> emit EN and use one bilingual rescue query instead of fragile DE clones when needed
+- en_plus_selective_de -> emit EN plus DE only when the phrasing is likely to survive title/abstract search
+- en_de_parallel -> emit both EN and DE
+- do not mirror every English query into German mechanically
+- if the German rendering becomes too literal, niche, or implementation-like, prefer one strongly object-anchored DE core query over multiple dead DE clones
+- keep DE coverage for queries whose object phrase and facet phrase are both likely to appear in German titles/abstracts
+
+LEXICALITY POLICY:
+- prefer literature-native phrases that are likely to appear verbatim in titles/abstracts
+- prefer direct object phrases over implementation jargon or abstract substitutes
+- prefer full forms before acronyms or project-local shorthand
+
+QUERY SHAPES:
+- object_core -> ("core object" OR variants) AND ("construct" OR close object-defining context)
+- object_plus_construct -> ("core object" OR variants) AND ("construct" OR variants)
+- object_plus_data_proxy -> ("core object" OR variants) AND ("data" OR "proxy" OR "measurement" variants)
+- object_plus_method -> ("core object" OR variants) AND ("specific method" OR close variants)
+- object_plus_limitation -> ("core object" OR variants) AND ("bias" OR "validity" OR "limitation" variants)
+- object_plus_context -> ("core object" OR variants) AND ("domain" OR "platform" OR "setting" variants)
+- authority core -> object-led, tight, field-defining construct/data/context phrasing
+- authority booster -> broader but still chapter-anchored authority expansion
+
+BUDGETING:
+- authority: 1 query per core authority blueprint first
+- authority: then up to 1 query per booster authority blueprint if budget remains and lexicality is plausible
+- match: global match EN + at least one DE or bilingual core query
+- match: for each facet with weight>=4 -> 1 EN query, plus DE only when the facet language_strategy supports it
+- if budget remains -> extra object-anchored expansions only
+
+EMPTY-QUERY TARGET:
+- some narrow zero-yield probes are acceptable
+- core authority and core object+construct families should usually have a plausible hit path
+- avoid stacking rare exact phrases, brittle exclusions, and literal DE mirroring in the same query
+
+SELF-CHECK (must enforce silently):
+- Would this query still retrieve many generic method surveys if the object phrase were removed? If yes, strengthen it.
+- Does every query include an object anchor, not only a method term? If not, fix it.
+- Did this authority query come from a core or booster authority blueprint? If not, fix it.
+- Does the query shape match the facet's query_family_preference? If not, fix it.
+- Are exclusions atomic and provider-safe? If not, omit them.
+- Are boolean operators uppercase and filters safe? If not, fix them.
+- Are `*` or `~` used only on `search` and only when clearly justified? If not, simplify.
+
+Return ONLY JSON.
+"""
+
+
+S2_BULK_QUERY_BUILDER_SYSTEM_PROMPT = """You generate Semantic Scholar Academic Graph bulk search queries for scientific literature retrieval.
+Reliability and chapter anchoring are more important than clever syntax.
+
+Priority order:
+1) Keep every query inside the chapter object, corpus, or domain.
+2) Cover the main constructs, data/proxy constraints, and required facets.
+3) Use title/abstract-plausible wording and simple, provider-safe syntax first.
+4) Use advanced syntax only when it clearly solves a recall problem.
+
+Never mix context anchors and facet terms in the same OR-group.
+Keep every query interpretable by a human reviewer.
+Output ONLY valid JSON. No prose.
+Be deterministic."""
+
+
+S2_BULK_QUERY_BUILDER_USER_PROMPT_TEMPLATE = """CHAPTER_TITLE:
+{{chapter_title}}
+
+CHAPTER_SPEC_TEXT:
+{{chapter_spec_text}}
+
+INPUT_QUERY_PLAN_JSON:
+{{query_plan_json}}
+
+BUDGET:
+max_queries = {{max_queries}}
+languages = ["en","de"]
+
+OUTPUT JSON:
+{
+  "s2_bulk_queries": [
+    {
+      "intent": "authority" | "match",
+      "language": "en" | "de",
+      "query_string": "QUERY STRING",
+      "notes": "<= 18 words"
+    }
+  ]
+}
+
+GOAL HIERARCHY:
+- authority: tight core authority first, optional broader boosters second
+- match: strongest chapter fit with good recall
+- do not spend budget on generic method queries that are weakly tied to the chapter object
+
+PLANNER-CONTROLLED INPUT FIELDS:
+- Each facet includes:
+  - query_family_preference
+  - language_strategy
+  - authority_role
+- authority_blueprints is the canonical upstream authority split.
+- authority_blueprints_expanded repeats each blueprint with its target facet controls for easier use.
+- Generate authority queries from authority_blueprints first. Do not collapse them into one flat authority notion.
+
+PROVIDER REALITY:
+- Semantic Scholar bulk keyword search matches titles and abstracts, so use phrases likely to appear in titles/abstracts.
+- Prefer full lexical forms over acronym-only shorthand.
+- Do not mirror every English query into German mechanically.
+
+LANGUAGE STRATEGY:
+- obey the planner's language_strategy for each facet or authority blueprint
+- en_core_only -> emit EN only
+- en_plus_bilingual_fallback -> emit EN and use bilingual rescue only when it improves recall
+- en_plus_selective_de -> emit EN plus selective DE only when the phrasing is plausible
+- en_de_parallel -> emit both EN and DE
+- English should carry the recall backbone.
+- Use German selectively, only where the object phrase and facet phrase are both likely to appear in German titles/abstracts.
+- If the German rendering is literal, brittle, or niche, use a bilingual or English fallback instead of forcing DE parity.
+
+LEXICALITY POLICY:
+- prefer direct object phrases and standard literature wording
+- prefer full forms before acronyms or shorthand
+- avoid implementation-jargon translations that are unlikely to appear in titles/abstracts
+
+ALLOWED OPERATORS (ONLY THESE):
+- Required: +term or +("a" | "b")
+- Exclude: -term or -"phrase"
+- OR: ("a" | "b" | "c")  # ALL | MUST be inside parentheses
+- Quotes: "two words"
+- Wildcard: suffix only, e.g. gene*  (GUARDRAIL: stem length >=4)
+- Fuzzy/edit distance: term~1 or term~2 (GUARDRAIL: N<=2 unless term length>=8; then N<=3)
+- Phrase proximity: "two word phrase" ~2..4 (GUARDRAIL: N<=4)
+
+ABSOLUTE SEPARATION RULE (CRITICAL; DO NOT VIOLATE):
+A) PRIMARY_CONTEXT terms and FACET terms MUST NEVER be mixed in the same OR-group.
+B) PRIMARY_CONTEXT_OR_GROUP MUST be built ONLY from primary_context_anchors for that language.
+C) FACET_OR_GROUP MUST be built ONLY from facet canonical_terms + neighbor_terms (plus safe bilingual variants).
+D) If a term is not explicitly in primary_context_anchors, it is NOT allowed in PRIMARY_CONTEXT_OR_GROUP.
+
+MANDATORY STRUCTURE:
+
+MATCH queries MUST have:
+  +(PRIMARY_CONTEXT_OR_GROUP) +(FACET_OR_GROUP) [optional NEGATIVE]
+
+DEFAULT STRONG MATCH FORM:
+  +(PRIMARY_CONTEXT_OR_GROUP) +(FACET_OR_GROUP) [optional NEGATIVE]
+
+OPTIONAL DRIFT-REDUCING FORM:
+  +(PRIMARY_CONTEXT_OR_GROUP) +(SECOND_CONTEXT_OR_GROUP) +(FACET_OR_GROUP) [optional NEGATIVE]
+
+PRIMARY_CONTEXT_OR_GROUP:
+- 2-5 terms
+- use terms that name the chapter object/corpus/domain, not only methods
+- when available, include at least 2 distinct object/context anchors
+- prefer direct object phrases such as `online reviews`, `user reviews`, `customer reviews`, `review platforms`
+- avoid abstract substitutes such as `user generated content` unless paired with a direct object phrase
+
+SECOND_CONTEXT_OR_GROUP:
+- optional but recommended only when it clearly reduces drift
+- may use anchors or global canonical terms that are still true context anchors
+- do NOT place generic facet/method terms here
+
+FACET_OR_GROUP:
+- 5-10 terms
+- only target-facet canonical_terms + neighbor_terms
+- bilingual variants are allowed inside this group when they improve recall
+- front-load standard literature wording before niche or implementation-like wording
+- avoid filling the whole group with rare translated compounds that are unlikely to appear in titles/abstracts
+
+QUERY-FAMILY SHAPE CONTROL:
+- object_core -> PRIMARY_CONTEXT + object-defining construct/context facet group
+- object_plus_construct -> PRIMARY_CONTEXT + construct facet group
+- object_plus_data_proxy -> PRIMARY_CONTEXT + data/proxy facet group
+- object_plus_method -> PRIMARY_CONTEXT + specific method facet group; add SECOND_CONTEXT only when it clearly reduces drift
+- object_plus_limitation -> PRIMARY_CONTEXT + limitation/validity facet group
+- object_plus_context -> PRIMARY_CONTEXT + context/domain/platform facet group
+- The query's dominant structure must match the facet's query_family_preference.
+
+AUTHORITY SPLIT:
+- Emit all core authority blueprints first.
+- Core authority queries should usually use 2 required groups: +(PRIMARY_CONTEXT_OR_GROUP) +(field-defining authority facet group)
+- Booster authority queries may broaden OR-groups, but must remain object-led and interpretable.
+- Do not create authority queries for facets with authority_role="none".
+
+ANTI-DRIFT RULES:
+- Pure method-only queries are NOT allowed.
+- If a query could retrieve broad NLP/LLM/economics/method papers with no chapter object, strengthen it.
+- Ambiguous standalone tokens must be rewritten as more specific phrases or paired with disambiguating terms.
+
+NEGATIVE RULES:
+- default to 0 or 1 negatives
+- use at most 2 negatives unless there is a very clear wrong-sense problem
+- negatives must be atomic and provider-safe
+- if a negative is messy, omit it
+
+EMPTY-QUERY TARGET:
+- some narrow zero-yield probes are acceptable
+- most core authority, global-match, and weight>=4 facet families should keep a plausible title/abstract hit path
+- avoid combining literal DE phrasing, 3 required groups, and multiple negatives unless the payoff is clear
+
+AUTHORITY POLICY:
+Authority queries are broader but MUST remain chapter-anchored:
+  +(PRIMARY_CONTEXT_OR_GROUP) +(HIGH_LEVEL_OR_GROUP) [optional NEGATIVE]
+
+HIGH_LEVEL_OR_GROUP:
+- use topic-specific construct/data/proxy terms
+- avoid generic standalone method or field terms
+- keep authority queries interpretable and obviously on-topic
+- avoid acronym-only terms unless the full phrase is also present
+
+ALWAYS INCLUDE:
+- authority EN
+- authority bilingual fallback
+- at least 1 DE query that uses clearly standard German academic phrasing when such phrasing exists
+- global match EN
+- match EN for each weight>=4 facet while budget permits
+- spend remaining budget first on object+data/proxy and object+limitations families before DE clones or extra method families
+
+SELF-CHECK (MUST DO, FIX SILENTLY):
+- PRIMARY_CONTEXT_OR_GROUP contains only true anchors
+- FACET_OR_GROUP contains only facet terms
+- every '|' is inside parentheses
+- MATCH has at least two required groups and at most three
+- negatives are atomic and <=2
+- wildcard only suffix and stem>=4
+- ~ only within allowed N
+- if the German version is a literal translation that is unlikely to appear in titles/abstracts, replace it with a bilingual or English fallback
+- if the query depends on acronym-only shorthand, rewrite it with full terms
+- if advanced syntax is unnecessary, simplify it
+- Did this authority query come from a core or booster blueprint? If not, fix it.
+- Does the query shape match the facet's query_family_preference? If not, fix it.
+
+Return ONLY JSON: { "s2_bulk_queries": [ ... ] }
 """
 
 
@@ -1100,6 +2170,53 @@ def _sanitize_plan_for_query_builders(plan: QueryPlan) -> Dict[str, Any]:
                 terms = list(ex.get(lang) or [])
                 ex[lang] = [t for t in terms if _is_atomic_exclusion(t)]
             f["exclusion_terms"] = ex
+
+        facet_lookup = {
+            str(f.get("facet_id") or ""): f
+            for f in facets
+            if isinstance(f, dict) and str(f.get("facet_id") or "").strip()
+        }
+        obj["phase_c_guidance"] = {
+            "facet_query_controls": [
+                {
+                    "facet_id": str(f.get("facet_id") or ""),
+                    "facet_label_en": str(f.get("facet_label_en") or ""),
+                    "importance_weight": int(f.get("importance_weight") or 0),
+                    "facet_group": str(f.get("facet_group") or ""),
+                    "query_family_preference": str(f.get("query_family_preference") or ""),
+                    "language_strategy": str(f.get("language_strategy") or ""),
+                    "authority_role": str(f.get("authority_role") or ""),
+                }
+                for f in facets
+            ],
+            "authority_blueprints_expanded": [
+                {
+                    "authority_kind": str(bp.get("authority_kind") or ""),
+                    "label_en": str(bp.get("label_en") or ""),
+                    "label_de": str(bp.get("label_de") or ""),
+                    "language_strategy": str(bp.get("language_strategy") or ""),
+                    "search_breadth": str(bp.get("search_breadth") or ""),
+                    "notes_en": str(bp.get("notes_en") or ""),
+                    "target_facets": [
+                        {
+                            "facet_id": facet_id,
+                            "facet_label_en": str((facet_lookup.get(facet_id) or {}).get("facet_label_en") or ""),
+                            "facet_group": str((facet_lookup.get(facet_id) or {}).get("facet_group") or ""),
+                            "query_family_preference": str((facet_lookup.get(facet_id) or {}).get("query_family_preference") or ""),
+                            "language_strategy": str((facet_lookup.get(facet_id) or {}).get("language_strategy") or ""),
+                            "authority_role": str((facet_lookup.get(facet_id) or {}).get("authority_role") or ""),
+                        }
+                        for facet_id in [
+                            str(fid or "").strip()
+                            for fid in (bp.get("target_facet_ids") or [])
+                            if str(fid or "").strip()
+                        ]
+                    ],
+                }
+                for bp in (obj.get("authority_blueprints") or [])
+                if isinstance(bp, dict)
+            ],
+        }
     except Exception:
         return obj
     return obj
@@ -1227,7 +2344,7 @@ def _lint_openalex_not_clauses_atomic(qs: str) -> None:
 def _lint_s2_negative_terms_atomic(qs: str) -> None:
     s = str(qs or "")
     bad: List[str] = []
-    for m in re.finditer(r'-(\"[^\"]+\"|[^\s()|]+)', s):
+    for m in re.finditer(r'(?:^|[\s(])-\s*(\"[^\"]+\"|[^\s()|]+)', s):
         raw = m.group(1).strip()
         if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
             raw = raw[1:-1].strip()
@@ -1696,6 +2813,267 @@ def _validate_openalex_match_anchor_fingerprint_diversity(
             )
 
 
+def _count_s2_required_components(qs: str) -> int:
+    return len(re.findall(r"(?:^|\s)\+(?=(?:\(|\"|[\w]))", str(qs or ""), flags=re.UNICODE))
+
+
+def _count_s2_negative_components(qs: str) -> int:
+    return len(re.findall(r"(?:^|[\s(])-\s*(?:(?:\"[^\"]+\")|[^\s()|]+)", str(qs or ""), flags=re.UNICODE))
+
+
+def _has_s2_advanced_syntax(qs: str) -> bool:
+    s = str(qs or "")
+    if "*" in s or "?" in s:
+        return True
+    if re.search(r"\w+~\d+", s):
+        return True
+    if re.search(r'"[^"]+"\s*~\s*\d+', s):
+        return True
+    return False
+
+
+def _plan_language_terms(plan: QueryPlan, attr_name: str, language: str) -> List[str]:
+    obj = getattr(plan, attr_name, None)
+    if obj is None:
+        return []
+    terms = getattr(obj, language, None) or []
+    return [str(t).strip() for t in terms if str(t or "").strip()]
+
+
+def _is_atomic_exclusion(term: str) -> bool:
+    t = str(term or "").strip()
+    if not t:
+        return False
+    if _BAD_EXCL_PAT.search(t):
+        return False
+    if len(t) > 40:
+        return False
+    if _word_count(t) > 3:
+        return False
+    if re.search(r"[^\w\s-]", t, flags=re.UNICODE):
+        return False
+    return True
+
+
+def _normalize_openalex_query(q: OpenAlexQuery) -> OpenAlexQuery:
+    raw_search_field = getattr(q, "search_field", None) or ("search" if q.intent == "authority" else "title_and_abstract.search")
+    if raw_search_field == "default.search":
+        raw_search_field = "search"
+    search_field = raw_search_field
+
+    qs = _normalize_unicode_query_text(str(q.query_string or "")).strip()
+    qs = _expand_slash_tokens(qs, or_operator="OR")
+    qs = _uppercase_boolean_ops_outside_quotes(qs)
+    qs = re.sub(r"\s+", " ", qs).strip()
+    if "?" in qs:
+        raise ValueError(f"OpenAlex unsupported character in query_string: {qs!r}")
+    if search_field != "search" and any(ch in qs for ch in ("*", "~")):
+        raise ValueError(f"OpenAlex advanced syntax allowed only on search field: {qs!r}")
+    _lint_openalex_not_clauses_atomic(qs)
+
+    filters = _canonicalize_openalex_filters(q.filters, language=q.language)
+
+    sort = q.sort
+    if q.intent == "authority":
+        sort = "cited_by_count:desc"
+    elif q.intent == "match" and sort not in (None, "relevance_score:desc"):
+        sort = "relevance_score:desc"
+
+    notes = _limit_words(q.notes, 18)
+
+    return q.model_copy(
+        update={
+            "search_field": search_field,
+            "query_string": qs,
+            "filters": filters,
+            "sort": sort,
+            "per_page": 200,
+            "notes": notes,
+        }
+    )
+
+
+def _normalize_s2_query(q: S2BulkQuery) -> S2BulkQuery:
+    qs = _normalize_unicode_query_text(str(q.query_string or ""))
+    qs = _expand_slash_tokens(qs.strip(), or_operator="|")
+    qs = re.sub(r"\s+", " ", qs)
+    if "?" in qs:
+        raise ValueError(f"S2 forbidden character in query_string: {qs!r}")
+    _validate_s2_advanced_ops(qs)
+    _lint_s2_negative_terms_atomic(qs)
+    if not re.search(r"\+\s*(?:\(|\")", qs):
+        raise ValueError(f"S2 query_string must contain at least one +anchor: {qs!r}")
+
+    plus_count = _count_s2_required_components(qs)
+    neg_count = _count_s2_negative_components(qs)
+    if neg_count > 2:
+        raise ValueError(f"S2 negative budget exceeded (>2): {qs!r}")
+    if plus_count > 3:
+        raise ValueError(f"S2 query_string has too many required components (>3): {qs!r}")
+    if q.intent == "match" and plus_count < 2:
+        raise ValueError(f"S2 match query_string must contain >=2 required components (+): {qs!r}")
+
+    depth = 0
+    in_quote = False
+    for ch in qs:
+        if ch == '"':
+            in_quote = not in_quote
+            continue
+        if in_quote:
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(depth - 1, 0)
+        elif ch == "|" and depth <= 0:
+            raise ValueError(f"S2 operator sanity: '|' must be inside parentheses: {qs!r}")
+
+    notes = _limit_words(q.notes, 18)
+    return q.model_copy(update={"query_string": qs.strip(), "notes": notes})
+
+
+def _find_anchor_terms_in_text(text: str, terms: List[str]) -> List[str]:
+    hay = _normalize_unicode_query_text(str(text or "")).lower()
+    matches: List[str] = []
+    for t in terms:
+        tt = _normalize_unicode_query_text(str(t or "")).strip()
+        if not tt:
+            continue
+        if tt.lower() in hay:
+            matches.append(tt)
+    matches.sort(key=lambda x: len(x), reverse=True)
+
+    seen = set()
+    uniq: List[str] = []
+    for match in matches:
+        key = match.lower()
+        if key in seen:
+            continue
+        uniq.append(match)
+        seen.add(key)
+    return uniq
+
+
+def _validate_openalex_anchor_presence(queries: List[OpenAlexQuery], *, plan: QueryPlan) -> None:
+    for q in queries:
+        anchors = getattr(plan.primary_context_anchors, q.language, []) or []
+        if not anchors:
+            continue
+        hits = _find_anchor_terms_in_text(q.query_string, list(anchors))
+        if not hits:
+            raise ValueError(f"OpenAlex: query missing required anchor (lang={q.language}, intent={q.intent}): {q.query_string!r}")
+
+
+def _validate_s2_anchor_presence(queries: List[S2BulkQuery], *, plan: QueryPlan) -> None:
+    for q in queries:
+        anchors = getattr(plan.primary_context_anchors, q.language, []) or []
+        if not anchors:
+            continue
+        hits = _find_anchor_terms_in_text(q.query_string, list(anchors))
+        if not hits:
+            raise ValueError(f"S2: query missing required primary anchor (lang={q.language}, intent={q.intent}): {q.query_string!r}")
+
+
+def _validate_match_core_object_presence(queries: List[Any], *, plan: QueryPlan, provider: str) -> None:
+    for q in queries:
+        if getattr(q, "intent", None) != "match":
+            continue
+        core_terms = _plan_language_terms(plan, "core_object_terms", getattr(q, "language", ""))
+        if not core_terms:
+            continue
+        hits = _find_anchor_terms_in_text(getattr(q, "query_string", ""), core_terms)
+        if not hits:
+            raise ValueError(
+                f"{provider}: match query missing core object term (lang={getattr(q, 'language', '')}): {getattr(q, 'query_string', '')!r}"
+            )
+
+
+def _validate_openalex_match_anchor_fingerprint_diversity(
+    queries: List[OpenAlexQuery],
+    *,
+    plan: QueryPlan,
+    max_share: float = 0.60,
+) -> None:
+    for lang in ("en", "de"):
+        anchors = getattr(plan.primary_context_anchors, lang, []) or []
+        anchors = [t for t in anchors if str(t or "").strip()]
+        if not anchors:
+            continue
+
+        match_qs = [q for q in queries if q.intent == "match" and q.language == lang]
+        if len(match_qs) < 4:
+            continue
+
+        counts: Dict[Tuple[str, str], int] = {}
+        eligible = 0
+        for q in match_qs:
+            hits = _find_anchor_terms_in_text(q.query_string, anchors)
+            top2 = [h.lower() for h in hits[:2]]
+            if len(top2) < 2:
+                continue
+            fp = (top2[0], top2[1])
+            counts[fp] = counts.get(fp, 0) + 1
+            eligible += 1
+
+        if eligible < 4:
+            continue
+
+        most_fp, most_n = max(counts.items(), key=lambda kv: kv[1])
+        share = most_n / max(eligible, 1)
+        if share > float(max_share):
+            raise ValueError(
+                f"OpenAlex: anchor fingerprint concentration too high (lang={lang}, share={share:.2f}, fp={most_fp}): regenerate"
+            )
+
+
+def _validate_openalex_search_field_budget(
+    queries: List[OpenAlexQuery],
+    *,
+    max_match_search_queries: int = 2,
+    max_match_search_share: float = 0.20,
+) -> None:
+    match_queries = [q for q in queries if q.intent == "match"]
+    if not match_queries:
+        return
+    match_search = [q for q in match_queries if q.search_field == "search"]
+    share = float(len(match_search)) / float(max(1, len(match_queries)))
+    if len(match_search) > int(max_match_search_queries) or share > float(max_match_search_share):
+        raise ValueError(
+            f"OpenAlex: too many broad match queries on search field (count={len(match_search)}/{len(match_queries)}, share={share:.2f}): regenerate"
+        )
+
+
+def _validate_s2_match_required_group_budget(
+    queries: List[S2BulkQuery],
+    *,
+    max_three_group_share: float = 0.35,
+) -> None:
+    match_queries = [q for q in queries if q.intent == "match"]
+    if len(match_queries) < 4:
+        return
+    three_group = [q for q in match_queries if _count_s2_required_components(q.query_string) == 3]
+    share = float(len(three_group)) / float(max(1, len(match_queries)))
+    if share > float(max_three_group_share):
+        raise ValueError(
+            f"S2: too many 3-group match queries (share={share:.2f}, count={len(three_group)}/{len(match_queries)}): regenerate"
+        )
+
+
+def _validate_s2_advanced_syntax_budget(
+    queries: List[S2BulkQuery],
+    *,
+    max_queries_with_advanced: int = 2,
+    max_share: float = 0.20,
+) -> None:
+    advanced = [q for q in queries if _has_s2_advanced_syntax(q.query_string)]
+    if not advanced:
+        return
+    share = float(len(advanced)) / float(max(1, len(queries)))
+    if len(advanced) > int(max_queries_with_advanced) or share > float(max_share):
+        raise ValueError(
+            f"S2: advanced syntax overused (count={len(advanced)}/{len(queries)}, share={share:.2f}): regenerate"
+        )
+
 async def build_openalex_queries_llm(
     plan: QueryPlan,
     *,
@@ -1728,40 +3106,12 @@ async def build_openalex_queries_llm(
             if len(queries) > max_q:
                 queries = queries[:max_q]
 
-            injected = 0
-            repaired: List[OpenAlexQuery] = []
-            for q in queries:
-                q2, changed = _maybe_inject_missing_openalex_anchor(q, plan=plan)
-                if changed:
-                    injected += 1
-                    q2 = _normalize_openalex_query(q2)
-                repaired.append(q2)
-            queries = repaired
-            if injected:
-                log_event(run_ctx, stage=stage, event="anchor_injected_cache", count=injected)
-
             _validate_language_coverage(queries, provider="OpenAlex")
             _validate_intent_coverage(queries, provider="OpenAlex")
-            try:
-                _validate_openalex_anchor_presence(queries, plan=plan)
-            except Exception as e:
-                log_event(
-                    run_ctx,
-                    stage=stage,
-                    event="lint_warning",
-                    warning=str(e)[:800],
-                    warning_type="anchor_presence_cache",
-                )
-            try:
-                _validate_openalex_match_anchor_fingerprint_diversity(queries, plan=plan)
-            except Exception as e:
-                log_event(
-                    run_ctx,
-                    stage=stage,
-                    event="lint_warning",
-                    warning=str(e)[:800],
-                    warning_type="anchor_fingerprint_diversity_cache",
-                )
+            _validate_openalex_anchor_presence(queries, plan=plan)
+            _validate_match_core_object_presence(queries, plan=plan, provider="OpenAlex")
+            _validate_openalex_match_anchor_fingerprint_diversity(queries, plan=plan)
+            _validate_openalex_search_field_budget(queries)
 
             write_json(cache_path, {"openalex_queries": [q.model_dump(mode="json") for q in queries]})
             log_event(run_ctx, stage=stage, event="cache_hit", path=str(cache_path), query_count=len(queries))
@@ -1846,41 +3196,12 @@ async def build_openalex_queries_llm(
                     log_event(run_ctx, stage=stage, event="budget_trim", from_count=len(queries), to_count=max_q)
                     queries = queries[:max_q]
 
-                injected = 0
-                repaired: List[OpenAlexQuery] = []
-                for q in queries:
-                    q2, changed = _maybe_inject_missing_openalex_anchor(q, plan=plan)
-                    if changed:
-                        injected += 1
-                        q2 = _normalize_openalex_query(q2)
-                    repaired.append(q2)
-                queries = repaired
-                if injected:
-                    log_event(run_ctx, stage=stage, event="anchor_injected", count=injected)
-
                 _validate_language_coverage(queries, provider="OpenAlex")
                 _validate_intent_coverage(queries, provider="OpenAlex")
-                try:
-                    _validate_openalex_anchor_presence(queries, plan=plan)
-                except Exception as e:
-                    log_event(
-                        run_ctx,
-                        stage=stage,
-                        event="lint_warning",
-                        warning=str(e)[:800],
-                        warning_type="anchor_presence",
-                    )
-                try:
-                    _validate_openalex_match_anchor_fingerprint_diversity(queries, plan=plan)
-                except Exception as e:
-                    # This is a quality heuristic; never abort a run because of it.
-                    log_event(
-                        run_ctx,
-                        stage=stage,
-                        event="lint_warning",
-                        warning=str(e)[:800],
-                        warning_type="anchor_fingerprint_diversity",
-                    )
+                _validate_openalex_anchor_presence(queries, plan=plan)
+                _validate_match_core_object_presence(queries, plan=plan, provider="OpenAlex")
+                _validate_openalex_match_anchor_fingerprint_diversity(queries, plan=plan)
+                _validate_openalex_search_field_budget(queries)
 
                 write_json(run_ctx.run_dir / "openalex_queries.raw_output.json", obj)
                 write_json(run_ctx.run_dir / "openalex_queries.openai_meta.json", meta)
@@ -1932,17 +3253,7 @@ async def build_s2_bulk_queries_llm(
             if not isinstance(items, list):
                 raise ValueError("cache missing s2_bulk_queries list")
 
-            raw_queries = [S2BulkQuery.model_validate(x) for x in items]
-            injected = 0
-            repaired: List[S2BulkQuery] = []
-            for q in raw_queries:
-                q2, changed = _maybe_inject_missing_s2_anchor(q, plan=plan)
-                if changed:
-                    injected += 1
-                repaired.append(q2)
-            queries = [_normalize_s2_query(q) for q in repaired]
-            if injected:
-                log_event(run_ctx, stage=stage, event="anchor_injected_cache", count=injected)
+            queries = [_normalize_s2_query(S2BulkQuery.model_validate(x)) for x in items]
 
             max_q = int(config.max_queries_per_provider or 0) or 50
             if len(queries) > max_q:
@@ -1950,16 +3261,10 @@ async def build_s2_bulk_queries_llm(
 
             _validate_language_coverage(queries, provider="S2")
             _validate_intent_coverage(queries, provider="S2")
-            try:
-                _validate_s2_anchor_presence(queries, plan=plan)
-            except Exception as e:
-                log_event(
-                    run_ctx,
-                    stage=stage,
-                    event="lint_warning",
-                    warning=str(e)[:800],
-                    warning_type="anchor_presence_cache",
-                )
+            _validate_s2_anchor_presence(queries, plan=plan)
+            _validate_match_core_object_presence(queries, plan=plan, provider="S2")
+            _validate_s2_match_required_group_budget(queries)
+            _validate_s2_advanced_syntax_budget(queries)
 
             write_json(cache_path, {"s2_bulk_queries": [q.model_dump(mode="json") for q in queries]})
             log_event(run_ctx, stage=stage, event="cache_hit", path=str(cache_path), query_count=len(queries))
@@ -2038,17 +3343,7 @@ async def build_s2_bulk_queries_llm(
                 items = obj.get("s2_bulk_queries")
                 if not isinstance(items, list):
                     raise ValueError("OpenAI output missing s2_bulk_queries list")
-                raw_queries = [S2BulkQuery.model_validate(x) for x in items]
-                injected = 0
-                repaired: List[S2BulkQuery] = []
-                for q in raw_queries:
-                    q2, changed = _maybe_inject_missing_s2_anchor(q, plan=plan)
-                    if changed:
-                        injected += 1
-                    repaired.append(q2)
-                queries = [_normalize_s2_query(q) for q in repaired]
-                if injected:
-                    log_event(run_ctx, stage=stage, event="anchor_injected", count=injected)
+                queries = [_normalize_s2_query(S2BulkQuery.model_validate(x)) for x in items]
 
                 if len(queries) > max_q:
                     log_event(run_ctx, stage=stage, event="budget_trim", from_count=len(queries), to_count=max_q)
@@ -2056,16 +3351,10 @@ async def build_s2_bulk_queries_llm(
 
                 _validate_language_coverage(queries, provider="S2")
                 _validate_intent_coverage(queries, provider="S2")
-                try:
-                    _validate_s2_anchor_presence(queries, plan=plan)
-                except Exception as e:
-                    log_event(
-                        run_ctx,
-                        stage=stage,
-                        event="lint_warning",
-                        warning=str(e)[:800],
-                        warning_type="anchor_presence",
-                    )
+                _validate_s2_anchor_presence(queries, plan=plan)
+                _validate_match_core_object_presence(queries, plan=plan, provider="S2")
+                _validate_s2_match_required_group_budget(queries)
+                _validate_s2_advanced_syntax_budget(queries)
 
                 write_json(run_ctx.run_dir / "s2_bulk_queries.raw_output.json", obj)
                 write_json(run_ctx.run_dir / "s2_bulk_queries.openai_meta.json", meta)
@@ -2278,7 +3567,7 @@ def _openalex_params(cfg: PipelineConfig, q: OpenAlexQuery, *, cursor: str) -> D
         params["api_key"] = cfg.openalex_api_key
 
     base_filters = str(getattr(q, "filters", "") or "").strip().strip(",")
-    if q.search_field == "default.search":
+    if q.search_field in {"default.search", "search"}:
         params["search"] = q.query_string
         if base_filters:
             params["filter"] = base_filters
@@ -3505,6 +4794,22 @@ class PipelineConfig(BaseModel):
     # Embeddings
     embedding_model: str = "text-embedding-3-small"
     embedding_batch_size: int = 256
+    embedding_candidate_abstract_chars_main: int = 800
+    embedding_candidate_include_venue: bool = True
+    embedding_candidate_include_year: bool = True
+    embedding_candidate_include_authors: bool = False
+    embedding_shortlist_stage2: int = 400
+    embedding_chunk_target_min: int = 260
+    embedding_chunk_target_max: int = 420
+    embedding_stage2_weight: float = 0.45
+    embedding_stage1_weight: float = 0.55
+    embedding_apply_mmr: bool = True
+    embedding_mmr_lambda: float = 0.82
+    embedding_mmr_top_k: int = 40
+    embedding_max_no_abstract_share: float = 0.15
+    embedding_apply_hygiene: bool = True
+    embedding_temp_precap_total: int = 100000
+    embedding_temp_precap_noabs_share: float = 0.15
 
     # Pruning
     prune_n1: int = 600
@@ -3517,6 +4822,11 @@ class PipelineConfig(BaseModel):
     # Rerank
     rerank_top_k_pre: int = 40
     rerank_concurrency: int = 20
+    rerank_pairwise_top_k: int = 6
+    rerank_pointwise_max_output_tokens: int = 2500
+    rerank_pointwise_timeout_s: float = 300.0
+    rerank_pairwise_max_output_tokens: int = 1500
+    rerank_pairwise_timeout_s: float = 240.0
 
     # Match aggregation weights
     match_weight_best: float = 0.55
@@ -3591,8 +4901,9 @@ class TwoLaneOpenAI:
         self.total_cost_usd: float = 0.0
         self.stage_costs: Dict[str, TwoLaneStageCost] = {}
 
-        # Unique workflow id to keep operation ids stable per run.
+        # Unique workflow id scopes all budget/cost operations to one pipeline run.
         self.workflow_id = stable_hash("two_lane", self.user_id, self.run_id, length=16)
+        self._operation_seq = 0
         self.budget_exceeded = False
 
         # Live cost reporting to Firestore (for UI updates while running).
@@ -3616,6 +4927,71 @@ class TwoLaneOpenAI:
             st = TwoLaneStageCost()
             self.stage_costs[stage] = st
         return st
+
+    def _next_operation_id(self, *, stage: str, operation_type: str, model: str, operation_details: dict | None = None) -> str:
+        self._operation_seq += 1
+        try:
+            details_key = json.dumps(operation_details or {}, ensure_ascii=False, sort_keys=True, default=_json_default)
+        except Exception:
+            details_key = str(operation_details or "")
+        suffix = stable_hash(
+            stage,
+            operation_type,
+            model,
+            details_key,
+            f"seq:{self._operation_seq}",
+            length=12,
+        )
+        return f"{self.workflow_id}_{suffix}"
+
+    @staticmethod
+    def _openai_retry_after_seconds(exc: Exception) -> float | None:
+        response = getattr(exc, "response", None)
+        headers = getattr(response, "headers", None)
+        if not headers:
+            return None
+        value = headers.get("retry-after") or headers.get("Retry-After")
+        if value is None:
+            return None
+        try:
+            return max(0.0, float(value))
+        except Exception:
+            return None
+
+    @classmethod
+    def _should_retry_embedding_error(cls, exc: Exception) -> tuple[bool, float | None]:
+        retry_after_s = cls._openai_retry_after_seconds(exc)
+
+        if isinstance(exc, (APIConnectionError, APITimeoutError, InternalServerError, RateLimitError)):
+            return True, retry_after_s
+
+        if isinstance(exc, APIStatusError):
+            status_code = int(getattr(exc, "status_code", 0) or getattr(getattr(exc, "response", None), "status_code", 0) or 0)
+            return status_code in {408, 409, 429, 500, 502, 503, 504}, retry_after_s
+
+        status_code = getattr(exc, "status_code", None)
+        if status_code is not None:
+            try:
+                return int(status_code) in {408, 409, 429, 500, 502, 503, 504}, retry_after_s
+            except Exception:
+                pass
+
+        message = str(exc).lower()
+        if any(
+            token in message
+            for token in (
+                "server_error",
+                "internalservererror",
+                "rate limit",
+                "timeout",
+                "timed out",
+                "connection error",
+                "temporarily unavailable",
+            )
+        ):
+            return True, retry_after_s
+
+        return False, None
 
     def _costs_snapshot(self) -> Dict[str, Any]:
         stage_costs = {
@@ -3717,7 +5093,12 @@ class TwoLaneOpenAI:
         if credits_est <= 0:
             credits_est = 0.0001
 
-        op_id = f"{self.workflow_id}_{stable_hash(stage, operation_type, model, str(time.time()), length=10)}"
+        op_id = self._next_operation_id(
+            stage=stage,
+            operation_type=operation_type,
+            model=model,
+            operation_details=operation_details,
+        )
         estimate = {
             "operationType": str(operation_type),
             "model": str(model),
@@ -3909,7 +5290,13 @@ class TwoLaneOpenAI:
             if not batch:
                 continue
 
-            op_id = f"{self.workflow_id}_{stable_hash(stage, operation_type, model, f'b{bi}', length=10)}"
+            batch_operation_details = {"batchIndex": int(bi), "batchSize": int(len(batch)), **(operation_details or {})}
+            op_id = self._next_operation_id(
+                stage=stage,
+                operation_type=operation_type,
+                model=model,
+                operation_details=batch_operation_details,
+            )
 
             input_tokens_est = int(sum(count_tokens(t) for t in batch))
             cost_est_usd = float((input_tokens_est / 1_000_000) * float(input_price))
@@ -3937,7 +5324,7 @@ class TwoLaneOpenAI:
                 estimate=estimate,
                 projekt_id=self.projekt_id,
                 kapitel_id=self.kapitel_id,
-                operation_details=operation_details,
+                operation_details=batch_operation_details,
             )
             if reservation.result == "blocked":
                 raise HTTPException(
@@ -3950,14 +5337,54 @@ class TwoLaneOpenAI:
             await self.budget_service.mark_running(user_id=self.user_id, operation_id=op_id)
 
             t0 = time.perf_counter()
-            try:
-                resp = await client.embeddings.create(model=model, input=batch)
-            except Exception as exc:
-                await self.budget_service.mark_status(user_id=self.user_id, operation_id=op_id, status="error", error_message=str(exc))
-                await self.budget_service.release_reservation(user_id=self.user_id, operation_id=op_id, reason="error")
-                raise
+            resp = None
+            backoff_s = 1.0
+            for attempt in range(1, 9):
+                try:
+                    resp = await client.embeddings.create(model=model, input=batch)
+                    break
+                except Exception as exc:
+                    retryable, retry_after_s = self._should_retry_embedding_error(exc)
+                    if (not retryable) or attempt >= 8:
+                        await self.budget_service.mark_status(
+                            user_id=self.user_id,
+                            operation_id=op_id,
+                            status="error",
+                            error_message=str(exc),
+                        )
+                        await self.budget_service.release_reservation(
+                            user_id=self.user_id,
+                            operation_id=op_id,
+                            reason="error",
+                        )
+                        raise
 
-            vecs = [array("f", [float(x) for x in item.embedding]) for item in resp.data]
+                    wait_s = min(60.0, float(backoff_s))
+                    if retry_after_s is not None:
+                        wait_s = max(wait_s, float(retry_after_s))
+                    wait_s = max(0.5, float(wait_s) * (1.0 + random.uniform(-0.15, 0.15)))
+                    logger.warning(
+                        "Two-lane embeddings transient failure | stage=%s run_id=%s operation_id=%s batch_index=%s "
+                        "attempt=%s/8 wait_s=%.2f error=%s",
+                        stage,
+                        self.run_id,
+                        op_id,
+                        int(bi),
+                        attempt,
+                        wait_s,
+                        _truncate(repr(exc), max_len=240),
+                    )
+                    await asyncio.sleep(wait_s)
+                    backoff_s *= 2.0
+
+            data = list(getattr(resp, "data", None) or [])
+            if len(data) != len(batch) or any(getattr(item, "embedding", None) is None for item in data):
+                err = RuntimeError(f"Embedding response shape mismatch (got {len(data)} for {len(batch)}).")
+                await self.budget_service.mark_status(user_id=self.user_id, operation_id=op_id, status="error", error_message=str(err))
+                await self.budget_service.release_reservation(user_id=self.user_id, operation_id=op_id, reason="error")
+                raise err
+
+            vecs = [array("f", [float(x) for x in item.embedding]) for item in data]
             all_vecs.extend(vecs)
             reqs += 1
 
@@ -3975,7 +5402,7 @@ class TwoLaneOpenAI:
                 operation_type=operation_type,
                 user_id=self.user_id,
                 user_action_id=self.run_id,
-                operation_details={"batchSize": int(len(batch)), **(operation_details or {})},
+                operation_details=batch_operation_details,
                 model=model,
                 usage=usage,
                 cost_breakdown=cost_breakdown,
