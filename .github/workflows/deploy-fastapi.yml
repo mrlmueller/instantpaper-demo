@@ -79,7 +79,7 @@ jobs:
             --task-timeout 2h
             --command python
             --set-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app"
-            --set-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENALEX_API_KEY=OPENALEX_API_KEY:latest,OPENALEX_EMAIL=OPENALEX_EMAIL:latest,SEMANTICSCHOLAR_API_KEY=SEMANTICSCHOLAR_API_KEY:latest"
+            --set-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENALEX_API_KEY=OPENALEX_API_KEY:latest,SEMANTICSCHOLAR_API_KEY=SEMANTICSCHOLAR_API_KEY:latest"
           )
 
           if gcloud run jobs describe "$CLOUD_RUN_JOB" --region "$GCP_REGION" >/dev/null 2>&1; then
