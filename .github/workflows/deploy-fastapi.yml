@@ -56,8 +56,9 @@ jobs:
             --image "$IMAGE" \
             --allow-unauthenticated \
             --service-account "instantpaper-api-runtime@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
-            --set-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,TWO_LANE_CLOUD_RUN_JOB_NAME=${CLOUD_RUN_JOB},TWO_LANE_CLOUD_RUN_JOB_REGION=${GCP_REGION}" \
-            --set-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest,USER_KEY_ENCRYPTION_KEY=USER_KEY_ENCRYPTION_KEY:latest,ADMIN_UIDS=ADMIN_UIDS:latest"
+            --remove-secrets "FIREBASE_PROJECT_ID,FIREBASE_CLIENT_EMAIL,FIREBASE_PRIVATE_KEY" \
+            --update-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,TWO_LANE_CLOUD_RUN_JOB_NAME=${CLOUD_RUN_JOB},TWO_LANE_CLOUD_RUN_JOB_REGION=${GCP_REGION}" \
+            --update-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest,USER_KEY_ENCRYPTION_KEY=USER_KEY_ENCRYPTION_KEY:latest,ADMIN_UIDS=ADMIN_UIDS:latest"
 
       - name: Deploy two-lane Cloud Run Job
         run: |
