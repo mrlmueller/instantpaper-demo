@@ -1,128 +1,558 @@
-# PDF Scan – Verbesserungs-Ideen (Accuracy vs. Aufwand)
+# PDF Scan Research Report
 
-Skalen:
+Scope of this report:
+- target implementation under review: `pdf-scan/pdf-scan-test.ipynb`
+- goal: rank the most useful chapters / sections from one or more digital PDFs for a given input chapter description
+- not a code-change pass
+- section text extraction is treated as secondary
 
-- **Complexity (1–5)**: 1 = sehr leicht, 5 = groß/architektonisch
-- **Accuracy impact (1–5)**: 1 = kleiner Effekt, 5 = sehr großer Effekt
-- **Reliability impact (1–5)**: 1 = kleiner Effekt, 5 = sehr großer Effekt
+## Executive Summary
 
-Ziel: möglichst vollständige, thematisch präzise Evidence-Pakete aus PDFs, damit die spätere Kapitel-Schreibphase maximal belastbar ist.
+The current notebook is built around the wrong retrieval unit.
 
----
+Right now the pipeline mostly does:
+- retrieve raw vector-store chunks from uploaded PDFs
+- ask an LLM to infer which places are relevant
+- optionally recover sections later
 
-## Architektur (Ist-Stand)
+That is fundamentally weaker than a section-first design.
 
-- **Stage 0 (Input)**: Kapitel-Titel + Rohbeschreibung + PDFs (lokal oder `file_id`)
-- **Stage 1 (Preprocess)**: LLM erzeugt Retrieval-Spezifikation (Keywords, Subpoints, Exclusions, Scope Notes)
-- **Stage 2 (Evidence Extractor)**: `vector_stores.search` → EVIDENCE → LLM extrahiert Treffer (strict: nur EVIDENCE)
-- **Stage 3 (Curation)**: viele Treffer → wenige **einzigartige** PDF-Sections (divers + importance-gewichtet)
-- **Stage 4 (Text Extract)**: aus lokaler PDF via Anchor+Heading den Volltext des Abschnitts ziehen (best effort)
+For stable performance on scientific papers, reports, and books from roughly `2` to `200+` pages, the system should be redesigned around:
+- explicit section / chapter candidates
+- structure-aware parsing
+- section-level retrieval
+- second-stage reranking
+- calibrated scoring
 
-Dateien:
+The main recommendation is:
 
-- `pdf-scan/pdf-scan-test.ipynb` (Stage 0–3)
-- `pdf-scan/text-extract.ipynb` (Stage 4)
-- `pdf-scan/pdf_text_utils.py` (Shared Normalization/Anchor-Validation)
+1. Recover document structure first.
+2. Build explicit section candidates.
+3. Retrieve and rerank sections, not arbitrary raw chunks.
+4. Use LLMs only where they add clear value.
 
----
+## What Is Wrong With The Current Notebook
 
-## 0) Was bereits umgesetzt ist (Status)
+The notebook already proves that the basic workflow can run, but it has several structural problems for the actual task.
 
-**In `pdf-scan/pdf-scan-test.ipynb`**
+### 1. It ranks sections indirectly
 
-- Multi-PDF Upload/Reuse: lokale Pfade oder `file_id` (ein Vector Store).
-- Stage-Model Overrides: `STAGE_MODELS` + `OPENAI_MODEL_<STAGE>`.
-- Stage 1 Preprocess (LLM, strict JSON Schema): `optimized_description`, `must_terms`, `should_terms`, `subpoints` (inkl. keywords/exclusions), `hard_exclusions`, `scope_notes`.
-- Retrieval: `vector_stores.search` (capped `max_num_results <= 50`).
-- Balanced Retrieval (Option A): global Search + per-PDF “Top-up” via Filters + optional Subpoint-Top-up (importance-basiert).
-- Stage 2 Evidence Extractor (LLM): **Hard rule: nur EVIDENCE**; `anchor` + `anchor_alt` + Summary + Score + `subpoint_scores` (Multi-Subpoint).
-- Postprocess: robuste Anchor-Validierung (NFKC, Quotes, Soft-Hyphen, Case, Ligaturen) + “snap-to-evidence”; Treffer werden nicht still gedroppt, sondern als “UNVERIFIED_ANCHOR” markiert.
-- Ausgabe: pro PDF (Debug), nach Unterpunkt (aggregiert), plus Stage-3-Curation Views.
-- Kosten: pro Stage + pro PDF + Total (actual per `model_used` + what-if für `gpt-5-nano`/`gpt-5-mini`/`gpt-5.2`).
-- Stage 3 Curation: Auswahl **einzigartiger** PDF-Sections (TOC/Strict-Headings best effort), importance-gewichtete Targets, kein “min=1”-Bug, PyMuPDF-Docs werden geschlossen.
+The target task is:
+- "Which chapters / sections in these PDFs are most useful for writing this input chapter?"
 
-**In `pdf-scan/text-extract.ipynb`**
+The notebook instead does:
+- "Which raw chunks look relevant, and can an LLM infer section usefulness from them?"
 
-- Robust anchor locate (word-based, survives line breaks).
-- Strict heading detection (font-size/numbering heuristics) + section extraction by heading bounds, fallback “window around anchor”.
-- Shared Normalization aus `pdf_text_utils.py`.
+That creates an avoidable recall bottleneck.
 
----
+### 2. It is chunk-recall bound
 
-## 1) Fix-first: mögliche Bugs / Unsaubere Stellen (Status + Fix)
+If the right section is not present in the top vector-store hits, the system cannot recover later.
 
-Diese Punkte sind die wahrscheinlichsten Ursachen für “es gibt Infos im PDF, aber Pipeline findet sie nicht zuverlässig” oder “Output ist verwirrend”.
+This is especially risky because the current design has:
+- a global retrieval step
+- a `max_num_results` ceiling
+- evidence budgets per PDF
+- post-hoc section reasoning after recall is already truncated
 
-| Problem / Code-Smell | Warum relevant | Wo | Fix | Status | Complexity | Reliability impact |
-| --- | --- | --- | --- | :---: | ---: | ---: |
-| Relative Pfade hängen am Notebook-CWD (z.B. `.env`, `PDF_DIR`) | `.env`/PDFs werden “nicht gefunden”; Heading-Extraction fällt still aus | `pdf-scan/pdf-scan-test.ipynb` | Repo-Root Discovery + Pfade relativ dazu auflösen | DEFERRED (Notebook ist temporär) | 2 | 5 |
-| Hardcoded IDs überschreiben Env | “Warum wird neu hochgeladen / falscher Store?” | `pdf-scan/pdf-scan-test.ipynb` | `USE_HARDCODED_REUSE_IDS` Toggle; sonst Env priorisieren | DONE | 1 | 4 |
-| One-call Retrieval kann PDFs “verhungern” lassen | Global Top-50 kann von 1 PDF dominiert werden → andere PDFs bekommen `no_evidence` | `pdf-scan/pdf-scan-test.ipynb` | Balanced Retrieval (global + per-PDF top-up via filters + optional subpoint top-up) | DONE | 3 | 5 |
-| API-Limits (`max_num_results`, `limit`) werden überschritten | Hard failures/400 → `no_evidence` obwohl Inhalte existieren | `pdf-scan/pdf-scan-test.ipynb` | Maxima konsequent cappen (Search <= 50), Warnungen mit “weiterlaufen” | DONE | 1 | 5 |
-| Anchor Checks zu “streng” (Case/Quotes/Whitespace) | Gute Treffer werden gedroppt → “keine passenden Stellen” | `pdf-scan/pdf-scan-test.ipynb`, `pdf-scan/text-extract.ipynb` | Einheitliche Normalisierung + word-based matching + “unverified” statt drop | DONE | 2 | 5 |
-| Stage 3 Targets erzwingen min=1 (soft_total/desired) | Verwirrung bei 0 Treffern; außerdem fehlende importance-Verteilung | `pdf-scan/pdf-scan-test.ipynb` | Auto-Targets + importance-gewichtete per-subpoint Budgets; 0 möglich | DONE | 2 | 4 |
-| PyMuPDF docs nicht geschlossen | File Locks / Kernel instabil bei vielen PDFs | `pdf-scan/pdf-scan-test.ipynb`, `pdf-scan/text-extract.ipynb` | Close am Ende der Stage (Reliability > Speed) | DONE | 1 | 5 |
+### 3. It uses raw PDF chunking rather than structure-aware units
 
----
+Scientific PDFs often have:
+- two-column layouts
+- headers / footers
+- references and appendices
+- formulas, tables, captions
+- repeated generic headings
+- weak or absent semantic markup
 
-## 2) Retrieval / Search (Accuracy)
+Ranking directly from raw chunks ignores the most useful signal for this task:
+- the section boundary itself
 
-| Idee | Kurzbeschreibung | Complexity | Accuracy impact | Reliability impact |
-| --- | --- | ---: | ---: | ---: |
-| Multi-Query pro Subpoint (systematisch) | Für jeden Subpoint eigene Query (must/should/keywords) + merge/rerank; reduziert Topic Drift | 2 | 4 | 4 |
-| Hybrid Retrieval (BM25 + Embeddings) | Keyword + Vektor kombinieren (z.B. BM25 lokal + embeddings) | 4 | 5 | 4 |
-| Reranking der Kandidaten | Erst breit holen, dann LLM/Reranker auf Relevanz reranken (evidence-only) | 3 | 4 | 3 |
-| Coverage-driven Top-up | Wenn Subpoint “missing/weak”, automatisch Zusatz-Searches mit gezielten Terms | 3 | 4 | 4 |
+### 4. Its scores are not calibrated section scores
 
----
+The notebook’s `1..10` scores are LLM judgments over limited evidence snippets. They are useful as rough internal ranking hints, but they are not a stable, calibrated user-facing section score.
 
-## 3) Stage 2 (Evidence Extractor) – Stabilität/Qualität
+### 5. Too much complexity is spent on the wrong stage
 
-| Idee | Kurzbeschreibung | Complexity | Accuracy impact | Reliability impact |
-| --- | --- | ---: | ---: | ---: |
-| Score-Kalibrierung weiter schärfen | Weniger 9/10, konsistentere 7–8; kurze `score_rationale` nutzen | 2 | 3 | 3 |
-| Locator-Hints erweitern | Zusätzlich “section signature” (2–3 Keywords) für robustes Wiederfinden | 2 | 3 | 4 |
-| “Repair pass” bei JSON/Schema Fail | Wenn parsing/strict schema fails: 1 Repair-Call mit “return JSON only” | 2 | 2 | 4 |
+There is substantial notebook logic for:
+- anchor validation
+- alternate anchor derivation
+- local section recovery from anchor positions
 
----
+That work is not worthless, but it is not the highest-leverage path for the stated goal. The main job is not anchor recovery. The main job is correct section ranking.
 
-## 4) Stage 4 (Text Extraction) – Robustheit
+## Research Findings
 
-| Idee | Kurzbeschreibung | Complexity | Accuracy impact | Reliability impact |
-| --- | --- | ---: | ---: | ---: |
-| Text Cleanup Pipeline | Ligaturen, Soft-Hyphens, line-break-hyphenation, Header/Footer Removal, References-Block erkennen | 3 | 4 | 4 |
-| Extraction Boundaries verbessern | Nicht nur “heading bounds”: TOC ranges + heuristisch “next heading” + window fallback | 3 | 4 | 4 |
-| Export “Evidence Pack” | Pro Section: `{pdf_label, pdf_heading, anchors, extracted_text, covered_subpoints}` als JSON/MD | 2 | 3 | 5 |
+## 1. Digital PDF extraction is still structurally hard
 
----
+Even without OCR, digital PDFs are not semantically clean inputs.
 
-## 5) Writing Stage (nach Evidence Pack)
+From the official `pypdf` documentation:
+- PDF files do not contain a semantic layer
+- concepts like paragraph, header, footer, table, and page number are not reliably represented
 
-| Idee | Kurzbeschreibung | Complexity | Accuracy impact | Reliability impact |
-| --- | --- | ---: | ---: | ---: |
-| Evidence-only Drafting | Kapitel-Entwurf NUR aus extrahierten Section-Texten (keine externen Fakten) | 3 | 4 | 4 |
-| Citation/Source Map | Jede Aussage bekommt `{pdf_label, pdf_heading, anchor}` als Source-Ref | 2 | 4 | 5 |
-| Gap Analysis | Vor dem Schreiben: pro Subpoint “covered / weak / missing” + welche PDFs fehlen | 2 | 4 | 5 |
-| Consistency/Contradiction Check | Widersprüche markieren statt glätten; “needs adjudication” | 3 | 3 | 4 |
-| Outline Builder | Aus Subpoints + Evidence Pack ein Outline + Bullet Notes je Subpoint | 2 | 3 | 4 |
+From the official `PyMuPDF` documentation:
+- raw text extraction may not follow reading order
+- block- and word-based extraction is often needed
+- markdown-oriented extraction is specifically recommended for RAG / LLM workflows
 
----
+What this means for your project:
+- "digital PDF only" removes OCR complexity
+- it does not remove structure-recovery complexity
 
-## 6) Workflow / Engineering
+## 2. Scientific literature is a special case and should be treated as one
 
-| Idee | Kurzbeschreibung | Complexity | Accuracy impact | Reliability impact |
-| --- | --- | ---: | ---: | ---: |
-| Run Artifacts speichern | Pro Run JSON + Logs nach `pdf-scan/runs/<timestamp>/...` | 2 | 2 | 5 |
-| Hash-basierte Reuse Map | Lokaler Cache: `pdf_hash -> file_id` + `vector_store_id`; Upload nur wenn PDF geändert | 2 | 2 | 5 |
-| Config als YAML/JSON | PDF-Liste + Subpoint-Importance + Model Overrides in Datei statt Notebook edits | 3 | 2 | 4 |
-| CLI/Script Wrapper | `python -m pdf_scan ...` für Runs ohne Notebook | 4 | 2 | 4 |
-| Evaluation Harness | Golden-Set + Regression (Recall/Precision), damit Prompt-Änderungen messbar sind | 4 | 3 | 4 |
+Two tools stood out in the research:
 
----
+### GROBID
 
-## 7) Langfristig / Optional
+GROBID is specifically built for scholarly PDFs and converts them into structured TEI/XML for text mining and semantic analysis.
 
-- Offline/On-Prem Alternative: lokale Embeddings + FAISS + optional LLM nur fürs Schreiben (Complexity 5, Accuracy 4, Reliability 4).
-- Project-level Knowledge Base: ein Vector Store pro Projekt, PDFs versioniert; Kapitel-Queries über Projekt-Bibliothek.
-- Active Learning: du bestätigst “good/bad” Treffer → Retrieval/Curator lernt (z.B. weight tuning, prompt tuning).
+Why it matters here:
+- papers and reports often follow recognizable scholarly structure
+- section titles, bibliography, metadata, and document hierarchy are first-class outputs
 
+### Docling
+
+Docling exposes a structured document abstraction and has chunking / hybrid chunking as explicit concepts.
+
+Why it matters here:
+- it is a better fit for a section-aware pipeline than ad-hoc raw text stitching
+
+My conclusion:
+- for scientific papers and reports, a specialized parser is very likely worth it
+- for books and fallback cases, local PyMuPDF layout heuristics remain useful
+
+## 3. Long-document retrieval should not be built as a single flat chunk search
+
+The retrieval literature and official retrieval tooling are consistent on this point.
+
+### Two-stage retrieval is the practical default
+
+The official Sentence Transformers retrieve-and-rerank guidance recommends:
+- a fast first-stage retriever to get a broad candidate set
+- a second-stage reranker to score those candidates more accurately
+
+That pattern maps cleanly to your task:
+- stage 1: gather plausible sections
+- stage 2: rerank sections for usefulness to the target chapter
+
+### Hybrid retrieval remains strong
+
+BEIR shows that:
+- BM25 is still a strong baseline
+- reranking and late-interaction models are often strongest in zero-shot settings
+
+That matters because your queries are scientific chapter descriptions, not casual web questions. Exact lexical cues still matter a lot:
+- section titles
+- technical terms
+- standards language
+- abbreviations
+
+### Long-document retrieval needs context
+
+DAPR is highly relevant here. It shows that a large share of long-document passage retrieval errors come from missing document context.
+
+Practical implication:
+- a passage should not be treated as an isolated chunk
+- it should carry its parent section and document context
+
+This is one of the clearest arguments against your current raw-chunk-first notebook design.
+
+## 4. The current OpenAI vector-store path has real strengths, but also hard limits
+
+From the official OpenAI docs:
+- `vector_stores.search` supports `filters`, `ranking_options`, and `rewrite_query`
+- `max_num_results` is limited to `50`
+- default chunking is `800` tokens with `400` overlap
+- custom `chunking_strategy` is supported
+- attached file attributes can be used for filtered search
+
+The notebook currently uses:
+- `rewrite_query=True`
+- `max_num_results`
+- `filters` only as top-up fallback logic
+
+The notebook currently does not use:
+- custom chunking
+- ranking options
+- score thresholds
+- structure-aware ingestion
+
+Conclusion:
+- OpenAI vector stores can still be part of the solution
+- but raw uploaded PDFs plus default chunking is not the strongest setup for your task
+
+## Recommendation Hierarchy
+
+## Recommended architecture: Section-first retrieval pipeline
+
+This is the architecture I would recommend as the default target.
+
+### Stage 1. Parse and normalize the document structure
+
+For each PDF:
+
+1. Read native outline / bookmarks / TOC if present.
+2. Run a scholarly parser when applicable:
+   - `GROBID` is the strongest candidate for papers and reports.
+   - `Docling` is a strong alternative if you want a richer document-object workflow.
+3. Use local PyMuPDF fallback heuristics when structured parsing is unavailable or incomplete.
+
+Output of this stage should be a section tree:
+- `doc_title`
+- `section_id`
+- `section_title`
+- `section_level`
+- `page_start`, `page_end`
+- `section_text`
+- paragraph / passage children
+
+### Stage 2. Build section candidates
+
+The retrieval unit should be:
+- section / chapter as the primary candidate
+
+And each section should also have:
+- a list of paragraph or short passage children
+
+This gives you two useful retrieval levels:
+- section retrieval
+- supporting passage retrieval inside the section
+
+### Stage 3. Query decomposition
+
+Your current idea of preprocessing the chapter description is directionally good, but it should be controlled more tightly.
+
+Recommended query representation:
+- original title
+- original raw chapter description
+- extracted subpoints
+- must-terms
+- synonyms / support terms
+
+Important:
+- do not collapse everything into only one monolithic search string
+- run multiple retrieval views and fuse them
+
+### Stage 4. First-stage retrieval
+
+Use hybrid retrieval over sections:
+- sparse lexical retrieval
+- dense semantic retrieval
+
+What should be indexed:
+- section title
+- section text
+- optional section summary
+- document title
+
+For long sections, passage-level retrieval should be used only to support the section score, not to replace the section as the ranking unit.
+
+### Stage 5. Second-stage reranking
+
+Rerank only the top candidate sections.
+
+Strong choices:
+- a cross-encoder reranker
+- or a carefully constrained LLM judge on a small candidate pool
+
+Inputs to reranking:
+- target chapter description
+- section title
+- section summary or truncated section body
+- top supporting passages
+
+### Stage 6. Scoring
+
+Expose a direct usefulness score for each section.
+
+Recommended internal signals:
+- title relevance
+- best supporting passage relevance
+- average top-k passage relevance
+- coverage of query subpoints
+- penalty for off-scope section types
+
+Recommended user-facing score:
+- `0..100`
+
+But only if calibrated later on a benchmark. Otherwise use bands:
+- `90-100`: highly useful
+- `70-89`: strong match
+- `50-69`: partially useful
+- `20-49`: weak / tangential
+- `0-19`: not useful
+
+## Minimal-change alternative: Keep OpenAI vector stores, but change what gets indexed
+
+If you want to stay close to the current notebook stack, the better path is not:
+- raw PDF upload -> default chunking -> search raw chunks
+
+Instead:
+
+1. Parse the PDF locally into structured section text.
+2. Serialize sections into structured text or JSONL-like records.
+3. Upload those structured records.
+4. Retrieve at section granularity.
+5. Rerank sections.
+
+This keeps the hosted retrieval path while fixing the largest architectural mistake.
+
+I would still consider this weaker than a full local structure-aware retrieval stack, but much stronger than the current raw-PDF approach.
+
+## What I Would Not Recommend
+
+I would not recommend spending the next iteration on:
+- better anchors
+- more anchor heuristics
+- larger evidence snippets
+- prompt-only tweaks to scoring language
+
+Those may improve outputs at the margin, but they do not fix the main failure mode:
+- the system is ranking the wrong unit too late
+
+## Specific Areas Worth Tweaking Later
+
+These are the biggest levers I considered that are worth tuning once the architecture is corrected.
+
+### 1. Parser choice by document type
+
+- `GROBID` likely strongest for scholarly articles and many reports.
+- `Docling` may be strongest if you want a more flexible document-object workflow.
+- `PyMuPDF` should remain the fallback and validation tool.
+
+### 2. Retrieval granularity
+
+- section-only retrieval is interpretable but may miss fine-grained relevance
+- section + passage support is likely the best balance
+
+### 3. Chunk size inside sections
+
+Once sections are explicit, passage chunking still matters.
+
+Likely useful later:
+- paragraph-based chunks where possible
+- otherwise small sliding windows inside a section
+
+### 4. Title boosting
+
+For your task, section titles are unusually important because the output is a chapter / section ranking problem, not only answer extraction.
+
+### 5. Query fusion
+
+Instead of one search string, fuse results from:
+- full chapter description
+- subpoints
+- title-only query
+- must-terms query
+
+### 6. Score calibration
+
+If you display `0..100`, calibrate it on labeled data.
+
+Otherwise users will assume a precision that the system does not really have.
+
+### 7. Section-type priors
+
+Some section classes often deserve systematic penalties:
+- references
+- acknowledgements
+- author notes
+- appendices
+- boilerplate front matter
+
+But this should stay configurable, because some query types really do target appendices or evaluation sections.
+
+## Other Important Things I Noticed
+
+These are not the main topic, but they are likely to matter later.
+
+### 1. Too much logic is buried inside one notebook
+
+The current notebook mixes:
+- API setup
+- parsing
+- retrieval
+- LLM prompting
+- validation
+- output formatting
+- cost reporting
+
+That makes it difficult to test and benchmark reliably.
+
+When you move to implementation, this should become:
+- parser module
+- retrieval module
+- reranking module
+- evaluation harness
+- notebook only as experimentation UI
+
+### 2. The current notebook has hidden coupling between stages
+
+The preprocessing stage changes the retrieval behavior a lot, but there is no evaluation harness around it. That means query expansion errors are hard to catch.
+
+### 3. The current use of hardcoded reuse IDs is practical for experimentation, but dangerous for benchmarking
+
+For benchmark runs, inputs and index state need to be reproducible.
+
+### 4. Cost tracking exists, but quality tracking does not
+
+That is backward relative to your current goal. The missing piece is not more cost visibility. It is ranking quality visibility.
+
+## Benchmark And Test System
+
+You asked for a good system to test and benchmark this later. This is the benchmark I recommend.
+
+## Benchmark goal
+
+Measure whether the system can:
+- find the correct sections
+- rank them well
+- stay stable across short and long PDFs
+- produce meaningful scores
+
+## Gold judgment unit
+
+The gold label should be on:
+- a section / chapter
+
+Not on:
+- raw vector-store chunks
+- anchor strings
+- generated summaries
+
+## Annotation scale
+
+Use this `0..3` ordinal scale first:
+
+- `0`: irrelevant
+- `1`: weak / tangential
+- `2`: useful
+- `3`: highly useful / central for writing the target chapter
+
+Later you can map it to user-facing `0..100`.
+
+## Recommended initial benchmark corpus
+
+Start with roughly `45` documents:
+
+- `15` short papers / reports: `2-10` pages
+- `15` medium papers / surveys: `10-40` pages
+- `10` long surveys / standards / reports: `40-120` pages
+- `5` very long books / standards / handbooks: `120-250` pages
+
+## Recommended initial query set
+
+Start with `30` target chapter descriptions:
+
+- `10` broad conceptual chapters
+- `10` medium-scope chapters with multiple subpoints
+- `10` narrow technical chapters
+
+Make sure the query suite mixes:
+- near-exact terminology
+- paraphrased terminology
+- single-concept targets
+- multi-subpoint targets
+
+## Metrics
+
+Primary metrics:
+- `nDCG@3`
+- `nDCG@5`
+- `Recall@3`
+- `Recall@5`
+- `MRR`
+
+Secondary metrics:
+- section-boundary quality
+- percentage of queries with at least one gold-`3` section in top-3
+- score calibration error
+- runtime per document
+- cost per query
+
+## Stress tests
+
+Include documents with:
+- and without outline / bookmark metadata
+- two-column layouts
+- long reference sections
+- appendices
+- formulas and tables
+- repeated generic section names
+- mixed English / German terminology
+- long chapters with shallow internal structure
+
+## Regression checks to automate later
+
+- parse success rate
+- section count per document
+- empty-section rate
+- candidate count per query
+- reranker latency
+- top-k ranking stability
+- cost per run
+
+## What You Should Collect Later For The Benchmark
+
+When you are ready to gather documents, these are the criteria I need:
+
+### Documents
+
+Please collect:
+- `15` short scientific PDFs (`2-10` pages)
+- `15` medium scientific PDFs (`10-40` pages)
+- `10` long reports / surveys / standards (`40-120` pages)
+- `5` very long books / standards (`120-250` pages)
+
+### Query chapters
+
+Please collect or write:
+- `30` chapter descriptions
+
+For each one:
+- a short title
+- a paragraph-length description
+- optional subpoints if the chapter is complex
+
+### Diversity requirements
+
+The set should include:
+- papers with clean headings
+- papers with messy layout
+- documents with and without bookmarks
+- documents where the relevant section title is obvious
+- documents where relevance is mostly in body text, not the heading
+
+## Final Recommendation
+
+If the goal is to get "close to best in the world" on this task, then the next implementation should not be:
+- a better prompt around the same notebook architecture
+
+It should be:
+- a structure-first section-retrieval system
+
+My recommended priority order is:
+
+1. Replace raw-PDF chunk ranking with explicit section candidates.
+2. Use a scholarly parser plus fallback heuristics.
+3. Retrieve sections with hybrid methods.
+4. Rerank sections with a stronger second-stage model.
+5. Build a real benchmark before tuning further.
+
+## Source Links
+
+- OpenAI vector store search API reference: https://developers.openai.com/api/reference/resources/vector_stores/methods/search
+- OpenAI retrieval guide: https://developers.openai.com/api/docs/guides/retrieval
+- OpenAI file search guide: https://developers.openai.com/api/docs/guides/tools-file-search
+- PyMuPDF text recipes: https://pymupdf.readthedocs.io/en/latest/recipes-text.html
+- pypdf text extraction guide: https://pypdf.readthedocs.io/en/stable/user/extract-text.html
+- GROBID principles: https://grobid.readthedocs.io/en/latest/Principles/
+- Docling docs: https://docling-project.github.io/docling/
+- Sentence Transformers retrieve & rerank docs: https://www.sbert.net/examples/sentence_transformer/applications/retrieve_rerank/README.html
+- BEIR benchmark: https://arxiv.org/abs/2104.08663
+- DAPR benchmark: https://arxiv.org/abs/2305.13915
+- ColBERT: https://arxiv.org/abs/2004.12832
+- Dense Passage Retrieval: https://arxiv.org/abs/2004.04906
+- MultiDocFusion: https://aclanthology.org/2025.emnlp-main.1062.pdf
