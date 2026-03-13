@@ -1,0 +1,20 @@
+{
+  "chapter_id": "chapter_001",
+  "doc_id": "doc_001",
+  "has_useful_information": true,
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_title": "Replace with the section title",
+        "page_start": 1,
+        "page_end": 3
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "notes": "Why this section is useful."
+    }
+  ],
+  "document_notes": "Overall document-level notes."
+}

@@ -1,0 +1,8 @@
+{
+  "doc_id": "doc_002_long_strong_match",
+  "label": "Long strong match",
+  "path": "documents/doc_002_long_strong_match.pdf",
+  "role_in_suite": "long_strong_match",
+  "expected_difficulty": "medium",
+  "notes": "Use a long survey, report, or book-like PDF, ideally 40+ pages, with several potentially useful sections so we can test long-document parsing, section construction, and ranking."
+}

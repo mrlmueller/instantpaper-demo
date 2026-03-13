@@ -1,0 +1,8 @@
+{
+  "doc_id": "doc_004_hard_negative_overlap",
+  "label": "Hard negative overlap",
+  "path": "documents/doc_004_hard_negative_overlap.pdf",
+  "role_in_suite": "hard_negative_overlap",
+  "expected_difficulty": "hard",
+  "notes": "Use a paper with superficial lexical overlap but no meaningful support for the chapter. This is primarily for no-match and false-positive control."
+}

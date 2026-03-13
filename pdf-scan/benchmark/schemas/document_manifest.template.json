@@ -1,0 +1,8 @@
+{
+  "doc_id": "doc_001",
+  "label": "Replace with a short human-readable label",
+  "path": "documents/raw/replace-me.pdf",
+  "role_in_suite": "short_strong_match",
+  "expected_difficulty": "easy",
+  "notes": "Why this document is included."
+}

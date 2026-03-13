@@ -1,0 +1,20 @@
+{
+  "suite_id": "small_gold_v1",
+  "suite_type": "small_gold",
+  "chapter_specs": [
+    "chapters/chapter_001.json"
+  ],
+  "documents": [
+    "manifests/doc_001.json",
+    "manifests/doc_002.json",
+    "manifests/doc_003.json",
+    "manifests/doc_004.json"
+  ],
+  "judgments": [
+    "judgments/chapter_001__doc_001.json",
+    "judgments/chapter_001__doc_002.json",
+    "judgments/chapter_001__doc_003.json",
+    "judgments/chapter_001__doc_004.json"
+  ],
+  "notes": "Example manifest for the immediate small gold suite."
+}

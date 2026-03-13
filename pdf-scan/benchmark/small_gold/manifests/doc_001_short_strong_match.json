@@ -1,0 +1,8 @@
+{
+  "doc_id": "doc_001_short_strong_match",
+  "label": "Short strong match",
+  "path": "documents/doc_001_short_strong_match.pdf",
+  "role_in_suite": "short_strong_match",
+  "expected_difficulty": "easy",
+  "notes": "Use a short paper or report, roughly 2-10 pages, with clearly relevant material on decision psychology, online uncertainty, trust, choice architecture, digital nudging, or decision confidence."
+}

@@ -1,0 +1,15 @@
+{
+  "suite_id": "small_gold_webshop_decision_psychology_v1",
+  "suite_type": "small_gold",
+  "chapter_specs": [
+    "chapters/chapter_001_webshop_decision_psychology.json"
+  ],
+  "documents": [
+    "manifests/doc_001_short_strong_match.json",
+    "manifests/doc_002_long_strong_match.json",
+    "manifests/doc_003_partial_difficult_match.json",
+    "manifests/doc_004_hard_negative_overlap.json"
+  ],
+  "judgments": [],
+  "notes": "Concrete small-gold suite for early iterative development. Judgment files are intentionally not populated yet because they depend on the final chosen PDFs and the later canonical section outputs."
+}

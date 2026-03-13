@@ -1,0 +1,8 @@
+{
+  "suite_id": "large_suite_v1",
+  "suite_type": "large_suite",
+  "chapter_specs": [],
+  "documents": [],
+  "judgments": [],
+  "notes": "Populate this only after the pipeline output schema is stable."
+}
