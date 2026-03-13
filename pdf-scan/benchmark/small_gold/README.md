@@ -5,13 +5,14 @@ Build this suite now.
 ## Target shape
 
 - exactly 1 chapter input
-- 4 PDFs
+- 5 PDFs
 
 Recommended document roles:
-- `short_strong_match`
-- `long_strong_match`
-- `partial_difficult_match`
-- `hard_negative_overlap`
+- `short_document_candidate`
+- `very_long_document_candidate`
+- `medium_document_candidate_a`
+- `medium_document_candidate_b`
+- `long_document_candidate`
 
 ## What to add here
 
@@ -22,25 +23,27 @@ This is now populated with:
 
 ### `documents/`
 
-Drop the four PDFs here.
-
-Recommended filenames to match the manifest stubs:
-- `doc_001_short_strong_match.pdf`
-- `doc_002_long_strong_match.pdf`
-- `doc_003_partial_difficult_match.pdf`
-- `doc_004_hard_negative_overlap.pdf`
+The active suite now uses the real PDF filenames already present in `documents/`.
 
 ### `manifests/`
 
 This is now populated with:
 - `manifests/suite_manifest.json`
-- four document manifest stubs
+- five document manifests
 
 ### `judgments/`
 
 Add one judgment JSON per `(chapter, document)` pair based on `../schemas/section_judgments.template.json`.
 
 Do not populate judgments until the canonical section outputs from the new pipeline are stable.
+
+See also:
+- `ROLE_ASSIGNMENT.md`
+- `judgments/ANNOTATION_PLAN.md`
+
+Important:
+- these are document-profile assignments only
+- they are not relevance labels
 
 ## What this suite is for
 

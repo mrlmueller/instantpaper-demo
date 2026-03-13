@@ -1,0 +1,8 @@
+{
+  "doc_id": "doc_002_very_long_document_candidate",
+  "label": "Judgment under Uncertainty: Heuristics and Biases",
+  "path": "documents/Judgment Under Uncertainty Heuristics and Biases.pdf",
+  "role_in_suite": "very_long_document_candidate",
+  "expected_difficulty": "unknown_until_annotation",
+  "notes": "Very long candidate document. Included to stress-test parsing, section construction, and retrieval on a book-length PDF. This is not a relevance judgment."
+}

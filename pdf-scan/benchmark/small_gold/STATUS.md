@@ -8,17 +8,21 @@ This suite is now partially populated.
   - `chapters/chapter_001_webshop_decision_psychology.json`
 - concrete suite manifest:
   - `manifests/suite_manifest.json`
-- four document-manifest stubs:
-  - `doc_001_short_strong_match.json`
-  - `doc_002_long_strong_match.json`
-  - `doc_003_partial_difficult_match.json`
-  - `doc_004_hard_negative_overlap.json`
+- five document manifests:
+  - `doc_001_short_document_candidate.json`
+  - `doc_002_very_long_document_candidate.json`
+  - `doc_003_medium_document_candidate_a.json`
+  - `doc_004_medium_document_candidate_b.json`
+  - `doc_005_long_document_candidate.json`
+- finalized role mapping:
+  - `ROLE_ASSIGNMENT.md`
+- pre-annotation expectations:
+  - `judgments/ANNOTATION_PLAN.md`
 
 ## Still needed from the user
 
-- drop the 4 PDFs into:
-  - `documents/`
-- either use the suggested filenames from the manifests, or update the manifest paths
+- no additional file placement is required for the current small-gold setup
+- the active manifests now point to the real filenames already present in `documents/`
 
 ## Still needed later during annotation
 

@@ -1,6 +1,6 @@
 # Small Gold Population Checklist
 
-Before we continue beyond early parsing and retrieval work, collect:
+This suite is now populated and should be treated as the canonical early test set.
 
 ## One chapter
 
@@ -8,34 +8,20 @@ Before we continue beyond early parsing and retrieval work, collect:
 - 1 full chapter description
 - optional subpoints if the chapter is complex
 
-## Four PDFs
+## Five PDFs
 
-### 1. Short strong match
+The current suite intentionally uses a mixed document set with neutral structural roles only:
 
-- around 2-10 pages
-- very clearly relevant
-- at least one section that should score `3`
+- 1 short document candidate
+- 1 very long document candidate
+- 2 medium document candidates
+- 1 long document candidate
 
-### 2. Long strong match
-
-- around 40+ pages
-- still clearly relevant
-- useful for testing long-document parsing and section ranking
-
-### 3. Partial difficult match
-
-- somewhat relevant
-- not a perfect thematic fit
-- useful for ranking calibration
-
-### 4. Hard negative overlap
-
-- superficially similar topic
-- should mostly or fully fail the target chapter
-- useful for no-match behavior
+These are coverage roles for evaluation design, not relevance labels.
 
 ## Annotation goal
 
 For each document:
 - mark whether it has useful information at all
 - label only the actually relevant sections
+- keep the judgment evidence-based and independent of filename, length, or title cues

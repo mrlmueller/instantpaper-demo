@@ -1,0 +1,8 @@
+{
+  "doc_id": "doc_004_medium_document_candidate_b",
+  "label": "Online Reviews and Information Overload",
+  "path": "documents/Online Reviews and Information Overload The Role of Selective, Parsimonious, and Concordant Top Reviews.pdf",
+  "role_in_suite": "medium_document_candidate_b",
+  "expected_difficulty": "unknown_until_annotation",
+  "notes": "Medium-length candidate document B. Included because its title suggests overlap with online reviews and information presentation, but final fit must be decided only after annotation."
+}

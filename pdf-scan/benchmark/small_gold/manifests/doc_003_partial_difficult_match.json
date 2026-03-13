@@ -1,8 +1,0 @@
-{
-  "doc_id": "doc_003_partial_difficult_match",
-  "label": "Partial difficult match",
-  "path": "documents/doc_003_partial_difficult_match.pdf",
-  "role_in_suite": "partial_difficult_match",
-  "expected_difficulty": "hard",
-  "notes": "Use a document with partial relevance only. It should overlap on some concepts, for example trust, uncertainty, nudging, or online decision-making, but should not be a clean overall thematic fit."
-}

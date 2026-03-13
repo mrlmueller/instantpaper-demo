@@ -1,0 +1,8 @@
+{
+  "doc_id": "doc_005_long_document_candidate",
+  "label": "Opinion Mining and Sentiment Analysis",
+  "path": "documents/Opinion Mining and Sentiment Analysis.pdf",
+  "role_in_suite": "long_document_candidate",
+  "expected_difficulty": "unknown_until_annotation",
+  "notes": "Long candidate document. Included because it broadens the suite with a larger review / methodology style PDF that may or may not be useful. This is not a relevance judgment."
+}
