@@ -1,0 +1,81 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "opinion_mining_and_sentiment_analysis-d837b2bce0b4",
+  "has_useful_information": true,
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_title": "The demand for information on opinions and sentiment",
+        "page_start": 5,
+        "page_end": 7
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 8/10. Strong introductory framing for missing, confusing, or overwhelming online information."
+    },
+    {
+      "section_ref": {
+        "section_title": "Applications in business and government intelligence",
+        "page_start": 12,
+        "page_end": 13
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 9/10. Laptop example is a strong fit for uncertainty in complex consumer-electronics products."
+    },
+    {
+      "section_ref": {
+        "section_title": "Sentiment polarity and degrees of positivity",
+        "page_start": 20,
+        "page_end": 22
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 9/10. Concrete features, pros/cons, and comparisons as uncertainty-reducing signals."
+    },
+    {
+      "section_ref": {
+        "section_title": "Special considerations for extraction",
+        "page_start": 37,
+        "page_end": 38
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 9/10. Aspect extraction and feature-level review structuring for explainability and comparison."
+    },
+    {
+      "section_ref": {
+        "section_title": "Review(er) quality",
+        "page_start": 53,
+        "page_end": 59
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 10/10. Strongest section in the PDF for helpfulness signals and ranking useful reviews."
+    },
+    {
+      "section_ref": {
+        "section_title": "Implications for manipulation",
+        "page_start": 63,
+        "page_end": 65
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "notes": "Score 8/10. Best fit for manipulation boundaries, sock puppets, gaming the system, and trust erosion."
+    }
+  ],
+  "document_notes": "User-marked positive. Strong for uncertainty in online information, concrete product-evaluation examples, feature-level explanations, helpfulness signals, and manipulation/trust issues."
+}

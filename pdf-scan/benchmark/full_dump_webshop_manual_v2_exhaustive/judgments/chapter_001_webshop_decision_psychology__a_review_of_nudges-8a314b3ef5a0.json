@@ -1,0 +1,1701 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "a_review_of_nudges-8a314b3ef5a0",
+  "doc_title": "A review of nudges: Definitions, justifications, effectiveness",
+  "has_useful_information": true,
+  "document_label_0_to_3": 3,
+  "document_label_band": "core_or_strong_support",
+  "document_notes": "Strong conceptual source on nudge definitions, justificatory debates, transparency, avoidability, and libertarian-paternalistic grounding. Existing benchmark note: Broad positive recall judgment for nudging / choice architecture coverage. Section anchors pending.",
+  "manual_review_basis": [
+    "full extracted section inventory",
+    "run 386e04657c41c805f8c1b974 section inspection packets",
+    "benchmark target direct excerpt review where available"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "Abstract",
+      "page_start": 1,
+      "page_end": 2,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Abstract gives a clear overview of the definition, justification, and effectiveness of nudges — directly relevant to choice architecture, ethical justification, and ties to behavioral theory for the chapter."
+    },
+    {
+      "section_title": "1.1 | Setting the stage",
+      "page_start": 2,
+      "page_end": 3,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context",
+        "nudging_choice_architecture"
+      ],
+      "notes": "Discusses limits of neoclassical models, behavioral models, and historical experimental findings (Kahneman & Tversky, Ellsberg, etc.) — highly relevant for heuristics, biases, dual-process framing and grounding nudging rationale in the章."
+    },
+    {
+      "section_title": "1.2 | This article",
+      "page_start": 3,
+      "page_end": 4,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "notes": "Concise roadmap of the review covering definitions, justifications, and effectiveness of nudges. Useful as orienting background for the chapter's section on choice architecture, ethical debate, and evidence base."
+    },
+    {
+      "section_title": "2 | THE ORIGINAL DEFINITION OF A NUDGE AND ITS PROBLEMS",
+      "page_start": 4,
+      "page_end": 4,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Sets out Thaler & Sunstein's original nudge definition and its four components — directly relevant for explaining what counts as a nudge, boundaries, and links to dual-process/heuristics discussions."
+    },
+    {
+      "section_title": "2.1 | Adding options",
+      "page_start": 4,
+      "page_end": 4,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Discussion of adding dominated options/decoy effect gives concrete mechanism (choice architecture tactic) and experimental evidence — highly relevant for examples of manipulative vs. benign design and for explaining heuristics."
+    },
+    {
+      "section_title": "2.2 | Beyond economic incentives",
+      "page_start": 4,
+      "page_end": 5,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Critiques the 'no significant economic incentives' clause and highlights non-monetary incentives and costs — useful for distinguishing nudges from coercion and for ethical/limits discussion."
+    },
+    {
+      "section_title": "2.3 | Opaque and hard-to-avoid nudges",
+      "page_start": 5,
+      "page_end": 6,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "notes": "Addresses avoidability, opacity, and when nudges fail under deliberation — centrally important for treatment of transparency, autonomy, dual-process considerations, and ethical boundaries in digital nudging."
+    },
+    {
+      "section_title": "2.4 | Rational or boundedly-rational channels?",
+      "page_start": 6,
+      "page_end": 6,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Diskussion der Abgrenzung zwischen rationalen und bounded‑rationalen Wirkmechanismen mit konkretem Beispiel (5‑Cent‑Tax) und Bezug auf Verlustaversion/Salienz — sehr nützlich, um zu erklären, wie Nudges versus ‚Incentives‘ arbeiten und wie/"
+    },
+    {
+      "section_title": "3.1 | Hansen’s definition",
+      "page_start": 7,
+      "page_end": 7,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Hansen‑Definition verbindet Nudges systematisch mit Rationalitätsfehlern und erläutert, dass auch Hinzufügen von Optionen/Anreizen Nudges sein können — wichtig für theoretische Fundierung und Abgrenzung im Kapitel."
+    },
+    {
+      "section_title": "3.2 | Sunstein’s definition",
+      "page_start": 7,
+      "page_end": 8,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "review_quality_authenticity",
+        "supporting_background_context"
+      ],
+      "notes": "Sunsteins ‚broad sense‘ betont Freiheit/Autonomie und erlaubt Einordnung ethischer Grenzen (libertarian paternalism vs. harte Eingriffe) — relevant für Diskussion von Transparenz und Nutzerautonomie."
+    },
+    {
+      "section_title": "4.3 | Nudging or marketing?",
+      "page_start": 9,
+      "page_end": 10,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Directly addresses the overlap and distinction between nudging and marketing (decoys, defaults, commercial nudges), with concrete examples (Amazon) — highly relevant for ethical boundaries, manipulative patterns, and differentiating nudges/"
+    },
+    {
+      "section_title": "4.4 | Summing up",
+      "page_start": 10,
+      "page_end": 10,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "supporting_background_context",
+        "decision_psychology_theory"
+      ],
+      "notes": "Concise summary of a practical definition of nudges and its scope/limits — useful for framing chapter definitions and distinguishing nudges from harmful marketing."
+    },
+    {
+      "section_title": "5 | THE LIBERTARIAN-PATERNALISTIC JUSTIFICATION OF PRO-SELF NUDGES",
+      "page_start": 10,
+      "page_end": 11,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Core exposition of the libertarian-paternalism justification for nudges and its limits; essential for discussing normative grounding, autonomy, and what counts as legitimate nudging in webshops."
+    },
+    {
+      "section_title": "6 | ISSUES WITH THE LIBERTARIAN-PATERNALISTIC JUSTIFICATION OF PRO-SELF NUDGES",
+      "page_start": 11,
+      "page_end": 11,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "supporting_background_context",
+        "decision_psychology_theory"
+      ],
+      "notes": "Introduces critical issues with libertarian paternalism and sets up the normative critique — useful for limitations, ethics, and design constraints in digital choice architecture."
+    },
+    {
+      "section_title": "6.1 | Rationalization of choices",
+      "page_start": 11,
+      "page_end": 12,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "nudging_choice_architecture",
+        "supporting_background_context"
+      ],
+      "notes": "Analyzes assumptions about ‘true preferences’ and knowledge problems — strongly relevant to dual-process/heuristics discussion and to whether nudges align with users’ interests."
+    },
+    {
+      "section_title": "6.2 | Inevitable existence of a choice architecture",
+      "page_start": 12,
+      "page_end": 13,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Discusses inevitability of choice architectures, neutral design vs boosts, and ethical/practical trade-offs — directly applicable to digital nudging, boosts, transparency and autonomy debates."
+    },
+    {
+      "section_title": "7 | JUSTIFYING NUDGES BEYOND LIBERTARIAN PATERNALISM",
+      "page_start": 13,
+      "page_end": 14,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "High-level framing of alternative justifications for nudges is directly relevant for the chapter's discussion of ethical grounds, limits and justifications of choice architecture. Useful for contextualizing nudging beyond libertarian-pater-"
+    },
+    {
+      "section_title": "7.1 | Justifications for pro-self nudges not based on libertarian paternalism",
+      "page_start": 14,
+      "page_end": 14,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Provides concrete justifications for pro-self nudges (genuine paternalism) and contrasts gentle nudges with hard paternalism — directly applicable to normative arguments and design trade-offs."
+    },
+    {
+      "section_title": "7.3 | Justifications based on public acceptance",
+      "page_start": 14,
+      "page_end": 15,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "review_quality_authenticity",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Evidence on public acceptance and how transparency/Type 1 vs Type 2 nudges are perceived is valuable for sections on ethical design, transparency, and user autonomy in digital choice architecture."
+    },
+    {
+      "section_title": "8 | BOOSTS VERSUS NUDGES",
+      "page_start": 15,
+      "page_end": 16,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Comparison of nudges vs boosts (empowerment through competence/representation of risk info) is highly relevant for design alternatives in webshops, links to dual-process thinking and info-presentation strategies."
+    },
+    {
+      "section_title": "9 | EFFECTIVENESS OF NUDGING",
+      "page_start": 16,
+      "page_end": 17,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "review_quality_authenticity"
+      ],
+      "notes": "Detailed empirical overview of nudge effectiveness (defaults example, boundary conditions) directly informs digital nudging design, expected impact, and limits for webshop choice architecture."
+    },
+    {
+      "section_title": "9.1 | Do nudges work best if non-transparent?",
+      "page_start": 17,
+      "page_end": 18,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "trust_risk_uncertainty",
+        "decision_psychology_theory"
+      ],
+      "notes": "Discusses transparency of nudges and whether transparency reduces effectiveness—highly relevant for ethical digital nudging, user autonomy, and effects on decision confidence."
+    },
+    {
+      "section_title": "9.3 | Do nudges work worse than standard policies?",
+      "page_start": 19,
+      "page_end": 20,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Compares nudges to standard policies, including cost-effectiveness evidence—helps position choice architecture relative to other interventions and discuss limits and trade-offs."
+    }
+  ],
+  "near_miss_sections": [
+    {
+      "section_title": "NOTES",
+      "page_start": 21,
+      "page_end": 21,
+      "usefulness_0_to_10": 4,
+      "notes": "Notes list key literature and debates on nudging and behavioral economics — useful for sourcing theoretical background and further reading, but no substantive content by itself."
+    },
+    {
+      "section_title": "REFERENCES",
+      "page_start": 21,
+      "page_end": 26,
+      "usefulness_0_to_10": 3,
+      "notes": "Reference list is valuable for locating primary studies and reviews relevant to nudging and decision psychology, but it contains no extractable arguments or findings."
+    }
+  ],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "5ef4024433a545a7",
+        "section_title": "A review of nudges: Definitions, justifications, effectiveness",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty/placeholder body section with no content — no useful information for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "fe0c4328b9fa2312",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Front matter only and empty; contains no substantive content relevant to the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "8fdab8d564a6f1e1",
+        "section_title": "Abstract",
+        "page_start": 1,
+        "page_end": 2,
+        "section_type": "abstract"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Abstract gives a clear overview of the definition, justification, and effectiveness of nudges — directly relevant to choice architecture, ethical justification, and ties to behavioral theory for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "9ca3bb3e5b936659",
+        "section_title": "1 | INTRODUCTION",
+        "page_start": 2,
+        "page_end": 2,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Introduction section is empty in the extract and provides no usable content.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7b6e97803ebe5081",
+        "section_title": "1.1 | Setting the stage",
+        "page_start": 2,
+        "page_end": 3,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context",
+        "nudging_choice_architecture"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses limits of neoclassical models, behavioral models, and historical experimental findings (Kahneman & Tversky, Ellsberg, etc.) — highly relevant for heuristics, biases, dual-process framing and grounding nudging rationale in the章.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 97,
+        "phase_f_doc_rank": 102,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f153d2cc3651eec5",
+        "section_title": "1.2 | This article",
+        "page_start": 3,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Concise roadmap of the review covering definitions, justifications, and effectiveness of nudges. Useful as orienting background for the chapter's section on choice architecture, ethical debate, and evidence base.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d495169cd63fbad4",
+        "section_title": "2 | THE ORIGINAL DEFINITION OF A NUDGE AND ITS PROBLEMS",
+        "page_start": 4,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Sets out Thaler & Sunstein's original nudge definition and its four components — directly relevant for explaining what counts as a nudge, boundaries, and links to dual-process/heuristics discussions.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 108,
+        "phase_f_doc_rank": 106,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f3c1e28e163b7c6c",
+        "section_title": "2.1 | Adding options",
+        "page_start": 4,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discussion of adding dominated options/decoy effect gives concrete mechanism (choice architecture tactic) and experimental evidence — highly relevant for examples of manipulative vs. benign design and for explaining heuristics.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 84,
+        "phase_f_doc_rank": 64,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 38.82,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "29d1ad191c1a52d0",
+        "section_title": "2.2 | Beyond economic incentives",
+        "page_start": 4,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Critiques the 'no significant economic incentives' clause and highlights non-monetary incentives and costs — useful for distinguishing nudges from coercion and for ethical/limits discussion.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 194,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "df2cbc798ccf34f9",
+        "section_title": "2.3 | Opaque and hard-to-avoid nudges",
+        "page_start": 5,
+        "page_end": 6,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Addresses avoidability, opacity, and when nudges fail under deliberation — centrally important for treatment of transparency, autonomy, dual-process considerations, and ethical boundaries in digital nudging.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 91,
+        "phase_f_doc_rank": 104,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "dd25d867e0f8c5bf",
+        "section_title": "2.4 | Rational or boundedly-rational channels?",
+        "page_start": 6,
+        "page_end": 6,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Diskussion der Abgrenzung zwischen rationalen und bounded‑rationalen Wirkmechanismen mit konkretem Beispiel (5‑Cent‑Tax) und Bezug auf Verlustaversion/Salienz — sehr nützlich, um zu erklären, wie Nudges versus ‚Incentives‘ arbeiten und wie/",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 167,
+        "phase_f_doc_rank": 146,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "93d6d73c04490564",
+        "section_title": "3 | REVISED DEFINITIONS OF A NUDGE",
+        "page_start": 6,
+        "page_end": 7,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Signals refinements to the nudge definition and points to literature updating the concept — useful as a pointer to nuanced definitions and later sources, but contains little substantive detail in this excerpt.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7dd804c496cf190b",
+        "section_title": "3.1 | Hansen’s definition",
+        "page_start": 7,
+        "page_end": 7,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Hansen‑Definition verbindet Nudges systematisch mit Rationalitätsfehlern und erläutert, dass auch Hinzufügen von Optionen/Anreizen Nudges sein können — wichtig für theoretische Fundierung und Abgrenzung im Kapitel.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 155,
+        "phase_f_doc_rank": 136,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "325f0c39d27024b9",
+        "section_title": "3.2 | Sunstein’s definition",
+        "page_start": 7,
+        "page_end": 8,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "review_quality_authenticity",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Sunsteins ‚broad sense‘ betont Freiheit/Autonomie und erlaubt Einordnung ethischer Grenzen (libertarian paternalism vs. harte Eingriffe) — relevant für Diskussion von Transparenz und Nutzerautonomie.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 195,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3f5a998a5c65aa75",
+        "section_title": "4 | TYPES OF NUDGES",
+        "page_start": 8,
+        "page_end": 8,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Kurzabschnitt zur Frage, wer von Nudges profitiert; nützlich zur Klassifikation und zur Einordnung ethischer Implikationen im Kapitel, aber relativ knapp.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 172,
+        "phase_f_doc_rank": 173,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "beef011fe1ae6956",
+        "section_title": "4.1 | Pro-self nudges",
+        "page_start": 8,
+        "page_end": 8,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Beschreibung von ‚pro‑self‘ Nudges mit Beispielen (Defaults, Cafeteria) — brauchbar als illustrative Beispiele für Choice Architecture, jedoch begrenzt tiefgehend.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e97e41a539d23cfc",
+        "section_title": "4.2 | Pro-social nudges",
+        "page_start": 8,
+        "page_end": 9,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Erläuterung von pro‑sozialen Nudges und konkreten Studien (social comparison, Energy/Tax) — hilfreich für Beispiele zur Wirkung sozialer Normen und Grenzen von Libertarian Paternalism.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 186,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "195758abc6e28093",
+        "section_title": "4.3 | Nudging or marketing?",
+        "page_start": 9,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Directly addresses the overlap and distinction between nudging and marketing (decoys, defaults, commercial nudges), with concrete examples (Amazon) — highly relevant for ethical boundaries, manipulative patterns, and differentiating nudges/",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 86,
+        "phase_f_doc_rank": 84,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f72af6193ab30f0e",
+        "section_title": "4.4 | Summing up",
+        "page_start": 10,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "supporting_background_context",
+        "decision_psychology_theory"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Concise summary of a practical definition of nudges and its scope/limits — useful for framing chapter definitions and distinguishing nudges from harmful marketing.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 175,
+        "phase_f_doc_rank": 181,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3c6e2ac33eb4ab13",
+        "section_title": "5 | THE LIBERTARIAN-PATERNALISTIC JUSTIFICATION OF PRO-SELF NUDGES",
+        "page_start": 10,
+        "page_end": 11,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Core exposition of the libertarian-paternalism justification for nudges and its limits; essential for discussing normative grounding, autonomy, and what counts as legitimate nudging in webshops.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 104,
+        "phase_f_doc_rank": 135,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "652f9bf4579be79f",
+        "section_title": "6 | ISSUES WITH THE LIBERTARIAN-PATERNALISTIC JUSTIFICATION OF PRO-SELF NUDGES",
+        "page_start": 11,
+        "page_end": 11,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "supporting_background_context",
+        "decision_psychology_theory"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Introduces critical issues with libertarian paternalism and sets up the normative critique — useful for limitations, ethics, and design constraints in digital choice architecture.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 189,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3bdbba7c1cf28c15",
+        "section_title": "6.1 | Rationalization of choices",
+        "page_start": 11,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "nudging_choice_architecture",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Analyzes assumptions about ‘true preferences’ and knowledge problems — strongly relevant to dual-process/heuristics discussion and to whether nudges align with users’ interests.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 170,
+        "phase_f_doc_rank": 118,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "568e695143e1c76a",
+        "section_title": "6.2 | Inevitable existence of a choice architecture",
+        "page_start": 12,
+        "page_end": 13,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses inevitability of choice architectures, neutral design vs boosts, and ethical/practical trade-offs — directly applicable to digital nudging, boosts, transparency and autonomy debates.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 33,
+        "phase_f_doc_rank": 28,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 54.86,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "932587f6367ea85a",
+        "section_title": "6.3 | Liberty preservation and choice manipulation",
+        "page_start": 13,
+        "page_end": 13,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "supporting_background_context",
+        "decision_psychology_theory"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed critique of libertarian paternalism and liberty-preservation is useful for the chapter's ethical/ autonomy discussion and boundaries between benign nudges and manipulative design.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 70,
+        "phase_f_doc_rank": 70,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 40.18,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7f5d9e7d589d0f6f",
+        "section_title": "7 | JUSTIFYING NUDGES BEYOND LIBERTARIAN PATERNALISM",
+        "page_start": 13,
+        "page_end": 14,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "High-level framing of alternative justifications for nudges is directly relevant for the chapter's discussion of ethical grounds, limits and justifications of choice architecture. Useful for contextualizing nudging beyond libertarian-pater-",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a88381ad653e6800",
+        "section_title": "7.1 | Justifications for pro-self nudges not based on libertarian paternalism",
+        "page_start": 14,
+        "page_end": 14,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Provides concrete justifications for pro-self nudges (genuine paternalism) and contrasts gentle nudges with hard paternalism — directly applicable to normative arguments and design trade-offs.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d082f9b3d484b2bd",
+        "section_title": "7.2 | Justifications for pro-social nudges",
+        "page_start": 14,
+        "page_end": 14,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Covers pro-social/no-harm justifications (externalities), relevant when defending nudges aimed at societal benefit; helps frame ethical limits and public-interest arguments.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "29e96ee6b5cd3e3f",
+        "section_title": "7.3 | Justifications based on public acceptance",
+        "page_start": 14,
+        "page_end": 15,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "review_quality_authenticity",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Evidence on public acceptance and how transparency/Type 1 vs Type 2 nudges are perceived is valuable for sections on ethical design, transparency, and user autonomy in digital choice architecture.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 193,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f3ce3e749f750f57",
+        "section_title": "8 | BOOSTS VERSUS NUDGES",
+        "page_start": 15,
+        "page_end": 16,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Comparison of nudges vs boosts (empowerment through competence/representation of risk info) is highly relevant for design alternatives in webshops, links to dual-process thinking and info-presentation strategies.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 100,
+        "phase_f_doc_rank": 126,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "80601f529d02ec52",
+        "section_title": "9 | EFFECTIVENESS OF NUDGING",
+        "page_start": 16,
+        "page_end": 17,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed empirical overview of nudge effectiveness (defaults example, boundary conditions) directly informs digital nudging design, expected impact, and limits for webshop choice architecture.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 87,
+        "phase_f_doc_rank": 113,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "325140ce2dee74b4",
+        "section_title": "9.1 | Do nudges work best if non-transparent?",
+        "page_start": 17,
+        "page_end": 18,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "trust_risk_uncertainty",
+        "decision_psychology_theory"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses transparency of nudges and whether transparency reduces effectiveness—highly relevant for ethical digital nudging, user autonomy, and effects on decision confidence.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 63,
+        "phase_f_doc_rank": 39,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 48.98,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "affb646ba4ad7053",
+        "section_title": "9.2 | Do nudges work in the long run?",
+        "page_start": 18,
+        "page_end": 19,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Addresses persistence of nudge effects and habit formation vs. repeated exposure—useful for designing interventions in webshops and understanding long-term effects on consumer confidence.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 68,
+        "phase_f_doc_rank": 71,
+        "phase_g_doc_rank": 5,
+        "phase_g_score_0_to_100": 37.73,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f95031426d970387",
+        "section_title": "9.3 | Do nudges work worse than standard policies?",
+        "page_start": 19,
+        "page_end": 20,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Compares nudges to standard policies, including cost-effectiveness evidence—helps position choice architecture relative to other interventions and discuss limits and trade-offs.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 114,
+        "phase_f_doc_rank": 153,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "87bd90e84053000b",
+        "section_title": "9.4 | Do nudges crowd out or complement standard policies?",
+        "page_start": 20,
+        "page_end": 20,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Examines crowding-out vs complementarity between nudges and policies with psychological mechanisms—relevant for ethical design, perceived trust, and policy interactions in online retail.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 117,
+        "phase_f_doc_rank": 139,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "dfb349da6857ed6a",
+        "section_title": "10 | CONCLUSIONS",
+        "page_start": 20,
+        "page_end": 21,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "nudging_choice_architecture"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "High-level conclusions summarizing nudging literature; useful as background/context but low on novel, chapter-specific detail.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 176,
+        "phase_f_doc_rank": 175,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c8c5a9a9d3250832",
+        "section_title": "ACKNOWLEDGEMENTS",
+        "page_start": 21,
+        "page_end": 21,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Acknowledgements contain no conceptual or empirical content relevant to the chapter; purely formal.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "facb40fd723fff0b",
+        "section_title": "NOTES",
+        "page_start": 21,
+        "page_end": 21,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "decision_psychology_theory",
+        "nudging_choice_architecture"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Notes list key literature and debates on nudging and behavioral economics — useful for sourcing theoretical background and further reading, but no substantive content by itself.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 157,
+        "phase_f_doc_rank": 108,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "79ac1abcab873184",
+        "section_title": "REFERENCES",
+        "page_start": 21,
+        "page_end": 26,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Reference list is valuable for locating primary studies and reviews relevant to nudging and decision psychology, but it contains no extractable arguments or findings.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    }
+  ]
+}

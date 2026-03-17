@@ -1,0 +1,2216 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "judgment_under_uncertainty_heuristics_and_biases-5d61ba1a71f6",
+  "doc_title": "Judgment under Uncertainty: Heuristics and Biases",
+  "has_useful_information": true,
+  "document_label_0_to_3": 3,
+  "document_label_band": "core_or_strong_support",
+  "document_notes": "Core theory source for heuristics, biases, representativeness, availability, base rates, risk perception, and confidence under uncertainty. Existing benchmark note: Broad positive recall judgment for heuristics, biases, and perceived risk.",
+  "manual_review_basis": [
+    "full extracted section inventory",
+    "run 386e04657c41c805f8c1b974 section inspection packets",
+    "benchmark target direct excerpt review where available"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "1 Judgment under uncertainty: Heuristics and biases",
+      "page_start": 15,
+      "page_end": 35,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Classic overview of heuristics and biases; foundational theory about how people form beliefs under uncertainty—highly relevant for explaining heuristics, biases, and sources of miscalibrated decision confidence."
+    },
+    {
+      "section_title": "2 Belief in the law of small numbers",
+      "page_start": 36,
+      "page_end": 44,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Discussion of the law of small numbers and overgeneralization from small samples — directly relevant to sampling biases and misplaced confidence in online decision contexts."
+    },
+    {
+      "section_title": "3 Subjective probability: A judgment of representativeness",
+      "page_start": 45,
+      "page_end": 60,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Detailed treatment of subjective probability and representativeness heuristic — central for explaining probability distortions, confidence judgments, and misestimation of risk in online purchases."
+    },
+    {
+      "section_title": "4 On the psychology of prediction",
+      "page_start": 61,
+      "page_end": 82,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Focused on representativeness with empirical studies and mechanisms; crucial empirical grounding for heuristics that affect decision confidence and perceived risk in complex product choices."
+    },
+    {
+      "section_title": "6 Judgments of and by representativeness",
+      "page_start": 98,
+      "page_end": 114,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Kerntext zu Repräsentativitätsheuristik und zugehörigen Verzerrungen (Law of small numbers, Gambler’s fallacy). Direkt relevant für Entscheidungspsychologie, Heuristiken und deren Einfluss auf Entscheidungssicherheit und subjective probabil"
+    },
+    {
+      "section_title": "7 Popular induction: Information is not necessarily informative",
+      "page_start": 115,
+      "page_end": 131,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Kapitel zur Attributionstheorie (Kelley) und Schlussfolgerungsprozessen. Nützlich zur Erklärung kausaler Inferenzen, Attributionseffekte und deren Rolle bei Vertrauen/Unsicherheit in Kaufentscheidungen."
+    },
+    {
+      "section_title": "8 Causal schemas in judgments under uncertainty",
+      "page_start": 132,
+      "page_end": 144,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "notes": "Diskussion von kausalen Schemata und deren Einfluss auf Wahrscheinlichkeitsurteile. Hilfreich, um zu erklären, wie Nutzer Unsicherheit interpretieren und wie kausale Narrative Entscheidungssicherheit beeinflussen."
+    },
+    {
+      "section_title": "9 Shortcomings in the attribution process: On the origins and maintenance of erroneous social assessments",
+      "page_start": 145,
+      "page_end": 169,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Analyse von Attributionsfehlern und deren Entstehung. Relevant für Verständnis von Fehleinschätzungen bei Produktbewertungen, Vertrauensbildung und der Persistenz falscher Eindrücke im Webshop-Kontext."
+    },
+    {
+      "section_title": "10 Evidential impact of base rates",
+      "page_start": 170,
+      "page_end": 179,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Kernkapitel zu Basisratenvernachlässigung und Gewichtung spezifischer Evidenz. Sehr relevant für Informationsdarstellung, Vergleichbarkeit und wie Präsentationsformate Nutzerunsicherheit und Entscheidungssicherheit beeinflussen."
+    },
+    {
+      "section_title": "11 Availability: A heuristic for judging frequency and probability",
+      "page_start": 180,
+      "page_end": 196,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Kerntext zur Availability-Heuristik: Mechanismen, Beispiele und Implikationen für Wahrscheinlichkeits- und Häufigkeitsschätzungen. Sehr relevant für Entscheidungsheuristiken, Vertrauen/Unsicherheit und wie Informationspräsentation Retrieval"
+    },
+    {
+      "section_title": "14 The simulation heuristic",
+      "page_start": 221,
+      "page_end": 229,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "nudging_choice_architecture",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Einführung der Simulation‑Heuristik (mentale Konstruktion von Szenarien). Sehr relevant für Understanding von Entscheidungssicherheit, Erwartungsbildung und Gestaltung digitaler Informationspfade (z. B. Produktdemos, Szenarien)."
+    },
+    {
+      "section_title": "15 Informal covariation assessment: Data-based versus theory-based judgments",
+      "page_start": 230,
+      "page_end": 250,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Detailed treatment of covariation detection and informal inference is directly relevant to heuristics, updating beliefs under uncertainty, and how consumers infer product–outcome relationships (affects decision confidence and perceived risk"
+    },
+    {
+      "section_title": "16 The illusion of control",
+      "page_start": 251,
+      "page_end": 258,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Classic analysis of illusion of control explains a bias that inflates confidence and affects perceived controllability in purchase contexts (relevant for confidence, risk perception, and nudging safeguards)."
+    },
+    {
+      "section_title": "18 Probabilistic reasoning in clinical medicine: Problems and opportunities",
+      "page_start": 269,
+      "page_end": 288,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "In-depth exploration of probabilistic reasoning under high-stakes uncertainty; highly applicable to online purchase decisions for complex products (diagnostics of signal interpretation, base-rate neglect, presentation of probabilities)."
+    },
+    {
+      "section_title": "19 Learning from experience and suboptimal rules in decision making",
+      "page_start": 289,
+      "page_end": 306,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Examines learning-from-experience and when heuristics persist — directly relevant to consumer learning, formation of decision rules, and design interventions to improve decision confidence and reduce biases."
+    },
+    {
+      "section_title": "20 Overconfidence in case-study judgments",
+      "page_start": 307,
+      "page_end": 313,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Diskussion von Overconfidence und Angemessenheit von Vertrauen ist direkt relevant für «decision confidence» und Biases bei Kaufentscheidungen; liefert klassische Befunde und Beispiele für Überschätzung der Sicherheit."
+    },
+    {
+      "section_title": "22 Calibration of probabilities: The state of the art to 1980",
+      "page_start": 328,
+      "page_end": 357,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "decision_psychology_theory",
+        "review_quality_authenticity"
+      ],
+      "notes": "Umfassende Übersichtsarbeit zur Kalibrierung von Wahrscheinlichkeiten (calibration) — zentral für Verständnis von Vertrauen/Confidence, Messung von Unsicherheit und Interventionen zur Verbesserung von Entscheidungsqualität."
+    },
+    {
+      "section_title": "24 Evaluation of compound probabilities in sequential choice",
+      "page_start": 377,
+      "page_end": 381,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Experimentelle Befunde zu Fehleinschätzungen bei verketteten Wahrscheinlichkeiten (Addition statt Multiplikation). Relevante Einsicht für Gestaltung digitaler Entscheidungsprozesse und Informationsaufbereitung."
+    },
+    {
+      "section_title": "25 Conservatism in human information processing",
+      "page_start": 382,
+      "page_end": 393,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "notes": "Detailed classic account of conservatism in belief updating vs. Bayesian ideal. Highly relevant for explaining how consumers underweight new information, affecting decision confidence and uncertainty in online purchases."
+    },
+    {
+      "section_title": "26 The best-guess hypothesis in multistage inference",
+      "page_start": 394,
+      "page_end": 401,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "notes": "Multistage inference and the best-guess heuristic illuminate how sequential information (e.g., product reviews, specs) is integrated imperfectly, producing miscalibrated confidence — directly applicable to web-shop decision processes."
+    },
+    {
+      "section_title": "27 Inferences of personal characteristics on the basis of information retrieved from one’s memory",
+      "page_start": 402,
+      "page_end": 413,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Bayesian modeling of inferences from noisy memory speaks to how consumers form attribute beliefs under retrieval uncertainty; useful for sections on perceived risk, information reliability, and design to reduce uncertainty."
+    },
+    {
+      "section_title": "30 Intuitive prediction: Biases and corrective procedures",
+      "page_start": 437,
+      "page_end": 445,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Discusses intuitive prediction, role of singular vs. distributional information and limits of expert judgment — directly informs heuristics, biases, and how people form confidence under uncertainty; useful for explaining sources of miscalib"
+    },
+    {
+      "section_title": "31 Debiasing",
+      "page_start": 446,
+      "page_end": 470,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "nudging_choice_architecture",
+        "supporting_background_context"
+      ],
+      "notes": "Focuses on debiasing and 'destructive testing' of behavioral phenomena — crucial for interventions, design of choice architectures and limits of corrective procedures relevant to decision confidence and ethical nudging."
+    },
+    {
+      "section_title": "32 Improving inductive inference",
+      "page_start": 471,
+      "page_end": 487,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "notes": "Addresses improving inductive inference with statistical heuristics and educative maxims — useful for practical measures to raise decision quality, presentable rules for users, and clear info design to reduce uncertainty."
+    },
+    {
+      "section_title": "33 Facts versus fears: Understanding perceived risk",
+      "page_start": 488,
+      "page_end": 515,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Directly addresses perceived risk vs. objective facts and psychological elements of risk assessment and communication — highly relevant for perceived uncertainty in online purchases and design of trust-building information."
+    },
+    {
+      "section_title": "34 On the study of statistical intuitions",
+      "page_start": 516,
+      "page_end": 532,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "notes": "Detailed theoretical treatment of errors, biases, and statistical intuition—directly relevant to heuristics, biases, and dual-process considerations underlying decision confidence in uncertain online purchases."
+    },
+    {
+      "section_title": "35 Variants of uncertainty",
+      "page_start": 533,
+      "page_end": 545,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Explicit discussion of different variants and phenomenology of uncertainty; useful for framing perceived risk/uncertainty, internal vs. external attributions, and modes of judgment in online buying contexts."
+    }
+  ],
+  "near_miss_sections": [
+    {
+      "section_title": "Contents",
+      "page_start": 5,
+      "page_end": 8,
+      "usefulness_0_to_10": 4,
+      "notes": "Table of contents maps to many directly relevant topics (heuristics, perceived risk, overconfidence) and helps identify which chapters/sections to extract, but contains no substantive arguments or evidence itself."
+    },
+    {
+      "section_title": "29 The vitality of mythical numbers",
+      "page_start": 431,
+      "page_end": 436,
+      "usefulness_0_to_10": 5,
+      "notes": "Illustrative critique of widely propagated 'mythical numbers' and sloppy estimation — useful as an example of information quality/credibility issues that can mislead consumers, though less directly tied to webshop design."
+    }
+  ],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "38963074b1ce8c85",
+        "section_title": "Front Matter",
+        "page_start": 2,
+        "page_end": 2,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Front matter (empty) — no content to inform the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b4821a344d9a0bf3",
+        "section_title": "Title Page",
+        "page_start": 3,
+        "page_end": 3,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "fallback_anchor",
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Title/front-matter only; no substantive content for chapter development.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a58ec46841cf2622",
+        "section_title": "Copyright Page",
+        "page_start": 4,
+        "page_end": 4,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "fallback_anchor",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Copyright page only; not useful for theoretical or practical chapter material.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7217733b9bba188c",
+        "section_title": "Contents",
+        "page_start": 5,
+        "page_end": 8,
+        "section_type": "table_of_contents"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Table of contents maps to many directly relevant topics (heuristics, perceived risk, overconfidence) and helps identify which chapters/sections to extract, but contains no substantive arguments or evidence itself.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "00d630af63a03c60",
+        "section_title": "List of contributors",
+        "page_start": 9,
+        "page_end": 10,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "fallback_anchor",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "List of contributors only; minor contextual usefulness (authorship/authority), but no content for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "973e07f0707604ac",
+        "section_title": "Preface",
+        "page_start": 11,
+        "page_end": 14,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Preface outlines intellectual origins and scope of heuristics-and-biases research, useful for framing decision-psychology theory, historical context, and evaluating the literature's credibility; contains conceptual material valuable for the",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4c494e53e7481714",
+        "section_title": "Part I: Introduction",
+        "page_start": 14,
+        "page_end": 14,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Blank/placeholder introduction page with no extractable content.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e6135e0d991b1964",
+        "section_title": "1 Judgment under uncertainty: Heuristics and biases",
+        "page_start": 15,
+        "page_end": 35,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Classic overview of heuristics and biases; foundational theory about how people form beliefs under uncertainty—highly relevant for explaining heuristics, biases, and sources of miscalibrated decision confidence.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 41,
+        "phase_f_doc_rank": 20,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 56.85,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "02033b4bf5db957d",
+        "section_title": "Part II: Representativeness",
+        "page_start": 35,
+        "page_end": 35,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty/placeholder section (no substantive text) — no usable content for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6374249e3e2c28e6",
+        "section_title": "2 Belief in the law of small numbers",
+        "page_start": 36,
+        "page_end": 44,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discussion of the law of small numbers and overgeneralization from small samples — directly relevant to sampling biases and misplaced confidence in online decision contexts.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 187,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "0b5ca80e495f2b83",
+        "section_title": "3 Subjective probability: A judgment of representativeness",
+        "page_start": 45,
+        "page_end": 60,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed treatment of subjective probability and representativeness heuristic — central for explaining probability distortions, confidence judgments, and misestimation of risk in online purchases.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 109,
+        "phase_f_doc_rank": 50,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "5be35a415e25c940",
+        "section_title": "4 On the psychology of prediction",
+        "page_start": 61,
+        "page_end": 82,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Focused on representativeness with empirical studies and mechanisms; crucial empirical grounding for heuristics that affect decision confidence and perceived risk in complex product choices.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 79,
+        "phase_f_doc_rank": 44,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 48.89,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "8da11b4aa8759686",
+        "section_title": "5 Studies of representativeness",
+        "page_start": 83,
+        "page_end": 97,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": null,
+      "pipeline_trace": {
+        "phase_e_doc_rank": 184,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3547b12ce993bfba",
+        "section_title": "6 Judgments of and by representativeness",
+        "page_start": 98,
+        "page_end": 114,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Kerntext zu Repräsentativitätsheuristik und zugehörigen Verzerrungen (Law of small numbers, Gambler’s fallacy). Direkt relevant für Entscheidungspsychologie, Heuristiken und deren Einfluss auf Entscheidungssicherheit und subjective probabil",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 123,
+        "phase_f_doc_rank": 59,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "2f55049917955354",
+        "section_title": "Part III: Causality and attribution",
+        "page_start": 114,
+        "page_end": 114,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Leere/Frontmatter-Seite (Part-Überschrift) — kein verwertbarer inhaltlicher Beitrag für das Kapitel.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d657239a53f08e41",
+        "section_title": "7 Popular induction: Information is not necessarily informative",
+        "page_start": 115,
+        "page_end": 131,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Kapitel zur Attributionstheorie (Kelley) und Schlussfolgerungsprozessen. Nützlich zur Erklärung kausaler Inferenzen, Attributionseffekte und deren Rolle bei Vertrauen/Unsicherheit in Kaufentscheidungen.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 64,
+        "phase_f_doc_rank": 51,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "91a28ca929b68678",
+        "section_title": "8 Causal schemas in judgments under uncertainty",
+        "page_start": 132,
+        "page_end": 144,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Diskussion von kausalen Schemata und deren Einfluss auf Wahrscheinlichkeitsurteile. Hilfreich, um zu erklären, wie Nutzer Unsicherheit interpretieren und wie kausale Narrative Entscheidungssicherheit beeinflussen.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 75,
+        "phase_f_doc_rank": 68,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "8a8cf82504dcdb8f",
+        "section_title": "9 Shortcomings in the attribution process: On the origins and maintenance of erroneous social assessments",
+        "page_start": 145,
+        "page_end": 169,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Analyse von Attributionsfehlern und deren Entstehung. Relevant für Verständnis von Fehleinschätzungen bei Produktbewertungen, Vertrauensbildung und der Persistenz falscher Eindrücke im Webshop-Kontext.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 120,
+        "phase_f_doc_rank": 93,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "2683f7e51d273702",
+        "section_title": "10 Evidential impact of base rates",
+        "page_start": 170,
+        "page_end": 179,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Kernkapitel zu Basisratenvernachlässigung und Gewichtung spezifischer Evidenz. Sehr relevant für Informationsdarstellung, Vergleichbarkeit und wie Präsentationsformate Nutzerunsicherheit und Entscheidungssicherheit beeinflussen.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 147,
+        "phase_f_doc_rank": 99,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4eedec65020e8dca",
+        "section_title": "Part IV: Availxability",
+        "page_start": 179,
+        "page_end": 179,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "decision_psychology_theory"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Nur ein Kapitel- bzw. Abschnittstitel (Part IV: Availability). Kaum inhaltliche Substanz für die Kapitelarbeit, aber zeigt Struktur des Buchs.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6331979c14e41a90",
+        "section_title": "11 Availability: A heuristic for judging frequency and probability",
+        "page_start": 180,
+        "page_end": 196,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Kerntext zur Availability-Heuristik: Mechanismen, Beispiele und Implikationen für Wahrscheinlichkeits- und Häufigkeitsschätzungen. Sehr relevant für Entscheidungsheuristiken, Vertrauen/Unsicherheit und wie Informationspräsentation Retrieval",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d7958c8b69e56763",
+        "section_title": "12 Egocentric biases in availability and attribution",
+        "page_start": 197,
+        "page_end": 208,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Beschreibt egocentrische Verzerrungen in Verfügbarkeitswahrnehmung/Attribution. Nützlich für soziale Aspekte von Entscheidungssicherheit und Verantwortungswahrnehmung, weniger direkt auf E‑Commerce bezogen.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 122,
+        "phase_f_doc_rank": 79,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "8150a4a21580f348",
+        "section_title": "13 The availability bias in social perception and interaction",
+        "page_start": 209,
+        "page_end": 220,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Diskussion der Availability-Bias in sozialer Wahrnehmung; liefert empirische Beispiele und Mechanismen, die Einfluss auf Vertrauen und Risikoabschätzung im Online‑Kauf haben können.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 85,
+        "phase_f_doc_rank": 62,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3e82cec417bbb19f",
+        "section_title": "14 The simulation heuristic",
+        "page_start": 221,
+        "page_end": 229,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "nudging_choice_architecture",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Einführung der Simulation‑Heuristik (mentale Konstruktion von Szenarien). Sehr relevant für Understanding von Entscheidungssicherheit, Erwartungsbildung und Gestaltung digitaler Informationspfade (z. B. Produktdemos, Szenarien).",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 152,
+        "phase_f_doc_rank": 77,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "59a294971ec68cf3",
+        "section_title": "Part V: Covariation and control",
+        "page_start": 229,
+        "page_end": 229,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Nur ein Kapiteleinstieg/Überschrift (Part V: Covariation and control). Keine substantiellen Inhalte für das Kapitel.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "579510c7fb48d417",
+        "section_title": "15 Informal covariation assessment: Data-based versus theory-based judgments",
+        "page_start": 230,
+        "page_end": 250,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed treatment of covariation detection and informal inference is directly relevant to heuristics, updating beliefs under uncertainty, and how consumers infer product–outcome relationships (affects decision confidence and perceived risk",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 141,
+        "phase_f_doc_rank": 89,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e814001ef89f2faf",
+        "section_title": "16 The illusion of control",
+        "page_start": 251,
+        "page_end": 258,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Classic analysis of illusion of control explains a bias that inflates confidence and affects perceived controllability in purchase contexts (relevant for confidence, risk perception, and nudging safeguards).",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a6c83280ca5a69bb",
+        "section_title": "17 Test results are what you think they are",
+        "page_start": 259,
+        "page_end": 268,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses projection in test interpretation and observer bias — useful for understanding evaluator bias and overconfidence, but more clinical/projective-test specific and less directly about consumer purchase contexts.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 209,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "526b65d7ab28f413",
+        "section_title": "18 Probabilistic reasoning in clinical medicine: Problems and opportunities",
+        "page_start": 269,
+        "page_end": 288,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "In-depth exploration of probabilistic reasoning under high-stakes uncertainty; highly applicable to online purchase decisions for complex products (diagnostics of signal interpretation, base-rate neglect, presentation of probabilities).",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "1c5925644ad3cad1",
+        "section_title": "19 Learning from experience and suboptimal rules in decision making",
+        "page_start": 289,
+        "page_end": 306,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Examines learning-from-experience and when heuristics persist — directly relevant to consumer learning, formation of decision rules, and design interventions to improve decision confidence and reduce biases.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 32,
+        "phase_f_doc_rank": 15,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 67.43,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "17b0643661c3c3a3",
+        "section_title": "Part VI: Overconfidence",
+        "page_start": 306,
+        "page_end": 306,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Single heading page with no substantive content — minimal utility for chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b9031df383401cea",
+        "section_title": "20 Overconfidence in case-study judgments",
+        "page_start": 307,
+        "page_end": 313,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Diskussion von Overconfidence und Angemessenheit von Vertrauen ist direkt relevant für «decision confidence» und Biases bei Kaufentscheidungen; liefert klassische Befunde und Beispiele für Überschätzung der Sicherheit.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 113,
+        "phase_f_doc_rank": 67,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c6ea7608f54b5b5e",
+        "section_title": "21 A progress report on the training of probability assessors",
+        "page_start": 314,
+        "page_end": 327,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Beschreibt Verfahren zur Einschätzung und Kalibrierung von Wahrscheinlichkeitsurteilen (Fraktile-Methode). Nützlich für Trainings-/Kalibrierungsaspekte und Messung von Entscheidungssicherheit, enthält aber starken Methodenfokus.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 178,
+        "phase_f_doc_rank": 54,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7113bff051ef9561",
+        "section_title": "22 Calibration of probabilities: The state of the art to 1980",
+        "page_start": 328,
+        "page_end": 357,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "decision_psychology_theory",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Umfassende Übersichtsarbeit zur Kalibrierung von Wahrscheinlichkeiten (calibration) — zentral für Verständnis von Vertrauen/Confidence, Messung von Unsicherheit und Interventionen zur Verbesserung von Entscheidungsqualität.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 118,
+        "phase_f_doc_rank": 82,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "37d18a3ff49e6a9b",
+        "section_title": "23 For those condemned to study the past: Heuristics and biases in hindsight",
+        "page_start": 358,
+        "page_end": 376,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Analyse von Hindsight-Bias und retrospektiven Verzerrungen; relevant zur Erklärung, wie Nutzer vergangene Informationen bewerten und wie das Vertrauen in Entscheidungen nachträglich verzerrt wird.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 132,
+        "phase_f_doc_rank": 76,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ac5eed3d697d42b2",
+        "section_title": "Part VII: Multistage evaluation",
+        "page_start": 376,
+        "page_end": 376,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Nur Part-Überschrift/Leerseite ohne inhaltlichen Nutzen für das Kapitel.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b0d8df316beac30b",
+        "section_title": "24 Evaluation of compound probabilities in sequential choice",
+        "page_start": 377,
+        "page_end": 381,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Experimentelle Befunde zu Fehleinschätzungen bei verketteten Wahrscheinlichkeiten (Addition statt Multiplikation). Relevante Einsicht für Gestaltung digitaler Entscheidungsprozesse und Informationsaufbereitung.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 88,
+        "phase_f_doc_rank": 80,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3ba03b0708d56d90",
+        "section_title": "25 Conservatism in human information processing",
+        "page_start": 382,
+        "page_end": 393,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed classic account of conservatism in belief updating vs. Bayesian ideal. Highly relevant for explaining how consumers underweight new information, affecting decision confidence and uncertainty in online purchases.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 110,
+        "phase_f_doc_rank": 83,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ac8f45c9a84bf59f",
+        "section_title": "26 The best-guess hypothesis in multistage inference",
+        "page_start": 394,
+        "page_end": 401,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Multistage inference and the best-guess heuristic illuminate how sequential information (e.g., product reviews, specs) is integrated imperfectly, producing miscalibrated confidence — directly applicable to web-shop decision processes.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 162,
+        "phase_f_doc_rank": 105,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "fd73492eea0a4798",
+        "section_title": "27 Inferences of personal characteristics on the basis of information retrieved from one’s memory",
+        "page_start": 402,
+        "page_end": 413,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Bayesian modeling of inferences from noisy memory speaks to how consumers form attribute beliefs under retrieval uncertainty; useful for sections on perceived risk, information reliability, and design to reduce uncertainty.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 161,
+        "phase_f_doc_rank": 109,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c918b64f37f98fd0",
+        "section_title": "Part VIII: Corrective procedures",
+        "page_start": 413,
+        "page_end": 413,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty/placeholder section (Part heading) — no substantive content for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "de4e29a9ed22353b",
+        "section_title": "28 The robust beauty of improper linear models in decision making",
+        "page_start": 414,
+        "page_end": 430,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "nudging_choice_architecture",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discussion of linear models versus expert judgment provides evidence for using simple decision aids/algorithms in choice architecture and for designing transparent decision support in webshops to improve decision quality/confidence.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 168,
+        "phase_f_doc_rank": 58,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ef3c5ed652974161",
+        "section_title": "29 The vitality of mythical numbers",
+        "page_start": 431,
+        "page_end": 436,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "review_quality_authenticity",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Illustrative critique of widely propagated 'mythical numbers' and sloppy estimation — useful as an example of information quality/credibility issues that can mislead consumers, though less directly tied to webshop design.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "0d1b99f2f79d1b63",
+        "section_title": "30 Intuitive prediction: Biases and corrective procedures",
+        "page_start": 437,
+        "page_end": 445,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses intuitive prediction, role of singular vs. distributional information and limits of expert judgment — directly informs heuristics, biases, and how people form confidence under uncertainty; useful for explaining sources of miscalib",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 115,
+        "phase_f_doc_rank": 61,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "0d8aa6ec2fc1808f",
+        "section_title": "31 Debiasing",
+        "page_start": 446,
+        "page_end": 470,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "nudging_choice_architecture",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Focuses on debiasing and 'destructive testing' of behavioral phenomena — crucial for interventions, design of choice architectures and limits of corrective procedures relevant to decision confidence and ethical nudging.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 95,
+        "phase_f_doc_rank": 52,
+        "phase_g_doc_rank": 5,
+        "phase_g_score_0_to_100": 46.32,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6860fca4296f8468",
+        "section_title": "32 Improving inductive inference",
+        "page_start": 471,
+        "page_end": 487,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Addresses improving inductive inference with statistical heuristics and educative maxims — useful for practical measures to raise decision quality, presentable rules for users, and clear info design to reduce uncertainty.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 111,
+        "phase_f_doc_rank": 65,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3ed87773ff86cd97",
+        "section_title": "Part IX: Risk perception",
+        "page_start": 487,
+        "page_end": 487,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty/placeholder section (no substantive text) — no value for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "2c2e4b504d3e164c",
+        "section_title": "33 Facts versus fears: Understanding perceived risk",
+        "page_start": 488,
+        "page_end": 515,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Directly addresses perceived risk vs. objective facts and psychological elements of risk assessment and communication — highly relevant for perceived uncertainty in online purchases and design of trust-building information.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 43,
+        "phase_f_doc_rank": 60,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4a0a5fa3f625d11e",
+        "section_title": "Part X: Postscript",
+        "page_start": 515,
+        "page_end": 515,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty/placeholder postscript page with no content — not useful for chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b0179a2e28bb092f",
+        "section_title": "34 On the study of statistical intuitions",
+        "page_start": 516,
+        "page_end": 532,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed theoretical treatment of errors, biases, and statistical intuition—directly relevant to heuristics, biases, and dual-process considerations underlying decision confidence in uncertain online purchases.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 65,
+        "phase_f_doc_rank": 107,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b4560ec2e74a9876",
+        "section_title": "35 Variants of uncertainty",
+        "page_start": 533,
+        "page_end": 545,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Explicit discussion of different variants and phenomenology of uncertainty; useful for framing perceived risk/uncertainty, internal vs. external attributions, and modes of judgment in online buying contexts.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 55,
+        "phase_f_doc_rank": 13,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 49.55,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "8dd6d2ad9dc18690",
+        "section_title": "References",
+        "page_start": 546,
+        "page_end": 590,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Bibliographic references only; useful only for sourcing citations, not for substantive chapter content.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c6fc732e92ba5f14",
+        "section_title": "Index",
+        "page_start": 591,
+        "page_end": 598,
+        "section_type": "index"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context",
+        "decision_psychology_theory"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Index entries can help locate relevant topics across the book but contain no substantive content themselves.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    }
+  ]
+}

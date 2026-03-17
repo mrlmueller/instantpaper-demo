@@ -1,0 +1,8 @@
+{
+  "doc_id": "sentiment_analysis_of_product_reviews_using_mach-1897724bd012",
+  "label": "Sentiment Analysis of Product Reviews Using Machine Learning and Pre-Trained LLM",
+  "path": "../../paper-dump/Sentiment Analysis of Product Reviews Using Machine Learning and Pre-Trained LLM.pdf",
+  "role_in_suite": "manual_negative_anchor",
+  "expected_difficulty": "manual_negative",
+  "notes": "User explicitly marked this PDF as not useful for the webshop chapter."
+}

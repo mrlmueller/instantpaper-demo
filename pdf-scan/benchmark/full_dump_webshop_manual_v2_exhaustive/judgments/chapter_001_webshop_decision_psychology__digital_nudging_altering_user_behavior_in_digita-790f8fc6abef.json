@@ -1,0 +1,435 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "digital_nudging_altering_user_behavior_in_digita-790f8fc6abef",
+  "doc_title": "Digital Nudging: Altering User Behavior in Digital Environments",
+  "has_useful_information": true,
+  "document_label_0_to_3": 3,
+  "document_label_band": "core_or_strong_support",
+  "document_notes": "Strong digital nudging survey with behavioral foundations, UI design implications, and a detailed catalog of psychological effects and nudges. Existing benchmark note: Broad positive recall judgment for digital nudging mechanisms and psychological effects.",
+  "manual_review_basis": [
+    "full extracted section inventory",
+    "run 386e04657c41c805f8c1b974 section inspection packets",
+    "benchmark target direct excerpt review where available"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "Abstract",
+      "page_start": 1,
+      "page_end": 1,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Abstract summarizes digital nudging, psychological mechanisms and relevance to UI design and decision support on screens — highly relevant as an overview and literature-review anchor for the chapter."
+    },
+    {
+      "section_title": "1 Introduction",
+      "page_start": 1,
+      "page_end": 3,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Introduction explains digital nudging, choice architecture, behavioral foundations (heuristics, context dependence) and libertarian paternalism — directly relevant for nudging, psychological mechanisms, and ethical framing in webshop buying"
+    },
+    {
+      "section_title": "2.1 Behavioral Economics and Nudging",
+      "page_start": 3,
+      "page_end": 4,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "nudging_choice_architecture",
+        "supporting_background_context"
+      ],
+      "notes": "Contains core theory: behavioral economics, dual‑process (System 1/2), heuristics and biases, and definition/mechanism of nudging — directly applicable to decision confidence, heuristics, and choice architecture discussion."
+    },
+    {
+      "section_title": "2.2 UI Design in the HCI Domain",
+      "page_start": 4,
+      "page_end": 5,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Explains HCI/UI design principles, UX and links to behavioral insights — useful for digital choice architecture, interface-level nudges, and information presentation, though more applied than theoretical."
+    },
+    {
+      "section_title": "3.2 Identified Psychological Effects and Nudges",
+      "page_start": 6,
+      "page_end": 11,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Systematic identification of ~20 psychological effects and associated nudges with examples — directly applicable for explaining mechanisms of digital nudging, linking heuristics/biases to design interventions and choice architecture in web‑"
+    }
+  ],
+  "near_miss_sections": [],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "6be35d7ff6156538",
+        "section_title": "Abstract",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "abstract"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Abstract summarizes digital nudging, psychological mechanisms and relevance to UI design and decision support on screens — highly relevant as an overview and literature-review anchor for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 37,
+        "phase_f_doc_rank": 57,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "04bd12e37b983d86",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Front matter only (title/cover), no substantive content relevant to chapter topics.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b5ef7e03b57d7b89",
+        "section_title": "1 Introduction",
+        "page_start": 1,
+        "page_end": 3,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Introduction explains digital nudging, choice architecture, behavioral foundations (heuristics, context dependence) and libertarian paternalism — directly relevant for nudging, psychological mechanisms, and ethical framing in webshop buying",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 12,
+        "phase_f_doc_rank": 17,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 56.43,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "59e6353f7abc257c",
+        "section_title": "2 Theoretical Background",
+        "page_start": 3,
+        "page_end": 3,
+        "section_type": "background"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Section heading present but no text provided — no usable content for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "630332851ed68ee5",
+        "section_title": "2.1 Behavioral Economics and Nudging",
+        "page_start": 3,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "nudging_choice_architecture",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Contains core theory: behavioral economics, dual‑process (System 1/2), heuristics and biases, and definition/mechanism of nudging — directly applicable to decision confidence, heuristics, and choice architecture discussion.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 19,
+        "phase_f_doc_rank": 24,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 55.09,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "929de13a723afb0d",
+        "section_title": "2.2 UI Design in the HCI Domain",
+        "page_start": 4,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Explains HCI/UI design principles, UX and links to behavioral insights — useful for digital choice architecture, interface-level nudges, and information presentation, though more applied than theoretical.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 29,
+        "phase_f_doc_rank": 35,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 48.97,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b79d349b9d73a069",
+        "section_title": "3 Literature Review on Nudging",
+        "page_start": 5,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Heading only (literature review) with no content — no direct utility.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "00c4a44de7b1ab94",
+        "section_title": "3.1 Systematic Literature Review",
+        "page_start": 5,
+        "page_end": 6,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes systematic review methodology and screening — informative about evidence base and selection but provides little substantive content for chapter arguments or examples.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 39,
+        "phase_f_doc_rank": 56,
+        "phase_g_doc_rank": 5,
+        "phase_g_score_0_to_100": 29.47,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "cca583185fca4f3b",
+        "section_title": "3.2 Identified Psychological Effects and Nudges",
+        "page_start": 6,
+        "page_end": 11,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Systematic identification of ~20 psychological effects and associated nudges with examples — directly applicable for explaining mechanisms of digital nudging, linking heuristics/biases to design interventions and choice architecture in web‑",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 9,
+        "phase_f_doc_rank": 25,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 59.77,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "adf4c7b5f748c013",
+        "section_title": "References",
+        "page_start": 11,
+        "page_end": 15,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Reference list: useful only as a pointer to primary sources but contains no substantive content for the chapter itself.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    }
+  ]
+}

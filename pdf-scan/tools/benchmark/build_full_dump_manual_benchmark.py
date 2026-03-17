@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
-REPO_ROOT = Path(__file__).resolve().parent
-PDF_SCAN_DIR = REPO_ROOT
+PDF_SCAN_DIR = Path(__file__).resolve().parents[2]
+REPO_ROOT = PDF_SCAN_DIR.parent
 DEFAULT_SOURCE_RUN = "386e04657c41c805f8c1b974"
 SUITE_DIR = PDF_SCAN_DIR / "benchmark" / "full_dump_webshop_manual_v1"
 

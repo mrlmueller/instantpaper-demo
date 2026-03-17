@@ -1,0 +1,33 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "using_online_reviews_for_customer_sentiment_anal-ba995f136320",
+  "has_useful_information": true,
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_title": "INTRODUCTION",
+        "page_start": 1,
+        "page_end": 2
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 9/10. Online reviews become more important for unfamiliar and harder-to-evaluate products."
+    },
+    {
+      "section_ref": {
+        "section_title": "SENTIMENT ANALYSIS ON ONLINE REVIEWS",
+        "page_start": 2,
+        "page_end": 5
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp3",
+        "sp1"
+      ],
+      "notes": "Score 8/10. Helpful-vote filtering and fake/ingenuine review concerns as quality-signaling mechanisms."
+    }
+  ],
+  "document_notes": "User-marked positive. Strong for unfamiliar/innovation products, helpfulness votes, fake or ingenuine reviews, and review-based uncertainty reduction."
+}

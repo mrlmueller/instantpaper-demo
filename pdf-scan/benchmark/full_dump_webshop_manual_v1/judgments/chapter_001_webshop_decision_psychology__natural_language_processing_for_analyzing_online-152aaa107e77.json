@@ -1,0 +1,57 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "natural_language_processing_for_analyzing_online-152aaa107e77",
+  "has_useful_information": true,
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_title": "Introduction",
+        "page_start": 1,
+        "page_end": 3
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 7/10. Best general entry point for reviews as assurance and guidance in consumer choice."
+    },
+    {
+      "section_ref": {
+        "section_title": "Review analysis and management",
+        "page_start": 9,
+        "page_end": 10
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp3",
+        "sp1"
+      ],
+      "notes": "Score 9/10. Strongest section for authenticity, trustworthiness, quality, usefulness, fake-review detection, verified purchase, helpfulness, and information overload."
+    },
+    {
+      "section_ref": {
+        "section_title": "Marketing and brand management",
+        "page_start": 14,
+        "page_end": 18
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 8/10. Useful for seller trust profiles, trust models, and verified-purchase badges."
+    },
+    {
+      "section_ref": {
+        "section_title": "Customer experience and satisfaction",
+        "page_start": 10,
+        "page_end": 12
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 8/10. Useful for review-based QA and summarization as uncertainty-reduction mechanisms."
+    }
+  ],
+  "document_notes": "User-marked positive. Strong for review authenticity, trustworthiness, helpfulness, verified purchase, information overload, and better presentation of review information."
+}

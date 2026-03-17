@@ -1,0 +1,811 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "natural_language_processing_for_analyzing_online-152aaa107e77",
+  "doc_title": "Natural Language Processing for Analyzing Online Customer Reviews: A Survey, Taxonomy, and Open Research Challenges",
+  "has_useful_information": true,
+  "document_label_0_to_3": 2,
+  "document_label_band": "useful_support",
+  "document_notes": "Useful survey source for review authenticity, fake-review detection, trust models, verified-purchase-like signals, overload, and review summarization. Existing benchmark note: User-marked positive. Strong for review authenticity, trustworthiness, helpfulness, verified purchase, information overload, and better presentation of review information.",
+  "manual_review_basis": [
+    "full extracted section inventory",
+    "run 386e04657c41c805f8c1b974 section inspection packets",
+    "benchmark target direct excerpt review where available"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "Review analysis and management",
+      "page_start": 9,
+      "page_end": 10,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Behandelt Fake‑Reviews, Authentizitätsprüfung und Faktoren wie Review‑Länge/Argumentation — direkt relevant für Vertrauen, Wahrnehmung von Risiko und Qualitäts‑Signale in Online‑Shops. Benchmark-reviewed note: The section contains high‑value material on authenticity, fake‑review detection, verified‑purchase signals and helpfulness metrics directly relevant to decision confidence and trust, but it was not retrieved (pipeline indicates an early retrieval miss). Likely causes: low lexical overlap with the query or overly strict"
+    }
+  ],
+  "near_miss_sections": [
+    {
+      "section_title": "Taxonomy of NLP applications in online customer reviews",
+      "page_start": 4,
+      "page_end": 4,
+      "usefulness_0_to_10": 5,
+      "notes": "Taxonomie liefert strukturierende Übersicht über NLP‑Anwendungsfelder; hilfreich als Kontexthilfe, weniger konkrete Implikationen für psychologische Mechanismen."
+    },
+    {
+      "section_title": "Discussion",
+      "page_start": 18,
+      "page_end": 18,
+      "usefulness_0_to_10": 5,
+      "notes": "High-level discussion of trends and open challenges (e.g., fake reviews) provides useful background context for chapters on decision confidence and trust, but little actionable detail."
+    },
+    {
+      "section_title": "RQ2: data sources",
+      "page_start": 20,
+      "page_end": 21,
+      "usefulness_0_to_10": 5,
+      "notes": "Describes common data sources (Amazon, TripAdvisor, cross-domain datasets). Helpful as background on where evidence comes from and the prevalence of review influence, but limited theoretical depth."
+    },
+    {
+      "section_title": "RQ3: techniques and methods",
+      "page_start": 21,
+      "page_end": 22,
+      "usefulness_0_to_10": 4,
+      "notes": "Focuses on ML/NLP techniques for analyzing reviews. Relevant insofar as methods enable fake‑review detection and granular sentiment extraction, but largely methodological rather than directly informing psychological mechanisms or design/eth"
+    }
+  ],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "a8ac305270538e7d",
+        "section_title": "ABSTRACT",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "abstract"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity",
+        "consumer_electronics_or_product_examples"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Survey of NLP methods for analyzing online reviews—relevant for designing information-presentation, assessing review quality/authenticity, and leveraging review data (Amazon focus) to reduce consumer uncertainty for complex products.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ea092b46363ea5ea",
+        "section_title": "Natural language processing for analyzing online customer reviews: a survey, taxonomy, and open research challenges",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Author contribution note / metadata only; no substantive content for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "5d962c3aae2d28b5",
+        "section_title": "Introduction",
+        "page_start": 1,
+        "page_end": 3,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "supporting_background_context",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Einführender Überblick, der die Bedeutung von Online‑Reviews für Kaufentscheidungen und die Rolle von NLP skizziert. Hilfreich als Kontext für Kapitelabschnitte zu Informationsquellen, Vertrauensbildung und Entscheidungssicherheit, liefert/ Benchmark-reviewed note: Pipeline aborted early due to a top‑section threshold: the document's introduction likely didn’t share many high‑weight keywords with the chapter query (decision confidence, nudging, perceived risk, consumer electronics). Although conceptually relevant (reviews as assurance/uncertainty reduction), the retrieval model's",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "Introduction",
+        "benchmark_label_0_to_3": 2,
+        "benchmark_notes": "Score 7/10. Best general entry point for reviews as assurance and guidance in consumer choice.",
+        "miss_reason": "phase_e_retrieval_recall_gap",
+        "pipeline_reason": "phase_e_retrieval_miss"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6b3259e9b20f919e",
+        "section_title": "Survey methodology",
+        "page_start": 3,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Beschreibt Such- und Auswahlkriterien der Literaturrecherche; für die inhaltliche Kapitelarbeit wenig direkt relevant (methodischer, technischer Charakter).",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "49179def4b1f6548",
+        "section_title": "Taxonomy of NLP applications in online customer reviews",
+        "page_start": 4,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Taxonomie liefert strukturierende Übersicht über NLP‑Anwendungsfelder; hilfreich als Kontexthilfe, weniger konkrete Implikationen für psychologische Mechanismen.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 171,
+        "phase_f_doc_rank": 179,
+        "phase_g_doc_rank": 5,
+        "phase_g_score_0_to_100": 5.01,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e7e81e04c80695da",
+        "section_title": "Sentiment analysis and opinion mining",
+        "page_start": 4,
+        "page_end": 9,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "supporting_background_context",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Vertieftes Material zu Sentiment- und Aspektextraktion. Nützlich für Gestaltung von Informationsdarstellung (z. B. aspektbasierte Zusammenfassungen), die Unsicherheit reduziert und Entscheidungssicherheit beeinflusst.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 174,
+        "phase_f_doc_rank": 171,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 15.72,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "455ba4f626336358",
+        "section_title": "Review analysis and management",
+        "page_start": 9,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Behandelt Fake‑Reviews, Authentizitätsprüfung und Faktoren wie Review‑Länge/Argumentation — direkt relevant für Vertrauen, Wahrnehmung von Risiko und Qualitäts‑Signale in Online‑Shops. Benchmark-reviewed note: The section contains high‑value material on authenticity, fake‑review detection, verified‑purchase signals and helpfulness metrics directly relevant to decision confidence and trust, but it was not retrieved (pipeline indicates an early retrieval miss). Likely causes: low lexical overlap with the query or overly strict",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "Review analysis and management",
+        "benchmark_label_0_to_3": 3,
+        "benchmark_notes": "Score 9/10. Strongest section for authenticity, trustworthiness, quality, usefulness, fake-review detection, verified purchase, helpfulness, and information overload.",
+        "miss_reason": "phase_e_retrieval_recall_gap",
+        "pipeline_reason": "phase_e_retrieval_miss"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a12de81eab79d6c9",
+        "section_title": "Customer experience and satisfaction",
+        "page_start": 10,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Diskutiert, wie Reviews Kundenerlebnis und Zufriedenheit formen; nützlich zur Erklärung, wie Informationsdarstellung Vertrauen und Entscheidungssicherheit beeinflusst, aber eher anwendungsorientiert. Benchmark-reviewed note: The section offers useful methods (aspect‑based summaries, QA, summarization, credibility metrics) that directly map to mechanisms for reducing uncertainty (better information presentation). The pipeline ranked the doc in mid to low retrieval (phase_e/f) and the reranker appears to have downranked it, possibly due to a",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 182,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "Customer experience and satisfaction",
+        "benchmark_label_0_to_3": 2,
+        "benchmark_notes": "Score 8/10. Useful for review-based QA and summarization as uncertainty-reduction mechanisms.",
+        "miss_reason": "phase_f_rerank_downranked",
+        "pipeline_reason": "phase_f_rerank_miss"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b54dd97c0685ab85",
+        "section_title": "User profiling and recommendation systems",
+        "page_start": 13,
+        "page_end": 14,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses user profiling and recommender systems which inform personalization/choice architecture in webshops and can influence decision confidence and heuristics; also touches on methods relevant to authenticity. Not specific to consumer‑e",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 190,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f3b13a4bf38bc802",
+        "section_title": "Marketing and brand management",
+        "page_start": 14,
+        "page_end": 18,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "consumer_electronics_or_product_examples",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Covers reputation models and trust profiling from reviews—directly relevant to perceived risk, trustworthiness signals, and how presentation of trust information affects online purchase uncertainty. Benchmark-reviewed note: This section contains useful material on seller trust profiles, commensurate trust models, and verified‑purchase effects (relevant to cues that reduce perceived risk). Pipeline logs show the doc reached later phases but was ranked low until it surfaced very late (phase_g rank 1 after heavy downranking), suggesting rera",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 131,
+        "phase_f_doc_rank": 91,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 34.37,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "Marketing and brand management",
+        "benchmark_label_0_to_3": 2,
+        "benchmark_notes": "Score 8/10. Useful for seller trust profiles, trust models, and verified-purchase badges.",
+        "miss_reason": "phase_g_threshold_or_doc_calibration",
+        "pipeline_reason": "surfaced_to_phase_g"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a21b523bb88c7ca9",
+        "section_title": "Discussion",
+        "page_start": 18,
+        "page_end": 18,
+        "section_type": "discussion"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "High-level discussion of trends and open challenges (e.g., fake reviews) provides useful background context for chapters on decision confidence and trust, but little actionable detail.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "adc39d2cc9f32f39",
+        "section_title": "RQ1: application areas",
+        "page_start": 19,
+        "page_end": 20,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity",
+        "decision_psychology_theory"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Surveys sentiment/aspect analysis and product-quality prediction approaches—useful for how review content can be distilled and presented to reduce uncertainty and affect confidence/heuristics.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 139,
+        "phase_f_doc_rank": 163,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 17.06,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "fd978a22c0f1996b",
+        "section_title": "RQ2: data sources",
+        "page_start": 20,
+        "page_end": 21,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes common data sources (Amazon, TripAdvisor, cross-domain datasets). Helpful as background on where evidence comes from and the prevalence of review influence, but limited theoretical depth.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 216,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "dd94c55a39c4ba4b",
+        "section_title": "RQ3: techniques and methods",
+        "page_start": 21,
+        "page_end": 22,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Focuses on ML/NLP techniques for analyzing reviews. Relevant insofar as methods enable fake‑review detection and granular sentiment extraction, but largely methodological rather than directly informing psychological mechanisms or design/eth",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "015471477c0e361c",
+        "section_title": "RQ4: open challenges and future directions",
+        "page_start": 22,
+        "page_end": 26,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses open challenges directly relevant to online review reliability (fake reviews, multi-modal integration, explainability) and handling diverse data sources — useful for sections on information quality, trust, and mechanisms to reduce",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 142,
+        "phase_f_doc_rank": 155,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 20.79,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c7865b6144c5c18e",
+        "section_title": "ADDITIONAL INFORMATION AND DECLARATIONS",
+        "page_start": 26,
+        "page_end": 26,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty ‘Additional Information and Declarations’ section — no substantive content for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4c0521c2bd46adc0",
+        "section_title": "Conclusion",
+        "page_start": 26,
+        "page_end": 26,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Conclusion synthesizes literature on sentiment analysis advances and lists open problems (fake reviews, explainability, cross-domain issues) which inform perceived-risk, information-quality, and background context for online purchase决策.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ca44e51dcecbbdd7",
+        "section_title": "Funding",
+        "page_start": 26,
+        "page_end": 26,
+        "section_type": "acknowledgements"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Funding statement (no funding) is administrative and not useful for chapter content.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "9a227f4119750d00",
+        "section_title": "Competing Interests",
+        "page_start": 26,
+        "page_end": 27,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Competing interests/author contribution statements provide no content useful for theory, nudging, trust, or product examples.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6e91465b30380a02",
+        "section_title": "Data Availability",
+        "page_start": 27,
+        "page_end": 27,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Data availability statement noting this is a literature review — administrative, no substantive content for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ae27c59eebb301d9",
+        "section_title": "Supplemental Information",
+        "page_start": 27,
+        "page_end": 27,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Supplemental-information label only; no substantive content to inform chapter topics.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "781ba9d3d223b89e",
+        "section_title": "References",
+        "page_start": 27,
+        "page_end": 38,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Reference list only — potentially useful for follow-up reading but contains no directly usable exposition for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    }
+  ]
+}

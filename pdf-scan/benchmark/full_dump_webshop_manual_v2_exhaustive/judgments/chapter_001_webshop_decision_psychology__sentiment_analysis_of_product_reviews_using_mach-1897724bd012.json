@@ -1,0 +1,1055 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "sentiment_analysis_of_product_reviews_using_mach-1897724bd012",
+  "doc_title": "Sentiment Analysis of Product Reviews Using Machine Learning and Pre-Trained LLM",
+  "has_useful_information": false,
+  "document_label_0_to_3": 0,
+  "document_label_band": "not_useful",
+  "document_notes": "Mostly technical and not a good fit for the chapter. Explainability material is adjacent, but overall the PDF is too method-centric for the benchmark's usefulness threshold. Existing benchmark note: User explicitly marked this PDF as not useful for the webshop chapter.",
+  "manual_review_basis": [
+    "full extracted section inventory",
+    "run 386e04657c41c805f8c1b974 section inspection packets",
+    "benchmark target direct excerpt review where available"
+  ],
+  "gold_section_refs": [],
+  "near_miss_sections": [
+    {
+      "section_title": "Introduction",
+      "page_start": 1,
+      "page_end": 3,
+      "usefulness_0_to_10": 3,
+      "notes": "Introduction situates importance of online reviews and large-scale text data — useful background for sections on perceived risk, trust signals and the role of reviews in reducing uncertainty, but lacks theory on decision processes or nudges"
+    },
+    {
+      "section_title": "Literature Review",
+      "page_start": 3,
+      "page_end": 3,
+      "usefulness_0_to_10": 4,
+      "notes": "Literature review explains NLP/sentiment-analysis capabilities (incl. LLMs) which can inform how review-derived signals and explanations affect perceived product quality and decision confidence; however, it is method-focused and not about心理"
+    },
+    {
+      "section_title": "Traditional Approach of Training and Testing Machine Learning Models",
+      "page_start": 3,
+      "page_end": 4,
+      "usefulness_0_to_10": 3,
+      "notes": "Detailed description of traditional ML approaches for sentiment analysis. Could help the chapter when discussing automated quality signals, authenticity detection, or presentation of review-derived information, but is largely technical and‑"
+    },
+    {
+      "section_title": "Pre-Trained LLMs",
+      "page_start": 4,
+      "page_end": 5,
+      "usefulness_0_to_10": 3,
+      "notes": "Overview of pre-trained LLMs for sentiment analysis is primarily technical and methodological. It has limited direct bearing on decision‑psychology, nudging, or perceived risk, but can inform how review sentiment is extracted (quality/auth)"
+    },
+    {
+      "section_title": "Dataset Features",
+      "page_start": 7,
+      "page_end": 7,
+      "usefulness_0_to_10": 3,
+      "notes": "Lists dataset features and notes inclusion of electronic items among product categories. This is somewhat useful as concrete examples (consumer electronics) and for thinking about which product attributes/metadata could reduce uncertainty."
+    },
+    {
+      "section_title": "Dataset Analysis",
+      "page_start": 8,
+      "page_end": 8,
+      "usefulness_0_to_10": 4,
+      "notes": "Discusses nature of review text as qualitative signals, dataset biases, and missing product categories—useful for sections on review quality as trust/quality signals and limitations of information presentation/comparison in webshops."
+    },
+    {
+      "section_title": "Approach 2: LLM Test for Sentiment Analysis on Product Reviews",
+      "page_start": 10,
+      "page_end": 11,
+      "usefulness_0_to_10": 3,
+      "notes": "Explains using LLMs (GPT-4) to interpret nuanced review language and API accessibility—useful as background on automated assessment of review sentiment and implications for presenting trustworthy information to shoppers."
+    },
+    {
+      "section_title": "LLM (OpenAI GPT-4): Sentiment Analysis",
+      "page_start": 11,
+      "page_end": 11,
+      "usefulness_0_to_10": 4,
+      "notes": "Describes using GPT-4 for sentiment classification of reviews—relevant for assessing review sentiment as a signal of product quality/trust. Useful background for how automated sentiment labels might influence perceived risk or decision‑conf"
+    },
+    {
+      "section_title": "Sentiment Analysis on ”Summary” Feature",
+      "page_start": 12,
+      "page_end": 13,
+      "usefulness_0_to_10": 5,
+      "notes": "Findings that LLMs handle longer, contextual summaries better and can identify 'mixed' sentiment are relevant for how product information and reviews are summarized/presented to reduce buyer uncertainty. Also notes cost/ sampling trade-offs"
+    },
+    {
+      "section_title": "Performance Comparison Between Traditional ML Models and Pre-Trained LLMs",
+      "page_start": 14,
+      "page_end": 15,
+      "usefulness_0_to_10": 5,
+      "notes": "Compares traditional ML and LLMs for sentiment on product reviews—useful background on automated signals of review sentiment and strengths/limits of models when using reviews to reduce buyer uncertainty, but technical/ML-focused rather than"
+    },
+    {
+      "section_title": "Limitations",
+      "page_start": 16,
+      "page_end": 16,
+      "usefulness_0_to_10": 3,
+      "notes": "Discusses dataset generalizability and cost constraints of GPT-4—useful caveats when proposing automated sentiment as a trust/uncertainty-reducing signal, but primarily methodological and limited in depth."
+    },
+    {
+      "section_title": "Conclusions",
+      "page_start": 16,
+      "page_end": 17,
+      "usefulness_0_to_10": 4,
+      "notes": "High-level conclusions about adopting LLMs for business insights; offers contextual support for arguing that automated sentiment tools can inform consumer confidence, but is generic and not specific to decision psychology or digital choice-"
+    }
+  ],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "8f97054d0798919e",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Front matter/abstract focused on sentiment-analysis models; provides high-level motivation for analysing reviews but little directly relevant content on decision psychology, nudging, or perceived risk.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f8f89096da2821ae",
+        "section_title": "Introduction",
+        "page_start": 1,
+        "page_end": 3,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Introduction situates importance of online reviews and large-scale text data — useful background for sections on perceived risk, trust signals and the role of reviews in reducing uncertainty, but lacks theory on decision processes or nudges",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "981b1e291ef28244",
+        "section_title": "Analysis of Existing Research",
+        "page_start": 3,
+        "page_end": 3,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Very brief methodological framing (traditional vs pre-trained approaches). Minor usefulness for understanding how review analyses might be produced, but limited direct relevance to decision psychology or choice architecture.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "1181f9ede5bfe5fb",
+        "section_title": "Literature Review",
+        "page_start": 3,
+        "page_end": 3,
+        "section_type": "background"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Literature review explains NLP/sentiment-analysis capabilities (incl. LLMs) which can inform how review-derived signals and explanations affect perceived product quality and decision confidence; however, it is method-focused and not about心理",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "30a0650a68fa13cf",
+        "section_title": "Traditional Approach of Training and Testing Machine Learning Models",
+        "page_start": 3,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed description of traditional ML approaches for sentiment analysis. Could help the chapter when discussing automated quality signals, authenticity detection, or presentation of review-derived information, but is largely technical and‑",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7319bb98cea90ffe",
+        "section_title": "Pre-Trained LLMs",
+        "page_start": 4,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Overview of pre-trained LLMs for sentiment analysis is primarily technical and methodological. It has limited direct bearing on decision‑psychology, nudging, or perceived risk, but can inform how review sentiment is extracted (quality/auth)",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "072889c7392eca2a",
+        "section_title": "Theoretical Framework",
+        "page_start": 5,
+        "page_end": 6,
+        "section_type": "background"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "High-level framing of why sentiment analysis matters to organizations; useful as general background but offers little theory or specific insight for decision confidence, nudging, or perceived risk.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a068b5a862290ddc",
+        "section_title": "Materials and Methods",
+        "page_start": 6,
+        "page_end": 7,
+        "section_type": "methods"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Methodological description of dual experimental approaches (classic ML vs pre-trained LLMs). Procedural detail is low relevance to the chapter's psychological, design, or trust-focused themes.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ef73c8b038dccf9d",
+        "section_title": "Data Acquisition, Analysis and Pre-Processing",
+        "page_start": 7,
+        "page_end": 7,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Data acquisition notes (use of a Kaggle dataset) are largely procedural. Minor relevance only as a source of review data that could be later analyzed for perceived risk signals.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d450fbfd9d7501e9",
+        "section_title": "Dataset Features",
+        "page_start": 7,
+        "page_end": 7,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "consumer_electronics_or_product_examples",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Lists dataset features and notes inclusion of electronic items among product categories. This is somewhat useful as concrete examples (consumer electronics) and for thinking about which product attributes/metadata could reduce uncertainty.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "edfc3b69d114f7c7",
+        "section_title": "Dataset Description",
+        "page_start": 7,
+        "page_end": 8,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Dataset size and split information is technical/operational. Offers negligible conceptual value for decision psychology, nudging, or information‑presentation discussion.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4d96d42aa8a42a14",
+        "section_title": "Dataset Analysis",
+        "page_start": 8,
+        "page_end": 8,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses nature of review text as qualitative signals, dataset biases, and missing product categories—useful for sections on review quality as trust/quality signals and limitations of information presentation/comparison in webshops.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6f81503f447ad14c",
+        "section_title": "Data Pre-Processing",
+        "page_start": 8,
+        "page_end": 9,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Pure data-cleaning detail for sentiment analysis; technical preprocessing (null removal, balancing) has little direct relevance to decision psychology, nudging, or perceived risk—mostly methodological.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ce8c05af3026fe5d",
+        "section_title": "Approach 1: Traditional Machine Learning Model Training and Test for Sentiment Analysis on Product Reviews",
+        "page_start": 9,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes standard NLP preprocessing (tokenization, stemming, BoW). Relevant only as background on how review text is processed; not directly useful for psychological theory, nudging, or perceived-risk design guidance.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d89aa1ccff67ecc7",
+        "section_title": "c) Machine Learning Model Training",
+        "page_start": 10,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Algorithm selection rationale (Random Forest, Naive Bayes, SVM) is methodological. May offer minor background on strengths of classifiers for extracting signals from reviews but not central to chapter topics.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4d932668d8f7595e",
+        "section_title": "Approach 2: LLM Test for Sentiment Analysis on Product Reviews",
+        "page_start": 10,
+        "page_end": 11,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Explains using LLMs (GPT-4) to interpret nuanced review language and API accessibility—useful as background on automated assessment of review sentiment and implications for presenting trustworthy information to shoppers.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "60c6aaf89eb7c948",
+        "section_title": "Data Cleaning",
+        "page_start": 11,
+        "page_end": 11,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Pure data-cleaning boilerplate for NLP preprocessing. Methodological but offers little theory or applied insight relevant to decision psychology, nudging, or perceived risk in webshop purchase decisions.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 203,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "451008b5d06f8c7e",
+        "section_title": "LLM (OpenAI GPT-4): Sentiment Analysis",
+        "page_start": 11,
+        "page_end": 11,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes using GPT-4 for sentiment classification of reviews—relevant for assessing review sentiment as a signal of product quality/trust. Useful background for how automated sentiment labels might influence perceived risk or decision‑conf",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "30b16b5ae851dfee",
+        "section_title": "Model Performance Metric Comparison",
+        "page_start": 11,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Defines common performance metrics (accuracy, precision, recall, F1). Purely technical evaluation metrics with minimal direct relevance to decision psychology, nudging, or perceived risk topics.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 201,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3a0e71dcc863d455",
+        "section_title": "Results and Discussion",
+        "page_start": 12,
+        "page_end": 12,
+        "section_type": "results"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "High-level results/method comparison info; mostly methodological and metric-focused. Limited direct linkage to decision psychology or choice architecture, but marginally useful for understanding reliability of review-derived signals.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "26a1613ecd3033b0",
+        "section_title": "Sentiment Analysis on ”Review” Feature",
+        "page_start": 12,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Details performance differences on very short review snippets (SVM > LLM). Method-heavy and specific to ML model selection; minor relevance for interpreting short user reviews as quality indicators in webshop contexts.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "1cd259b14ce27147",
+        "section_title": "Sentiment Analysis on ”Summary” Feature",
+        "page_start": 12,
+        "page_end": 13,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Findings that LLMs handle longer, contextual summaries better and can identify 'mixed' sentiment are relevant for how product information and reviews are summarized/presented to reduce buyer uncertainty. Also notes cost/ sampling trade-offs",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "81a1687464a6ecb3",
+        "section_title": "LLM Explainability",
+        "page_start": 13,
+        "page_end": 14,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "review_quality_authenticity",
+        "consumer_electronics_or_product_examples"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses LLM explainability and example rationales for sentiment labels (includes camera example). Highly relevant for transparency, trustworthiness of automated review summarization, and how explainable signals can affect decision‑confid",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 116,
+        "phase_f_doc_rank": 125,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 21.91,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f2b07ca828c68c11",
+        "section_title": "Performance Comparison Between Traditional ML Models and Pre-Trained LLMs",
+        "page_start": 14,
+        "page_end": 15,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "supporting_background_context",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Compares traditional ML and LLMs for sentiment on product reviews—useful background on automated signals of review sentiment and strengths/limits of models when using reviews to reduce buyer uncertainty, but technical/ML-focused rather than",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 128,
+        "phase_f_doc_rank": 142,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 24.86,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "0cc3993d68435334",
+        "section_title": "Novelty of Approach",
+        "page_start": 15,
+        "page_end": 16,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes novel use of pre-trained LLMs and their explainability in sentiment analysis. Relevant to trust/transparency of automated review interpretation and how explainable outputs can affect decision confidence; helps bridge tech methods/",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "78b85f87c316d96d",
+        "section_title": "Future Improvements",
+        "page_start": 16,
+        "page_end": 16,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Practical suggestions (use open-source LLMs, multithreading, few-shot) that are methodological and operational; only marginally relevant for framing feasibility/costs of using automated review analysis in webshop decision-support.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "5cffc156b6d40cc3",
+        "section_title": "Limitations",
+        "page_start": 16,
+        "page_end": 16,
+        "section_type": "discussion"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "trust_risk_uncertainty",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses dataset generalizability and cost constraints of GPT-4—useful caveats when proposing automated sentiment as a trust/uncertainty-reducing signal, but primarily methodological and limited in depth.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 215,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "24677563007cc20f",
+        "section_title": "Limitations and Future Improvements",
+        "page_start": 16,
+        "page_end": 16,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Single-line header about limitations/future work with no substantive content—low informational value for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e68e3dd86056fe6e",
+        "section_title": "Conclusions",
+        "page_start": 16,
+        "page_end": 17,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "High-level conclusions about adopting LLMs for business insights; offers contextual support for arguing that automated sentiment tools can inform consumer confidence, but is generic and not specific to decision psychology or digital choice-",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "0f144052b80f13df",
+        "section_title": "References",
+        "page_start": 17,
+        "page_end": 18,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Pure references section from a different paper (sentiment analysis). No substantive content for the chapter; low informational value per instructions.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    }
+  ]
+}

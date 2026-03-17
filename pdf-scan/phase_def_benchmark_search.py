@@ -3,13 +3,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
-from evaluate_manual_benchmark import build_run_view, build_summary, evaluate_judgment, load_suite
+PDF_SCAN_DIR = Path(__file__).resolve().parent
+if str(PDF_SCAN_DIR) not in sys.path:
+    sys.path.insert(0, str(PDF_SCAN_DIR))
+
+from tools.benchmark.evaluate_manual_benchmark import build_run_view, build_summary, evaluate_judgment, load_suite
 from phase_a_lab import (
-    PDF_SCAN_DIR,
     REPO_ROOT,
     RunArtifacts,
     RunContext,

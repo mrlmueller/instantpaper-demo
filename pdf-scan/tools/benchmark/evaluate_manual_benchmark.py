@@ -8,8 +8,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
-
-PDF_SCAN_DIR = Path(__file__).resolve().parent
+PDF_SCAN_DIR = Path(__file__).resolve().parents[2]
 
 
 def read_json(path: Path) -> Any:

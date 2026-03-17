@@ -1,0 +1,8 @@
+{
+  "doc_id": "sentiment_analysis_in_e_commerce_platforms_a_rev-0c59fc64f2e7",
+  "label": "Sentiment Analysis in E-Commerce Platforms: A Review of Current Techniques and Future Directions",
+  "path": "../../paper-dump/Sentiment Analysis in E-Commerce Platforms A Review of Current Techniques and Future Directions.pdf",
+  "role_in_suite": "manual_exhaustive_positive",
+  "expected_difficulty": "manual_exhaustive",
+  "notes": "Modest but positive source. Mostly overview material, with some relevant passages on e-commerce review data, fake/spam review issues, and trust-related platform signals. Existing benchmark note: User-marked weak-but-positive. Useful mainly for platform quality, trust, reliability, and fake-review detection references."
+}
