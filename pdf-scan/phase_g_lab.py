@@ -57,6 +57,9 @@ class PhaseGOptions:
     generic_high_penalty: float = 0.08
     penalized_type_penalty: float = 0.20
     calibration_mode: str = "auto"
+    broad_support_min_sections: int = 3
+    broad_support_top1_floor: int = 44
+    broad_support_probability_bonus: float = 0.04
 
     def normalized(self) -> "PhaseGOptions":
         mode = str(self.calibration_mode or "auto").strip().lower() or "auto"
@@ -81,6 +84,9 @@ class PhaseGOptions:
             generic_high_penalty=max(0.0, min(0.3, float(self.generic_high_penalty))),
             penalized_type_penalty=max(0.0, min(0.4, float(self.penalized_type_penalty))),
             calibration_mode=mode,
+            broad_support_min_sections=max(1, int(self.broad_support_min_sections)),
+            broad_support_top1_floor=max(1, min(100, int(self.broad_support_top1_floor))),
+            broad_support_probability_bonus=max(0.0, min(0.2, float(self.broad_support_probability_bonus))),
         )
 
 
@@ -343,13 +349,13 @@ def build_doc_decision(
     only_generic_high = bool(high_rows) and all(bool(row.get("generic_high_level")) for row in high_rows)
     only_penalized_high = bool(high_rows) and all(bool(row.get("penalized_section_type")) for row in high_rows)
     probability = (
-        (0.42 * top1_prob)
-        + (0.18 * top3_mean_prob)
-        + (0.10 * min(1.0, margin / 0.15))
-        + (0.10 * useful_count_norm)
-        + (0.08 * partial_count_norm)
-        + (0.07 * coverage_ratio)
-        + (0.03 * clamp01(support_mean))
+        (0.34 * top1_prob)
+        + (0.16 * top3_mean_prob)
+        + (0.08 * min(1.0, margin / 0.15))
+        + (0.14 * useful_count_norm)
+        + (0.12 * partial_count_norm)
+        + (0.08 * coverage_ratio)
+        + (0.06 * clamp01(support_mean))
         + (0.02 * clamp01(judge_mean))
     )
     if float(top1.get("score_0_to_100") or 0.0) >= float(options.strong_top_section_floor) and float(top1.get("support_strength_score") or 0.0) >= 0.72:
@@ -378,6 +384,19 @@ def build_doc_decision(
     if strong_partial_case:
         probability = round(max(probability, float(options.doc_probability_threshold) + 0.02), 8)
 
+    broad_support_case = (
+        float(top1.get("score_0_to_100") or 0.0) >= max(float(options.section_partial_threshold), float(options.broad_support_top1_floor))
+        and len(partial_rows) >= int(options.broad_support_min_sections)
+        and float(top_n_mean((row.get("score_0_to_100") for row in sorted_rows), 3)) >= float(options.section_partial_threshold) + 1.0
+        and clamp01(support_mean) >= 0.58
+        and (coverage_ratio >= 0.34 or not active)
+        and not only_generic_high
+        and not only_penalized_high
+        and int(top1.get("supporting_passage_count") or 0) >= 1
+    )
+    if broad_support_case:
+        probability = round(max(probability, float(options.doc_probability_threshold) + float(options.broad_support_probability_bonus)), 8)
+
     has_useful_information = (
         probability >= float(options.doc_probability_threshold)
         and float(top1.get("score_0_to_100") or 0.0) >= float(options.top_section_floor)
@@ -390,8 +409,11 @@ def build_doc_decision(
         has_useful_information = True
     if strong_partial_case:
         has_useful_information = True
+    if broad_support_case:
+        has_useful_information = True
     if float(top1.get("score_0_to_100") or 0.0) < float(options.top_section_floor) and not strong_partial_case:
-        has_useful_information = False
+        if not broad_support_case:
+            has_useful_information = False
 
     abstention_reason = None
     if not has_useful_information:
@@ -425,6 +447,7 @@ def build_doc_decision(
         "judge_mean_score": round(clamp01(judge_mean), 8),
         "only_generic_high_sections": only_generic_high,
         "only_penalized_high_sections": only_penalized_high,
+        "broad_support_case": broad_support_case,
     }
 
 

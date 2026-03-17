@@ -59,6 +59,10 @@ BASE_PHASE_D = dict(
     max_summary_chars=480,
     max_subpoint_summary_chars=320,
     min_anchor_token_overlap=0.67,
+    planner_prompt_mode="baseline",
+    include_should_terms_view=False,
+    include_support_context_view=False,
+    include_subpoint_lexical_views=False,
 )
 
 BASE_PHASE_E = dict(
@@ -140,34 +144,29 @@ BASE_PHASE_G = dict(
     generic_high_penalty=0.08,
     penalized_type_penalty=0.20,
     calibration_mode="auto",
+    broad_support_min_sections=3,
+    broad_support_top1_floor=44,
+    broad_support_probability_bonus=0.04,
 )
 
 
 VARIANTS: List[VariantSpec] = [
     VariantSpec(
         name="baseline_current",
-        notes="Current tuned D/E/F/G defaults from the full-dump false-negative audit baseline.",
+        notes="Current tuned baseline, now scored against the exhaustive v2 benchmark gold sections.",
     ),
     VariantSpec(
-        name="recall_relaxed_calibration",
-        notes="Keep retrieval the same but widen rerank judging and relax final usefulness thresholds.",
-        phase_f={
-            "rerank_top_k": 90,
-            "judge_candidate_limit": 24,
-            "judge_max_per_doc": 3,
-            "llm_judge_blend": 0.28,
+        name="coverage_prompt_dual_views",
+        notes="Broader Phase D prompt plus should-term, support-context, and lexical subpoint views, with modest retrieval widening.",
+        phase_d={
+            "planner_prompt_mode": "coverage",
+            "should_term_limit": 18,
+            "bridge_term_limit": 12,
+            "subpoint_limit": 6,
+            "include_should_terms_view": True,
+            "include_support_context_view": True,
+            "include_subpoint_lexical_views": True,
         },
-        phase_g={
-            "section_useful_threshold": 65,
-            "section_partial_threshold": 50,
-            "doc_probability_threshold": 0.52,
-            "top_section_floor": 55,
-            "strong_top_section_floor": 72,
-        },
-    ),
-    VariantSpec(
-        name="recall_broader_retrieval",
-        notes="Broaden Phase E candidate generation and disable supported-subpoint gating.",
         phase_e={
             "candidate_limit_per_lane": 120,
             "fused_candidate_limit": 180,
@@ -175,94 +174,73 @@ VARIANTS: List[VariantSpec] = [
             "use_supported_subpoint_selection": False,
             "abstain_when_no_supported_subpoints": False,
             "selection_strategy": "round_robin",
-            "diversity_lambda": 0.25,
+            "diversity_lambda": 0.28,
             "single_support_penalty": 0.004,
             "zero_support_penalty": 0.012,
             "generic_low_support_penalty": 0.006,
-        },
-        phase_f={
-            "rerank_top_k": 100,
-            "judge_candidate_limit": 24,
-            "judge_max_per_doc": 3,
-            "llm_judge_blend": 0.25,
-        },
-        phase_g={
-            "section_useful_threshold": 65,
-            "section_partial_threshold": 50,
-            "doc_probability_threshold": 0.50,
-            "top_section_floor": 54,
-            "strong_top_section_floor": 72,
-        },
-    ),
-    VariantSpec(
-        name="summary_doc_rescue_high_recall",
-        notes="Broader retrieval plus low-scale document-summary rescue and a wider rerank pool.",
-        phase_e={
-            "candidate_limit_per_lane": 120,
-            "fused_candidate_limit": 180,
-            "per_view_limit_multiplier": 3,
-            "use_supported_subpoint_selection": False,
-            "abstain_when_no_supported_subpoints": False,
-            "selection_strategy": "round_robin",
-            "diversity_lambda": 0.25,
-            "single_support_penalty": 0.004,
-            "zero_support_penalty": 0.012,
-            "generic_low_support_penalty": 0.006,
-            "enable_doc_title_rescue": True,
-            "doc_rescue_doc_limit": 5,
-            "doc_rescue_sections_per_doc": 2,
-            "doc_rescue_score_scale": 0.02,
-        },
-        phase_f={
-            "rerank_top_k": 140,
-            "judge_candidate_limit": 28,
-            "judge_max_per_doc": 3,
-            "llm_judge_blend": 0.24,
         },
         phase_g={
             "section_useful_threshold": 62,
             "section_partial_threshold": 48,
-            "doc_probability_threshold": 0.48,
-            "top_section_floor": 52,
+            "doc_probability_threshold": 0.46,
+            "top_section_floor": 50,
             "strong_top_section_floor": 70,
         },
     ),
     VariantSpec(
-        name="summary_doc_rescue_max_rerank",
-        notes="Same recall stack but let Phase F see nearly the full fused pool before judging.",
+        name="coverage_prompt_dual_views_doc_rescue",
+        notes="Same broader query plan, plus stronger document-summary rescue to recover survey and trust papers.",
+        phase_d={
+            "planner_prompt_mode": "coverage",
+            "should_term_limit": 18,
+            "bridge_term_limit": 12,
+            "subpoint_limit": 6,
+            "include_should_terms_view": True,
+            "include_support_context_view": True,
+            "include_subpoint_lexical_views": True,
+        },
         phase_e={
-            "candidate_limit_per_lane": 140,
-            "fused_candidate_limit": 220,
+            "candidate_limit_per_lane": 120,
+            "fused_candidate_limit": 180,
             "per_view_limit_multiplier": 3,
             "use_supported_subpoint_selection": False,
             "abstain_when_no_supported_subpoints": False,
             "selection_strategy": "round_robin",
-            "diversity_lambda": 0.22,
+            "diversity_lambda": 0.26,
             "single_support_penalty": 0.004,
-            "zero_support_penalty": 0.01,
-            "generic_low_support_penalty": 0.005,
+            "zero_support_penalty": 0.012,
+            "generic_low_support_penalty": 0.006,
             "enable_doc_title_rescue": True,
-            "doc_rescue_doc_limit": 6,
+            "doc_rescue_doc_limit": 8,
             "doc_rescue_sections_per_doc": 2,
-            "doc_rescue_score_scale": 0.018,
+            "doc_rescue_score_scale": 0.04,
         },
         phase_f={
-            "rerank_top_k": 180,
-            "judge_candidate_limit": 32,
+            "rerank_top_k": 110,
+            "judge_candidate_limit": 20,
             "judge_max_per_doc": 3,
             "llm_judge_blend": 0.22,
         },
         phase_g={
             "section_useful_threshold": 60,
-            "section_partial_threshold": 46,
-            "doc_probability_threshold": 0.46,
-            "top_section_floor": 50,
+            "section_partial_threshold": 48,
+            "doc_probability_threshold": 0.44,
+            "top_section_floor": 48,
             "strong_top_section_floor": 68,
         },
     ),
     VariantSpec(
-        name="summary_doc_rescue_max_rerank_relaxed_calibration",
-        notes="Best observed end-to-end stack so far: max-rerank recall plus relaxed document calibration.",
+        name="coverage_prompt_dual_views_broad_g",
+        notes="Broader query plan plus document rescue, with new broad-evidence calibration to keep near-miss useful PDFs.",
+        phase_d={
+            "planner_prompt_mode": "coverage",
+            "should_term_limit": 18,
+            "bridge_term_limit": 12,
+            "subpoint_limit": 6,
+            "include_should_terms_view": True,
+            "include_support_context_view": True,
+            "include_subpoint_lexical_views": True,
+        },
         phase_e={
             "candidate_limit_per_lane": 140,
             "fused_candidate_limit": 220,
@@ -270,30 +248,81 @@ VARIANTS: List[VariantSpec] = [
             "use_supported_subpoint_selection": False,
             "abstain_when_no_supported_subpoints": False,
             "selection_strategy": "round_robin",
-            "diversity_lambda": 0.22,
+            "diversity_lambda": 0.24,
             "single_support_penalty": 0.004,
             "zero_support_penalty": 0.01,
             "generic_low_support_penalty": 0.005,
             "enable_doc_title_rescue": True,
-            "doc_rescue_doc_limit": 6,
-            "doc_rescue_sections_per_doc": 2,
-            "doc_rescue_score_scale": 0.018,
+            "doc_rescue_doc_limit": 8,
+            "doc_rescue_sections_per_doc": 3,
+            "doc_rescue_score_scale": 0.05,
         },
         phase_f={
-            "rerank_top_k": 180,
-            "judge_candidate_limit": 32,
+            "rerank_top_k": 120,
+            "judge_candidate_limit": 20,
             "judge_max_per_doc": 3,
             "llm_judge_blend": 0.22,
         },
         phase_g={
-            "section_useful_threshold": 48,
-            "section_partial_threshold": 36,
-            "doc_probability_threshold": 0.34,
-            "top_section_floor": 38,
+            "section_useful_threshold": 54,
+            "section_partial_threshold": 40,
+            "doc_probability_threshold": 0.40,
+            "top_section_floor": 42,
             "strong_top_section_floor": 56,
             "generic_only_penalty": 0.14,
             "generic_high_penalty": 0.06,
             "penalized_type_penalty": 0.16,
+            "broad_support_min_sections": 2,
+            "broad_support_top1_floor": 40,
+            "broad_support_probability_bonus": 0.06,
+        },
+    ),
+    VariantSpec(
+        name="coverage_prompt_max_recall",
+        notes="Highest-recall D/E/G stack in this loop: broader prompt, extra views, aggressive rescue, and permissive document calibration.",
+        phase_d={
+            "planner_prompt_mode": "coverage",
+            "should_term_limit": 20,
+            "bridge_term_limit": 14,
+            "subpoint_limit": 7,
+            "include_should_terms_view": True,
+            "include_support_context_view": True,
+            "include_subpoint_lexical_views": True,
+        },
+        phase_e={
+            "candidate_limit_per_lane": 160,
+            "fused_candidate_limit": 260,
+            "per_view_limit_multiplier": 4,
+            "use_supported_subpoint_selection": False,
+            "abstain_when_no_supported_subpoints": False,
+            "selection_strategy": "round_robin",
+            "diversity_lambda": 0.20,
+            "single_support_penalty": 0.003,
+            "zero_support_penalty": 0.008,
+            "generic_low_support_penalty": 0.004,
+            "enable_doc_title_rescue": True,
+            "doc_rescue_doc_limit": 10,
+            "doc_rescue_sections_per_doc": 3,
+            "doc_rescue_score_scale": 0.06,
+        },
+        phase_f={
+            "rerank_top_k": 140,
+            "judge_candidate_limit": 24,
+            "judge_max_per_doc": 3,
+            "llm_judge_blend": 0.20,
+        },
+        phase_g={
+            "section_useful_threshold": 50,
+            "section_partial_threshold": 38,
+            "doc_probability_threshold": 0.36,
+            "top_section_floor": 38,
+            "strong_top_section_floor": 54,
+            "generic_only_penalty": 0.12,
+            "generic_high_penalty": 0.05,
+            "penalized_type_penalty": 0.14,
+            "broad_support_min_sections": 2,
+            "broad_support_top1_floor": 36,
+            "broad_support_probability_bonus": 0.08,
         },
     ),
 ]
@@ -427,7 +456,7 @@ def run_variant(run_ctx: RunContext, chapter_title: str, chapter_description: st
 def main() -> None:
     parser = argparse.ArgumentParser(description="Search D/E/F/G variants against the manual full-dump benchmark.")
     parser.add_argument("--run-id", default="386e04657c41c805f8c1b974")
-    parser.add_argument("--suite-manifest", default="benchmark/full_dump_webshop_manual_v1/manifests/suite_manifest.json")
+    parser.add_argument("--suite-manifest", default="benchmark/full_dump_webshop_manual_v2_exhaustive/manifests/suite_manifest.json")
     parser.add_argument("--variants", nargs="*", default=[spec.name for spec in VARIANTS])
     args = parser.parse_args()
 
@@ -453,21 +482,31 @@ def main() -> None:
     leaderboard = []
     for row in rows:
         doc_metrics = row["benchmark_summary"]["document_metrics"]
-        anchor_metrics = row["benchmark_summary"]["section_anchor_metrics"]
+        gold_anchor_metrics = row["benchmark_summary"]["gold_section_anchor_metrics"]
+        exhaustive_anchor_metrics = row["benchmark_summary"]["exhaustive_section_anchor_metrics"]
         leaderboard.append(
             {
                 "variant": row["variant"],
                 "doc_recall": doc_metrics["doc_recall"],
                 "doc_precision": doc_metrics["doc_precision"],
-                "anchor_structure_recall": anchor_metrics["structure_presence_recall"],
-                "phase_e_anchor_hit": anchor_metrics.get("phase_e_hit_at_doc_top10"),
-                "phase_f_anchor_hit": anchor_metrics.get("phase_f_hit_at_doc_top10"),
-                "phase_g_anchor_hit": anchor_metrics.get("phase_g_hit_at_doc_top5"),
+                "gold_anchor_structure_recall": gold_anchor_metrics["structure_presence_recall"],
+                "gold_phase_e_anchor_hit": gold_anchor_metrics.get("phase_e_hit_at_doc_top10"),
+                "gold_phase_f_anchor_hit": gold_anchor_metrics.get("phase_f_hit_at_doc_top10"),
+                "gold_phase_g_anchor_hit": gold_anchor_metrics.get("phase_g_hit_at_doc_top5"),
+                "exhaustive_phase_g_anchor_hit": exhaustive_anchor_metrics.get("phase_g_hit_at_doc_top5"),
                 "false_negative_count": doc_metrics["false_negative"],
                 "useful_doc_count": doc_metrics["true_positive"] + doc_metrics["false_positive"],
             }
         )
-    leaderboard.sort(key=lambda row: (row["doc_recall"], row["phase_f_anchor_hit"], row["phase_e_anchor_hit"]), reverse=True)
+    leaderboard.sort(
+        key=lambda row: (
+            row["doc_recall"],
+            row["gold_phase_g_anchor_hit"],
+            row["gold_phase_f_anchor_hit"],
+            row["gold_phase_e_anchor_hit"],
+        ),
+        reverse=True,
+    )
     write_json(out_dir / "leaderboard.json", {"rows": leaderboard})
 
     print(json.dumps({"run_id": args.run_id, "leaderboard": leaderboard}, ensure_ascii=False, indent=2))

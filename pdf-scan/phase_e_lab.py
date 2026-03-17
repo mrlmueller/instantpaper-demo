@@ -34,17 +34,17 @@ PHASE_E_EMBED_PRICING = {"text-embedding-3-small": 0.02, "text-embedding-3-large
 PHASE_E_PRICING_URL = "https://platform.openai.com/docs/pricing"
 PHASE_E_PRICING_DATE = "2026-03-15"
 PHASE_E_VIEW_WEIGHTS = {
-    "section_title_lexical": {"title_lexical": 1.0, "must_terms_lexical": 0.9, "bridge_lexical": 0.95, "subpoint": 0.8, "summary_semantic": 0.5, "bridge_semantic": 0.55, "broad_fallback": 0.55},
-    "section_body_lexical": {"title_lexical": 0.75, "must_terms_lexical": 1.0, "bridge_lexical": 1.05, "subpoint": 0.9, "summary_semantic": 0.7, "bridge_semantic": 0.8, "broad_fallback": 0.75},
-    "section_dense": {"title_lexical": 0.8, "must_terms_lexical": 0.8, "bridge_lexical": 0.8, "subpoint": 0.95, "summary_semantic": 1.0, "bridge_semantic": 1.0, "broad_fallback": 0.85},
-    "passage_lexical": {"title_lexical": 0.7, "must_terms_lexical": 1.0, "bridge_lexical": 1.0, "subpoint": 0.9, "summary_semantic": 0.65, "bridge_semantic": 0.75, "broad_fallback": 0.8},
-    "passage_dense": {"title_lexical": 0.8, "must_terms_lexical": 0.8, "bridge_lexical": 0.8, "subpoint": 0.95, "summary_semantic": 1.0, "bridge_semantic": 1.0, "broad_fallback": 0.85},
+    "section_title_lexical": {"title_lexical": 1.0, "must_terms_lexical": 0.9, "should_terms_lexical": 0.92, "bridge_lexical": 0.95, "subpoint": 0.8, "subpoint_lexical": 1.0, "summary_semantic": 0.5, "bridge_semantic": 0.55, "support_context_semantic": 0.62, "broad_fallback": 0.55},
+    "section_body_lexical": {"title_lexical": 0.75, "must_terms_lexical": 1.0, "should_terms_lexical": 0.95, "bridge_lexical": 1.05, "subpoint": 0.9, "subpoint_lexical": 1.05, "summary_semantic": 0.7, "bridge_semantic": 0.8, "support_context_semantic": 0.82, "broad_fallback": 0.75},
+    "section_dense": {"title_lexical": 0.8, "must_terms_lexical": 0.8, "should_terms_lexical": 0.85, "bridge_lexical": 0.8, "subpoint": 0.95, "subpoint_lexical": 0.88, "summary_semantic": 1.0, "bridge_semantic": 1.0, "support_context_semantic": 1.04, "broad_fallback": 0.85},
+    "passage_lexical": {"title_lexical": 0.7, "must_terms_lexical": 1.0, "should_terms_lexical": 0.96, "bridge_lexical": 1.0, "subpoint": 0.9, "subpoint_lexical": 1.0, "summary_semantic": 0.65, "bridge_semantic": 0.75, "support_context_semantic": 0.8, "broad_fallback": 0.8},
+    "passage_dense": {"title_lexical": 0.8, "must_terms_lexical": 0.8, "should_terms_lexical": 0.84, "bridge_lexical": 0.8, "subpoint": 0.95, "subpoint_lexical": 0.86, "summary_semantic": 1.0, "bridge_semantic": 1.0, "support_context_semantic": 1.02, "broad_fallback": 0.85},
 }
 PHASE_E_FUSION_WEIGHTS = {"section_title_lexical": 1.0, "section_body_lexical": 1.05, "section_dense": 1.15, "passage_lexical": 0.95, "passage_dense": 1.05}
 PHASE_E_SECTION_LANES = {"section_title_lexical", "section_body_lexical", "section_dense"}
 PHASE_E_PASSAGE_LANES = {"passage_lexical", "passage_dense"}
 PHASE_E_STOPWORDS = {"a","an","and","are","as","at","be","bei","by","das","dem","den","der","des","die","ein","eine","einer","eines","for","from","im","in","into","is","ist","mit","of","on","or","the","to","und","von","with","zu"}
-PHASE_E_DOC_RESCUE_VIEW_WEIGHTS = {"title_lexical": 1.0, "must_terms_lexical": 1.0, "bridge_lexical": 1.15, "subpoint": 0.95, "summary_semantic": 0.55, "bridge_semantic": 0.8, "broad_fallback": 0.8}
+PHASE_E_DOC_RESCUE_VIEW_WEIGHTS = {"title_lexical": 1.0, "must_terms_lexical": 1.0, "should_terms_lexical": 1.05, "bridge_lexical": 1.15, "subpoint": 0.95, "subpoint_lexical": 1.0, "summary_semantic": 0.55, "bridge_semantic": 0.8, "support_context_semantic": 0.9, "broad_fallback": 0.8}
 
 @dataclass
 class PhaseEOptions:
@@ -117,11 +117,14 @@ class BM25:
 
 def phase_e_views(obj: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows = []
-    for k in ["title_lexical", "summary_semantic", "must_terms_lexical", "bridge_lexical", "bridge_semantic", "broad_fallback"]:
+    for k in ["title_lexical", "summary_semantic", "must_terms_lexical", "should_terms_lexical", "bridge_lexical", "bridge_semantic", "support_context_semantic", "broad_fallback"]:
         v = dict(obj.get(k) or {})
         if clean_text(v.get("query_text")):
             rows.append(v)
     for v in obj.get("subpoint_views") or []:
+        if clean_text((v or {}).get("query_text")):
+            rows.append(dict(v))
+    for v in obj.get("subpoint_lexical_views") or []:
         if clean_text((v or {}).get("query_text")):
             rows.append(dict(v))
     return rows
@@ -325,6 +328,8 @@ def is_informative_anchor_unigram(token: Any) -> bool:
 def subpoint_id_from_view_id(view_id: Any) -> Optional[str]:
     value = str(view_id or "").strip()
     if value.startswith("subpoint::"):
+        return value.split("::", 1)[1].strip() or None
+    if value.startswith("subpoint_lexical::"):
         return value.split("::", 1)[1].strip() or None
     return None
 

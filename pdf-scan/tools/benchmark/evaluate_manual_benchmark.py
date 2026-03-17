@@ -158,6 +158,49 @@ def find_matches(expected: Dict[str, Any], rows: Iterable[Dict[str, Any]], *, ti
     return matches
 
 
+def build_expected_anchor(section_ref: Dict[str, Any], *, supported_subpoints: Iterable[Any] | None = None, label_0_to_3: Any = None) -> Dict[str, Any]:
+    return {
+        "section_ref": {
+            "section_title": str(section_ref.get("section_title") or ""),
+            "page_start": int(section_ref.get("page_start") or 0),
+            "page_end": int(section_ref.get("page_end") or section_ref.get("page_start") or 0),
+        },
+        "supported_subpoints": [str(item) for item in (supported_subpoints or []) if str(item)],
+        "label_0_to_3": label_0_to_3,
+    }
+
+
+def collect_expected_anchor_sets(judgment: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+    exhaustive_rows: List[Dict[str, Any]] = []
+    for row in judgment.get("section_judgments") or []:
+        if not isinstance(row, dict) or not isinstance(row.get("section_ref"), dict):
+            continue
+        exhaustive_rows.append(
+            build_expected_anchor(
+                row.get("section_ref") or {},
+                supported_subpoints=row.get("supported_subpoints") or [],
+                label_0_to_3=row.get("label_0_to_3"),
+            )
+        )
+
+    gold_rows: List[Dict[str, Any]] = []
+    for row in judgment.get("gold_section_refs") or []:
+        if not isinstance(row, dict):
+            continue
+        gold_rows.append(
+            build_expected_anchor(
+                row,
+                supported_subpoints=row.get("supported_subpoints") or [],
+                label_0_to_3=3 if float(row.get("usefulness_0_to_10") or 0.0) >= 8.0 else 2,
+            )
+        )
+
+    return {
+        "gold": gold_rows or exhaustive_rows,
+        "exhaustive": exhaustive_rows,
+    }
+
+
 def evaluate_judgment(
     judgment: Dict[str, Any],
     run_view: Dict[str, Any],
@@ -176,28 +219,35 @@ def evaluate_judgment(
     rerank_rows = run_view["rerank_by_doc"].get(doc_id, [])
     final_top_sections = list(final_doc.get("top_sections") or [])[:phase_g_topk]
 
-    anchor_rows = []
-    for expected in judgment.get("section_judgments") or []:
-        structure_matches = find_matches(expected, sections)
-        e_matches = find_matches(expected, fused_rows[:phase_e_doc_topk])
-        f_matches = find_matches(expected, rerank_rows[:phase_f_doc_topk])
-        g_matches = find_matches(expected, final_top_sections)
-        anchor_rows.append(
-            {
-                "expected_section_title": expected["section_ref"]["section_title"],
-                "expected_pages": f"{expected['section_ref']['page_start']}-{expected['section_ref']['page_end']}",
-                "supported_subpoints": expected.get("supported_subpoints") or [],
-                "label_0_to_3": expected.get("label_0_to_3"),
-                "structure_present": bool(structure_matches),
-                "phase_e_hit_at_doc_topk": bool(e_matches),
-                "phase_f_hit_at_doc_topk": bool(f_matches),
-                "phase_g_hit_at_doc_topk": bool(g_matches),
-                "best_structure_match": structure_matches[0] if structure_matches else None,
-                "best_phase_e_match": e_matches[0] if e_matches else None,
-                "best_phase_f_match": f_matches[0] if f_matches else None,
-                "best_phase_g_match": g_matches[0] if g_matches else None,
-            }
-        )
+    expected_anchor_sets = collect_expected_anchor_sets(judgment)
+
+    def evaluate_anchor_rows(expected_rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        anchor_rows = []
+        for expected in expected_rows:
+            structure_matches = find_matches(expected, sections)
+            e_matches = find_matches(expected, fused_rows[:phase_e_doc_topk])
+            f_matches = find_matches(expected, rerank_rows[:phase_f_doc_topk])
+            g_matches = find_matches(expected, final_top_sections)
+            anchor_rows.append(
+                {
+                    "expected_section_title": expected["section_ref"]["section_title"],
+                    "expected_pages": f"{expected['section_ref']['page_start']}-{expected['section_ref']['page_end']}",
+                    "supported_subpoints": expected.get("supported_subpoints") or [],
+                    "label_0_to_3": expected.get("label_0_to_3"),
+                    "structure_present": bool(structure_matches),
+                    "phase_e_hit_at_doc_topk": bool(e_matches),
+                    "phase_f_hit_at_doc_topk": bool(f_matches),
+                    "phase_g_hit_at_doc_topk": bool(g_matches),
+                    "best_structure_match": structure_matches[0] if structure_matches else None,
+                    "best_phase_e_match": e_matches[0] if e_matches else None,
+                    "best_phase_f_match": f_matches[0] if f_matches else None,
+                    "best_phase_g_match": g_matches[0] if g_matches else None,
+                }
+            )
+        return anchor_rows
+
+    gold_anchor_rows = evaluate_anchor_rows(expected_anchor_sets["gold"])
+    exhaustive_anchor_rows = evaluate_anchor_rows(expected_anchor_sets["exhaustive"])
 
     if expected_useful and actual_useful:
         doc_verdict = "true_positive"
@@ -217,7 +267,8 @@ def evaluate_judgment(
         "actual_top_section_title": final_doc.get("top_section_title"),
         "actual_top_section_score": final_doc.get("top_section_score"),
         "actual_abstention_reason": final_doc.get("abstention_reason"),
-        "section_anchor_rows": anchor_rows,
+        "gold_section_anchor_rows": gold_anchor_rows,
+        "exhaustive_section_anchor_rows": exhaustive_anchor_rows,
         "document_notes": judgment.get("document_notes"),
     }
 
@@ -230,11 +281,21 @@ def build_summary(rows: List[Dict[str, Any]], *, phase_e_doc_topk: int, phase_f_
     false_positive = sum(1 for row in negative_rows if row["doc_verdict"] == "false_positive")
     true_negative = sum(1 for row in negative_rows if row["doc_verdict"] == "true_negative")
 
-    all_anchors = [anchor for row in rows for anchor in row["section_anchor_rows"]]
-    structure_hits = sum(1 for row in all_anchors if row["structure_present"])
-    e_hits = sum(1 for row in all_anchors if row["phase_e_hit_at_doc_topk"])
-    f_hits = sum(1 for row in all_anchors if row["phase_f_hit_at_doc_topk"])
-    g_hits = sum(1 for row in all_anchors if row["phase_g_hit_at_doc_topk"])
+    def summarize_anchor_rows(anchor_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+        structure_hits = sum(1 for row in anchor_rows if row["structure_present"])
+        e_hits = sum(1 for row in anchor_rows if row["phase_e_hit_at_doc_topk"])
+        f_hits = sum(1 for row in anchor_rows if row["phase_f_hit_at_doc_topk"])
+        g_hits = sum(1 for row in anchor_rows if row["phase_g_hit_at_doc_topk"])
+        return {
+            "anchor_count": len(anchor_rows),
+            "structure_presence_recall": round(structure_hits / max(1, len(anchor_rows)), 4),
+            f"phase_e_hit_at_doc_top{phase_e_doc_topk}": round(e_hits / max(1, len(anchor_rows)), 4),
+            f"phase_f_hit_at_doc_top{phase_f_doc_topk}": round(f_hits / max(1, len(anchor_rows)), 4),
+            f"phase_g_hit_at_doc_top{phase_g_topk}": round(g_hits / max(1, len(anchor_rows)), 4),
+        }
+
+    gold_anchors = [anchor for row in rows for anchor in row["gold_section_anchor_rows"]]
+    exhaustive_anchors = [anchor for row in rows for anchor in row["exhaustive_section_anchor_rows"]]
 
     false_negative_docs = [
         {
@@ -249,7 +310,7 @@ def build_summary(rows: List[Dict[str, Any]], *, phase_e_doc_topk: int, phase_f_
 
     missed_anchor_docs = defaultdict(list)
     for row in rows:
-        for anchor in row["section_anchor_rows"]:
+        for anchor in row["gold_section_anchor_rows"]:
             if not anchor["phase_f_hit_at_doc_topk"]:
                 missed_anchor_docs[row["doc_id"]].append(anchor["expected_section_title"])
 
@@ -265,13 +326,8 @@ def build_summary(rows: List[Dict[str, Any]], *, phase_e_doc_topk: int, phase_f_
             "doc_recall": round(true_positive / max(1, len(positive_rows)), 4),
             "doc_precision": round(true_positive / max(1, true_positive + false_positive), 4),
         },
-        "section_anchor_metrics": {
-            "anchor_count": len(all_anchors),
-            "structure_presence_recall": round(structure_hits / max(1, len(all_anchors)), 4),
-            f"phase_e_hit_at_doc_top{phase_e_doc_topk}": round(e_hits / max(1, len(all_anchors)), 4),
-            f"phase_f_hit_at_doc_top{phase_f_doc_topk}": round(f_hits / max(1, len(all_anchors)), 4),
-            f"phase_g_hit_at_doc_top{phase_g_topk}": round(g_hits / max(1, len(all_anchors)), 4),
-        },
+        "gold_section_anchor_metrics": summarize_anchor_rows(gold_anchors),
+        "exhaustive_section_anchor_metrics": summarize_anchor_rows(exhaustive_anchors),
         "false_negative_docs": false_negative_docs,
         "docs_with_missed_anchors": {doc_id: titles for doc_id, titles in missed_anchor_docs.items()},
         "doc_verdict_distribution": dict(Counter(row["doc_verdict"] for row in rows)),
@@ -289,8 +345,10 @@ def write_markdown(path: Path, suite_id: str, run_id: str, summary: Dict[str, An
     lines.append("")
     for key, value in summary["document_metrics"].items():
         lines.append(f"- {key}: `{value}`")
-    for key, value in summary["section_anchor_metrics"].items():
-        lines.append(f"- {key}: `{value}`")
+    for key, value in summary["gold_section_anchor_metrics"].items():
+        lines.append(f"- gold::{key}: `{value}`")
+    for key, value in summary["exhaustive_section_anchor_metrics"].items():
+        lines.append(f"- exhaustive::{key}: `{value}`")
     lines.append("")
     lines.append("## False Negative Docs")
     lines.append("")
@@ -312,12 +370,15 @@ def write_markdown(path: Path, suite_id: str, run_id: str, summary: Dict[str, An
         lines.append(f"- actual_abstention_reason: `{row['actual_abstention_reason']}`")
         if row["document_notes"]:
             lines.append(f"- notes: {row['document_notes']}")
-        for anchor in row["section_anchor_rows"]:
+        lines.append("- gold_anchors:")
+        for anchor in row["gold_section_anchor_rows"]:
             lines.append(
-                f"- anchor `{anchor['expected_section_title']}` ({anchor['expected_pages']}): "
+                f"  - `{anchor['expected_section_title']}` ({anchor['expected_pages']}): "
                 f"structure={anchor['structure_present']}, e={anchor['phase_e_hit_at_doc_topk']}, "
                 f"f={anchor['phase_f_hit_at_doc_topk']}, g={anchor['phase_g_hit_at_doc_topk']}"
             )
+        if row["exhaustive_section_anchor_rows"]:
+            lines.append("- exhaustive_anchor_count: " + str(len(row["exhaustive_section_anchor_rows"])))
         lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 

@@ -213,8 +213,15 @@ class PhaseDOptions:
     max_summary_chars: int = 480
     max_subpoint_summary_chars: int = 320
     min_anchor_token_overlap: float = 0.67
+    planner_prompt_mode: str = "baseline"
+    include_should_terms_view: bool = True
+    include_support_context_view: bool = True
+    include_subpoint_lexical_views: bool = True
 
     def normalized(self) -> "PhaseDOptions":
+        prompt_mode = str(self.planner_prompt_mode or "baseline").strip().lower() or "baseline"
+        if prompt_mode not in {"baseline", "coverage"}:
+            prompt_mode = "baseline"
         return PhaseDOptions(
             force_rebuild=bool(self.force_rebuild),
             use_openai_planner=bool(self.use_openai_planner),
@@ -239,6 +246,10 @@ class PhaseDOptions:
             max_summary_chars=max(160, int(self.max_summary_chars)),
             max_subpoint_summary_chars=max(120, int(self.max_subpoint_summary_chars)),
             min_anchor_token_overlap=min(1.0, max(0.4, float(self.min_anchor_token_overlap))),
+            planner_prompt_mode=prompt_mode,
+            include_should_terms_view=bool(self.include_should_terms_view),
+            include_support_context_view=bool(self.include_support_context_view),
+            include_subpoint_lexical_views=bool(self.include_subpoint_lexical_views),
         )
 
 
@@ -845,31 +856,63 @@ def build_query_planner_messages(
     allowed_types = ", ".join(PHASE_D_ALLOWED_SECTION_TYPES)
     source_anchors = source_inventory.get("selected_anchors") or []
     clauses = source_inventory.get("clauses") or []
-    system_prompt = (
-        "You create strict query plans for section retrieval over scientific PDFs. "
-        "Use only the chapter title, chapter spec, and provided source-anchor inventory. "
-        "Do not invent new topics, wildcards, regex fragments, or domain drift. "
-        "Prefer selecting and grouping the supplied anchors over paraphrasing. "
-        "When the source mixes German and English, prefer English technical terms for must_terms when the source already contains them. "
-        "Every must_terms and should_terms item must be short, concrete, and source-grounded. "
-        "Return 2-6 subpoints. Each subpoint must cite 1-3 source_anchors from the inventory. "
-        "Always include at least one drift_risk. "
-        f"Allowed section types: {allowed_types}."
-    )
-    user_prompt = (
-        f"Chapter title:\n{chapter_title}\n\n"
-        f"Chapter spec:\n{chapter_spec_text}\n\n"
-        "Numbered source clauses:\n"
-        + "\n".join(f"- Clause {idx}: {clause}" for idx, clause in enumerate(clauses, start=1))
-        + "\n\n"
-        + "Source-anchor inventory (choose from these whenever possible):\n"
-        + "\n".join(f"- {anchor}" for anchor in source_anchors)
-        + "\n\n"
-        + "Build a retrieval query plan for finding useful PDF sections. "
-        "Must terms should be discriminative lexical anchors likely to appear in paper titles, headings, or body text. "
-        "Should terms may be broader but must stay grounded in the same source anchors. "
-        "Keep chapter_summary concise."
-    )
+    if str(options.planner_prompt_mode or "baseline") == "coverage":
+        system_prompt = (
+            "You create high-recall, source-grounded query plans for retrieving useful sections from scientific PDFs.\n\n"
+            "Your job is not only to find sections that restate the chapter wording. Your job is to find sections that could materially help write the chapter well. "
+            "A section can be useful because it gives core theory, mechanisms, operational factors, design implications, quality or trust signals, failure modes, comparative framing, measurement constructs, or practical implications, as long as that usefulness is grounded in the source text.\n\n"
+            "Hard constraints:\n"
+            "- Use only the chapter title, chapter spec, numbered clauses, and source-anchor inventory.\n"
+            "- Do not invent unrelated topics, datasets, products, methods, or jargon.\n"
+            "- Keep must_terms short, discriminative, and likely to appear in section titles or section text.\n"
+            "- Keep should_terms broader than must_terms, but still clearly grounded in the source anchors or obvious bilingual technical renderings.\n"
+            "- When the source mixes German and English, prefer English technical surface forms when they are faithful translations of the source concepts and likely to appear in papers.\n"
+            "- Return 3-6 subpoints, treating them as retrieval packs or information families rather than just sentence fragments.\n"
+            "- At least one subpoint may cover supporting context if that context would clearly enrich scientific writing and is still source-grounded.\n"
+            "- Every subpoint must cite 1-3 source_anchors.\n"
+            "- Always include at least one drift_risk.\n\n"
+            f"Allowed section types: {allowed_types}."
+        )
+        user_prompt = (
+            f"## Chapter Title\n{chapter_title}\n\n"
+            f"## Chapter Spec\n{chapter_spec_text}\n\n"
+            "## Numbered Source Clauses\n"
+            + "\n".join(f"- Clause {idx}: {clause}" for idx, clause in enumerate(clauses, start=1))
+            + "\n\n## Source-Anchor Inventory\n"
+            + "\n".join(f"- {anchor}" for anchor in source_anchors)
+            + "\n\n## Task\n"
+            "Build a retrieval plan that keeps recall high while staying auditable. "
+            "Make the plan useful for heading-first plus section-text retrieval. "
+            "Use must_terms for precise anchors, should_terms for broader but grounded retrieval, and subpoints for distinct useful evidence families. "
+            "Favor terms that could surface theory, signals, review quality, practical implications, risk or trust mechanisms, design choices, or contextual evidence if those ideas are grounded in the source. "
+            "Do not optimize only for the most literal wording overlap."
+        )
+    else:
+        system_prompt = (
+            "You create strict query plans for section retrieval over scientific PDFs. "
+            "Use only the chapter title, chapter spec, and provided source-anchor inventory. "
+            "Do not invent new topics, wildcards, regex fragments, or domain drift. "
+            "Prefer selecting and grouping the supplied anchors over paraphrasing. "
+            "When the source mixes German and English, prefer English technical terms for must_terms when the source already contains them. "
+            "Every must_terms and should_terms item must be short, concrete, and source-grounded. "
+            "Return 2-6 subpoints. Each subpoint must cite 1-3 source_anchors from the inventory. "
+            "Always include at least one drift_risk. "
+            f"Allowed section types: {allowed_types}."
+        )
+        user_prompt = (
+            f"Chapter title:\n{chapter_title}\n\n"
+            f"Chapter spec:\n{chapter_spec_text}\n\n"
+            "Numbered source clauses:\n"
+            + "\n".join(f"- Clause {idx}: {clause}" for idx, clause in enumerate(clauses, start=1))
+            + "\n\n"
+            + "Source-anchor inventory (choose from these whenever possible):\n"
+            + "\n".join(f"- {anchor}" for anchor in source_anchors)
+            + "\n\n"
+            + "Build a retrieval query plan for finding useful PDF sections. "
+            "Must terms should be discriminative lexical anchors likely to appear in paper titles, headings, or body text. "
+            "Should terms may be broader but must stay grounded in the same source anchors. "
+            "Keep chapter_summary concise."
+        )
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
@@ -1625,7 +1668,7 @@ def attach_bridge_terms_to_plan(
     return plan
 
 
-def build_retrieval_views(plan: Dict[str, Any]) -> Dict[str, Any]:
+def build_retrieval_views(plan: Dict[str, Any], options: PhaseDOptions) -> Dict[str, Any]:
     def join_terms(items: List[str], limit: int = 12) -> str:
         return " | ".join([clean_text(x) for x in (items or []) if clean_text(x)][: int(limit)])
 
@@ -1680,6 +1723,14 @@ def build_retrieval_views(plan: Dict[str, Any]) -> Dict[str, Any]:
             "target_units": ["section_text", "passage_text"],
             "preferred_section_types": plan.get("preferred_section_types") or [],
         },
+        "should_terms_lexical": {
+            "view_id": "should_terms_lexical",
+            "kind": "should_terms_lexical",
+            "query_text": join_terms(supported_should_terms or plan.get("should_terms") or [], limit=12),
+            "anchor_terms": list((supported_should_terms or plan.get("should_terms") or []))[:12],
+            "target_units": ["section_title", "section_text", "passage_text"],
+            "preferred_section_types": plan.get("preferred_section_types") or [],
+        },
         "bridge_lexical": {
             "view_id": "bridge_lexical",
             "kind": "bridge_lexical",
@@ -1702,6 +1753,7 @@ def build_retrieval_views(plan: Dict[str, Any]) -> Dict[str, Any]:
             "preferred_section_types": plan.get("preferred_section_types") or [],
         },
         "subpoint_views": [],
+        "subpoint_lexical_views": [],
         "broad_fallback": {
             "view_id": "broad_fallback",
             "kind": "broad_fallback",
@@ -1710,7 +1762,28 @@ def build_retrieval_views(plan: Dict[str, Any]) -> Dict[str, Any]:
             "target_units": ["section_contextualized", "passage_contextualized"],
             "preferred_section_types": plan.get("preferred_section_types") or [],
         },
+        "support_context_semantic": {
+            "view_id": "support_context_semantic",
+            "kind": "support_context_semantic",
+            "query_text": build_compact_query_text(
+                [
+                    clean_text(plan.get("chapter_summary")),
+                    join_terms(supported_should_terms or plan.get("should_terms") or [], limit=6),
+                    join_terms([clean_text(item.get("label") or "") for item in (plan.get("subpoints") or [])], limit=3),
+                ],
+                separator=" | ",
+                max_words=72,
+                max_chars=360,
+            ),
+            "anchor_terms": list((supported_should_terms or plan.get("should_terms") or []))[:8],
+            "target_units": ["section_contextualized", "passage_contextualized"],
+            "preferred_section_types": plan.get("preferred_section_types") or [],
+        },
     }
+    if not bool(options.include_should_terms_view) or not clean_text((retrieval_views.get("should_terms_lexical") or {}).get("query_text")):
+        retrieval_views.pop("should_terms_lexical", None)
+    if not bool(options.include_support_context_view) or not clean_text((retrieval_views.get("support_context_semantic") or {}).get("query_text")):
+        retrieval_views.pop("support_context_semantic", None)
     for subpoint in plan.get("subpoints") or []:
         subpoint_keys = {
             normalize_match_key(item)
@@ -1754,12 +1827,35 @@ def build_retrieval_views(plan: Dict[str, Any]) -> Dict[str, Any]:
                 "preferred_section_types": subpoint.get("preferred_section_types") or plan.get("preferred_section_types") or [],
             }
         )
+        if bool(options.include_subpoint_lexical_views):
+            retrieval_views["subpoint_lexical_views"].append(
+                {
+                    "view_id": f"subpoint_lexical::{subpoint.get('subpoint_id')}",
+                    "kind": "subpoint_lexical",
+                    "label": subpoint.get("label"),
+                    "query_text": build_compact_query_text(
+                        [
+                            clean_text(subpoint.get("label")),
+                            join_terms(subpoint.get("source_anchors") or [], limit=3),
+                            join_terms(subpoint.get("must_terms") or [], limit=3),
+                            join_terms(linked_bridge_terms, limit=2),
+                        ],
+                        separator=" | ",
+                        max_words=26,
+                        max_chars=220,
+                    ),
+                    "anchor_terms": list(subpoint.get("source_anchors") or [])[:3] + list(subpoint.get("must_terms") or [])[:3] + linked_bridge_terms[:2],
+                    "bridge_terms": linked_bridge_terms,
+                    "target_units": ["section_title", "section_text", "passage_text"],
+                    "preferred_section_types": subpoint.get("preferred_section_types") or plan.get("preferred_section_types") or [],
+                }
+            )
     return retrieval_views
 
 
 def flatten_retrieval_views(retrieval_views: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
-    for key in ["title_lexical", "summary_semantic", "must_terms_lexical", "bridge_lexical", "bridge_semantic", "broad_fallback"]:
+    for key in ["title_lexical", "summary_semantic", "must_terms_lexical", "should_terms_lexical", "bridge_lexical", "bridge_semantic", "support_context_semantic", "broad_fallback"]:
         view = retrieval_views.get(key) or {}
         if not clean_text(view.get("query_text")):
             continue
@@ -1775,6 +1871,18 @@ def flatten_retrieval_views(retrieval_views: Dict[str, Any]) -> List[Dict[str, A
             }
         )
     for view in retrieval_views.get("subpoint_views") or []:
+        rows.append(
+            {
+                "view_id": view.get("view_id"),
+                "kind": view.get("kind"),
+                "target_units": ", ".join(view.get("target_units") or []),
+                "preferred_section_types": ", ".join(view.get("preferred_section_types") or []),
+                "anchor_terms": ", ".join(view.get("anchor_terms") or []),
+                "query_word_count": count_words(clean_text(view.get("query_text"))),
+                "query_text": truncate_text(clean_text(view.get("query_text")), max_len=220),
+            }
+        )
+    for view in retrieval_views.get("subpoint_lexical_views") or []:
         rows.append(
             {
                 "view_id": view.get("view_id"),
@@ -2243,7 +2351,7 @@ def run_phase_d(
 
     corpus_support = analyze_corpus_support(plan, run_ctx)
     plan = suppress_unsupported_subpoints(plan, corpus_support)
-    retrieval_views = build_retrieval_views(plan)
+    retrieval_views = build_retrieval_views(plan, options)
     write_json(planner_prompt_path, {"generated_at_utc": utc_now_iso(), "phase": "phase_d", **prompt_payload})
     write_json(planner_response_path, {"generated_at_utc": utc_now_iso(), "phase": "phase_d", "response": raw_response})
     write_json(bridge_prompt_path, {"generated_at_utc": utc_now_iso(), "phase": "phase_d", **bridge_prompt_payload})
