@@ -1,0 +1,18 @@
+{
+  "suite_id": "decline_of_roman_empire_manual_v1_exhaustive",
+  "chapter_id": "chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi",
+  "document_count": 10,
+  "positive_doc_count": 9,
+  "negative_doc_count": 1,
+  "pending_doc_count": 0,
+  "gold_section_count": 21,
+  "structural_miss_count": 8,
+  "judgment_label_distribution": {
+    "0": 199,
+    "1": 74,
+    "2": 45,
+    "3": 35
+  },
+  "judgment_status": "complete",
+  "pending_docs": []
+}

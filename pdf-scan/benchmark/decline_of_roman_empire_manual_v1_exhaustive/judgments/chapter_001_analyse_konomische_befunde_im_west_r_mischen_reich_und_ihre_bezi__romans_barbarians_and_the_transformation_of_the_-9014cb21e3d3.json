@@ -1,0 +1,1427 @@
+{
+  "chapter_id": "chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi",
+  "doc_id": "romans_barbarians_and_the_transformation_of_the_-9014cb21e3d3",
+  "doc_title": "Romans, Barbarians, and the Transformation of the Roman World",
+  "has_useful_information": true,
+  "document_label_0_to_3": 2,
+  "document_label_band": "useful_support",
+  "document_notes": "Edited volume mostly focused on identity, religion, and frontier interaction. For an economics-focused chapter it is uneven, but it contains a few strong sections with explicit fiscal/tenurial content (ius colonatus and taxation obligations for settled prisoners-of-war) and an explicitly economic-integration chapter ('Barbarian Raiders and Barbarian Peasants') with a useful methodological warning about the limits of anecdotal written evidence for economic impact claims.",
+  "manual_review_basis": [
+    "direct PDF reading",
+    "run cde2f3959baf36fa0d09956c normalized sections",
+    "review packet with extracted section text and current pipeline trace"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "11 The ius colonatus as a Model for the Settlement of Barbarian Prisoners-of-War in the Late Roman Empire?",
+      "page_start": 168,
+      "page_end": 180,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "land_tenure_taxation",
+        "barbarian_settlement",
+        "fiscal_obligations"
+      ],
+      "notes": "Strong for economic institutions: discusses settlement of conquered barbarians on land, legal terms, and fiscal/tax obligations, which supports arguments about labor, tenancy, and revenue constraints."
+    },
+    {
+      "section_title": "Conclusions",
+      "page_start": 180,
+      "page_end": 181,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "land_tenure_taxation",
+        "fiscal_obligations",
+        "local_economic_conditions"
+      ],
+      "notes": "Most concentrated economic signal: explicitly links tenancy arrangements to taxation/fiscal responsibility and notes that settlement terms could respond to local economic conditions and landowner needs."
+    },
+    {
+      "section_title": "15 Barbarian Raiders and Barbarian Peasants: Models of Ideological and Economic Integration",
+      "page_start": 220,
+      "page_end": 239,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "economic_integration_models",
+        "rural_labor",
+        "roman_barbarian_relations"
+      ],
+      "notes": "Useful for discussing economic integration mechanisms (raiders vs peasants, ideological framing vs economic realities) and how Roman perceptions can distort economic-impact claims."
+    },
+    {
+      "section_title": "Conclusions",
+      "page_start": 239,
+      "page_end": 241,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "economic_integration_models",
+        "roman_economy_impact",
+        "evidence_limits"
+      ],
+      "notes": "Explicitly cautions that late Roman texts are anecdotal and unreliable for generalizing economic damage/impact claims; useful methodological support when separating evidence from interpretation."
+    }
+  ],
+  "near_miss_sections": [
+    {
+      "section_title": "Introduction",
+      "page_start": 22,
+      "page_end": 33,
+      "usefulness_0_to_10": 5,
+      "notes": "Good high-level framing of 'transformation' and integration of barbarian peoples, but only weakly connected to concrete economic evidence."
+    },
+    {
+      "section_title": "8 Imperial Religious Unification Policy and its Divisive Consequences",
+      "page_start": 130,
+      "page_end": 153,
+      "usefulness_0_to_10": 4,
+      "notes": "Mentions Diocletian's military/economic/administrative reforms but focuses on religious policy; marginal economic relevance."
+    },
+    {
+      "section_title": "14 Captivity and Romano-Barbarian Interchange",
+      "page_start": 206,
+      "page_end": 219,
+      "usefulness_0_to_10": 4,
+      "notes": "Captivity/slavery and cross-border interchange can matter economically, but the section is largely narrative and only weakly supports economic mechanisms."
+    },
+    {
+      "section_title": "PART III: Creating Identity in the Post-Roman World",
+      "page_start": 284,
+      "page_end": 291,
+      "usefulness_0_to_10": 5,
+      "notes": "Has some useful framing about settlement and accommodation on Roman soil but is primarily identity-focused."
+    },
+    {
+      "section_title": "12 Spies Like Us: Treason and Identity in the Late Roman Empire",
+      "page_start": 182,
+      "page_end": 194,
+      "usefulness_0_to_10": 3,
+      "notes": "Mentions frontier cultural/economic interchange, but the section is mainly about loyalty and identity rather than economic evidence."
+    }
+  ],
+  "structural_miss_sections": [
+    {
+      "expected_section_title": "6 Banditry or Catastrophe?: History, Archaeology, and Barbarian Raids on Roman Greece",
+      "page_start": 98,
+      "page_end": 127,
+      "usefulness_0_to_10": 5,
+      "benchmark_label_0_to_3": 1,
+      "supported_subpoints": [],
+      "notes": "The PDF table of contents shows a distinct chapter on barbarian raids on Roman Greece (potentially relevant for economic damage/supply disruption), but the extraction appears to merge it under a generic wrapper heading, which weakens retrievability and makes the chapter harder to cite precisely.",
+      "why_missing": "Chapter-level title/number not detected; content appears merged into the wrapper section 'B. Political and Religious Interpretations of Barbarian Activities'.",
+      "suggested_pipeline_change": "Use TOC-derived anchors or chapter-number pattern detection to split wrapper sections into per-chapter sections and prefer the most specific heading as the extracted section_title."
+    }
+  ],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "108efa9bfbe561a4",
+        "section_title": "Front Matter",
+        "page_start": 2,
+        "page_end": 5,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Publisher metadata/copyright and blank-page boilerplate; no substantive content for the benchmark chapter.",
+      "section_text_excerpt": "This page has been left blank intentionally Cultural Interaction and the Creation of Identity in Routledge is an imprint of the Taylor & Francis Group, an informa business Ralph W. Mathisen and Danuta Shanzer have asserted their right under the Copyright, Designs and Patents Act, 1988, to be identified as the editors of this work. All rights reserved. No part of this book may be reprinted or reproduced or utilised in any form or by any electronic, mechanical, or other means, now known or hereafter invented, including photocopying and recording, or in any information storage or retrieval system, without permission in writing from the publishers. Product or corporate names may be trademarks or registered trademarks, and are used only for identification and explanation without intent to infringe. of identity in late antiquity. 1. Rome – Civilization – Foreign influences – Congresses. 2. Rome – History – Empire, 284–476 – Congresses. 3. Social change – Rome – History – Congresses. I. Mathisen, Ralph W., 1947– II. Shanzer, Danuta. III. Shifting Frontiers in Late Antiquity Conference (6th: 2005: University of Illinois) 937’.08–dc22 of identity in late antiquity / edited by Ralph W. Mathisen and Danuta R. Shanzer. Papers originally delivered at the 6th Biennial Conference on Shifting Frontiers of Late Antiquity, held at the University of Illinois, Urbana-Champaign, in Mar. 2005. Includes index. ISBN 978-0-7546-6814-5 (hardcover: alk. paper) – ISBN 978-1-4094-1243-4 (ebook) 1. Rome – Civilization – Congresses. 2. Rome – Civilization – Foreign influences – Congresses. 3. – Rome – Congresses. 6. Acculturation – Rome – Congresses. I. Mathisen, Ralph W., 1947– II. Shanzer, Danuta. III. Title. 937’.08–dc22 2010021523",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a0049773dfa69231",
+        "section_title": "Contents",
+        "page_start": 6,
+        "page_end": 7,
+        "section_type": "table_of_contents"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Table of contents only; useful for navigation, but not evidence-bearing content.",
+      "section_text_excerpt": "PART I: CONstrUctiNG ImaGEs OF tHE Impact aNd IdENtitY Catalogues of Barbarians in Late Antiquity \b Augustine and the Merciful Barbarians \b Reguli in the Roman Empire, Late Antiquity, and the Early Medieval Were the Sasanians Barbarians? Roman Writers on the “Empire of the Persians” \b A Roman Image of the “Barbarian” Sasanians \b B. Political and Religious Interpretations of Barbarian Activities John Rufus, Timothy Aelurus, and the Fall of the Western Roman Empire \b",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a3fe16040a0f2bb2",
+        "section_title": "C. Imperial Manipulation of Perceptions of Barbarians",
+        "page_start": 7,
+        "page_end": 9,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "TOC-like chapter-title list (not actual chapter content); not useful as evidence.",
+      "section_text_excerpt": "C. Imperial Manipulation of Perceptions of Barbarians Diocletian, the Jews, and the Samaritans \b Hellenes, Barbarians, and Christians: Religion and Identity Politics in Diocletian’s Rome \b Barbarians as Spectacle: The Account of an Ancient “Embedded PART II: CUltUral INtEractiON ON tHE ROmaN/BarbariaN A. Becoming Roman: Movements of People across the Frontier and the The ius colonatus as a Model for the Settlement of Barbarian Prisoners-of-War in the Late Roman Empire? \b Spies Like Us: Treason and Identity in the Late Roman Empire \b 161 The “Runaway” Avars and Late Antique Diplomacy \b Barbarian Raiders and Barbarian Peasants: Models of Ideological Kush and Rome on the Egyptian Southern Frontier: Where Barbarians Petra and the Saracens: New Evidence from a Recently Discovered Epigram \b Elusive Places: A Chorological Approach to Identity and Territory Barbarian Traffic, Demon Oaths, and Christian Scruples (Aug. PART III: CrEatiNG IdENtitY iN tHE POst-ROmaN WOrld Building an Ethnic Identity for a New Gothic and Roman Nobility: Vascones and Visigoths: Creation and Transformation of Identity in Identity and Ethnicity during the Era of Migrations and Barbarian Kingdoms in the Light of Archaeology in Gaul \b Text, Artifact, and Genome: The Disputed Nature of the Anglo- Auguste Moutié, Pioneer of Merovingian Archaeology, and the Spurlock Merovingian Collection at the University of Illinois \b This page has been left blank intentionally",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 90,
+        "phase_f_doc_rank": 118,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "5083cc5a1fe0af81",
+        "section_title": "List of Figures",
+        "page_start": 10,
+        "page_end": 13,
+        "section_type": "table_of_contents"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "List of figures only; no usable economic evidence.",
+      "section_text_excerpt": "A late nineteenth-century portrayal of a skin-clad Alaric in Greece: “Alaric at Athens,” by Ludwig Thiersch, from John H. Haaren, A.B. Poland, Famous Men of the Middle Ages (New York/Cincinnati/ 15.1 “Plomb de Lyon,” the lead proof of a non-extant gold medallion showing barbarian families entering the Roman Empire at Mainz.\b 18.1 Map of Scythia Minor showing Greek and Roman cities and major trade routes. \b 23.1 Černjahov culture and the find spots of combs of Thomas III type associated with the Černjahov culture: M. Kazanski, in M. Larrieu, La nécropole mérovingienne de La Turraque, Beaucaire-sur-Baïse 23.2 A typical representation of the movements of a supposedly culturally homogeneous Vandal people during the course of their travels over hundreds of years and thousands of miles: P. Périn, “Archéologie et art des Vandales,” in Encyclopaedia Universalis (1989), at 23.3 Funerary artifacts from the grave of a Visigothic woman from the cemetery at Duraton: A. Molinero-Perez, La necropolis visigoda de 23.4 Inscribed lance head from Bourges, with legends “Regius” and “Patricius”; late fifth century: Pierre Bailly, “A propos d’une mention de ‘patrice’ dans une sépulture du Ve siècle à Bourges,” in Actes du XLIIIe Congrès de la Fédération des sociétés savantes du Centre (Guéret, 6, 7 et 8 mai 1983) = Etudes creusoises 5 (1984): 39–43, at p. 40.\b 23.5 Findspots and appearance of military belts from the second half of the fourth century: H.-W. Böhme, Germanische Grabfunde des 4. bis. 5. Jahrhunderts zwischen unterer Elbe und Loire, vol. 2 (Munich, 1974), map 11. \b 23.6 Example of deformed skull, Saint-Prex (Switzerland): R. Moosbrugger-Leu, Die Schweiz zur Merowingerzeit, 2 vols. (Bern, 1971), 2.11. \b 23.7 Findspots of franciscas (above) and angons (below): W. Hübener, in P. Perin, L.-Ch. Feffer, eds., Les Francs, 2nd edn. (Paris, 1997), p. 312. \b 23.8 Reconstructed garb of eastern (above, middle) and western (below) Germanic women: W. Menghin, ed., Saalführer Eisenzeit. Europa und Eurasien (Berlin, 1998), p. 102. \b 23.9 Funerary goods from a female grave at Lezoux (Puy-de-Dôme): Y. Duterne, in Die Franken Wegbereiter Europas (Mainz, 1996), 1.166. \b 23.10 Funerary goods…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "39b753484400b452",
+        "section_title": "Abbreviations",
+        "page_start": 14,
+        "page_end": 15,
+        "section_type": "index"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Abbreviations list only.",
+      "section_text_excerpt": "Prosopography of the Later Roman Empire PSI Papiri greci e latini. (Pubblicazioni della Società Italiana per la ricerca dei papiri greci e latini in Egitto ZPE Zeitschrift für Papyrologie und Epigraphik This page has been left blank intentionally",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7d9b415669b9273e",
+        "section_title": "List of Contributors",
+        "page_start": 16,
+        "page_end": 21,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Contributor bios; not useful for the economics benchmark chapter.",
+      "section_text_excerpt": "Her Very Short Introduction to Late Antiquity (OUP) is expected in 2011. Her main research project is a collaborative print and electronic commentary on the Augustine City of God. She coedits, with Andrew Louth, the monograph series Oxford Early Christian Studies (OUP), and, with Mary Whitby and Mark of California at Santa Barbara. Her area of research interest is the conversation between what used to be called “paganism” and Christianity in the third- and fourth-century Roman Empire. She has finished a book on the role of late Platonists in Diocletian’s persecution, and is now working on the conversion of goddess temples into churches dedicated to the Virgin Mary. He works amongst other things on late Roman historiography, late ancient Christianity and the relations between the Roman and Sassanid Empires. He is co- author of the Philological and Historical Commentaries on Ammianus Marcellinus. Linda Ellis is a Full Professor in the Museum Studies Program at San Francisco State University. Her five-year hydroarchaeology surveying program in the area of Tropaeum Traiani has just been completed and she currently is working on a publication of aqueduct locations and chemical testing of underground water reservoirs used in Late Antiquity. periods of Nubian history. He is a contributor to the forthcoming Oxford Dictionary (Spain). He has published more than 250 books and academic papers, and he has delivered conferences in universities and academic institutions of Spain, France, on the Late Antiquity and the German peoples, especially the Goths and in Spain. He has also written about hellenistic historiography and geography, and the history of Spain before and during the Roman conquest. the Late Roman Countryside (Cambridge, 2011), as well as studies relating to late Roman socio-economic history including agriculture and field management practices, slavery, peasant marriage strategies, and demonic possession. Michael E. Jones is Professor of History and Christian A. Johnson Chair of Interdisciplinary Studies at Bates College. His research interests include the history and archaeology of Roman Britain, Anglo-Saxon England, and early medieval northwestern Europe; and …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "1e22dd5c0bc4a908",
+        "section_title": "Introduction",
+        "page_start": 22,
+        "page_end": 33,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "transformation_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Useful framing of integration/'transformation' themes, but provides limited concrete economic evidence for the benchmark chapter.",
+      "section_text_excerpt": "One of the most significant transformations of the Roman world between the fourth and seventh centuries CE was the integration of barbarian peoples into the social, cultural, religious, and political milieu of the Mediterranean world. In the western Roman world, barbarian peoples established independent kingdoms on what had been the territory of the Roman Empire. In the east, dealing with barbarian peoples became an even greater concern of the Byzantine government. Nowhere in the Roman world could the impact of the barbarians be escaped. The sixth biennial Shifting Frontiers in Late Antiquity Conference held at the University of Illinois at Urbana-Champaign in March of 2005 was devoted to “Romans, Barbarians, and The phrase “The Transformation of the Roman World” was a nod to a project of the same name funded by the European Science Foundation between 1993 and 1998 to study “the origins of Europe and the emergence of European Nations, going back to the crossroads of the end of the ancient world” between the fourth and the eighth centuries.\u0004 Although the project did not focus exclusively on the role played by the arrival of barbarian peoples in this transformation, the barbarians were never very far away from the work of any of the five study groups, whose themes were (1) Imperium, gentes, and regna, (2) Settlement in town and countryside, (3) Production, distribution, and demand, (4) Transformation of beliefs and culture, and (5) Power and society. One of the consequences of the “team” approach—which probably was unavoidable, given the 150 participants— was that the resulting 14 published volumes each focused on but one small piece of the larger puzzle, and only by happenstance did one contribution or another deal with broader overlapping and overarching issues relating to the nature of the transformation writ large.\u0004 As a result, the project did not craft a single statement \u0004 For reviews of various volumes, see, from The Medieval Review, e.g. http://quod. lib.umich.edu/cgi/t/text/text-idx?c=tmr;cc=tmr;q1=Transformation%20of%20the%20Ro man%20World;rgn=main;view=text;idno=baj9928.0005.007, accessed 16 July 2010, and passim. or theme about the nature of the trans…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 17,
+        "phase_f_doc_rank": 17,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 45.85,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f9b75c64391968b0",
+        "section_title": "PART I: Constructing Images of the Impact and Identity of Barbarians",
+        "page_start": 34,
+        "page_end": 35,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Part divider / blank-page boilerplate; no substantive content.",
+      "section_text_excerpt": "Constructing Images of the Impact and Identity of Barbarians This page has been left blank intentionally",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c3d3bb55e7c88de0",
+        "section_title": "A. Literary Constructions of Barbarian Identity",
+        "page_start": 36,
+        "page_end": 37,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Section divider / blank-page boilerplate; no substantive content.",
+      "section_text_excerpt": "This page has been left blank intentionally",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "07b61c74418a21bd",
+        "section_title": "1 Catalogues of Barbarians in Late Antiquity",
+        "page_start": 38,
+        "page_end": 53,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Primarily about literary categorization/identity lists; little to no direct economic evidence for the benchmark chapter.",
+      "section_text_excerpt": "Catalogues of Barbarians in Late Antiquity The human desire to create tangible lists of stuff is at least as old as the Babylonian king lists, the Turin papyrus, the Egyptian Nile records, and the Homeric catalogue of ships. Some lists, of course, were of a practical nature: the Roman consular fasti gave a chronological framework to the Roman state. Others served a less practical, but nonetheless important, purpose. Of particular interest to Greek and Roman writers were lists of exotic places and the peoples associated with them. This study proposes to look at the creation of catalogues of barbarian peoples during the Roman and, in particular, the late Roman periods, and consider what they can tell us about interests, ideologies, and mentalities.\u0004 Many aspects of the nature of barbarian alterity, and the place of barbarian otherness in Roman intellectual, political, and ecclesiastical ideologies, have been well studied in the past.\u0004 But an aspect of Roman perceptions of barbarians that hitherto has been little noticed or understood, and can help us to nuance even further the conceptual positions of barbarians in the Roman world, is what one might dub the “cataloguing tradition.” This related to the way that Romans conceptualized groups of barbarians not for their specific traits but for their collective appearances with other groups of barbarians. \u0004 An early version of this study was presented as “Catalogues of Barbarians in Late Antiquity” at the annual conference of the Medieval Academy of America Conference in 2003. \u0004 Late antique writers also enjoyed creating lists, as manifested, e.g., in the Notitia provinciarum; the Notitia dignitatum; and catalogues of saints, not to mention the great compilations of late Roman law. See also A. Diller, “Byzantine Lists of Old and New Geographical Names,” Byzantinische Zeitschrift (BZ) 63 (1970): 26–42. \u0004 See, inter alios, Y.A. Dauge, Le barbare. Recherches sur la conception romaine de la barbarie et de la civilisation, Collection Latomus 176 (Brussels, 1981); G.B. Ladner, “On Roman Attitudes toward Barbarians in Late Antiquity,” Viator 7 (1976): 1–25; H., R. Kahane, “On the Meanings of Barbarus,” Hellenika 37 (1986): 12…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 95,
+        "phase_f_doc_rank": 86,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e779eef226bcfee4",
+        "section_title": "2 Augustine and the Merciful Barbarians",
+        "page_start": 54,
+        "page_end": 75,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Religious/ideological treatment of barbarians; not relevant to economic mechanisms or evidence.",
+      "section_text_excerpt": "Augustine and the Merciful Barbarians Life is in common, merit not, for all. Walk on one earth, enjoy one sky, one ocean That bounds our world. Why, even animals Drink from our streams; dew that gives grain to me Gives grass to the wild ass; the dirty sow Bathes in our river; even the dogs inhale Our air, whose gentle breath gives life to beasts. But Roman and barbarian stand as far Apart as quadruped from biped, or As dumb from speaking: and thus far apart Stand worshippers of God from senseless cults. This passage from Prudentius exemplifies the rhetorical uses of late antique barbarians. They are assimilated to non-human animals, the “non-rational” animals who, because they lack reason, do not speak an intelligible language or understand the difference between right and wrong.\u0004 But when traditional Roman religion is classed as “senseless (stolidis) cults,” that is, cults without intelligence, it is the traditional Romans who are like the non-rational barbarians. What difference does it make when the barbarians are Christian? The Christian barbarians who invaded Rome in 410 prompted one of the most influential works of western culture, Augustine’s City of God. It is often regarded as Augustine’s response to the sack of Rome, but that is not quite right. His immediate response came in sermons, but in 410/11 Augustine was preoccupied with the Council of Carthage, a major effort, chaired by an imperial envoy, to settle the century-long Donatist dispute, and his preaching about Rome is interesting Special thanks to Noel Lenski, Neil McLynn, and Kevin Uhalde. \u0004 Gillian Clark, “The Fathers and the Animals: The Rule of Reason?” in Andrew Linzey, Dorothy Yamamoto, eds., Animals on the Agenda (London, 1998), pp. 67–79. Later debate on rational barbarians: Anthony Pagden, The Fall of Natural Man: The American Indian and the Origins of Comparative Ethnology (Cambridge, 1982). because it was so limited.\u0004 In the sermon now called The Destruction of Rome (de excidio urbis), Augustine began as usual with the scriptural readings for the day, and when he finally reached the sack of Rome, said what he always said about suffering.\u0004 He urged his hearers to get this episode of su…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 194,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "79e657d09c69ec80",
+        "section_title": "4 Were the Sasanians Barbarians? Roman Writers on the “Empire of the Persians”",
+        "page_start": 76,
+        "page_end": 87,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Roman literary framing of Sasanians; does not contribute economic evidence for Western Roman decline.",
+      "section_text_excerpt": "Roman Writers on the “Empire of the Persians” In his long digression on the character and dubious philosophical achievements of the Sasanian king Kusro I Anoshirvan, the sixth-century Roman advocate, poet, and historian Agathias states, “The philosophers of our age had come to the conclusion, because the official religion of the Roman Empire was not to their liking, that the Persian state was much superior. So they gave a ready hearing to the stories in general circulation according to which Persia was the land of ‘Plato’s philosopher king’ in which justice reigned supreme. Apparently, the subjects, too, were models of decency and good behavior and there was no such thing as theft, brigandage, or any other sort of crime.”\u0004 With this notion, a group of Neoplatonist philosophers from Athens journeyed to the court of Kusro. But they quickly became disillusioned with the barbarism of Persian customs and the superficiality of the king’s philosophical knowledge, and eventually begged Kusro to facilitate their return to the Roman Empire.\u0004 Because Agathias made use of Persian sources and eyewitness informants in constructing his long excurses on the Sasanians, modern scholars justifiably have viewed his Histories as the most important Roman source on Sasanian Iran.\u0004 Correspondingly, Agathias’ negative assessment of the society, customs, and rulers of Persians have been taken as representative of the attitudes of Roman authors in sixth-century Constantinople toward barbarous Persia and its barbarian Sasanian kings. These negative views would have been rooted in Roman writers’ confidence \u0004 Agathias 2.30.3; translation from Joseph D. Frendo, Agathias: The Histories (Berlin, 1975), p. 65. the Cambridge Philological Society 15 (1969): 7–29; Philippe Hoffmann, “Damascius,” in R. Goulet, ed., Dictionnaire des philosophes antiques (1994), 2.541–593; Michel Tardieu, “Chosroès,” in ibid., pp. 309–318; and Joel T. Walker, “The Limits of Late Antiquity: Philosophy between Rome and Iran,” Ancient World 33 (2002): 45–69. (Leyden, 1879); Averil Cameron, “Agathias on the Sasanians,” Dumbarton Oaks Papers 23 (1969–1970): 69–183; and eadem, Agathias (Oxford, 1970). in their own society’…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 112,
+        "phase_f_doc_rank": 85,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "44bf3662af14c9fe",
+        "section_title": "5 A Roman Image of the “Barbarian” Sasanians",
+        "page_start": 88,
+        "page_end": 97,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Identity/representation-focused; not useful for economic benchmarking.",
+      "section_text_excerpt": "A Roman Image of the “Almost from earliest times in Europe the Orient was something more than what was empirically known about it.” This notion, formulated by Edward Said in his standard work Orientalism,\u0004 has had and still has—in spite of the many criticisms of Said’s work\u0004—considerable influence on how ancient historians perceive the relations between the Mediterranean world of Greeks and Romans and the Oriental world of the Persians. For Greeks and Romans the Oriental world was an alter orbis, a world that culturally, socially, and politically differed considerably from their own. It was a world that Romans found hard to understand, about which they were prejudiced, and to which they felt superior. Since the “invention of the barbarian” by the Greeks, in particular in Herodotus’ Histories, the Persian world had been considered barbarian.\u0004 This conception of Persian society helped shape the Greco-Roman self-image as a predominant power, in particular also because the Orient was a world that could be defeated and conquered as shown by the victories of the Athenians, Spartans, and Macedonians under Alexander the Great and of the Romans. However, after conquest, it was a world extremely difficult to hold and to control as even the history of our own days shows. Modern discussions about Romans and barbarians focus mainly on northern and western barbarians such as Alamanni, Franks, Goths, and Huns;\u0004 these are considered the barbarians par excellence, who differ in almost every respect from Greco-Roman civilization. In his fifteenth Oration Libanius described the \u0004 I would like to thank Danuta Shanzer and Ralph W. Mathisen for their critical and very helpful comments on an earlier draft of this paper. \u0004 Edward W. Said, Orientalism (London, 1978), p. 55. \u0004 See now e.g. Robert Irwin, For Lust of Knowing: The Orientalists and their Enemies (London, 2006), esp. Ch. 9. (Oxford, 1989); Pericles Georges, Barbarian Asia and the Greek Experience: From the Archaic Period to the Age of Xenophon (Baltimore, MD/London, 1994). \u0004 E.g. W. Goffart, Barbarians and Romans A.D. 418–584: The Techniques of Accommodation (Princeton, NJ, 1980); Patrick J. Geary, “Barbarians and Ethnicity,…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 64,
+        "phase_f_doc_rank": 112,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "11d62048aeb5f766",
+        "section_title": "B. Political and Religious Interpretations of Barbarian Activities",
+        "page_start": 98,
+        "page_end": 127,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Mostly political/religious framing of barbarian activity; any economic impact is indirect and not developed as evidence.",
+      "section_text_excerpt": "This page has been left blank intentionally At first glance, the barbarian raids\u0004 on Roman Greece seem straightforward: Costobocs, Heruls, and Goths from the later second century periodically came south into the Roman province of Achaea and subjected its ancient cities to arson, looting, and civic turmoil before retreating north again, often after a defeat in battle.\u0004 Although this reconstruction rested originally on a very small number of ancient literary sources, it also has long provided an explanation for archaeological destruction layers and thus the decline of civic life in Greece from the later second century on. Recent advances in awareness of ancient bias and archaeological documentation, however, have led some excavators to question the accuracy of this narrative, and in particular its applicability to every city and excavated site.\u0004 But few archaeologists are yet aware how fragmentary, contradictory, and classicizing the literary sources are, and how the role of the “barbarians” in them were changing faster than the traditions of recording their activities, moving from plunder to politics, and involving Greece in wider struggles between local and \u0004 This study benefited greatly from the editors’ comments, discussion at the Shifting \u0004 For barbarian raiders, see also Ziche in this volume. \u0004 Note the third-century Herulian “trail of fire and devastation” through Athens in A. Frantz, Late Antiquity: A.D. 267–700. Agora 24 (Princeton, NJ, 1988), p. 2; also P. MacKendrick, The Greek Stones Speak (New York/London, 1981), p. 482; Corinthian devastation by “invasion of the Visigoths” in J.H. Finley, Jr., “Corinth in the Middle Ages,” Speculum 7 (1932): 477–499, at p. 477. \u0004 New historical awareness: W. Goffart, “The Theme of ‘The Barbarian Invasions’ in Late Antique and Modern Historiography,” in Rome’s Fall and After (London, 1989), pp. 111–132; D. Whittaker, “L’importance des invasions du Bas-Empire: peut-on faire confiance aux historiens?,” Revue du nord-archéologie 77 (1995): 11–20; C.R. Whittaker, Rome and its Frontiers: The Dynamics of Empire (London/New York, 2004). New archaeological awareness: G.D.R. Sanders, “Recent Developments in the Chronology of …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 18,
+        "phase_f_doc_rank": 52,
+        "phase_g_doc_rank": 5,
+        "phase_g_score_0_to_100": 44.93,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "703c966a88efa8d0",
+        "section_title": "C. Imperial Manipulation of Perceptions of Barbarians",
+        "page_start": 128,
+        "page_end": 129,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "fallback_anchor",
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Section divider / blank-page boilerplate; no substantive content.",
+      "section_text_excerpt": "This page has been left blank intentionally",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f127d68ee1839e71",
+        "section_title": "8 Imperial Religious Unification Policy and its Divisive Consequences",
+        "page_start": 130,
+        "page_end": 153,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "state_reform_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "fallback_anchor",
+        "metadata_stripped"
+      ],
+      "notes": "Mentions Diocletian's military/economic/administrative reforms, but the section is primarily about religious policy and identity divisions; marginal economic relevance.",
+      "section_text_excerpt": "Diocletian, the Jews, and the Samaritans The reforms of Diocletian in a number of fields—military, economic, administrative, cultural, etc.—were intended to reunite the Roman Empire after the chaos that had preceded him.\u0004 In many senses he actually achieved this goal. The religious policies of this emperor who called himself “Iovius” played a particularly important role.\u0004 In Oriens, however, including Palestine, these religious policies tended toward the extreme, and included systematic persecutions of Christians.\u0004 To a large extent the results were the opposite of those Diocletian had intended: in the short term they produced long, drawn-out and widely resounding confrontations with influential groups in the population; in the long term—at least from Constantine onward—they laid the foundations for divisions and violent clashes between those Christians who had stood up to the persecutions and those whose reactions were perceived as treachery to the faith in time of trial. This study will look at a secondary process that took place in Palestine. Here too, the religious policies of Diocletian strengthened the tendencies to division between two religious and ethnic groups of “barbarians,” Jews and Samaritans. That Jews and Samaritans were “barbarians” is clear from linguistic evidence: the Jewish historian Josephus actually used this term more than once to describe his own people.\u0004 More importantly, Jews and Samaritans were characterized as barbarians throughout Roman literature, historiography and legislation. They \u0004 The scholarly literature is vast—see, e.g., S. Williams, Diocletian and the Roman Recovery (London, 1985), pp. 41–150; and R. Rees, Diocletian and the Tetrarchy (Edinburgh, 2004), esp. pp. 13–45, 72–90, which includes useful English translations of the main primary sources. \u0004 Williams, Diocletian, pp. 153–172; Rees, Diocletian, pp. 46–59. \u0004 Williams, Diocletian, pp. 173–185; Rees, Diocletian, pp. 59–71. Cf. also M. Sordi, The Christians and the Roman Empire (London/Sydney, 1983), pp. 122–132. \u0004 Josephus included the Hebrew sources as part of the barbarian culture, while arguing that “the tradition of keeping chronicles of antiquity is found rather a…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 102,
+        "phase_f_doc_rank": 83,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "adf325c04d678710",
+        "section_title": "10 Barbarians as Spectacle: The Account of an Ancient “Embedded Reporter” (Symm. Or. 2.10–12)",
+        "page_start": 154,
+        "page_end": 163,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Primarily cultural/political material (spectacle/representation), not economic evidence.",
+      "section_text_excerpt": "The Account of an Ancient “Embedded “The only good barbarian is a dying barbarian” might be a crude but accurate paraphrase of the attitude of the late Roman senator Q. Aurelius Symmachus (and of many of his contemporaries) toward the peoples living beyond the frontiers of the Roman world.\u0004 For citizens of the empire “barbarian” was synonymous with “non-Roman” and, therefore, “uncivilized,” as exemplified by a famous passage in his third Relatio (3.4), in which Symmachus claimed that only those entirely “assimilated to the customs of barbarians” could be hostile to a symbol of Romanitas as revered as the Altar of Victory. Because barbarians posed a threat to civilization, the spectacle of their death in the arena was always welcome to Roman spectators.\u0004 And, when barbarians refused to comply with the expectations of their Roman masters—as in the case of a band of unfortunate Saxon prisoners, who preferred suicide to fighting in the arena, thus spoiling the celebrations for the questorian games of Symmachus’ son Memmius (393 CE)—cultured aristocrats such as Symmachus could draw on a vast array of philosophical and historical exempla that allowed them to show “the forbearance of Socrates” in the face of adversity (Symm. Ep. 2.46). The defense of the frontier against the barbarian menace was a subject dear to imperial propaganda and popular with taxpayers, and was in fact the main theme of Symmachus’ second panegyric in honor of Valentinian I. In that oration, barbarians appear both as a threat to the security of Rome and as part of a spectacle orchestrated by the emperor for the benefit of his senatorial guest, thus offering us some interesting insights into the relationship between senate and court vis-à-vis the barbarian question. \u0004 See P. Heather, “The Barbarian in Late Antiquity,” in R. Miles, ed., Constructing Identities in Late Antiquity (London, 1999), pp. 234–242. \u0004 Symm. Rel. 47.1 describes the joy of the Roman people watching the “column of the defeated people in chains” (i.e. Sarmatians) marching through Rome during a triumphal procession and then fighting in the arena. On 1 January 370, the Roman senator Quintus Aurelius Symmachus delivered a panegyri…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 175,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6b0dd74beca8cbf9",
+        "section_title": "PART II: Cultural Interaction on the Roman/Barbarian Frontiers",
+        "page_start": 164,
+        "page_end": 165,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Part divider / blank-page boilerplate; no substantive content.",
+      "section_text_excerpt": "This page has been left blank intentionally",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f41fd8d7c5043187",
+        "section_title": "A. Becoming Roman: Movements of People across the Frontier and the Effects of Imperial Policies",
+        "page_start": 166,
+        "page_end": 167,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Section divider / blank-page boilerplate; no substantive content.",
+      "section_text_excerpt": "Movements of People across the Frontier and the Effects of Imperial This page has been left blank intentionally",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "cb6dbee0302adc60",
+        "section_title": "11 The ius colonatus as a Model for the Settlement of Barbarian Prisoners-of-War in the Late Roman Empire?",
+        "page_start": 168,
+        "page_end": 180,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "land_tenure_taxation",
+        "barbarian_settlement",
+        "fiscal_obligations"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Directly relevant to economic institutions: settlement of prisoners-of-war on land, tenancy-like arrangements, and obligations that intersect with taxation and labor/control.",
+      "section_text_excerpt": "The ius colonatus as a Model for the Settlement of Barbarian Prisoners-of-War in the Late Roman Empire? In late 408 or early 409, a group of Huns under the leadership of Uldin were forced to retreat back across the Danube following a series of raids upon Roman settlements in Thrace. According to the historian Sozomen, writing some thirty years after these events, Uldin’s withdrawal was due in no small part to the defection of a number of his allies.\u0004 Of those who remained loyal, Sozomen makes special mention of the Sciri, who, he says, were slaughtered in the retreat. The survivors were taken in chains to Constantinople, where some were sold or gifted into slavery, and others ordered to settle on the land. Sozomen observes that these individuals could still be found dispersed across the landscape of Bithynia in his own time. This event is one among numerous attested instances of the settlement of conquered barbarians on land inside the boundaries of the Roman Empire.\u0004 What is unique about this particular settlement, however, is the survival of a law, issued on 12 April 409 at Constantinople in the names of Honorius and Theodosius II, that purports to lay down the precise terms under which the Sciri were to be settled. This text provides the most detailed extant evidence for the settlement of barbarian prisoners-of-war as rural cultivators in the late Roman period, and it is worth citing in full here:\u0004 \u0004 See G. Wirth, “Rome and its Germanic Partners in the Fourth Century,” in W. Pohl, ed., Kingdoms of the Empire: The Integration of Barbarians in Late Antiquity (Leiden, 1997), pp. 13–55, and P. Heather, “Foedera and foederati of the Fourth Century,” in T.F.X. Noble, ed., From Roman Provinces to Medieval Kingdoms (London/New York, 2006), pp. 292–308. References to the settlement of barbarians are collected by G.E.M. de Ste. Croix, The Class Struggle in the Ancient Greek World: From the Archaic Age to the Arab Conquest (London, 1981), “Appendix III,” pp. 509–518. \u0004 CTh 5.6.3: “[Idem aa. A]nthemio p(raefecto) p(raetori)o. Sciras barbaram nationem maximis Chunorum, quibus se coniunxerunt, copiis fusis imperio nos[tro] subegimus. ideoque damus omnibus copiam ex praedi…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 34,
+        "phase_f_doc_rank": 18,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 60.13,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "add5af87c9f05178",
+        "section_title": "Conclusions",
+        "page_start": 180,
+        "page_end": 181,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "land_tenure_taxation",
+        "fiscal_obligations",
+        "local_economic_conditions"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Most concentrated economic/fiscal takeaway: explicitly connects settlement/tenancy to taxation obligations and notes that terms could respond to local economic conditions and landowner needs.",
+      "section_text_excerpt": "Some general patterns in the settlement of barbarian prisoners-of-war are discernible in the ancient sources, and the law concerning the settlement of the Sciri does reveal the broad trajectories of such settlements. Often, it seems, the settlement of these individuals entailed explicit provisions about their obligation for taxation. This nexus of tenancy and fiscal responsibility renders comparison with the legislation concerning registered tenancy in the period fruitful. But the extent to which the Sciri, at least, were supervised by the state, and the nature of the restrictions upon their freedom of movement, exceeded anything that was enacted for registered tenants. Some further caveats are also pertinent. It is likely that restrictions of the sort laid down in this text were characteristically imposed upon conquered barbarians. But the explicit recognition of unique circumstances in this law is a reminder that any such settlement is likely also to have responded to local economic conditions, and to the needs of local municipal aristocracies and landowners. Likewise, the socio-economic arrangements that might accompany these settlements also present problems, not only for the imperial administration and landowners, but also for modern commentators. What was the relationship between these individuals and their new landlords? Were they “free,” “dependent,” or a combination? To whom were they ultimately held responsible? It is here that the starkest contrast with the registered tenancy of the fiscal system is apparent. Registration of coloni amounted to the public acknowledgement of an existing arrangement. The coloni in question remained juridically free.43 The settlements of the Sciri and other barbarian prisoners-of-war, however, do not conform to this pattern, and the status of these individuals is not at all clear. In the law of 409, the landowners and their new tenants are in a strange intermediate position, where a private relationship is purportedly created by a public enactment, but that private relationship continues to be mediated by the office of the praetorian prefect. We may perhaps, with caution, interpret this text as providing another example …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 143,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ed75fa999c735687",
+        "section_title": "12 Spies Like Us: Treason and Identity in the Late Roman Empire",
+        "page_start": 182,
+        "page_end": 194,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "frontier_interchange"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Mentions cultural/economic interchange across frontiers, but the argument is primarily about loyalty and identity rather than economic mechanisms or evidence.",
+      "section_text_excerpt": "Spies Like Us: Treason and Identity in the Many inhabitants of lands outside of the formal provinces of the Roman Empire participated in Roman culture and the Roman economy, and as the Roman army employed more foreign elites and soldiers in the fourth century, cultural contacts across the frontiers increased. As this interchange evolved, some foreign elites from one side of the frontier functioned in high circles of the Roman state far from home. At the same time, other persons living on the other side of the frontier technically were part of the Roman state but felt that they were not. Those from both sides of the frontier behaved in ways that Roman law would call treacherous as participation in frontier culture created confused political identities and blurred distinctions between the Roman state and other polities.\u0004 A number of questions arise about the so-called traitors to the Roman state who appear frequently from the 350s to the 370s on both the eastern and western frontiers. Did competition among multiple identities motivate treacherous exchange of information with the enemy in the mid-fourth century? Did such traitors renounce not only their loyalty to the state, but also their Roman (or foreign) identity? Did Roman authorities, or members of the imperial elite such as Ammianus, perceive treason as a crime linked to ethnic identity, and did ethnic biases inform their treatment of traitors? This study will attempt to answer these, and other, questions about espionage on the Roman frontier. \u0004 For the nature of the frontier, C.R. Whittaker, Frontiers of the Roman Empire: A Social and Economic Study (Baltimore, MD, 1994), pp. 192–242. For identity, David Potter, The Roman Empire at Bay (London, 2004), p. 443; Greg Woolf, Becoming Roman: The Origins of Provincial Civilization in Gaul (Cambridge/New York, 1998); Stephen Mitchell, Geoffrey Greatrex, eds., Ethnicity and Culture in Late Antiquity (London, 2000); Guy Halsall, “Social Idenities and Social Relationships in Early Merovingian Gaul,” in Ian Wood, ed., Franks and Alamanni in the Merovingian Period: An Ethnographic Perspective (San Marino, 1998), pp. 141–143; Clifford Ando, Imperial Ideology and Provin…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 96,
+        "phase_f_doc_rank": 68,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "32d363973d8db0fd",
+        "section_title": "Conclusion",
+        "page_start": 194,
+        "page_end": 195,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Conclusion focused on perceptions/identity and loyalty; not usable as economic evidence.",
+      "section_text_excerpt": "These incidents tell us much about perceptions of the relationship of culture and ethnicity to state loyalty. In the mid-fourth century, confusion about political loyalty emerged primarily in dealings with barbarian client states, mainly in the west, when emperors such as Valentinian allowed Germanic kings to exercise royal authority while serving in the Roman army. Thus, persons of barbarian ethnic backgrounds were assumed to be more naturally inclined toward treasonous behavior, even when they were recruited into imperial service. On several occasions, loyalty to ethnic origins competed directly with loyalty to the Roman state, and imperial policies that permitted dual-state service highlighted the ambiguous political loyalties of Alamannic kings. But participation in the “civilized” culture of Rome and Persia was not expected to generate quandaries concerning to which imperial authority individuals owed political allegiance. In fact, the assumption was that subscribing to a civilized culture would generate the preconditions for loyalty to Roman political authority, rather than posing a challenge to it.59 Acculturated inhabitants of the Roman and Persian empires generally thought that loyalty to the state was exclusive. Regardless of their ethnic and cultural background, they expressed their loyalty to a single state and expected their colleagues to do the same. In special cases, individual Romans and Persians might deviate from the norm and adopt different political loyalties, but even traitors knew that they were flagrantly violating the norm, and loyalty to the state remained the accepted default condition. Thus, in the cases studied above, defectors on the eastern frontier—the only place the Romans encountered another “civilized” opponent—usually took up a new political identity at the same time that they adopted any elements of a new cultural identity, thus fulfilling the expectation of single political allegiance. 59 For the role of Hellenization in building political loyalty and identity in late Roman Asia Minor, see Stephen Mitchell, “Ethnicity, Acculturation, and Empire in Roman and late Roman Asia Minor,” in Mitchell, Greatrex, eds., Ethnicity and C…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 75,
+        "phase_f_doc_rank": 103,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "52ca4a52720c5479",
+        "section_title": "Chapter 13 The “Runaway” Avars and Late Antique",
+        "page_start": 196,
+        "page_end": 203,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Diplomacy/fugitives topic; not useful as economic evidence for Western Roman decline.",
+      "section_text_excerpt": "The “Runaway” Avars and Late Antique The treatment of fugitives was extensively discussed in late antique diplomacy, and their status can shed interesting political light on different forms of Roman and barbarian integration and interaction. While the flight of individuals from the Roman Empire to the territory of an enemy or vice-versa happened frequently, there also existed a different form of flight, in this case, the desertion to the enemy, of large groups, such as a part of a people or even the whole. The subject of this chapter is the “runaway” Avars, as depicted in the fragment of Menander Protector about the Avar embassy to Justin II that was received in Constantinople on 21 November 565 CE:\u0004 “Ὅτι ἐπὶ Ἰουστίνου τοῦ νέου οἱ τῶν Ἀβάρων πρέσβεις παρεγένοντο ἐν Βυζαντίῳ τὰ συνήθη δῶρα ληόμενοι, ἅπερ τῷ κατ’αὐτοὺς ἔθνει Ἰουστινιανὸς ὁ πρὸ τοῦ βασιλεὺς ἐδίδου· ἦσαν δὲ καλῴδιά τε χρυσῷ διαπεποικιλμένα, ἐς τὸ εἴργειν τῶν ἀποδιδρασκόντων ἐπινενοημένα, καὶ κλῖναι ὁμοίως καὶ ἄλλα τινὰ ἐς τὸ ἁβρότερον ἀνειμένα.” (“During the reign of the younger Justin the envoys of the Avars came to Byzantium to receive the usual gifts which the previous emperor, Justinian, had given to their tribe. These were cords worked with gold which were made to confine what was escaping, and likewise couches and other luxury goods.”\u0004) The immediate problem concerns the phrase “ἐς τὸ εἴργειν τῶν ἀποδιδρασκόντων” (Men. 8.4–5). Blockley translates “to confine what was escaping,” and in his note explains, “this is apparently a reference to cords with which the Avars bound up their hair,”\u0004 with evidence from Agathias and Corippus about the long and shaggy hair of the Avars.\u0004 Ἀποδιδράσκω, however, was frequently used of human beings who were running away, fleeing, or escaping.\u0004 But Blockley seems insufficiently puzzled by the concept of “absconding” or “runaway” hair and provides inadequate support for his interpretation. Menander nowhere connects the cords with hair. The fact that Avars were famously disheveled \u0004 Y. Kulakovskii, Istoriya Vizantii (St Petersburg, 1996), 2.276. \u0004 Men. 8.1–6; the numeration of fragments by Menander and translation according to R.C. Blockley, The History of Menander…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 110,
+        "phase_f_doc_rank": 81,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "71dc35069f2f0942",
+        "section_title": "13 The “Runaway” Avars and Late Antique Diplomacy",
+        "page_start": 196,
+        "page_end": 196,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Tiny chapter header / wrapper, no substantive content extracted.",
+      "section_text_excerpt": "The “Runaway” Avars and Late Antique",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "40a11503ee5c92f5",
+        "section_title": "B. Becoming Roman: Social and Economic Interchange",
+        "page_start": 204,
+        "page_end": 205,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Section divider / blank-page boilerplate; no substantive content.",
+      "section_text_excerpt": "This page has been left blank intentionally",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "1f929c9dbbbae39f",
+        "section_title": "14 Captivity and Romano-Barbarian Interchange",
+        "page_start": 206,
+        "page_end": 219,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "slavery_captivity",
+        "cross_border_exchange"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "fallback_anchor",
+        "metadata_stripped"
+      ],
+      "notes": "Captivity/slavery and ransom/interchange can matter economically, but this section is largely narrative and only weakly supports economic mechanisms for the benchmark chapter.",
+      "section_text_excerpt": "In the September issue of The Gentleman’s Magazine for the year 1748, a disturbing letter was published: “Sir, it is highly probable that very few of our countrymen know of the great hardships and cruel usage of 64 poor Englishmen, now in slavery, in the kingdom of Morocco, in Barbary. It is greatly to be regretted that a subscription is not set on foot for their deliverance from the intolerable tyranny of their inhuman task-masters … For what state in life can be worse than Turkish bondage!” Already the next month’s issue reported the establishment of a common fund to ransom the captives and posed a number of questions that had naturally arisen: How long had the prisoners been in slavery? About what sum would be necessary for redeeming and bringing them home? And what of their families? By November, it had been learned that the men had crewed a privateer named Inspector that had been wrecked off Tangier Bay almost three years earlier, on 4 January 1746. Several of the captives had already attempted escape: some successfully, others at the cost of their heads. By December the affair had become a cause célèbre. One of the escapees had been located, and his story of the captivity relayed: having swum to safety, the men were caught, stripped, imprisoned, and treated as slaves of the Moorish governor; 28 of the 96 captives had already, “turned Moors [that is, converted to Islam], not being able to undergo the fatigues we have undergone.” Even so, help, it seemed, was on the way, for King George II had sent an ambassador to settle a ransom. Yet fully one year later, the December 1749 Gentleman’s Magazine reported that negotiations had faltered when the ambassador arrived short of the £4399 demanded for the captives. After 1749 negotiations seem to have broken off, and the magazine ceased all correspondence on the affair. One of the survivors, Thomas Troughton, did, however, publish a narrative of his experience. His object was, in part, to memorialize what he had suffered, but above all to rally his countrymen against what was at the time an all-too-common occurrence, for the crewmen of the Inspector represented only a fraction of the tens of thousands of Europeans …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 94,
+        "phase_f_doc_rank": 91,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f2a8ed77023c0c4b",
+        "section_title": "15 Barbarian Raiders and Barbarian Peasants: Models of Ideological and Economic Integration",
+        "page_start": 220,
+        "page_end": 239,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "economic_integration_models",
+        "rural_labor",
+        "roman_barbarian_relations"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "fallback_anchor",
+        "metadata_stripped"
+      ],
+      "notes": "Explicitly addresses economic integration (raiders vs peasants) and how Roman ideological framing can mislead economic-impact claims; useful conceptual support for the benchmark chapter.",
+      "section_text_excerpt": "The concept of the barbarian in Greco-Roman civilization, for its contemporaries, was first and foremost a cultural construct. In its earliest manifestation in the Greek world the concept was even primarily linguistic (and to a lesser degree ethnic): barbarians were those who did not speak, and therefore were not, Greek. For the Greeks and Romans, it was the perceived cultural difference with the barbarians that determined their perception and formulation of other, to us, more fundamental, more tangible, and hence more objective differences. In practice, differences beyond culture were real and shaped political, military, and other relations between Romans and barbarians, but actual events involving barbarians normally were interpreted by Roman observers through the prism of perceived cultural difference. To the late Romans, barbarians were recognizable because of the sweeping cultural generalizations that had been elaborated in the late Republican and early imperial periods: barbarians were ferocious but cowards, dominated by their passions but docile, and so on.\u0004 It was not necessary for late Roman authors to analyze specific traits in detail in order to know and demonstrate that they were barbarian.\u0004 Barbarians also were a cause for concern. Synesius, for example, identified cultural differences between Romans and barbarians as a fundamental problem.\u0004 In a rather strange panegyric delivered to Arcadius in 399, Synesius presented very distinct and seemingly objective—even if somewhat paranoid—arguments.\u0004 Synesius was worried about Goths in the Senate and in the magistracies, Gothic \u0004 See Y.A. Dauge, Le barbare (Brussels, 1981), pp. 413ff., for the “essence of the barbarus,” esp. 456 for a summary table of barbarian characteristics. \u0004 For the Roman stereotyping of barbarians see Dauge, Le barbare, pp. 57–380. Dauge’s argument (e.g. 132, for the Augustan period) that Roman barbarian typologies evolved according to increasing objective knowledge seems to be contradicted by his examples showing the persistence of cultural stereotypes. \u0004 For a detailed discussion of Synesius’ views on barbarians, dealing also with the discrepancies between De regno and the markedl…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 16,
+        "phase_f_doc_rank": 11,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 63.82,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c1aa377f29596e64",
+        "section_title": "Conclusions",
+        "page_start": 239,
+        "page_end": 241,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "economic_integration_models",
+        "roman_economy_impact",
+        "evidence_limits"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Methodologically useful: emphasizes that late Roman texts are anecdotal and unreliable for generalizing economic damage/impact, helping separate evidence from interpretation.",
+      "section_text_excerpt": "The present discussion allows two sets of conclusions. On the one hand, late Roman texts about barbarians more often than not are not a good guide for evaluating the economic development of the barbarians or their impact on the Roman economy. Contemporary observers make quite diverse statements on the economic damage caused by “barbarian raiders,” and also vary in their opinions on the advisability of the use of barbarians as “barbarian peasants.” Indeed, late Roman writers do not even seem able to agree whether there was a category of people that, at the same time, could be distinctly barbarian and also fully integrated into the rural landscape as “normal” peasants. The observation that contemporary written evidence is anecdotal and cannot easily be used to infer general trends of historical development is, of course, not new either. But what our discussion shows, beyond restating this point, is why this seems especially true with regard to barbarians and their impact on the 72 See E. Frézouls, “Les deux politiques de Rome face aux barbares d’après Ammien Marcellin,” in E. Frézouls, ed., Crise et redressement dans les provinces européennes de l’Empire (Strasbourg, 1983), pp. 175–197, for the motivations of Ammianus’ anti- barbarism. 73 For example 16.12.2 and 16.3.2. 74 E.g., on the Alamanni, Amm. 17.10.10. 75 Amm. 20.10.2. empire. Roman authors had to deal with the tension between ideological reality and political and economic reality. Barbarians are stereotypically defined in rather simple terms, but late Roman observers are aware of the fact that these traditional stereotypes are not always—indeed, rarely—consistent with reality. Thus, we have snapshots of Roman elite opinion where the account resulting from this opposition depends very much on the precise circumstances in which the Roman observer operates. The tension between reality and ideology does not allow for detached objective discussions of barbarians and the Roman economy. The various and changing views on barbarians in writers such as Ammianus and Themistius reveal more about Ammianus and Themistius, and the changing circumstances in which they write, than they actually show about the changing ba…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 47,
+        "phase_f_doc_rank": 60,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4ed1d89488a308e2",
+        "section_title": "C. A New Era of Accommodation",
+        "page_start": 242,
+        "page_end": 243,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Section divider / blank-page boilerplate; no substantive content.",
+      "section_text_excerpt": "This page has been left blank intentionally",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4c47c291d771fe4a",
+        "section_title": "16 Kush and Rome on the Egyptian Southern Frontier",
+        "page_start": 244,
+        "page_end": 253,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Eastern/southern frontier case study; not useful for West Roman economic evidence or mechanisms.",
+      "section_text_excerpt": "Kush and Rome on the Egyptian Southern This study proposes to investigate the political and religious interaction of the Kushite and Roman empires on the Egyptian southern frontier between the third and sixth centuries CE. Kush refers to the region of the Nile Valley designated by the ancient Egyptians as south of the second cataract, although lower Nubia between the first and second cataract could refer to Kush when the territory was under Kushite control. Kushite history is divided into the Napatan (ca. 700–300 BCE) and Meroitic (ca. 300 BCE–350 CE) periods. Meroïtic Kush’s capital was located at Meroë. Nubia also is a common designation for Kush, although the term “Nubian” during Late Antiquity could also refer to non-Meroïtic peoples inhabiting the middle Nile valley, such as the Noubades and Blemmyes, who had occupied much of the northern Nubia as of the late fourth century. The first book of Procopius’ Persian Wars\u0004 provides the major documentary evidence for Roman and Byzantine frontier policy toward the Nubian kingdoms of the Noubades and Blemmyes south of Egypt, and also implicitly addresses the interaction between Rome and Meroitic Kush before the political collapse of the Meroitic state in the middle to late fourth century CE. The northern Nubian frontier area known as the Dodekaschoinos (“Twelve schoinos region”), an \u0004 The research for this study is based upon my dissertation The Roots of Nubian Christianity: A Transitional Culture in the Late Africa; The Silko Inscription and the Temple of Kalâbsha as Context (Claremont Graduate University, 2007). \u0004 Procopius, Bell.Pers. 1.19.27–37, collected with other sources in T. Eide, T. Hagg, R. Holton Pierce, L. Torok, eds., Fontes Historiae Nubiorum: Textual Sources for the Middle Nile Region Between the Eighth Century BC and the Sixth Century AD, Vol. III: From the First to the Sixth Century AD (hereafter FHN) (Bergen, 1998). The Procopius text is in FHN 3.328, 1188–93. See also Stanley Burstein, ed., Ancient African Civilizations (Princeton, NJ, 1998), pp. 73–75. approximately 135 kilometer-long frontier area running south from Aswan, was a buffer zone established by Kush and Rome in the aftermath of the …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 138,
+        "phase_f_doc_rank": 109,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6b2ccadae1ad5564",
+        "section_title": "17 Petra and the Saracens: New Evidence from a Recently Discovered Epigram",
+        "page_start": 254,
+        "page_end": 261,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Epigraphic/eastern frontier topic; not relevant to the benchmark's West Roman economic focus.",
+      "section_text_excerpt": "Petra and the Saracens: New Evidence from Petra’s role\u0004 in the defense of the east against the rising Saracen threat, though it had been the capital city of Palaestina Salutaris (later Tertia) since the middle of the fourth century, has remained obscure.\u0004 There is little literary or documentary evidence to suggest how this city participated in the defensive system along the eastern frontier. Nor is there much evidence for how the people of Petra and its territory interacted with the Saracens that lived in the region, or how they considered themselves distinct from the Saracens, though they shared cultural similarities with their nomadic neighbors. An epigram recently discovered at Petra promises to shed some light on these issues, and may indeed provide evidence for Petra’s role in the defense of the eastern frontier against Saracen raids. It should be emphasized that what follows is not meant to be a thorough interpretation of all of the issues relating to the text.\u0004 Rather it is meant to highlight—in a strictly preliminary sense—the potential historical importance of a little-known document for the military role of Petra and cultural changes within the city in Late Antiquity. \u0004 Much of the research for this chapter was done while I was the Whitney Fellow at the Center for Epigraphical and Palaeographical Studies (Ohio State University), in the summer of 2004. I wish to thank the conference participants at Shifting Frontiers for their useful criticisms on the resulting chapter. The ideas initially presented there were revised and substantially improved in light of the generous encouragement and suggestions of Glen W. Bowersock, Zbigniew T. Fiema, David F. Graf, and Dennis H. Groh. Of course, all errors in fact and judgment remain my own. Above all, I thank Illinois Wesleyan University for their support of faculty research. and New Interpretations,” in J.H. Humphrey, ed., The Roman and Byzantine Near East, vol. 3 (Portsmouth, RI, 2002), pp. 191–252, including an extensive bibliography. \u0004 The inscription has begun to receive some attention, e.g. Ariel S. Lewin, “‘Amr Ibn ‘Adî, Mavia, the Phylarchs and the Late Roman Army: Peace and War in the Near East,” in Arie…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 99,
+        "phase_f_doc_rank": 71,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "53ebe4bbe97cf447",
+        "section_title": "18 Elusive Places: A Chorological Approach to Identity and Territory in Scythia Minor",
+        "page_start": 262,
+        "page_end": 272,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "fallback_anchor",
+        "metadata_stripped"
+      ],
+      "notes": "Identity/territory framing for Scythia Minor; not providing concrete economic evidence for Western Roman decline.",
+      "section_text_excerpt": "to Identity and Territory in Scythia Minor As the geographer D.B. Knight has stated, “In a sense, territory is not; it becomes, for territory itself is passive, and it is human beliefs and actions that give territory meaning.”\u0004 Territories, provinces, nations, or whatever designation we choose, are spatial patterns on the landscape and can be “produced” and “reproduced” as society, politics, and economics dictate, so that their boundaries become culturally generated “geographies of the mind.”\u0004 Every human group assigns a symbolic meaning to its landscape, which in itself is sufficiently powerful to give rise to conflict. Since the late 1980s, the discipline of regional geography, and especially human (or cultural) geography, has witnessed a theoretical transformation. This philosophical renaissance analyzes “place” and “territory” and how human geography can study land categorization within the context of social theory.\u0004 This study explores some ideas from the field of “new regional geography” and how they might assist our understanding of human relations, delimiting territorial boundaries, and defining place during Late Antiquity.\u0004 This is a behavioral, rather than an ethno-linguistic, approach to understanding identity; socioeconomic relations are spatialized and cultural landscapes develop as a result of human practice. The criteria for identifying \u0004 From Greek χώρος (“place”), first used by Strabo; the study of the causal relations between geographical phenomena occurring within a particular region. \u0004 D.B. Knight, “Identity and Territory: Geographical Perspectives on Nationalism and Regionalism,” Annals of the Association of American Geographers (AAAG) 72 (1982): 514–531. \u0004 M.A. Lewis, “Elusive societies: A Regional–Cartographical Approach to the Study of Human Relatedness,” AAAG 81.4 (1991): 605–626, at p. 609. \u0004 For “new regional geography,” see, e.g., Mary Beth Pudup, “Arguments within Regional Geography,” Progress in Human Geography (PHG) 12.3 (1988): 369–390; Anne Gilbert, “The New Regional Geography in English and French-Speaking Countries,” PHG 12.2 (1988): 208–228. For critique, see, e.g., Hans Holmén, “What’s New and What’s Regional in the ‘New Reg…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 44,
+        "phase_f_doc_rank": 69,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "cb24123c9f2179ce",
+        "section_title": "Conclusion",
+        "page_start": 272,
+        "page_end": 283,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Conclusion for the Scythia Minor chapter; not useful for the benchmark's economic evidence needs.",
+      "section_text_excerpt": "After the Slavic invasions at the beginning of the seventh century, and until the ninth century, no textual information is available regarding Scythia Minor— ruralization and a state of “placelessness” had supervened. After the breakup of the Danubian limes in 602 by Avars and Slavs and their penetration into the empire, many episcopal sees declined or even disappeared. In the Dobrudja, a bishopric at Axiopolis existed in the eleventh century during the reign of emperor Alexius I Comnenus.27 Tomis, the largest urban area and major Black Sea port, should have been in a similar situation, for it continued to exist as a city even though it witnessed a process of decline widespread in Europe at the time of the barbarian invasions. Tomis preserved its Greek name until the tenth century, when it became yet another Roman palimpsest on the landscape, known as “Constantza.”28 27 Paul Stephenson, Byzantium’s Balkan Frontier: A Political Study of the Northern Balkans, 900–1204 (Cambridge, 2000), p. 97. This page has been left blank intentionally LUCIUS [son of Titus, leading the Goths] Who should I swear by? Thou believest no god: That granted, how canst thou believe an oath? What if I do not? As, indeed, I do not; Yet, for I know thou art religious And hast a thing within thee called conscience, … Therefore I urge thy oath; for that I know An idiot holds his bauble for a god And keeps the oath which by that god he swears, To that I’ll urge him …. (Titus Andronicus 5.1) Sometime around 397, a landowner named Publicola wrote Augustine of Hippo about happenings on his estates in the “region of the Arzuges,” probably southern Tunisia or western Libya.\u0004 Publicola’s managers on these remote lands contracted with barbarians for labor and protection and in the process accepted oaths that the barbarians swore by their own gods, whom Publicola called daemones. Publicola’s main question was whether oaths sworn by demons in any way contaminated the Christians who accepted the oaths or those who profited from the arrangement. His 13 other questions ranged across issues broadly related to sacredness and purity—what happens, for example, if a Christian eats food offered to an idol. Pub…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 85,
+        "phase_f_doc_rank": 130,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a6def5171933e44b",
+        "section_title": "PART III: Creating Identity in the Post-Roman World",
+        "page_start": 284,
+        "page_end": 291,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "settlement_accommodation_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "fallback_anchor",
+        "metadata_stripped"
+      ],
+      "notes": "Some potentially relevant framing about settlement/accommodation on Roman soil, but primarily identity-focused and not concrete economic evidence.",
+      "section_text_excerpt": "This page has been left blank intentionally Questions about the nature of the settlement of barbarians on Roman soil about the techniques of accommodation. As Goffart wrote then, the sources on the settlement of the Visigoths and the Burgundians are scanty, speak at a great distance from the actual settlement, and do not tell us very much, the Visigothic sources even more so than the Burgundian ones.\u0004 This opinion had been expressed already by Ernst Theodor Gaupp, who wrote in 1844, “The Visigothic legal code contains relatively few references to the division of lands and those are much more laconic than the Burgundian one.”\u0004 All authors since Gaupp agree that four entries in the Codex Euricianus (CE) (276–277, 312, and a fragment of 304) and about four or five of the Liber Iudiciorum or Lex Visigothorum (LV), issued by Reccesvinth (649–672) in the mid-seventh century, those expressively concerned with sortes Gothicae and tertiae Romanae, are the legal evidence for the modalities of the settlement. These laws can be summarized as follows: CE 276 concerns the disputes about borders of possessions and mentions Goths as hospites, who are to show the judges where to draw the borders (LV 10.3, 5); CE 277 mentions “sortes Gothicae” and “tertiae Romanae,” and a limit of 50 years is given for any disputes about them (LV 10.2, 1–3,1); CE 304 belonged to the titulus “De venditionibus” and seems to have dealt with the transfer of lands between Gothi and Romani within the territory of a civitas. Its exact meaning is unclear; CE 312 concerns deals between a Goth and a Roman, through which possessions were transferred that rightfully could be claimed by another \u0004 Walter Goffart, Barbarians and Romans. A.D. 418–584. The Techniques of Accommodation (Princeton, NJ, 1980), p. 103. Provinzen des Römischen Westreiches in ihrer völkerrechtlichen Eigenthümlichkeit und mit Rücksicht auf verwandte Erscheinungen der alten Welt und des späteren Mittelalters dargestellt (Breslau, 1844), pp. 392ff. Roman. In LV 5.4.20 this became a general rule without any mention of LV 10.1.8, called a lex antiqua, concerns the division of lands and woods between Goths and Romans (two parts for the Goths…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 88,
+        "phase_f_doc_rank": 74,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "33e93894631030c6",
+        "section_title": "21 Building an Ethnic Identity for a New Gothic and Roman Nobility: Córdoba, 615 AD",
+        "page_start": 292,
+        "page_end": 303,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "elite_property_transfer"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Contains legal/documentary material (dowry/gifts) with some economic texture, but it is post-Roman/identity-focused and only marginally supports the benchmark chapter.",
+      "section_text_excerpt": "Among the model notarial documents known as the Formulae wisigothicae, number 20 is of exceptional interest. It is a record of gifts given as dowry by a groom to his bride, called a donatio ante nuptias in Roman law.\u0004 The Formula stands out from the others in this collection. It is by far the longest and it is written in verse, 88 quite respectable hexameters if compared to other cultivated writings of the times. Moreover it is the only text of the group that still preserves authentic traces of the juridical act for which the original document was issued. The name of the groom and that of the bride who received the donation have been replaced by the pronoun ille, as is standard in this kind of document.\u0004 However, personal epithets given to the bride have been preserved, and these are characteristic of a unique social status. Even the current formula retains part of the date on which the original was signed: the third year of the reign of Sisebut, i.e. between February and March 614 and the same months of the following year.\u0004 Unfortunately the document does not mention the place where it was signed. However, an inference from other formulae of the collection, as well as the history of its textual transmission, allow the deduction that the dowry gift was made in the city of Córdoba.\u0004 Indeed, a will formula in the collection, securely dated to the times of the Visigothic monarchy, indicates that such wills were read out loud in Patricia Corduba, with the principal members of its municipal curia acting as witnesses; the document ended with the order to record it among the gesta of the municipality.\u0004 Allusions to these notables and to the former Roman municipal \u0004 Form.Wis. 20: J. Gil, ed., Miscellanea Wisigothica (Seville, 1972), pp. 90–94; it also was edited by K. Zeumer, MGH Leges V. Formulae (Hannover, 1886), pp. 583–585. \u0004 Form.Wis. 20.1–2: Insigni merito et Getiçe de stirpe senatus / illius sponsae nimis dilectae ille. \u0004 Form.Wis. 20.85–87: “Carta manet mensis illius, conscripta calendis / ter nostrii uoluto domini foeliciter anno / gloriosi merito Sisebuti tempore regis.” On Sisebut’s chronology see K. Zeumer, “Die Chronologie der Westgothenkönige des Reiches …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 84,
+        "phase_f_doc_rank": 114,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "833a1b7ea98fe237",
+        "section_title": "22 Vascones and Visigoths: Creation and Transformation of Identity in Northern Spain",
+        "page_start": 304,
+        "page_end": 319,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Primarily regional identity/history in northern Spain; not useful for West Roman economic evidence.",
+      "section_text_excerpt": "Creation and Transformation of Identity in Any examination of the Vascones during the Early Middle Ages must first acknowledge the limitations of the sources, both literary and archaeological.\u0004 The territorial extent of the people known as Vascones during the Roman period is well known from early imperial sources, particularly Strabo, Pliny, and Ptolemy.\u0004 The heart of their territory stretched from the Atlantic coast at the western end of the Pyrenees along the Arga and Ega river valleys to their confluence with the Ebro, an area corresponding roughly to the modern Spanish province of Navarre. Three major cities lay along this axis: Oiasso, on the Atlantic coast (modern Irún), Pompaelo (Pamplona), and Calagurris (Calahorra) on the Ebro. To the west of the Vascones the same sources inform us that a series of smaller groups inhabited slices of territory running approximately north to south. From east to west these were the Vardulli, the Carietes and Vennenses, and the Autrigones. Only one urban center of note was located in the area occupied by the modern Basque country, the oppidum of Veleia, which occupied a site known today as Iruña, and which is located just to the west of modern Vitoria.\u0004 \u0004 Much confusion arises from the appearance of a group named “Vascones” in both Roman and early medieval sources, the habit of some scholars to translate the name in one or both instances as “Basques,” and the presence of a later medieval and modern identifiably Basque population in an area near to, but not identical with, the territory of the earlier Vascones. This study uses “Vascones” to refer to the peoples referred to in literary sources (although the name remains the same, however, the peoples should not be treated as identical); “Basques” to refer to people who speak the Basque language, where we have evidence on the matter; and “Basque country” to refer to the modern Spanish autonomous region known as the País Vasco, consisting of the three provinces of Vizcaya, Guipúzcoa, and Álava. \u0004 Strabo, Geog. 3.3.8, 3.4.12, Pliny, HN 3.3.26, 4.20.10–11; Ptol. Geog. 2.5. See José J. Irigaray Arrieta, Los vascones a través de las fuentes literararias antigüas (San Sebastián, 19…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 73,
+        "phase_f_doc_rank": 105,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c0641ba0ad724f97",
+        "section_title": "23 Identity and Ethnicity during the Era of Migrations and Barbarian Kingdoms in the Light of Archaeology in Gaul",
+        "page_start": 320,
+        "page_end": 361,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "archaeology_identity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Archaeology/ethnicity focus; may provide background on material culture and settlement but is only marginally useful for economic mechanisms in the benchmark chapter.",
+      "section_text_excerpt": "Identity and Ethnicity during the Era of Migrations and Barbarian Kingdoms in the Light of Archaeology in Gaul Archaeology, Hans-Jürgen Eggers wrote, is concerned with the study of “dead civilizations” and thus, naturally enough, with the identity of the deceased.\u0004 This study will discuss the light that archaeology may or may not shed on questions of ethnic identity during the period when barbarian, generally Germanic peoples were depicted in the historical sources as settling in the western empire and establishing kingdoms there. The focus will be on Gaul, which at that time, as shall be seen, was a crossroads. Whether evidence comes from settlement sites, artifact types, or, as often is the case, cemeteries, the question of ethnic attribution at once arises. After all, ancient societies of all types, including Greeks, Romans, and barbarian gentes, displayed cultural particularisms whose material vestiges archaeology, using a comparative perspective, tries to discern. Indeed, the variation revealed in material culture is the archaeologist’s stock-in-trade. To correlate variation with ethnic identities is a very tricky business (some would say impossible or fruitless), at least without reliable written sources to help.\u0004 The idea that particular ancient peoples had distinctive material cultures guided most early research, and at the hands of Gustav Kossinna\u0004 and his disciples \u0004 The authors warmly thank Bailey Young for the English translation of this contribution, and Ralph Mathisen for the final editing. \u0004 H.-J. Eggers, “Das Problem der ethnischen Deutung in der Frühgeschichte,” in H. Kircher, ed., Ur- und Frühgeschichte als historische Wissenschaft (Heidelberg, 1950), pp. 49–59; idem, Einführung in die Vorgeschichte (Munich, 1959). \u0004 For different perceptions of this question, see, inter alios, Andrew Gillett, ed., On Barbarian Identity: Critical Approaches to Ethnicity in the Early Middle Ages (Turnhout, 2002); Patrick Geary, The Myth of Nations: The Medieval Origins of Europe (Princeton, NJ, 2002); Walter Pohl, ed., Kingdoms of the Empire: The Integration of Barbarians in Late Antiquity (Leiden, 1997); and Walter Pohl, Helmut Reimitz, eds., Strategies of Dis…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 36,
+        "phase_f_doc_rank": 40,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 50.45,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "fb8c29f35db3ab06",
+        "section_title": "PART IV Barbarian Identity",
+        "page_start": 362,
+        "page_end": 379,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Modern constructions/archaeology collection focus; not relevant to economic evidence for Roman decline.",
+      "section_text_excerpt": "This page has been left blank intentionally Archaeology, and the Spurlock Merovingian Collection at the University of Illinois an important collection of Merovingian artifacts, purchased as a study collection and rarely seen by the public.\u0004 In the course of her dissertation research, Barbara Oehlschlaeger-Garvey discovered that it derives essentially from the excavation of a single site, by a neglected archaeological pioneer, Auguste Moutié. The sixth Illinois at Urbana-Champaign in March 2005, provided the opportunity not only to assess Moutié’s work and its significance and to comment on the collection, but also to mount a special exhibit at the Spurlock Museum, entitled “Digging Auguste Moutié and the Butte des Gargans Excavations On 19 January 1843, a young property-owner from the town of Houdan, now in the Département of Yvelines (about 60 kilometers southwest of Paris) read a paper to the Société Archéologique de Rambouillet in which he discussed a cemetery excavation he had been conducting for the past decade, correctly identifying the graves as Merovingian in date, discussing specific grave-assemblages in context, and displaying an alertness to the possibilities of using burial practices and topochronology in site interpretation that would have done credit to an archaeologist a century later. The substance of his presentation is preserved in an \u0004 The authors gratefully acknowledge help from Luc Bourgeois of the CESCM at the Université de Poitiers, Marc Langlois, INRAP, and the curators and staff of the MAN in the research for this chapter. Thanks, too, to Christine Merllié-Young for reviewing the French. \u0004 “Digging Barbarians” exhibit, March to August 2005 at the Spurlock Museum, the University of Illinois at Urbana-Champaign. The authors wish to thank Douglas Brewer, then Director of the Spurlock Museum, for arranging the exhibit and are especially indebted to Christa Deacy-Quinn and Beth Watkins of the Spurlock for their collaboration in the installation and interpretation of materials. unpublished album entitled “Communication de M. Moutié à M. Guégan: Mémoire sur différents lieux de sépultures anciennes découverts dans les arrondissements de Mantes …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 176,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "bb7ea82e533c3211",
+        "section_title": "PART IV: Epilogue: Modern Constructions of Barbarian Identity",
+        "page_start": 362,
+        "page_end": 362,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Tiny epilogue wrapper; no substantive content extracted.",
+      "section_text_excerpt": "",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "240d76fdf46e70ba",
+        "section_title": "Index",
+        "page_start": 380,
+        "page_end": 399,
+        "section_type": "index"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Back-of-book index; not useful for the benchmark.",
+      "section_text_excerpt": "al-Mundhir, capture of 188 Alamanni 7, 22–25, 28, 30, 49–50, 63, 140, 170–173, 190, 200–201, 208, 213, 216, 258, 327–328 Alamannia 11, 134, 138, 315 Alamannicus 26 Alanicus 26 Alans 20, 24–27, 29–30, 211, 217, 304, 312, 324 Alaric 5, 36, 88–96, 190, 203 as Christian 36 Albanians 27 Alcaracejos 279 Alexandria 57, 100, 102, 105 Alites 26 Alpheus 94 Alpine peoples 21 Alps 20 Amalaric, king of Visigoths 308 Ambarri 46 Ambiani 204 ambiguity, in diplomacy 181 Ambrose 37–38, 42, 189 Amida, siege of 187 Ammianus Marcellinus 49–50, 68–69, 156, 161, 163, 165–168, 171, 200–201, 207–208, 213, 218–219 autopsy of Persians 72, 187 Ammonius 127–128 Achaea 79–81, 83–84 Achan, son of Carmi 100 Achaemenids 60 Achilles 90 Acisclus 278 Acrocorinth 87 Acropolis 85 Adamclisi 243 Adherbal 44–45 Adiabenicus 26 adoratio 165 Adrianople 171, 247 battle of 306 adscripticii 151 Aedui 46 Aegidius 4 Aemilianus 293 Agathias 55–61, 63, 65, 73–74 contempt for Persians 74 Agathyrsi 18 ager 290 ager Vasconum 288 Agila 278 Agilmundus 49 Agilo, tribune 171 agora Arcadius, emperor 58, 88–89, 199 archaeology 79, 84–85, 87–88, 94–96, 203, 248–249, 283, 288–289, 292, 296, 299–300, 302, 305–306, 310, 315, 321–322, 327–328, 332–333, 348 archaeological evidence, lack of 268 Merovingian 343, 348 new archaeologists 333 archaic sensibility 256 archapetes 60 Ardaricus 50 arena 133 Ares 211 Arga valley 283 Argos 85, 88, 93 Aristotle 19 Armenia 48 Armeniacus 26 Armenians 19, 22, 30 Armilausini 22 Arnulf 51 arson 79 Arthetaurus 46 artifacts 203, 307, 344, 349 Gothic 308 Arverni 46 Arzugitania 9 Ashdod 49 Ashkelon 49 Asia 19, 29, 46 Aspar 187 assemblages barbarian 327 male 355 Assyrians 165–166 Asturia 285 Aswan 224 Athamanians 46 Athanagild 274 Athanaric 37, 50, 137 Athaulf 38 Anglo-Saxons 305, 327–328, 333, 336 grave goods 356 settlement of Britain 10 angon 314, 328 Angrivari 22 Anianus, Petronius, vir clarissimus 245 animal head decoration 353 animals 33, 35 annona 268–269 annonarii 268 Antes 31 Anthemius, praetorian prefect 148 anti-Chalcedonians 6 anti-barbarian sentiment 218 Anticus 26 Antioch 100, 171 Antiochus, proconsul of Acnaea 90 antiquarianism 348 Antoninus, merchant 162–167–168 Apahida graves 327 Apo…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.73053833,
+        "doc_abstention_reason": null
+      }
+    }
+  ]
+}

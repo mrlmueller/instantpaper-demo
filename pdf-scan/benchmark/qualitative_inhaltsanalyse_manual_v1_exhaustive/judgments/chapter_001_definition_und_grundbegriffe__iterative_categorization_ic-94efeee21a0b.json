@@ -1,0 +1,657 @@
+{
+  "chapter_id": "chapter_001_definition_und_grundbegriffe",
+  "doc_id": "iterative_categorization_ic-94efeee21a0b",
+  "doc_title": "Iterative categorization (IC): a systematic technique for analysing qualitative data",
+  "has_useful_information": true,
+  "document_label_0_to_3": 2,
+  "document_label_band": "useful_support",
+  "document_notes": "Strong support for the chapter’s ‘iterative logic’ and practical analysis workflow: IC provides a clear, transparent progression from coded text to descriptive and interpretive findings (including audit-trail style summaries). Less directly about qualitative Inhaltsanalyse terminology, but valuable for step models and operationalization. Several key figures (coding frame, coded-data extracts, summarized analyses) are visual and not well preserved in text extraction.",
+  "manual_review_basis": [
+    "direct PDF reading",
+    "run 029c67764002834a74daaa7c normalized sections",
+    "review packet with extracted section text and current pipeline trace"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "ITERATIVE CATEGORIZATION",
+      "page_start": 3,
+      "page_end": 5,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "iterative_logic",
+        "codes_categories",
+        "step_model"
+      ],
+      "notes": "Defines IC workflow and its iterative logic from deductive/inductive coding toward structured findings."
+    },
+    {
+      "section_title": "Descriptive analyses",
+      "page_start": 5,
+      "page_end": 8,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "data_reduction",
+        "audit_trail",
+        "iterative_logic"
+      ],
+      "notes": "Concrete step model for summarizing coded extracts and iteratively refining headings and categories."
+    },
+    {
+      "section_title": "Interpretive analyses",
+      "page_start": 8,
+      "page_end": 9,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "interpretation",
+        "patterns_themes",
+        "transferability"
+      ],
+      "notes": "Explains the shift from descriptive summaries to interpretive patterns/explanations, supporting the iterative analytic logic."
+    }
+  ],
+  "near_miss_sections": [
+    {
+      "section_title": "INTRODUCTION",
+      "page_start": 1,
+      "page_end": 2,
+      "usefulness_0_to_10": 5,
+      "notes": "Motivates the need for transparent qualitative analysis reporting; mostly domain context with limited chapter alignment."
+    },
+    {
+      "section_title": "A further note on using computer software",
+      "page_start": 9,
+      "page_end": 9,
+      "usefulness_0_to_10": 4,
+      "notes": "Operational discussion of software choices; relevant only tangentially."
+    }
+  ],
+  "structural_miss_sections": [
+    {
+      "expected_section_title": "Figure 1: Basic coding frame",
+      "page_start": 4,
+      "page_end": 4,
+      "usefulness_0_to_10": 8,
+      "benchmark_label_0_to_3": 3,
+      "supported_subpoints": [],
+      "notes": "Useful concrete example of a coding frame/category system; directly supports understanding of codes/categories and organization.",
+      "why_missing": "The figure is visually formatted (dense hierarchical lists) and is not preserved as a readable structure in plain-text extraction.",
+      "suggested_pipeline_change": "Add layout-aware figure extraction (OCR + indentation/hierarchy preservation) so coding frames and schemas remain legible."
+    },
+    {
+      "expected_section_title": "Figure 2: Extract of coded data",
+      "page_start": 5,
+      "page_end": 5,
+      "usefulness_0_to_10": 7,
+      "benchmark_label_0_to_3": 2,
+      "supported_subpoints": [],
+      "notes": "Illustrates what an exported coded-data extract looks like (identifiers + coded segments), which helps concretize analysis units and workflow.",
+      "why_missing": "Two-column/figure layout collapses in extraction, losing the side-by-side structure that makes the example interpretable.",
+      "suggested_pipeline_change": "Detect multi-column figures and export them as images with OCR text blocks (or structured table-like representation)."
+    }
+  ],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "8173e4e44cb79c7f",
+        "section_title": "ABSTRACT",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "abstract"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "method_summary",
+        "iterative_logic"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Abstract summarizes IC as a rigorous, transparent technique from codes to analysis; highlights compatibility with inductive and deductive coding.",
+      "section_text_excerpt": "The processes of analysing qualitative data, particularly the stage between coding and publication, are often vague and/or poorly explained within addiction science and research more broadly. A simple but rigorous and transparent technique for analysing qualitative textual data, developed within the ﬁeld of addiction, is described. The technique, iterative categoriza- tion (IC), is suitable for use with inductive and deductive codes and can support a range of common analytical approaches, e.g. thematic analysis, Framework, constant comparison, analytical induction, content analysis, conversational analysis, discourse analysis, interpretative phenomenological analysis and narrative analysis. Once the data have been coded, the only software required is a standard word processing package. Worked examples are provided. Coding, inductive analysis, iterative categorization, qualitative data analysis, qualitative research, research methods. data analysis that may increase its legitimacy within addiction science; and (iii) to assist those tasked with reviewing or making editorial decisions on qualitative journal submissions. While the paper is written primarily for those who are new to qualitative addiction research or who are mystiﬁed, sceptical or confused by the pro- cesses of qualitative data analysis, there is likely to be inter- est from qualitative researchers more generally. The published previously sui generis. None the less, it has been used to train new addiction researchers and to write many qualitative addiction papers, including two published in Addiction [5,6]. IC is not a stand-alone method of analysing qualitative analysis that is compatible with, and can support, existing common analytical approaches, e.g. thematic analysis, Framework, constant comparison, analytical induction, content analysis, conversational analysis, discourse analy- sis, interpretative phenomenological analysis and narra- tive analysis. It achieves this by enabling researchers to code and analyse their data by topic, event, story, verbal interaction, signiﬁer, feeling, idea, category, theme, con- cept or theory, etc. IC can be used with textual data that",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 39,
+        "phase_f_doc_rank": 41,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b9a68bbd29f540c0",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Front matter placeholder/empty; no substantive content extracted.",
+      "section_text_excerpt": "",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "01eeebc5cc7fd8e9",
+        "section_title": "INTRODUCTION",
+        "page_start": 1,
+        "page_end": 2,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "motivation",
+        "transparency"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Mostly domain motivation (addiction journals) plus a general argument for better described qualitative analysis; weak but relevant context on transparency/rigor.",
+      "section_text_excerpt": "The ﬁeld of addiction has consistently provided qualitative researchers with a lucrative arena in which to apply and develop their methods [1]. Despite this, addiction science is dominated by biomedical and psychological approaches [2], with qualitative research accounting for a minority of addiction journal output (7% of papers published in top- ranked journals in 2009) [3]. In addition, the proportion of qualitative research published in any given addiction journal seems to be inversely proportional to that journal’s Impact Factor (i.e. fewer papers in higher-ranked journals) [3]. Such ﬁndings suggest a problem with qualitative addic- tion publishing that has been linked to both the epistemol- ogy of qualitative methods (speciﬁcally, the lack of credibility afforded to interpretative approaches to knowl- edge) and addiction journal practices (inﬂexible policies on article structure and length and the use of reviewers without appropriate qualitative expertise) [3,4]. This paper describes a simple but rigorous and trans- order to achieve three aims: (i) to offer practical assistance to addiction researchers struggling to analyse their own qualitative data; (ii) to provide insights into qualitative © 2016 The Authors. Addiction published by John Wiley & Sons Ltd on behalf of Society for the Study of Addiction Addiction, 111, 1096–1106 This is an open access article under the terms of the Creative Commons Attribution-NonCommercial License, which permits use, distribution and reproduction in any medium, provided the original work is properly cited and is not used for commercial purposes. have been coded deductively (based on the researcher’s pre-existing hunches or theories about issues likely to be important within the data) and inductively (based on issues emerging as important from the data themselves). The value of IC is that it offers researchers a set of standardized procedures to guide them through analysis to publication, leaving a clear audit trail. The audit trail demonstrates how they have arrived at their ﬁndings, and provides a route back to the raw data for further clariﬁcations, elabo- rations and conﬁrming/disconﬁrming evidence.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 43,
+        "phase_f_doc_rank": 40,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "fc510ce1a8cf0a73",
+        "section_title": "WHAT IS ALREADY KNOWN ABOUT QUALITATIVE DATA ANALYSIS",
+        "page_start": 2,
+        "page_end": 2,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "analysis_basics",
+        "transcription"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Explains that qualitative analysis must be systematic; discusses unstructured data and transcription detail choices, which relate to analysis units and preparation.",
+      "section_text_excerpt": "While qualitative data analysis is characterized by creativity and inspiration, it still needs to be systematic and rigorous [15]. Qualitative data (in the form of interview or focus group transcriptions, documentary materials, and ﬁeldnotes) tend to be unstructured, so the researcher must begin by imposing some order on them [16]. To this end, any audio recordings should be transcribed, ideally verbatim and to a level of detail required by the particular project and method. For example, ‘naturalized transcription’ might be used to capture every utterance (including time gaps, drawn out syllables or emphasis) in discourse or conversation anal- ysis while ‘denaturalized transcription’ (which focuses on in- formational content) might be preferable for thematic analysis, content analysis or Framework [17]. All transcriptions and other textual material should next be read and re-read to ensure familiarization with their con- tent. An accepted analytical method (thematic analysis, Framework, constant comparison, analytical induction, content analysis, conversational analysis, discourse analysis, interpretative phenomenological analysis and narrative analysis, etc.) can then be deployed. Although there are differences between, and often within, these methods in terms of their purpose and even their philosophical, ontolog- ical and epistemological orientations, they tend to be underpinned by several common processes. These include: coding; identifying important phrases, patterns, and themes; isolating emergent patterns, commonalities and differences; explaining consistencies; and relating any consistencies to a formalized body of knowledge [18]. As indicated above, coding (also known as indexing) is the most clearly (and easily) explained of these core pro- cesses and is undertaken increasingly using software such as NVivo [19], MAXqda [20] or Atlas.ti. [21]. There are also basic coding programs that can be downloaded freely from the internet, such as QDA Miner Lite [22], CAT [23] or Aquad [24]. Coding involves reviewing all data line-by- line, identifying key issues or themes (codes) and then attaching segments of text (either original text or summa- rized notes) to …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 11,
+        "phase_f_doc_rank": 12,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 56.58,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "05b4658e98e0b84f",
+        "section_title": "WHY IS QUALITATIVE DATA ANALYSIS OFTEN POORLY EXPLAINED?",
+        "page_start": 2,
+        "page_end": 3,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "iterative_logic",
+        "methods_transparency"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Explains why qualitative data analysis is often poorly explained; emphasizes overlap of collection/analysis and the need for transparent, systematic reasoning.",
+      "section_text_excerpt": "Textbooks and methodological papers describing qualita- tive methods report that qualitative data analysis is a ‘highly personal activity’, involving ‘creativity’ and ‘inspi- ration’ [7–9]. The analytical approach used within any study will relate to the research aim(s), nature and amount of data collected, time and resources available, and analytical skills, epistemological position and inter- ests of the researcher [4,8,10]. There are no ﬁrm rules about the volume of data needed for meaningful interpre- tation [9]. Furthermore, there is no rigid separation between data collection and analysis, as early hunches and preliminary interpretations can be used to inform, adapt or revise later data-gathering [11]. In short, quali- tative data analysis is less standardized than statistical analysis [9]. Recently, published qualitative studies have begun to include longer Methods sections. Despite this, the addi- tional explanation provided focuses commonly upon how the data were coded and ‘managed’, not on the intel- lectual processes involved in ‘generating ﬁndings’ [8]. In fact, published accounts of qualitative data analysis are often limited to explaining that categories, themes and concepts were generated through iterative coding, with team members discussing and/or independently verifying the ﬁndings. Sometimes, relatively esoteric approaches to the analysis of a particular data set are described more fully, although these are not necessarily replicable in other studies. Increased transparency is to be welcomed and has probably been prompted by the emergence of checklists and guidelines for writing up qualitative research [e.g. Critical Appraisal Skills Programme (CASP) [12], Consoli- dated Criteria for Reporting Qualitative Research (COREQ) [13], Relevance, Appropriateness and Transparency (RATS) [14]]. None the less, the information provided in most published reports is still insufﬁcient to guide novice qualitative researchers in undertaking their own analyses or to allay the fears of sceptical reviewers and readers who believe that qualitative ﬁndings are overly reliant upon intuition [9]. © 2016 The Authors. Addiction published by John Wiley & Sons Ltd on be…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 12,
+        "phase_f_doc_rank": 1,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 76.03,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "cf85a426ee510ab3",
+        "section_title": "ITERATIVE CATEGORIZATION",
+        "page_start": 3,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "iterative_logic",
+        "codes_categories",
+        "step_model"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Core IC method description: starts from study aims, recommends deductive then inductive codes, and frames coding as systematic ordering that supports iterative progression to findings.",
+      "section_text_excerpt": "To facilitate clear progression from the study aims/ objectives to the study conclusions, it is best if coding begins with deductive codes derived from any structured or semi-structured instruments used for data generation. This is because analysis and write-up of these deductive codes should feed back into the original study aim or ques- tion. Speciﬁcally, if one has taken the time to ask about a particular issue since it seemed important to the study aim, it is illogical to disregard that issue when coding the data prior to analysis. Deductive codes can then be supple- mented by more inductive (‘in vivo’) codes derived more creatively from emergent topics in the data. Analysis of the inductive codes can be particularly valuable in complementing, expanding, qualifying or even contradic- ting the initial hypotheses or assumptions of the researcher. IC has its origins in a study of non-fatal overdose con- ducted by the current author in 1997–99 [28–31]. This involved 200 qualitative interviews transcribed verbatim (‘denaturalized transcription’) by professional transcribers plus observational data. Findings needed to be dissemi- nated in a range of formats to different audiences, includ- ing policymakers, addiction service providers, police and opiate users. Data were being analysed using the Frame- work method and, to this end, the author was trialling a then relatively new qualitative software program (WinmaxPro, now MAXQDA). This program became an invaluable tool for organizing and sorting the data by both deductive and inductive codes, but offered little assistance with the main analytical work. After reﬂection, the author © 2016 The Authors. Addiction published by John Wiley & Sons Ltd on behalf of Society for the Study of Addiction Addiction, 111, 1096–1106 The researcher using IC is encouraged to think of cod- ing primarily as a means of systematically ordering and sorting their data. As part of this process, each document to be coded needs a meaningful identiﬁer. For example, a study involving interviews with people from three geo- graphical locations: C, L and K might have ﬁles labelled C1; C2; C3; L1; L2: L3; K1; K2; K3, etc. where ‘1’, ‘2’, ‘3’, etc. …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 7,
+        "phase_f_doc_rank": 24,
+        "phase_g_doc_rank": 5,
+        "phase_g_score_0_to_100": 42.1,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b71e5dbfa46d86b6",
+        "section_title": "Recommended approach to coding",
+        "page_start": 3,
+        "page_end": 3,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Heading-only structural wrapper; no substantive content extracted.",
+      "section_text_excerpt": "",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "0722ca0a1405af16",
+        "section_title": "Descriptive analyses",
+        "page_start": 5,
+        "page_end": 8,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "data_reduction",
+        "audit_trail",
+        "iterative_logic"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed descriptive-stage workflow: duplicate coding files into analysis files, summarize extracts line-by-line, group headings, and iteratively refine summaries. Strong step-model for turning coded text into organized categories/themes.",
+      "section_text_excerpt": "Exported coding ﬁles should be duplicated with the dupli- cate ﬁle renamed as an analysis ﬁle, e.g. ‘enablers analysis’. Each coding ﬁle should be stored electronically with its partner analysis ﬁle, but from this point the coding ﬁle will be a reference document only and the analyses will be undertaken using the analysis ﬁle. Each analysis ﬁle should next be skim-read, with the researcher spontaneously not- ing down topics and themes, perhaps also generating mind maps to show how issues seem to interconnect. This Figure 2 Extract of coded data © 2016 The Authors. Addiction published by John Wiley & Sons Ltd on behalf of Society for the Study of Addiction Addiction, 111, 1096–1106 and the bottom half shows the ﬁle heading and coding extracts (Fig. 3). The researcher can now read the ﬁrst coding extract in the bottom of the screen and summarize the key points made in the top half. This might be one simple point or sev- eral points. Each point should be written on a new line with the identiﬁer of the data source included in brackets at the end of each point (Fig. 4). The coded data extract that has been summarized at the top of the screen can now be deleted from the bottom of the screen and the researcher can move to the next coded extract repeating the process. When a point already noted in the top half of the screen recurs in another coding extract in the bottom half of the screen, the identiﬁer of the second source can be added to the brackets, separated from the ﬁrst source by a semi-colon. If there is a slight difference or subtle nuance that distinguishes the point made in the second relatively creative process should assist the researcher in further prioritizing codes for analysis, identifying duplica- tion, complementarity and contradiction between codes, and assessing the probable nature and range of ﬁndings. Notes and diagrams should then be set aside so that more systematic inductive line-by-line analyses can begin. At this point, the ﬁrst analysis ﬁle should be opened and the font and formatting edited so that as much text as pos- sible can be read on a single computer screen: in this regard, it is best to convert the ﬁle to small fount with single li…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 20,
+        "phase_f_doc_rank": 34,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 44.36,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "46a1ecea966fce02",
+        "section_title": "Preparing for analysis",
+        "page_start": 5,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "workflow",
+        "export_units"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Explains how IC bridges the analysis “black box” by exporting raw coded data to a standard word processor; useful operational guidance for units/files and iterative handling.",
+      "section_text_excerpt": "A number of qualitative computer packages now have in- built features for creating matrices (or grids/charts) that facilitate both data reduction and data display. These matri- ces permit data to be summarized and then reviewed both across and within cases. It is also possible to create docu- ment ‘attributes’ so that data relating to participants with particular characteristics can be isolated and examined separately. Although helpful, the researcher still needs to scroll up and down or across the matrix (or export or print off the matrix or aspects of the matrix) in order to appreci- ate and then interpret what is going on within the whole dataset. Furthermore, the process of moving from the ma- trix to writing up the ﬁndings cannot be executed or ex- plained by using the available specialist software alone. IC bridges this gap, demystifying the ‘black box’ of analysis without requiring the matrix function. In IC, raw (unsummarized) data from the coding stage are exported from the qualitative software into a standard word processing package, such as Microsoft Word. Data",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 54,
+        "phase_f_doc_rank": 65,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "37741a4dedd19a22",
+        "section_title": "Interpretive analyses",
+        "page_start": 8,
+        "page_end": 9,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "interpretation",
+        "patterns_themes",
+        "transferability"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Interpretive stage: moving from description to patterns/associations/concepts, considering explanations and transferability beyond the immediate dataset.",
+      "section_text_excerpt": "In the second stage of the analysis, the aim is to identify patterns, associations, concepts and explanations within the data and to ascertain how the ﬁndings complement or contradict previously published literature, theories, pol- icies or practices. It is not always necessary, or indeed pos- sible, to accomplish all these goals with every analysis ﬁle or in every study. For example, someone analysing data from a study that seeks to evaluate an intervention and has practitioners and commissioners as the intended audi- ence may not need to engage with complex macro theo- ries. Equally, a researcher working within one discipline may legitimately explore their ﬁndings in relation to other work within their own or a cognate discipline rather than unrelated disciplines. Thus, a sociologist may prefer to explore how their ﬁndings relate to some aspect of ‘social’ rather than ‘psychological’ theory. The key point is that the analyst must ﬁnd a way of moving beyond a simple description of their own data so that their ﬁndings are transferable (i.e. have meaning) to other contexts [37]. To begin, each completed analysis ﬁle should be read and re-read. Speciﬁcally, the researcher needs to consider: (a) which points or issues or themes recur within (and potentially across) the analyses ﬁles; (b) whether and, if so, how these points or issues or themes can be categorized into higher order concepts, constructs or typologies beyond those already identiﬁed in the earlier descriptive stage; and (c) the extent to which points or issues or themes apply to © 2016 The Authors. Addiction published by John Wiley & Sons Ltd on behalf of Society for the Study of Addiction Addiction, 111, 1096–1106 basis of Neale et al., 2012 [5] and Neale & Strang, 2015 [6]. Using both the summary ﬁles and the more detailed analyses ﬁles, the researcher can thus write up themes, identify any new concepts or categories and document and endeavour to account for any patterns or associations in the data. Illustrative quotations can be selected from the analysis or summary document or the researcher can re- turn to the earlier coding ﬁle for additional original text. commissioning processes to support, opp…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 34,
+        "phase_f_doc_rank": 38,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 42.91,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "9dbfd9d66d3892b0",
+        "section_title": "A further note on using computer software",
+        "page_start": 9,
+        "page_end": 9,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "software_tools"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [],
+      "notes": "Compares using Word/Excel vs specialist software; some operational relevance but not central to definitions/basic concepts.",
+      "section_text_excerpt": "A further note on using computer software In principle, the entire IC process could be carried out with- out using any specialist qualitative software. Microsoft Word, Excel and Access can, with time and patience, be used to code and analyse qualitative data [38]. Indeed, it is not so long since all qualitative data were coded and analysed by hand. Alternatively, it could be argued that it is preferable to execute all IC stages using a single specialist software program, as this would facilitate data manage- ment, reduce the chances of ﬁle corruption or human error when dealing with multiple ﬁles, support team working more effectively by providing simultaneous access to the data by multiple users, and retain a stronger link between summarized data and their source (context). The degree to which a researcher engages with the latest software is, in practice, a matter of personal prefer- ence. Coding using specialist software tends to be much",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 63,
+        "phase_f_doc_rank": 66,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6305b97b0e2a8ce1",
+        "section_title": "Writing up the fi ndings",
+        "page_start": 9,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "writeup",
+        "traceability"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Shows how summaries map back to codes and study aims/objectives, supporting a clear forward/backward trajectory and transparent write-up.",
+      "section_text_excerpt": "Summary documents can often be linked together to form the basis of a study report. This is because the analyses (if executed as suggested) should map back onto the codes, which should map back to any interview guide, which was devised with the original study aims and objectives in mind. Thus, there is a clear forward and backwards trajec- tory from the study starting point to its conclusion. Further, after completing the IC stages, the researcher will have averygood idea of which aspects of the data will make for interesting research papers and one or more analysis ﬁles can then be used to structure a journal article. For example, Figs 6 and 7 form the basis of Neale et al., 2007 [34] and Supporting information, Files S1–S4 form the © 2016 The Authors. Addiction published by John Wiley & Sons Ltd on behalf of Society for the Study of Addiction Addiction, 111, 1096–1106 quicker than by Word or hand. Meanwhile, Word ﬁles con- taining coded data are more portable and accessible than data coded in specialist software, and this can help to engage team members who may not use any qualitative software or who may prefer a different program. Equally, there are risks when team members analyse the same data ﬁle simultaneously in case they override each other; yet it is easy for them to each analyse a different Word ﬁle simulta- neously. Lastly, specialist software may be able to link sum- marized data back to their source (context) with a single mouse click. However, the value of this facility actually depends upon the extent to which the analyst has intimate knowledge of the data and when, where, how and why they were generated. No computer program can substitute for this. In IC, data are coded typically using qualitative software and then the codings are exported into a word-processing package for line-by-line analysis. While continuingadvances in qualitative software design may make the reliance or a word-processing package appear antiquated, this is offset by two factors: (i) understanding the core principles of rigor- ous analysis is a prerequisite to using any specialist software that merely facilitates the process; and (ii) IC is intended to be a pragmatic analyti…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 46,
+        "phase_f_doc_rank": 50,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "69361076405c3ea0",
+        "section_title": "Acknowledgement",
+        "page_start": 10,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Acknowledgement; not relevant.",
+      "section_text_excerpt": "",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "78c2c7a0dbc21e0e",
+        "section_title": "Declaration of interests",
+        "page_start": 10,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Declaration of interests; not relevant.",
+      "section_text_excerpt": "",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4f10fb53311afede",
+        "section_title": "References",
+        "page_start": 10,
+        "page_end": 11,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "References; not relevant to the chapter topic.",
+      "section_text_excerpt": "1. Fountain J., Grifﬁths P. Synthesis of qualitative research on drug use in the European Union: report on an EMCDDA pro- ject. European Monitoring Centre for Drugs and Drug Addiction. Eur Addict Res 1990; 5: 4–20. 2. Miller P. G., Strang J., Miller P. M. Introduction. In: Miller P. G., Strang J., Miller P. M., editors. Addiction Research Methods. Oxford: Wiley-Blackwell; 2010, pp. 1–8. 3. Rhodes T., Stimson G. V., Moore D., Bourgois P. Qualitative so- cial research in addictions publishing: creating an enabling journal environment. Int J Drug Policy 2010; 21: 441–4. 4. Neale J., Allen D., Coombes L. Qualitative research methods within the addictions. Addiction 2005; 100: 1584–93. 5. Neale J., Nettleton S., Pickering L., Fischer J. Eating patterns amongst heroin users: a qualitative study with implications for nutritional interventions. Addiction 2012; 107: 635–41. 6. Neale J., Strang J. Naloxone—does over-antagonism matter? Evidence of iatrogenic harm after emergency treatment of heroin/opioid overdose. Addiction 2015; 110: 1644–52. 7. Jones S. The analysis of depth interviews. In: Walker R., editor. Applied Qualitative Research. Aldershot: Gower; 1985, pp. 56–70. 8. Ritchie J., Lewis J. Qualitative Research Practice: A Guide for Social Science Students and Researchers. London: Sage; 2003. 9. Stenius K., Mäkelä K., Miovsky M., Gabrhelik R. How to write publishable qualitative research. In: Babor T. F., Stenius K., Savva S., O’Reilly J., editors. Publishing Addiction Science: A © 2016 The Authors. Addiction published by John Wiley & Sons Ltd on behalf of Society for the Study of Addiction Addiction, 111, 1096–1106 29. Neale J. Suicidal intent in non-fatal illicit drugoverdose. Addic- tion 2000; 95: 85–93. 30. Neale J. Methadone, methadone treatment and non-fatal overdose. Drug Alcohol Depend 2000; 58: 117–24. 31. Neale J. Drug Users in Society. Basingstoke: Palgrave; 2002. 32. Creswell J. W. Research Design: Quantitative, Qualitative, and Mixed Methods Approaches, 2nd edn. Thousand Oaks, CA: Sage; 2003. 33. Menand L., editor. Pragmatism: A Reader. London: Vintage Books; 1997. 34. Neale J., Sheard L., Tompkins C. Factors that help injecting drug users to access …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "17753321dc1e00e6",
+        "section_title": "Strengths and weaknesses of IC",
+        "page_start": 10,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "limitations",
+        "method_scope"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Summarizes strengths/weaknesses and when IC is suitable; useful for positioning the technique and its constraints.",
+      "section_text_excerpt": "Strengths and weaknesses of IC are those of the author and not necessarily those of the IC is a rigorous and transparent technique for managing the analysis of qualitative data. It is particularly suitable for novice qualitative researchers who may welcome a set of standardized steps to follow when trying to make sense of their data, but it can also reassure sceptical journal editors, reviewers or readers who question the rigour of qualitative analyses [9,39]. Furthermore, a lone researcher can use IC to demonstrate the validity and potential repeat- ability of their methods. IC is compatible with, and can support, most common analytical approaches, and is underpinned by concurrent data reduction, data display and conclusion-drawing/veriﬁcation[18]. The technique generates a clear audit trail with the analyses always linked back to the raw data (so that the original words of the study participants are never lost) and projecting forwards (so that the ﬁndings move beyond simple local description demonstrating relevance to the wider world). More negatively, IC is a time-consuming process, with a single code often taking many hours to analyse. That said, all qualitative analyses take time if executed thoroughly. Similarly, the quality of the analyses undertaken cannot be divorced from the skills and experience of the analyst, including the extent to which they understand the topic and relevant literature and have been involved in the study design and data generation. IC is intended for textual data (rather than images or ﬁlm) and assumes that the study is guided by clear a clear aim and objectives or research ques- tion. As such, it is less suited to studies using a more unstructured approach, e.g. Grounded Theory. Ideally, all the data should have been generated and coded before the main analysis begins, although this is not essential. Experienced analysts may baulk at the degree of structure involved in IC, but they are not the primary intended audi- ence. Furthermore, there is scope for creativity within the structure outlined, particularly at the interpretative stage.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 50,
+        "phase_f_doc_rank": 47,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e1600a0db5681906",
+        "section_title": "Supporting Information",
+        "page_start": 11,
+        "page_end": 11,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Supporting information pointers; no chapter-relevant methodological content.",
+      "section_text_excerpt": "Additional supporting information may be found in the online version of this article at the publisher’s web-site: oxone – does over-antagonism matter? Evidence of iatro- genic harm after emergency treatment of heroin/opioid overdose. Addiction 2015; 110, 1644-1652. users: a qualitative study with implications for nutritional interventions. Addiction 2012; 107: 635-41. Supplementary File 3 Summary from: Neale J., Nettleton S., Pickering L., Fischer J. Eating patterns amongst heroin users: a qualitative study with implications for nutritional interventions. Addiction 2012; 107: 635-41. Supplementary File 4 Summary from: Neale J., Strang J. Naloxone – does over-antagonism matter? Evidence of iat- rogenic harm after emergency treatment of heroin/opioid overdose. Addiction 2015; 110, 1644-1652. © 2016 The Authors. Addiction published by John Wiley & Sons Ltd on behalf of Society for the Study of Addiction Addiction, 111, 1096–1106",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.85836031,
+        "doc_abstention_reason": null
+      }
+    }
+  ]
+}

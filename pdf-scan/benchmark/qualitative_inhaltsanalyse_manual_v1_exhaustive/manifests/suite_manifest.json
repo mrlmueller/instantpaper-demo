@@ -1,0 +1,24 @@
+{
+  "suite_id": "qualitative_inhaltsanalyse_manual_v1_exhaustive",
+  "suite_type": "manual_exhaustive_scaffold",
+  "chapter_specs": [
+    "chapters/chapter_001_definition_und_grundbegriffe.json"
+  ],
+  "documents": [
+    "manifests/a_quality_approach_to_qualitative_content_analys-6fd1ec40663d.json",
+    "manifests/iterative_categorization_ic-94efeee21a0b.json",
+    "manifests/qualitative_inhaltsanalyse-45ddf662ab64.json",
+    "manifests/qualitative_text_analysis_a_systematic-e3d6dabf3e39.json",
+    "manifests/reflexive_content_analysis-67b1b104dac4.json",
+    "manifests/theme_in_qualitative_content_analysis_and_themat-ca9b9633447c.json"
+  ],
+  "judgments": [
+    "judgments/chapter_001_definition_und_grundbegriffe__a_quality_approach_to_qualitative_content_analys-6fd1ec40663d.json",
+    "judgments/chapter_001_definition_und_grundbegriffe__iterative_categorization_ic-94efeee21a0b.json",
+    "judgments/chapter_001_definition_und_grundbegriffe__qualitative_inhaltsanalyse-45ddf662ab64.json",
+    "judgments/chapter_001_definition_und_grundbegriffe__qualitative_text_analysis_a_systematic-e3d6dabf3e39.json",
+    "judgments/chapter_001_definition_und_grundbegriffe__reflexive_content_analysis-67b1b104dac4.json",
+    "judgments/chapter_001_definition_und_grundbegriffe__theme_in_qualitative_content_analysis_and_themat-ca9b9633447c.json"
+  ],
+  "notes": "Initial scaffold for manual exhaustive labeling. Each judgment file contains every extracted section plus pipeline trace data. Fill document-level labels, section usefulness, gold sections, near misses, and structural misses after direct PDF review."
+}

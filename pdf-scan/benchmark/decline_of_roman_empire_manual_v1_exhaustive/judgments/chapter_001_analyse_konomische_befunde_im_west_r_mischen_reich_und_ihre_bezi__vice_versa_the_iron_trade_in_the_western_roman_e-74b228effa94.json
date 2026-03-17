@@ -1,0 +1,636 @@
+{
+  "chapter_id": "chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi",
+  "doc_id": "vice_versa_the_iron_trade_in_the_western_roman_e-74b228effa94",
+  "doc_title": "Vice-versa: The iron trade in the western Roman Empire between Gaul and the Mediterranean",
+  "has_useful_information": true,
+  "document_label_0_to_3": 2,
+  "document_label_band": "useful_support",
+  "document_notes": "Provides concrete evidence for large-scale production and long-distance distribution of iron in the western Roman Empire (Gaul to Mediterranean and vice versa), including the Rhone corridor, shipwreck cargoes, and provenance links between production areas and transported bars. Useful support for economic integration, trade networks, and raw-material supply constraints.",
+  "manual_review_basis": [
+    "direct PDF reading",
+    "run cde2f3959baf36fa0d09956c normalized sections",
+    "review packet with extracted section text and current pipeline trace"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "1.Introduction",
+      "page_start": 1,
+      "page_end": 5,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "iron_trade",
+        "trade_routes",
+        "transport_rhone"
+      ],
+      "notes": "High-signal overview of Roman heavy-material trade and the Rhone axis; uses the Saintes-Maries-de-la-Mer wreck assemblage to motivate and contextualize large-scale iron distribution networks."
+    },
+    {
+      "section_title": "Conclusion",
+      "page_start": 33,
+      "page_end": 35,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "iron_trade",
+        "trade_networks",
+        "long_distance_transport"
+      ],
+      "notes": "Concise synthesis of provenance-linked up-river/down-river flows (Wallonia down the Rhone; Montagne Noire up the Rhone) and what this implies about the complexity of western Roman distribution networks."
+    }
+  ],
+  "near_miss_sections": [
+    {
+      "section_title": "Supporting information",
+      "page_start": 35,
+      "page_end": 35,
+      "usefulness_0_to_10": 4,
+      "notes": "Points to an external XLSX dataset (chemical data for production areas and slag inclusions). Useful for follow-up sourcing, but not substantive evidence by itself in the PDF text extraction."
+    },
+    {
+      "section_title": "References",
+      "page_start": 35,
+      "page_end": 38,
+      "usefulness_0_to_10": 3,
+      "notes": "Bibliography for Roman iron production/trade and archaeometallurgy provenance methods; useful for finding primary datasets and comparable studies but not directly quotable evidence."
+    }
+  ],
+  "structural_miss_sections": [
+    {
+      "expected_section_title": "Fig. 1 and Fig. 3 maps (wreck locations/cargo types and production-area geography)",
+      "page_start": 3,
+      "page_end": 7,
+      "usefulness_0_to_10": 7,
+      "benchmark_label_0_to_3": 2,
+      "supported_subpoints": [],
+      "notes": "Key geographic summary of (a) the Saintes-Maries-de-la-Mer wreck assemblage and (b) the spatial distribution of major iron production areas. Extraction retains some captions but not the map content in a retrievable/structured way.",
+      "why_missing": "These are image-heavy maps with dense spatial information and legends; the pipeline mainly indexes surrounding prose, so the core evidence (locations, cargo-type legend, production-area overlays) is not preserved.",
+      "suggested_pipeline_change": "Treat figure captions and figure-associated text blocks as first-class sections, and run an OCR/layout pass to extract legend labels and key toponyms from map figures; store them with figure identifiers for retrieval."
+    },
+    {
+      "expected_section_title": "Table 1 (slag samples from production areas: sites, regions, chronology, sample counts)",
+      "page_start": 6,
+      "page_end": 7,
+      "usefulness_0_to_10": 7,
+      "benchmark_label_0_to_3": 2,
+      "supported_subpoints": [],
+      "notes": "Table 1 provides the structured dataset grounding the provenance comparison (which sites/areas, dating, and sample sizes). The extraction references the table but does not preserve its rows/columns cleanly.",
+      "why_missing": "Tabular layouts are flattened into partial text (or dropped), losing row integrity (area, site name, dating, counts). That makes the core comparative evidence hard to retrieve and cite.",
+      "suggested_pipeline_change": "Add table extraction that preserves rows/columns (even as TSV/CSV) and link tables to nearby section IDs; include table titles and normalized column headers in the index."
+    },
+    {
+      "expected_section_title": "Table 2 (list of analysed iron bars/artefacts and previous assignments)",
+      "page_start": 11,
+      "page_end": 11,
+      "usefulness_0_to_10": 6,
+      "benchmark_label_0_to_3": 2,
+      "supported_subpoints": [],
+      "notes": "Table 2 enumerates the analysed wreck bars, stamps/types, and prior group assignments; essential context for interpreting provenance claims. The current extraction collapses table structure into fragmented text.",
+      "why_missing": "The table is encoded as a grid with many short cells; flattening merges columns and drops header associations, preventing reliable lookup of artefact identifiers and attributes.",
+      "suggested_pipeline_change": "Detect grid tables and extract as structured data; additionally, keep a short 'table schema' summary in the section text (column headers and a few representative rows) for retrieval."
+    }
+  ],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "a58ecf79b0f92192",
+        "section_title": "1.Introduction",
+        "page_start": 1,
+        "page_end": 5,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "iron_trade",
+        "trade_routes",
+        "transport_rhone"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Strong background evidence for economic integration and long-distance movement of heavy raw materials: situates iron trade in Mediterranean networks and highlights the Rhone corridor and Saintes-Maries-de-la-Mer wreck assemblage as key data.",
+      "section_text_excerpt": "Trade in foodstuffs (e.g., wine, brine, smoked meat) and in heavy raw materials (both metallic and non-metallic, such as copper, lead, marble) during the Roman Empire followed complex traffic patterns. Trading routes crisscrossed and intertwined around the Mediterranean, some- times anchored in older channels established during the Republic period [1]. This article deals with this aspect of research with a special focus on south-to-north and north-to-south flows in the iron trade, between the Mediterranean and Gaul. The exploitation of mineral resources in the territories conquered by Rome since the Republic period was of prime importance. It generated large-scale trade to supply all spheres of expanding Roman civilization with raw and semi-finished iron products. From the 2nd cen- tury BC onwards, iron became a widespread material used in all aspects of Gallic and Roman life–household activities, arts and crafts, weapon-making, construction and all forms of Data Availability Statement: All relevant data are within the paper and its Supporting Information files. Funding: - Research program entitled “Le fer antique et me´die´val du massif du Canigou (Pyre´ne´es-Orientales, France)”, directed by funded by the French Ministry of Culture and the innovations et controˆle: le fer antique et me´die´val du massif du Canigou (Pyre´ne´es-Orientales, Vice-versa: The iron trade in the western Roman Empire between Gaul and the Mediterranean architecture [2]. Maritime trade played a major role in this trend because it allowed, as it con- tinues to do today, the circulation of heavy materials over great distances, and because the Mediterranean Sea was the heart of the Roman Empire, as indicated by its Latin name: Mare nostrum (“Our Sea”). The Rhoˆne River was a major axis of communication linking maritime trade from the Med- iterranean to the provinces of Gaul, Britannia and Germania. Its many branches and ports around its delta facilitated the development of impressive volumes of trade. At the outlet of the middle branch (Saint-Ferre´ol Rhoˆne), 45 wrecks were discovered, opposite Saintes-Maries-de- la-Mer (Bouches-du-Rhoˆne, France). The majority of the vessels (31 out of 4…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 13,
+        "phase_f_doc_rank": 26,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 40.32,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "97ae6adb722b8e0c",
+        "section_title": "Abstract",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "abstract"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "iron_trade",
+        "provenance",
+        "long_distance_trade"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Compact statement of the key economic claim (growth in iron production/consumption and long-distance trade) and the provenance result (Wallonia vs Montagne Noire flows along the Rhone).",
+      "section_text_excerpt": "Starting from the second century BC, with the fast expansion of the Roman Empire, iron pro- duction and consumption developed exponentially in north-western Europe. This rapid growth naturally led to an increase in trade, that still remains to be studied encompassing a broad scope, so as to not neglect long-distance exchanges. This is today possible by taking advantage of the progress made in the past 40 years in archaeology and archaeometal- lurgy. Cargoes of iron bars recovered from a group of 23 wrecks located off the coast of Saintes-Maries-de-la-Mer (Bouches-du-Rhoˆne, France), opposite an old branch of the Rhoˆne River, constitute a rich opportunity to examine this trade, by comparing the slag inclu- sions trapped in iron bars to primary slag from the six main ironmaking areas in Gaul. Based on a trace element analysis of these inclusions and this slag, we suggest that ships travelled down the Rhoˆne carrying iron produced in Wallonia (Belgium), while others sailed up the Rhoˆne transporting iron produced in Montagne Noire (Aude, France). access article distributed under the terms of the reproduction in any medium, provided the original author and source are credited.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 12,
+        "phase_f_doc_rank": 116,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "cb6c5228b7190b14",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "metadata_noise",
+        "iron_trade"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Mostly affiliations/metadata and duplicated snippets; low standalone value and messy extraction, but may incidentally repeat the high-level conclusion about trade flows.",
+      "section_text_excerpt": "1 CNRS, Arche´ologies et Sciences de l’Antiquite´, ArScAn, UMR7041, E´ quipe Arche´ologie de la Gaule et du Monde Antique (GAMA), MSH Mondes, 21 alle´e de l’universite´, 92023, Nanterre cedex, France, 2 CNRS, LAPA-IRAMAT, NIMBE, CEA, CNRS, Universite´ Paris-Saclay, CEA Saclay 91191, Gif-sur-Yvette, France, 3 CNRS, LMC-IRAMAT, UMR7065, Universite´ de Technologie Belfort Montbe´liard, CNRS, Montbe´liard, France, 4 De´partement des Recherches Arche´ologiques Subaquatiques et Sous-Marines (DRASSM), Arche´ologie des Socie´te´s Me´diterrane´ennes, ASM UMR 5140, 34000, Montpellier, France",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3aae2f1bbf076da7",
+        "section_title": "2. Set of samples 2.1 Production areas",
+        "page_start": 5,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "structural_noise"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Tiny/empty structural wrapper section (no extractable content).",
+      "section_text_excerpt": "",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "fda5f47020caf56f",
+        "section_title": "2.1 Production areas",
+        "page_start": 5,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "iron_production",
+        "production_scale",
+        "regional_economy"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Substantive evidence on major Roman-period ironmaking regions (site counts, slag volumes, dating) that underpins claims about scale of production and the feasibility of long-distance supply networks.",
+      "section_text_excerpt": "Tapped slag was collected from the six territories in western Europe considered to be among the largest iron-producing areas in the Roman period (Table 1, Fig 3). From north to south, they are currently located in Wallonia, in Belgium (Eastern Condroz and Entre-Sambre-et- Meuse), in central and southern France (La Puisaye, Se´nonais-Pays-d’Othe, Montagne Noire and Canigou). In Wallonia (Belgium), the Condroz is located between the Meuse river and the Ardennes massif, stretching 130 km from east to west (Fig 4). This geological entity contained large quantities of iron ore mined in ancient times, in the form of limonite, from clay-sand karst fill- ing as well as from seams of oxidized sulfide ore, all of Famennian or Dinantian age [20,21]. The sedimentary deposits of the minette and oolitic oligist types present in the Paleozoic and Mesozoic rocks were exploited more recently mainly from the 19th century. In this area, based on bibliographic and field research, as many as 172 smelting sites (slag heaps) have been inven- toried, by Vincent Serneels in the 1970s, Geoffrey Houbrechts [22] and Gaspard Pagès (during his post-doctoral work at Liege University between 2009 and 2011). They all contain tapped smelting slag typical of the bloomery (or direct) process. Among this 172 sites, sixty-four slag heaps were dated by ceramics from La Tène D to late antiquity [23–33]. Based on the number of sites, the volume of tapped slag and the estimated quantity of slag recycled in blast furnaces since the 19th century, more than one million tons of slag may have been produced during this period [34–36]. In the western Condroz, the Entre-Sambre-et-Meuse area can be distin- guished by the number and the concentration of iron smelting sites and iron ore deposits (92 smelting sites, including 36 from the Roman period). The Entre-Sambre-et-Meuse area extends south into a geographical region called Fagnes, which is devoid of ore deposits, but features smelting sites. In this study, we therefore distinguish between Eastern Condroz (2,800 sq. km) and Entre-Sambre-et-Meuse (2,600 sq. km). 19 slag samples from three Eastern Con- droz sites dated from the end of Antiquity and 20 slag sam…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 8,
+        "phase_f_doc_rank": 72,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 32.7,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b79c6400b4b3a6d9",
+        "section_title": "2.2 Artefacts: Iron bars of Saintes-Maries-de-la-Mer (Bouches-du Rhoˆne, France)",
+        "page_start": 10,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "shipwreck_cargo",
+        "iron_bars",
+        "provenance"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Provides artefact inventory context (bar types, stamps, naming conventions) needed to interpret provenance results; table-heavy and the extraction loses structure, so it's less directly usable than the narrative conclusions.",
+      "section_text_excerpt": "The list of analyzed bars is provided in Table 2. The analyses take into indicates the iron bar types defined by L. Long [3] (Fig 7), as well as the types of marks stamped on some of the bars. In addition to original analytical results, the present study also includes published results from previously analyzed bars [9,40] in the statistical analyses. A first set of these earlier studies con- sidered a limited number of trace elements and only bivariate comparisons to test the prove- nance hypotheses (despite a higher number of element was analysed and published). They attribute some of these bars to Montagne Noire or other unknown provenance groups Vice-versa: The iron trade in the western Roman Empire between Gaul and the Mediterranean Table 2. List of analyzed artefacts. No MnO no P2O5 in slag inclusions High MgO in slag inclusions No MnO no P2O5 in slag inclusions No MnO no P2O5 in slag inclusions High P2O5 in slag inclusions High P2O5 in slag inclusions High P2O5 in slag inclusions High P2O5 in slag inclusions, high P in the metal No Mn no P2O5 in the slag, slow amounts of P in the metal \u0003\u0003 Families assigned based on major element analysis in slag inclusions [19]. MN: Montagne Noire. (Table 2).These results are reconsidered here, using a statistical data treatment. In addition, some of these former studies presented a too low number of analyzed elements (to be really discriminant) or data that are too dispersed for meaningful comparison. For this reason, the present study only takes into consideration published results on bars for which a sufficient number of elements were previously analyzed. These previously published artefacts have been renamed here, in an effort to clearly indicate their type and the number of the wreck on which they were found. The name of all bars is now composed of the “type code” (1M, 2M, etc), then comes the “ship name” (SM1, SM2, . . .) and a an identification number. Then comes a letter identifying te laboratory where the bar was analysed (T: bars analysed at the Toulouse (France) laboratory by Coustures; L: bars analysed in the LAPA laboratory). Finally a PPM number if more than one PPM constitutes the bar. Indeed, as said befor…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 126,
+        "phase_f_doc_rank": 57,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 40.84,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a01ddba89d2cc311",
+        "section_title": "3. Analytical methods",
+        "page_start": 12,
+        "page_end": 14,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "archaeometallurgy_methods"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Primarily technical lab/provenance methodology; useful only insofar as it explains why provenance claims about trade flows are credible.",
+      "section_text_excerpt": "Representative samples of at least 3 cubic centimeter were taken using a diamond saw on the smelting slag found on the production areas (Figs 4–6, Table 1). They were then ground to a powder, with a grain size of about 70–80μm. Major and trace elements were quantified using inductively coupled plasma atomic emission spectroscopy (ICP–AES) and inductively coupled plasma mass spectrometry (ICP–MS), respectively, at CRPG Nancy France [43]. Concerning metallic bars, cross-sections were made on the complete artefacts using a SiC cutting disc. After a first grinding and polishing (SiC papers grade 180 to 4000), the welding lines indicating that a given bar is constituted of several Primary Pieces of Metal (PPM) welded together are searched. If they are detected, sub-samples are taken on each PPM. Otherwise, only one sample is taken. In a second step, samples are polished (diamond paste 3 and 1 μm under ethanol). This allows an observation by Optical Microscope and Scanning Electron Microscope to locate and analyse the non-metallic slag inclusions (made of a mix of silicates, oxides and vitrous phases) entrapped in the metallic matrix. The major element composition is determined by Energy Dispersive Spectrometry coupled to SEM (a FESEM JEOL 7100 equipped with an Oxford silicon drift detector, at 15kV with a probe current of 20nA). Prior to Vice-versa: The iron trade in the western Roman Empire between Gaul and the Mediterranean any spectrum acquisition, SI were detected by means of image analysis of the backscattered electrons signal. Particle detection and spectra processing were performed using the Aztec Software (Oxford Company). On each spectra the background was substracted using a top hat filter. The XPP correction routine was used for quantification (Phi-Rho-Zed matrix correction with inner standards). A fixed set of elements composing the iron slag is considered (O, Na, Mg, Al, Si, P, S, Cl, K, Ca, Ti, V, Cr, Fe, Mn). Concentrations were normalized at 100%. The analytical methodology has been described in detail elsewhere [10–12,44]. An important step in this procedure is the identification of those inclusions deriving from the ore reduction stage (the only on…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 115,
+        "phase_f_doc_rank": 139,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f6d56128e2960f85",
+        "section_title": "4. Sorting of raw data on slag inclusions",
+        "page_start": 14,
+        "page_end": 14,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [],
+      "notes": "Purely internal data-cleaning/PCA clustering details; not useful for the chapter beyond technical reproducibility.",
+      "section_text_excerpt": "4. Sorting of raw data on slag inclusions The analytical results for the slag and the slag inclusions (SI) can be found in the supplemen- tary materials (S1 Table). For this analysis, the raw data on slag inclusions were compared using PCA on scaled xij (Fig 8). When plotted, the inclusions found in each artefact form rela- tively well-grouped clusters. Nevertheless, there are some exceptions (shown in color in Fig 8), which will be discussed here individually. The xij of the slag inclusions in 2M SM6 T2 form two distinct clusters. We therefore chose to consider that these two clusters represent two different PPMs constituting the same bar. They will be analyzed separately and hereafter referred to as 2M SM6 T2A and 2M SM6 T2B. For 1L-SM10-2L2, three inclusions can be considered to be outliers (1inc3, 2inc3 and 3 inc3 in the supplementary materials). For bar 2M-SM9 T1, one inclusion (248–47) can be considered to be an outlier, while the other inclusions form two clusters and will be hereafter referred to separately as 2M-SM9-T1A and B. For 4L-SM24-1-L1, one inclusion was discarded (2inc1). Four inclusions are outliers for 4L-SM24-1L3 (1inc2, 1inc3, 2inc2, 2inc 3). Three inclusions are outliers (1inc3, 4inc3, 2inc1) for bar 4L-SM24-1-L4, one inclusion is an outlier (1inc2) for 4L-SM24-2L2, two inclusions are outliers (1inc2, 3inc2) for 4L-SM24-2-L3 and two are outli- ers (2inc3, 1inc2) for 4L-SM24-2-L4.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 206,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "11fe7c61122415b4",
+        "section_title": "5. Results",
+        "page_start": 14,
+        "page_end": 14,
+        "section_type": "results"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "structural_noise"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty/tiny structural wrapper for results; no extractable content.",
+      "section_text_excerpt": "",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "28830d6abfca655d",
+        "section_title": "5.1 Production areas",
+        "page_start": 14,
+        "page_end": 15,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "provenance",
+        "production_chemistry"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Technical-but-interpretable summary of how production areas cluster chemically (Mn/P, trace signatures). Helpful for understanding provenance logic, but not itself a high-level economic argument.",
+      "section_text_excerpt": "As far as major elements are concerned, P and especially Mn presence in the slag are mainly linked to the initial ore composition. Contrary to other elements (Si, Al, Ca,..) that are Fig 8. PCA analysis on xij (scaled) from the SI of the bars. Projection on the components 1 and 2 of the PCA. Vice-versa: The iron trade in the western Roman Empire between Gaul and the Mediterranean potentially linked to other sources (fuel ashes, lining of the furnace, etc). Thus P and Mn can be considered in a rought first step, to decipher different provenances [8]. Fig 9 shows the P2O5 and MnO contents of the slag samples from the different production areas. It is interest- ing to note that the MnO content of the slag is greater than 1% for four out of the six ironmak- ing areas: Canigou, Montagne Noire, Puisaye and Condroz. Therefore, in our case, the presence of this element in slag inclusions is not sufficient to suggest or determine a specific provenance. The P2O5 content of the slag from all the production areas studied here was below 1%, so it is very unlikely that metals or slag inclusions with high levels of phosphorus (e.g., 4L-SM24-1-L1, L3 and L4, 4L-SM24-2-L1) come from these areas. Let us now consider the trace element signatures of the production areas (Fig 10). In this Dim1/Dim2 projection, it can be seen that the six production areas are represented by three main clusters, roughly corresponding to the same number of geographical zones. The two pro- duction areas located in Wallonia (Belgium) plot in the same cluster, despite the difference of MnO content observed. Note that it is not possible to distinguish between these two areas using any PCA approach (including an analysis considering only the two production areas in Wallonia). A second cluster is formed by Se´nonais-Pays-d’Othe and La Puisaye, two produc- tion areas that are relatively close to each other at the considered continental scale of the study. Again, these two production areas cannot be distinguished by PCA, even when only the two areas are considered. Lastly, Montagne Noire and Canigou are represented by the same cluster. It is worth to note that both areas show an anomalous Eu/Sm ratio (Fig 11)…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 133,
+        "phase_f_doc_rank": 113,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f6f64cbc5685c872",
+        "section_title": "5.2 Artefacts and production areas",
+        "page_start": 15,
+        "page_end": 20,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "provenance",
+        "trade_networks",
+        "iron_bars"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Core results section linking artefacts/bars to (or excluding them from) tested production-area clusters; supports the claim that multiple supply networks fed the Rhone trade corridor.",
+      "section_text_excerpt": "5.2 Artefacts and production areas For the first stage of statistical inference, we performed principal component analysis on the entire set of data (data from the slag samples from the different production areas and the slag inclusions embedded in bars and/or PPM). A first observation that can be made is that the three production area clusters are roughly preserved when slag inclusion data are added to the PCA (Fig 13). Some artefacts or PPM (defined by their inclusions) can be clearly graphically separated from the clusters corresponding to production areas, suggesting that they are not consistent with this provenance. A first group of artefacts (G1 in Table 3) is formed by the bars/PPM 1L-SM2-T1, 1L-SM2-T2, 1L-SM2-1L3, 4C-SM2-T1, 1L-SM2-1-L2, 4L-SM24-2-L2, which are all part of the same cluster in the projection of the first three dimensions of the PCA (Fig 14). In previous research [19], it was observed that 4L-SM24-1-L1, L3 and L4, and 4L-SM24- 2-L1 are made of phosphoric iron and that their slag inclusions content very high amounts of phosphorus (between 8 and 10%). On the PCA projection, none of these bars fits with any tested production area but, despite a slight dispersion, their SI plot in the same area of the pro- jections (GP on Fig 15). Consequently, considering the facts that the PPM all contain high lev- els of P in their slag inclusions and in the metal, and that they are located in the same area of the PCA projections, at this stage we consider them to be part of the same cluster (GP on Fig 15). PPM 4L SM24-2-L3 also plots in the same area of the PCA projection, but no P was detected in the slag inclusions by major element analysis. Therefore, at this stage we choose to identify it as a separate group (GP2). Another bar, 6C-SM6-T1, also plots in the GP and GP2 area of the projection. Unfortunately, this sample was not analyzed during the present study and there is no information in published literature on the presence of P in the slag inclusion. Hierarchical agglomerative clustering (HAC) performed on these six PPM (GP group, GP2 and 6C-SM6-T1) clearly shows that 6C-SM6-T1 is different from the five others (not shown). Vice-versa: The iron trad…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 128,
+        "phase_f_doc_rank": 67,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 36.79,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "fca2afc6534a319b",
+        "section_title": "6. Discussion",
+        "page_start": 20,
+        "page_end": 33,
+        "section_type": "discussion"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "trade_networks",
+        "provenance",
+        "iron_trade"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Interprets the provenance results and reinforces the economic implication: multiple long-distance supply routes and distribution networks for a heavy raw material within the western Roman system.",
+      "section_text_excerpt": "Some of the bars studied have been attributed to a Montagne Noire origin, in previous studies based on a more limited number of chemical elements. The groups G2 and G3 from Coustures Vice-versa: The iron trade in the western Roman Empire between Gaul and the Mediterranean Fig 14. PCA on xij of production area slag. Artefacts of Group G1 are coloured (each colour corresponds to an artefact. Production areas are presented in black. % between brackets: % of total variance. Vice-versa: The iron trade in the western Roman Empire between Gaul and the Mediterranean Fig 15. PCA on xij of production area slag. Artefacts of Group GP and GP2 are coloured (each colour corresponds to an artefact. Production areas are presented in black. % between brackets: % of total variance. Vice-versa: The iron trade in the western Roman Empire between Gaul and the Mediterranean Fig 16. PCA on xij of production area slag. Artefacts not consistent with the production areas are highlighted. % between brackets: % of total variance. et al. [9] (1L SM2 T2/SM2-96-KL-Y2, 4C SM2 T1/SM2-4-B and 4C SM2 T3/ SM-2-3-A-1) were considered to be consistent with a Montagne Noire provenance. The present study, which analyses a wider spectrum of trace elements, clearly shows that our group G1 (corre- sponding to group G2 from Coustures et al. 2003) is not compatible with Montagne Noire. Among those bars analyzed by Coustures [9], only one (4C-SM2-T3) remains consistent with Vice-versa: The iron trade in the western Roman Empire between Gaul and the Mediterranean Fig 17. PCA on xij of production area slag. Artefacts consistent with a production area are highlighted. % of total variance. Vice-versa: The iron trade in the western Roman Empire between Gaul and the Mediterranean Fig 18. Stage 2 in statistical inference, PCA of the artefact group G1 (stage 1 of statistical inference). % of total variance. this origin. Nevertheless, in the present study, two new PPM appear to be compatible with the Montagne Noire production area: 1L SM10-2-L1 and L2. The major element content of the slag inclusions of these two PPM had already been studied by Pages [19]. Manganese was found only in the slag inclusions of the latt…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 79,
+        "phase_f_doc_rank": 75,
+        "phase_g_doc_rank": 5,
+        "phase_g_score_0_to_100": 24.0,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4778b3fcdc08eee9",
+        "section_title": "Conclusion",
+        "page_start": 33,
+        "page_end": 35,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "iron_trade",
+        "trade_networks",
+        "long_distance_transport"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Concise synthesis of the key provenance and distribution-network findings; directly supports claims about large-scale interregional trade in heavy raw materials in the western Roman economy.",
+      "section_text_excerpt": "This study focused on the trace element analysis of slag inclusions embedded in bars from the largest known set of Roman wrecks carrying cargoes of iron: the Saintes-Maries-de-la-Mer Vice-versa: The iron trade in the western Roman Empire between Gaul and the Mediterranean Fig 27. GALLICUM stamp discovered by Luc Long on a 2M-type bar from the SM33 wreck off Saintes-Maries-de- la-Mer. wrecks. The results were compared to the composition of slag from the six largest iron-produc- ing areas in the western Roman Empire. A statistical approach, mainly using PCA, enabled us to link some bars with multiple provenance groups, which did or did not include the produc- tion areas being analyzed. Our interpretations are based on current data, resulting from 20 years of research. Although these analyses will need to be completed in the future, they already offer a glimpse of what appear to be different networks linking places of production to places of consumption. Indeed, at the end of the Iron Age and during the Roman conquest of Hispania and Gaul, iron became a common, everyday material used extensively in all aspects of Gallo-Roman life and found in all categories of material culture. This large-scale, universal use of iron was fueled by the development of large iron production areas, especially in Gaul, and on inten- sive, crisscrossing trade and distribution flows. Being a heavy material, large quantities of iron were transported by ship over long distances via the Mediterranean Sea and the rivers flowing into it. A complex system of intertwining commercial routes supplied iron to the whole of the expanding Roman Empire. Thanks to our study, we can see that iron from some regions, including Wallonia (Belgium), was carried down the Rhoˆne, while iron from other regions, including Montagne Noire (France), was carried up the river. The intricacy of this sales and distribution network can be partly explained by the fact that each ironmaking area seems to have been more likely to produce a particular quality of iron. Iron is in fact a metal with multiple qualities, of which ferrite, steel, and phosphoric iron are just a few. The ancient iron economy is therefore an importan…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 167,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ff9b1da720b82205",
+        "section_title": "Acknowledgments",
+        "page_start": 35,
+        "page_end": 35,
+        "section_type": "acknowledgements"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Acknowledgements only.",
+      "section_text_excerpt": "Our thanks go to Herve´ Laurent and Marc Leroy who have contributed to the construction of knowledge of ancient iron metallurgy in Puisaye and in the Se´nonais-Pays-d’Othe. Our grati- tude also goes to Vincent Serneels who wished to share his documentation and knowledge of the ancient iron metallurgy of Belgium. Without his research in the 1970s, the database on Wallonia presented in this article would never have had such importance and quality.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "0fd26f5b299b02dc",
+        "section_title": "References",
+        "page_start": 35,
+        "page_end": 38,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "references"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Bibliography only; useful for follow-up sourcing, not for direct evidence extraction.",
+      "section_text_excerpt": "Tchernia A. 2011: Les Romains et le commerce, Naples, Publications du Centre Jean Be´rard (coll. Pagès G. 2014: Productions, commerces et consommation du fer dans le sud de la Gaule de la Proto- histoire à la domination romaine, Gallia, 71/2, p. 47–67. Long L., Rico C., Domergue C. 2002: Les e´paves antiques de Camargue et le commerce maritime du fer en Me´diterrane´e nord-occidentale (Ier siècle avant J.-C.—Ier siècle après J.-C.), L’Africa Romana, XIV, p. 161–188. Maillet G., Poizot E., Sabatier F., Vella C., Me´ar Y. 2011: Pattern of Sediment Transport in a Microtidal River Mouth Using Geostatistical Sediment-Trend Analysis, Journal of Sedimentary Research 81, 81 (2). Mangin M. 2004: Le fer, Paris, Errance (coll. Arche´ologiques), 239 p. Domergue C., Serneels V., Cauuet B., Pailler J.-M., Orzechowski S. 2006: Mines et me´tallurgies en Gaule à la fin de l’Aˆ ge du Fer et à l’e´poque romaine, in Paunier D. (dir.), Celtes et Gaulois, l’Arche´ologie face à l’histoire, 5: la romanisation et la question de l’he´ritage celtique. Actes de la table ronde de Lau- sanne, 17–18 juin 2005, Glux-en-Glenne, Bibracte, Centre arche´ologique europe´en (coll. Bibracte), p. 131–162. Schwab R., Heger D., Ho¨ppner B., Pernicka E. 2006: The provenance of iron artefacts from Manching: a multi-technique approach, Archaeometry, 48, p. 433–452. Charlton M. F. 2015: The last frontier in ‘sourcing’: the hopes, constraints and future for iron provenance research, Journal of Archaeological Science, 56, p. 210–220. Coustures M. P., Be´ziat D., Tollon F., Domergue C., Long L., Rebiscoul A. 2003: The use of trace ele- ment analysis of entrapped slag inclusions to establish ore—Bar iron links: examples from two galo- roman iron-making sites in France (Les Martys, Montagne noire, and les Ferrys, Loiret), Archaeometry, 45, p. 599–613. Leroy S., Cohen S. X., Verna C., Gratuze B., Te´reygeol F., Fluzin P., et al. 2012: The medieval iron mar- ket in Ariège (France). Multidisciplinary analytical approach and multivariate analyses, Journal of Archaeological Science, 39, p. 1080–1093. Disser A., Dillmann P., Leroy M., L’He´ritier M., Bauvais S., Fluzin P. 2016: Iron supply for the building of Metz ca…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "68c1a356f2d41cf6",
+        "section_title": "Supporting information",
+        "page_start": 35,
+        "page_end": 35,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "dataset_pointer"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Pointer to an external dataset (S1 Table). Potentially useful for follow-up, but not substantive evidence in this extracted text.",
+      "section_text_excerpt": "S1 Table. Chemical data of iron production areas and slag inclusions of Primary Pieces of Metal (PPM) of iron bars. (XLSX)",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52689194,
+        "doc_abstention_reason": null
+      }
+    }
+  ]
+}

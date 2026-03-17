@@ -1,0 +1,398 @@
+{
+  "chapter_id": "chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi",
+  "doc_id": "the_growth_and_decline_of_the_western_roman_empi-82aa7f6ad2c8",
+  "doc_title": "BOOK REVIEW ESSAY",
+  "has_useful_information": true,
+  "document_label_0_to_3": 2,
+  "document_label_band": "useful_support",
+  "document_notes": "Quantitative modelling paper (Cliodynamics, 2019) focusing on feedback relationships between army size, territorial extent, and coin production/debasement. Useful as supporting material for how fiscal/coinage dynamics interact with military and territorial policy in narratives of Western Roman decline; not primary archaeological/economic evidence by itself.",
+  "manual_review_basis": [
+    "direct PDF reading",
+    "run cde2f3959baf36fa0d09956c normalized sections",
+    "review packet with extracted section text and current pipeline trace"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "Title The Growth and Decline of the Western Roman Empire",
+      "page_start": 1,
+      "page_end": 2,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "coinage_debasement",
+        "army_territory_dynamics",
+        "quant_model_feedback"
+      ],
+      "notes": "Contains the paper's abstract-level summary: models interdependent dynamics of army size, territory, and coin production/debasement and argues an optimal policy of stopping debasement and reducing army/territory (centralized control requirement)."
+    }
+  ],
+  "near_miss_sections": [],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "8a7b90ed2b3249e0",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Front matter / repository metadata only.",
+      "section_text_excerpt": "",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.59739142,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c5a3c4040c688f8c",
+        "section_title": "Title The Growth and Decline of the Western Roman Empire",
+        "page_start": 1,
+        "page_end": 2,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "coinage_debasement",
+        "army_territory_dynamics",
+        "quant_model_feedback"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Abstract-level summary of a feedback model connecting army size, territory, and coin production/debasement, including a concrete 'optimal policy' claim (stop debasement, reduce army/territory) that supports fiscal-military linkage discussion.",
+      "section_text_excerpt": "The Growth and Decline of the Western Roman Empire: Quantifying the Dynamics of Army Size, Territory, and Coinage terms of a Creative Commons Attribution License, available at Peer reviewed Cliodynamics: The Journal of Quantitative History and Cultural Evolution The Growth and Decline of the Western Roman Empire: Quantifying the Dynamics of Army Size, We model the Western Roman Empire from 500 BCE to 500 CE, aiming to understand the interdependent dynamics of army size, conquered territory and the production and debasement of coins within the empire. The relationships are represented through feed- back relationships and modelled mathematically via a dynamical system, specified as a set of ordinary differential equations. We analyze the stability of a subsystem and determine that it is neutrally stable. Based on this, we find that to prevent decline, the optimal policy was to stop debasement and reduce the army size and territory during the rule of Marcus Aurelius. Given the nature of the stability of the system and the kind of policies necessary to prevent decline, we argue that a high degree of centralized control was necessary, in line with basic tenets of structural-demographic theory.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 11,
+        "phase_f_doc_rank": 48,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.59739142,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "2f5f45e6841870a5",
+        "section_title": "1. Introduction",
+        "page_start": 2,
+        "page_end": 2,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "quant_model_feedback"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Positions the work within quantitative/cliodynamics approaches and motivates the chosen variables; useful framing but not direct economic evidence.",
+      "section_text_excerpt": "Mathematical and numerical modelling has increasingly been passing through disciplinary boundaries, with quantitative models in the social sciences becoming more common. Cliodynamics is one such recent development (Turchin 2008, 2011), wherein the integration of quantitative methods and historical knowledge brings new insights into human behavior and social institutions. The present study lies within this domain. Our research focus is to quantify feedback relationships between a set of variables in the many factors at play in the decline of the Western Roman Empire. There are centuries’ worth of explanations for the decline of the Western Roman Empire. An early starting point for the study of the Roman Empire and its decline is the work of Gibbon (1776). Since then, at least 210 reasons and theories have been put forth for the fall of the Roman Empire (Storey and Storey 2017), a list of which was originally compiled by Demandt Citation: Roman, Sabin, and Erika Palmer. 2019. “The Growth and Decline of the Western",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 160,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.59739142,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "8c06db8c73adaf87",
+        "section_title": "The Growth and Decline of the Western Roman Empire: Quantifying the Dynamics of Army Size, Territory, and Coinage",
+        "page_start": 2,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "coinage_debasement",
+        "army_territory_dynamics",
+        "quant_model_feedback"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Continues the introduction and explains why the model focuses on army size, territory, and coinage/debasement; useful for connecting fiscal and military dynamics conceptually.",
+      "section_text_excerpt": "Roman Empire: Quantifying the Dynamics of Army Size, Territory, and Coinage.” Cliodynamics 10: 76–98. Roman and Palmer: Growth and Decline. Cliodynamics 10:2 (2019) (1984). In Appendix A, we sort these possible reasons into different categories and discuss their viability as explanations of collapse. Inspired by Tainter (1988), we identify the following categories: exogenous causes that are either natural (e.g., calamities), or social (e.g., foreign invaders), endogenous causes that are either always present (e.g., wealth differences) or episodic (e.g., civil wars) and other reasons that have a moral or mystical nature (e.g., egoism, lack of dignity). Any one given cause is unlikely to explain why a complex phenomenon, such as the decline of a civilization, occurred. As such, we focus on determining the rela- tionships between several interrelated factors, such as the size of the army, that of the territory, and the quality and quantity of coins, and how these dependencies affected them over time. In addition, the model we have built is mathematical and computational in nature, which provides a quantitative understanding of the different factors in play. Thus, we move from the mental (or conceptual) models listed in Appendix A to quantitative, precise ones, where the magnitudes of the variables are known or determined. The maximum time horizon for our model is from 500 BCE to 500 CE, and we aim to understand the interdependent dynamics of the size of the army, the terri- torial expanse and the production and debasement of coins within the empire. These are the historical data we used, which pertain to the full lifespan of the empire or to key periods (such as the height of the empire) and are representative of the entire western empire. The relationships between these quantities are represented through feedback mechanisms and modelled mathematically via a dynamical system specified as a set of ordinary differential equations. By solving the system, we can check to what extent the historical record is recovered by the model. While the parameters of the model are determined so that the model predictions best fit the data, they are nonetheless archaeologically mea…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 9,
+        "phase_f_doc_rank": 19,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 50.81,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.59739142,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c1b0c179ac7129c9",
+        "section_title": "2. Mathematical and Computational Models of the Roman Empire",
+        "page_start": 5,
+        "page_end": 6,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "quant_model_literature"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Survey of prior modelling approaches (military, travel, commerce, etc.) that can be cited to justify quantitative modelling as a complement to qualitative economic arguments.",
+      "section_text_excerpt": "2. Mathematical and Computational Models of the Roman Empire While the decline of the Roman Empire has been studied for centuries, the mathe- matical modelling of the possible dynamics of and within the empire has only been attempted in recent decades. Several papers have focused on geographical aspects of the Roman Empire; either related to military activity (Stewart 1999; ReVelle and Rosing 2000; Henning 2003), travel (Graham 2006) or commerce (Scheidel 2013, 2014). Stewart (1999) introduced a graph-theoretic method for approaching the problem of how to secure the different regions of the Roman Empire from possible attacks. ReVelle and Rosing (2000) analyzed this mathematical problem and possible strategies in greater depth. Henning (2003) explored ways of reducing the substantial costs of maintaining legions and developed a new strategy for tackling the problem. While applicable to the Roman Empire, these graph-theoretic considerations are much more general and not specific to the Roman case. Graham (2006) carried out a study that focuses more on the Roman Empire. Employing network analysis, he used Antonine itineraries in agent-based simula- tions of information diffusion along the different routes. An estimate was obtained for the time it would take for information to reach different fractions of the population, and the findings were partially validated against the density of inscriptions in the different regions of the empire. Another model that focuses on geographical aspects is ORBIS: The Stanford Geospatial Network Model of the Roman World, which simulates the time and costs associated to travel via land, rivers or sea in the Roman Empire in conditions approximating the state of the empire at 200 CE. By using this network model, Scheidel (2013) determines the correlation between maximum prices of transported goods and sailing time. Similarly, with the same network model, Scheidel (2014) estimates travel times and costs within the empire at courier and military speeds during the summer and winter. While these geographical models are important for quantifying aspects of Roman communication and travel, they are static in nature, temporally constrained to …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 40,
+        "phase_f_doc_rank": 44,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 38.7,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.59739142,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6cc10a597dca2a6c",
+        "section_title": "3. Model Specification",
+        "page_start": 6,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "quant_model_feedback",
+        "coinage_debasement",
+        "army_territory_dynamics"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Technical core of the model: defines feedback relationships and equations connecting army size, territorial extent, and coin production/debasement; useful to substantiate a fiscal-military feedback claim, though method-heavy.",
+      "section_text_excerpt": "In this section, we first outline the modelling methodology we employed and then introduce our model (3.1)–(3.5) for the growth and decline of the Western Roman Empire. Afterwards, we discuss its structure and how the different terms can be interpreted, along with the parameters and their values, which are given in Table 1. In the model (3.1)–(3.5), we account for the growth and decline of the army size, the land conquered and the production and debasement of silver coins. The evolution of the army size is estimated from multiple sources (MacMullen 1980; Ward 1990; Roth 1999; Campbell 2006). The extent of land conquests over time is from Taagepera (1979), and the data for the production of coins is from Hopkins (1980), while debasement information is from Tainter (1988, 1996). The time span of the data regarding the army and land is 1000 years, from 500 BCE (-500) to 500 CE (+500), which determines the maximum time horizon for the model. We refer to the historical time series, which we aim to reproduce as reference modes (see Figure 1). Given this data, the task of developing a dynamical systems model can be understood as constructing a set of ordinary differential equations (ODEs), whose solutions reproduce the observed historical trajectories. The system of ODEs gives the rate of change of variables (e.g., army size, territory), which are typically Roman and Palmer: Growth and Decline. Cliodynamics 10:2 (2019) Table 1. Parameter and initial values for model (3.1)–(3.5) Debasement effect on changes of army size 1142 soldiers/year Army effect on changes in area of territory 326 km2/year Scaling parameter for army size 200 000 soldiers Debasement effect on changes of area of territory Territory effect on changes in debasement 0.002856 Scaling parameter for area of territory 2 500 000 km2 Net growth rate of silver reserves 2.5% Army and territory decrease after division 55% Initial value of army size 48 850 soldiers Initial value of territory area 648 521 km2 )(𝑡0) Initial value of silver concentration 17.3% expressed as linear and nonlinear combinations of the variables themselves. Often, these type of models do not have an explicit time dependence and are calle…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 83,
+        "phase_f_doc_rank": 24,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 43.33,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.59739142,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "38ca01936904c3b8",
+        "section_title": "4. Results",
+        "page_start": 12,
+        "page_end": 15,
+        "section_type": "results"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "quant_model_results",
+        "coinage_debasement",
+        "army_territory_dynamics"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Compares model output to historical reference modes for army size, territory, and debasement, offering a quantitative lens on decline dynamics that can support discussion of economic-military interactions.",
+      "section_text_excerpt": "In Figure 1, the reference modes of the data are compared to the model output. Within the uncertainty and granularity of the data, the army size, land conquered and the debasement are well reproduced by the subsystem (3.1)–(3.3). With regard to the number of coins minted, we see that equation (3.5) recovers the downward trajectory well but seems to overestimate the number of silver coins prior to 137 BCE. The model has a subsystem (3.1)–(3.3) for which we can write down an approximate closed-form solution. This helps us in fitting the trajectories of the dynamical system to the historical record. For the subsystem of ordinary differen- tial equations (3.1)–(3.3), we find the following approximation for the solution up to 𝑡≤𝑡𝑑: 𝑥(𝑡) = 𝐴[1 + sin(𝑤[𝑡+ Δ])] (4.1) 𝑦(𝑡) = 𝐵[1 + sin(𝑤[𝑡+ Δ −𝛿])] ) (𝑡) = 𝐶[1 + cos(𝜔[𝑡+ Δ])] The parameters in the subsystem (3.1)–(3.3) and in the solution (4.1) are related as follows: 𝑝0 = 𝑤𝐴, 𝑝1 = 𝐶, 𝑝2 = 𝜔𝐵sin(𝜔𝛿), 𝑝3 = 𝐴, 𝑝4 = 𝜔𝐵 cos (𝜔𝛿), 𝑝5 = 𝜔𝐶, 𝑝6 = 𝐵. Thus, we see that not all the parameters 𝑝0, … , 𝑝6 are indepen- dent, and it is sufficient to determine 𝐴, 𝐵, 𝐶, 𝜔, Δ and 𝛿. In Table 1, the initial conditions of the subsystem (3.1)–(3.3) have been set using the solution (4.1) at time 𝑡0. Roman and Palmer: Growth and Decline. Cliodynamics 10:2 (2019) Fitting the output of the model to the data requires us to take into account the following aspects: (1) the overall fit to the historical trajectory, which involves (a) the fit as measured by e.g., an 𝐿1 loss (least absolute deviations) and (b) the match of beginning and end values of the model output and the reference modes; and (2) the requirement of having: (a) positive parameters and (b) non-negative output values throughout the time periods in the data. A minimum of an 𝐿1 loss does not imply a good match of initial and final values of the model output with the reference modes; nor does it guarantee the non- negativity requirements. While it is possible to perform an optimization taking into account these constraints, in practice we found it simpler to provide an initial estimate of the parameters that give a good visual match to the data and then fine- tune the values by performi…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 77,
+        "phase_f_doc_rank": 80,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.59739142,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d57767ba483a6406",
+        "section_title": "5. Discussion",
+        "page_start": 15,
+        "page_end": 20,
+        "section_type": "discussion"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "coinage_debasement",
+        "policy_implications"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Interprets scope/limitations and policy implications (centralized control, debasement choices). Useful for argumentation but less evidentiary than the abstract/results.",
+      "section_text_excerpt": "In this section, we discuss certain aspects pertaining to the scope of the model. Specifically, we explain what elements we chose or chose not to incorporate; the extent to which the archaeological record is reproduced and how the mismatches can be understood; implications of the model and its relation to broader theories on societal collapse; and the nature of the mitigation policies proposed above and how they relate to other cases of collapse. The scope of the model is dictated in part by the availability and quality of the data, the possibility of finding system-wide, closed feedback mechanisms between the relevant variables, and the ability of the proposed equations to relate to and reproduce the archaeological record. These criteria are aimed at finding a feasible mathematical description of the system and do not necessarily guarantee that all factors that can be deemed archaeologically important will be incorporated within the model. As such, there are innumerable aspects the model does not address (e.g., trade relations, border attacks, army logistics), which do not lie within the scope of our modelling effort. A particularly important topic is the multi-metallic monetary system that the Roman Empire used throughout its lifetime. While bronze and silver coins were predominantly used in the early and middle periods of the empire, the later periods enjoyed an increased influx of gold (Bransbourg 2015), to the extent that the high- purity gold coins were commonly issued, most notably the aureus until the third century CE and the solidus thereafter. Given this, our model is not representative of the entire Roman monetary system, as we do not account for gold coinage. Roman and Palmer: Growth and Decline. Cliodynamics 10:2 (2019) However, this does not undermine the consistency of our modelling effort, nor of our results. Gold had a different monetary circuit than the other metals, being isolated in its usage and distribution in part due to the inequality (Levitt 2019; Milanovic et al. 2017) and stratification of Roman society (Bransbourg 2015), as well as certain general behavioral tendencies (such as Gresham’s law [Sparavigna 2014]). Access to gold was tig…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 39,
+        "phase_f_doc_rank": 30,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 39.79,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.59739142,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d5c9b31e20857b7e",
+        "section_title": "6. Conclusion",
+        "page_start": 20,
+        "page_end": 21,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "army_territory_dynamics",
+        "coinage_debasement"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Summarizes the modelling claim and reiterates that many single-cause explanations exist; good wrap-up, but not the strongest section for specific economic detail.",
+      "section_text_excerpt": "Hundreds of reasons have been put forward for the fall of the Western Roman Empire; we have classified them into the several categories in Appendix A. Any one reason is not sufficient to explain the decline of such a complex society. We have aimed to develop an understanding that links several dependent factors together. On the other hand, given the complexity of Roman society, it would be unfeasible to attempt a model that covers all possible features. Thus, we identified certain key feedback relationships in the Western Roman Empire between aggregated variables representative for the whole empire, for which we had data: the army size, the area of the territory, and the debasement and quantity of silver coins. The main focus was on understanding the evolution over time of these variables, and we built a system of ordinary differential equa- tions that captures this feedback quantitatively. The linear structure of a subsystem of the model allowed us to solve part of the system of equations analytically up to the time of division of the empire at 395 CE. Parameters in the model were optimized to match the historical record as closely as possible. In general, even an optimal choice of parameters does not guarantee a good fit. However, in this case, the structure of a model gives numerical solutions that show a close fit to the historical record. Furthermore, the parameters are archaeologically meaningful, relating to the scale of the variables. A stability analysis determined that the linear subsystem has a neutral center, with periodic orbits (for details, see Appendix B). This implies that by making adequate exogenous changes to the system at the right times and to the right ex- tent, the life span of the Western Empire could have been increased significantly. We found that the optimal policy is to roughly halve the size of the army and territory and fix the silver content of coins at 50% at 171 CE, during the rule of Marcus Aurelius. For socio-ecological systems, such as Easter Island (Roman et al. 2017) and the Classic Maya (Roman et al. 2018), the collapse can be modelled as a type of critical transition, in which a stable fixed point changes to an attractiv…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 15,
+        "phase_f_doc_rank": 37,
+        "phase_g_doc_rank": 5,
+        "phase_g_score_0_to_100": 32.33,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.59739142,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "38bb2803b0a8601a",
+        "section_title": "Acknowledgments",
+        "page_start": 21,
+        "page_end": 21,
+        "section_type": "acknowledgements"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Acknowledgments only.",
+      "section_text_excerpt": "We thank the Grantham Foundation for supporting this work and the anonymous reviewers for their comments and insights.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.59739142,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "2a2ae1ee852231f6",
+        "section_title": "References",
+        "page_start": 21,
+        "page_end": 24,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Reference list only.",
+      "section_text_excerpt": "Aimers, James J. 2007. “What Maya Collapse? Terminal Classic Variation in the Maya Lowlands.” Journal of Archaeological Research 15 (4): 329–77. Baker, David C. 2011. “The Roman Dominate from the Perspective of Demographic- Structural Theory.” Cliodynamics 2 (2): 217–51. doi: 10.21237/C7clio22216. Banaji, Jairus. 2002. Agrarian Change in Late Antiquity: Gold, Labour, and Aristo- Bowman, Alan, and Andrew Wilson. 2009. Quantifying the Roman Economy: Bransbourg, Gilles. 2015. “The Later Roman Empire.” In Fiscal Regimes and the Political Economy of Premodern States, edited by Andrew Monson and Walter Scheidel, 258–81. Cambridge: Cambridge University Press. Brunton, Steven L., Joshua L. Proctor, and J. Nathan Kutz. 2016. “Discovering Governing Equations from Data by Sparse Identification of Nonlinear Dynam- ical Systems.” Proceedings of the National Academy of Sciences 113 (15): 3932– 37. doi: 10.1073/pnas.1517384113. Campbell, B. 2006. The Roman Army, 31 B.C.–A.D. 337: A Sourcebook. London: Culbert, T. Patrick. 1991. “The Collapse of Classic Maya Civilization.” In The Collapse of Ancient States and Civilizations, edited by Norman Yoffee and George L. Cowgill, 69–101. Tucson, AZ: University of Arizona Press. Demandt, A. 1984. Der Fall Roms: Die Auflösung des römischen Reiches im Urteil der Nachwelt. Munich: C. H. Beck. Garnsey, Peter, and Richard Saller. 2015. The Roman Empire: Economy, Society and Roman and Palmer: Growth and Decline. Cliodynamics 10:2 (2019) Gibbon, Edward. 1776. The History of the Decline and Fall of the Roman Empire. Goldstone, Jack A. 1991. Revolution and Rebellion in the Early Modern World. dynamics 8 (2): 85–112. doi: 10.21237/C7clio8237450. Graham, Shawn. 2006. “Networks, Agent-based Models and the Antonine Itineraries: Implications for Roman Archaeology.” Journal of Mediterranean Archaeology 19 (1): 45–64. doi: 10.1558/jmea.2006.19.1.45. Guest, Peter. 2008. “Roman Gold and Hun Kings: The Use and Hoarding of Solidi in the Late Fourth and Fifth Centuries.” In Roman Coins Outside the Empire: Ways and Phases, Contexts and Functions, edited by Aleksander Bursche, Renata Ciolek, and Reinhard Wolters, 295–307. Moneta: Wetteren. Gündüz, Güngör. 200…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.59739142,
+        "doc_abstention_reason": null
+      }
+    }
+  ]
+}
