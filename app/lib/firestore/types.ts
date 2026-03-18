@@ -240,6 +240,9 @@ export type QuellenFinderRunDoc = ArchiveFields & {
   resultCount?: number;
   stage2Count?: number;
   stage3Count?: number;
+  pdfScanDocCount?: number;
+  pdfScanSectionCount?: number;
+  usefulPdfCount?: number;
   finalScoreCol?: string;
   hadPartialFailures?: boolean;
   errorMessage?: string | null;
@@ -305,38 +308,91 @@ export type TwoLaneResultDoc = {
   createdAt: Timestamp;
 };
 
-export type PdfScanStage2HitDoc = {
+export type PdfScanPreviewSection = {
+  sectionId?: string | null;
+  title?: string | null;
+  pageStart?: number | null;
+  pageEnd?: number | null;
+  score0To100?: number | null;
+  scoreBand?: string | null;
+};
+
+export type PdfScanDocSummaryDoc = {
   pdfId: string;
+  docId: string;
+  pdfFilename?: string | null;
   pdfLabel: string;
-  pdfFileId?: string | null;
-  subpoint?: string | null;
-  tier?: string | null;
-  score: number | null;
-  anchor: string | null;
-  anchorAlt: string | null;
-  summary: string | null;
-  locatorHint?: string | null;
-  coverage?: string | null;
-  scoreRationale?: string | null;
-  evidenceSnippet?: string | null;
-  subpointScores?: Record<string, number> | null;
-  diagnostics?: Record<string, unknown>;
+  docTitle: string;
+  pageCount?: number | null;
+  sectionCount?: number | null;
+  acceptedHeadingCount?: number | null;
+  strategy?: string | null;
+  doclingStatus?: string | null;
+  hasOutline?: boolean | null;
+  outlineCount?: number | null;
+  qualityFlags?: string[] | null;
+  hasUsefulInformation?: boolean | null;
+  docMatchProbability?: number | null;
+  topSectionScore?: number | null;
+  topSectionTitle?: string | null;
+  visibleSectionCount?: number | null;
+  previewSections?: PdfScanPreviewSection[] | null;
   createdAt: Timestamp;
 };
 
-export type PdfScanStage3SectionDoc = {
+export type PdfScanResultDoc = {
   pdfId: string;
+  docId: string;
+  pdfFilename?: string | null;
   pdfLabel: string;
-  pdfFileId?: string | null;
-  anchor: string | null;
-  anchorAlt: string | null;
-  heading: string | null;
-  headingMethod?: string | null;
+  docTitle: string;
+  sectionId: string;
+  title: string | null;
+  sectionPath?: string[] | null;
+  sectionPathText?: string | null;
+  sectionType?: string | null;
+  pageStart?: number | null;
+  pageEnd?: number | null;
+  score0To100?: number | null;
+  scoreBand?: string | null;
+  supportStrength?: number | null;
+  supportingPassageCount?: number | null;
+  subpointCoverageIds?: string[] | null;
+  qualityFlags?: string[] | null;
+  globalRank?: number | null;
+  docRank?: number | null;
   anchorPage?: number | null;
-  hitCount?: number | null;
-  summary?: string | null;
-  coveredSubpoints?: string[] | null;
-  score: number | null;
-  diagnostics?: Record<string, unknown>;
+  headingAnchor?: {
+    page?: number | null;
+    blockIndex?: number | null;
+    absBlockIndex?: number | null;
+    method?: string | null;
+    confidence?: number | null;
+  } | null;
+  span?: {
+    startAbsBlockIndex?: number | null;
+    endAbsBlockIndex?: number | null;
+    blockCount?: number | null;
+  } | null;
+  evidencePreview?: Array<{
+    pageStart?: number | null;
+    pageEnd?: number | null;
+    lanes?: string[] | null;
+    text?: string | null;
+  }> | null;
+  createdAt: Timestamp;
+};
+
+export type PdfScanDetailsDoc = {
+  docId: string;
+  pdfId: string;
+  pdfFilename?: string | null;
+  docTitle?: string | null;
+  overview?: Record<string, unknown> | null;
+  charts?: Record<string, unknown> | null;
+  phaseC?: Record<string, unknown> | null;
+  phaseE?: Record<string, unknown> | null;
+  phaseF?: Record<string, unknown> | null;
+  phaseG?: Record<string, unknown> | null;
   createdAt: Timestamp;
 };

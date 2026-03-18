@@ -1,4 +1,4 @@
-name: Deploy FastAPI and Two-Lane Job
+name: Deploy FastAPI and Workers
 
 on:
   workflow_dispatch:
@@ -16,6 +16,7 @@ env:
   GCP_REGION: europe-west3
   CLOUD_RUN_SERVICE: instantpaper-api
   CLOUD_RUN_JOB: instantpaper-two-lane-sources
+  PDF_SCAN_CLOUD_RUN_JOB: instantpaper-pdf-scan
   IMAGE_REPOSITORY: cloud-run-source-deploy
 
 jobs:
@@ -45,7 +46,7 @@ jobs:
         run: |
           IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${IMAGE_REPOSITORY}/${CLOUD_RUN_SERVICE}:${GITHUB_SHA}"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
-          docker build -t "$IMAGE" ./fastapi
+          docker build -f fastapi/Dockerfile -t "$IMAGE" .
           docker push "$IMAGE"
 
       - name: Migrate Firebase runtime vars off secrets
@@ -61,7 +62,7 @@ jobs:
             --image "$IMAGE" \
             --allow-unauthenticated \
             --service-account "instantpaper-api-runtime@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
-            --update-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,TWO_LANE_CLOUD_RUN_JOB_NAME=${CLOUD_RUN_JOB},TWO_LANE_CLOUD_RUN_JOB_REGION=${GCP_REGION},TWO_LANE_SOURCES_EXECUTION_BACKEND=cloud_run_job" \
+            --update-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,TWO_LANE_CLOUD_RUN_JOB_NAME=${CLOUD_RUN_JOB},TWO_LANE_CLOUD_RUN_JOB_REGION=${GCP_REGION},TWO_LANE_SOURCES_EXECUTION_BACKEND=cloud_run_job,PDF_SCAN_CLOUD_RUN_JOB_NAME=${PDF_SCAN_CLOUD_RUN_JOB},PDF_SCAN_CLOUD_RUN_JOB_REGION=${GCP_REGION},PDF_SCAN_EXECUTION_BACKEND=cloud_run_job" \
             --update-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest,USER_KEY_ENCRYPTION_KEY=USER_KEY_ENCRYPTION_KEY:latest,ADMIN_UIDS=ADMIN_UIDS:latest"
 
       - name: Deploy two-lane Cloud Run Job
@@ -85,4 +86,27 @@ jobs:
             gcloud run jobs update "$CLOUD_RUN_JOB" "${COMMON_FLAGS[@]}"
           else
             gcloud run jobs create "$CLOUD_RUN_JOB" "${COMMON_FLAGS[@]}"
+          fi
+
+      - name: Deploy PDF scan Cloud Run Job
+        run: |
+          COMMON_FLAGS=(
+            --region "$GCP_REGION"
+            --image "$IMAGE"
+            --service-account "instantpaper-two-lane-job@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
+            --cpu 4
+            --memory 16Gi
+            --tasks 1
+            --parallelism 1
+            --max-retries 0
+            --task-timeout 4h
+            --command python
+            --set-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app"
+            --set-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest"
+          )
+
+          if gcloud run jobs describe "$PDF_SCAN_CLOUD_RUN_JOB" --region "$GCP_REGION" >/dev/null 2>&1; then
+            gcloud run jobs update "$PDF_SCAN_CLOUD_RUN_JOB" "${COMMON_FLAGS[@]}"
+          else
+            gcloud run jobs create "$PDF_SCAN_CLOUD_RUN_JOB" "${COMMON_FLAGS[@]}"
           fi

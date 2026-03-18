@@ -75,54 +75,30 @@ class CloudRunJobLauncher:
         self._project_id = project_id
         return self._session, self._project_id
 
-    def _job_name(self) -> str:
-        job_name = str(config.TWO_LANE_CLOUD_RUN_JOB_NAME or "").strip()
+    def _job_name(self, value: str, env_name: str) -> str:
+        job_name = str(value or "").strip()
         if not job_name:
-            raise RuntimeError("TWO_LANE_CLOUD_RUN_JOB_NAME is not configured.")
+            raise RuntimeError(f"{env_name} is not configured.")
         return job_name
 
-    def _job_region(self) -> str:
-        region = str(config.TWO_LANE_CLOUD_RUN_JOB_REGION or "").strip()
+    def _job_region(self, value: str, env_name: str) -> str:
+        region = str(value or "").strip()
         if not region:
-            raise RuntimeError("TWO_LANE_CLOUD_RUN_JOB_REGION is not configured.")
+            raise RuntimeError(f"{env_name} is not configured.")
         return region
 
-    def execute_two_lane_sources_job(
+    def _execute_job(
         self,
         *,
-        user_id: str,
-        projekt_id: str,
-        run_id: str,
+        job_name: str,
+        region: str,
+        args: list[str],
     ) -> dict[str, str | None]:
         session, project_id = self._ensure_session()
-        region = self._job_region()
-        job_name = self._job_name()
-        url = (
-            f"https://run.googleapis.com/v2/projects/{project_id}/locations/{region}/jobs/{job_name}:run"
-        )
-        args = [
-            "run_two_lane_job.py",
-            f"--user-id={str(user_id).strip()}",
-            f"--project-id={str(projekt_id).strip()}",
-            f"--run-id={str(run_id).strip()}",
-        ]
-        payload = {
-            "overrides": {
-                "containerOverrides": [
-                    {
-                        "args": args,
-                    }
-                ]
-            }
-        }
+        url = f"https://run.googleapis.com/v2/projects/{project_id}/locations/{region}/jobs/{job_name}:run"
+        payload = {"overrides": {"containerOverrides": [{"args": args}]}}
 
-        logger.info(
-            "Launching Cloud Run Job | job=%s region=%s run_id=%s projekt_id=%s",
-            job_name,
-            region,
-            run_id,
-            projekt_id,
-        )
+        logger.info("Launching Cloud Run Job | job=%s region=%s args=%s", job_name, region, args)
         resp = session.post(url, json=payload, timeout=60)
         try:
             body = resp.json()
@@ -142,6 +118,52 @@ class CloudRunJobLauncher:
             "operation_name": operation_name,
             "execution_name": execution_name,
         }
+
+    def execute_two_lane_sources_job(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+    ) -> dict[str, str | None]:
+        region = self._job_region(
+            str(config.TWO_LANE_CLOUD_RUN_JOB_REGION or "").strip(),
+            "TWO_LANE_CLOUD_RUN_JOB_REGION",
+        )
+        job_name = self._job_name(
+            str(config.TWO_LANE_CLOUD_RUN_JOB_NAME or "").strip(),
+            "TWO_LANE_CLOUD_RUN_JOB_NAME",
+        )
+        args = [
+            "run_two_lane_job.py",
+            f"--user-id={str(user_id).strip()}",
+            f"--project-id={str(projekt_id).strip()}",
+            f"--run-id={str(run_id).strip()}",
+        ]
+        return self._execute_job(job_name=job_name, region=region, args=args)
+
+    def execute_pdf_scan_job(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+    ) -> dict[str, str | None]:
+        region = self._job_region(
+            str(config.PDF_SCAN_CLOUD_RUN_JOB_REGION or "").strip(),
+            "PDF_SCAN_CLOUD_RUN_JOB_REGION",
+        )
+        job_name = self._job_name(
+            str(config.PDF_SCAN_CLOUD_RUN_JOB_NAME or "").strip(),
+            "PDF_SCAN_CLOUD_RUN_JOB_NAME",
+        )
+        args = [
+            "run_pdf_scan_job.py",
+            f"--user-id={str(user_id).strip()}",
+            f"--project-id={str(projekt_id).strip()}",
+            f"--run-id={str(run_id).strip()}",
+        ]
+        return self._execute_job(job_name=job_name, region=region, args=args)
 
 
 cloud_run_job_launcher = CloudRunJobLauncher()

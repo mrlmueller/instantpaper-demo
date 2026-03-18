@@ -319,10 +319,11 @@ class QuellenFinderFirestoreService:
         snaps = list(col.stream())
         if not snaps:
             return
-        batch = self.firebase.db.batch()
-        for snap in snaps:
-            batch.delete(snap.reference)
-        batch.commit()
+        for start in range(0, len(snaps), 400):
+            batch = self.firebase.db.batch()
+            for snap in snaps[start : start + 400]:
+                batch.delete(snap.reference)
+            batch.commit()
 
     def write_two_lane_results(
         self,
@@ -366,16 +367,20 @@ class QuellenFinderFirestoreService:
         docs: Iterable[tuple[str, dict]],
     ) -> None:
         col = self.run_ref(user_id, projekt_id, run_id).collection(str(name))
-        batch = self.firebase.db.batch()
+        docs_list = list(docs)
         count = 0
         sanitized_any = False
-        for doc_id, payload in docs:
-            payload2, changed = _sanitize_firestore_value(payload)
-            sanitized_any = sanitized_any or changed
-            batch.set(col.document(str(doc_id)), payload2)
-            count += 1
+        for start in range(0, len(docs_list), 400):
+            batch = self.firebase.db.batch()
+            chunk = docs_list[start : start + 400]
+            for doc_id, payload in chunk:
+                payload2, changed = _sanitize_firestore_value(payload)
+                sanitized_any = sanitized_any or changed
+                batch.set(col.document(str(doc_id)), payload2)
+                count += 1
+            if chunk:
+                batch.commit()
         if count:
-            batch.commit()
             if sanitized_any:
                 logger.warning(
                     "Firestore payload sanitized (nested arrays / non-finite numbers) | subcollection=%s run_id=%s docs=%s",

@@ -16,20 +16,17 @@ const DEBUG = process.env.NODE_ENV !== "production";
 function qfLog(message: string, data?: Record<string, unknown>) {
   if (!DEBUG) return;
   try {
-    // eslint-disable-next-line no-console
     console.info(`[QF/pdf] ${message}`, data ?? {});
   } catch {
     // ignore
   }
 }
 
-type PdfExtractStage = "stage2" | "stage3";
-
 export type PdfExtractRequest = {
   projektId: string;
   runId: string;
-  stage: PdfExtractStage;
-  docId: string;
+  pdfDocId: string;
+  sectionDocId: string;
   pdfId?: string;
   pdfFilename?: string;
   storagePath?: string;
@@ -50,7 +47,7 @@ type HighlightPage = {
 
 type PdfExtractResponse = {
   pdf: { id: string; filename: string; storage_path: string | null; size?: number | null } | null;
-  hit: { anchor: string; anchor_alt: string; locator_hint: string | null } | null;
+  hit: { locator_hint?: string | null } | null;
   extract: {
     ok: boolean;
     reason?: string;
@@ -72,6 +69,10 @@ type PdfExtractResponse = {
 
 type PdfJsModule = typeof import("pdfjs-dist");
 type PdfViewerModule = typeof import("pdfjs-dist/web/pdf_viewer.mjs");
+type PdfTextContent = Awaited<ReturnType<import("pdfjs-dist").PDFPageProxy["getTextContent"]>>;
+type PdfTextItem = Extract<PdfTextContent["items"][number], { str: string }>;
+type TextLayerBuilderInstance = InstanceType<PdfViewerModule["TextLayerBuilder"]>;
+type TextLayerRenderArgs = Parameters<TextLayerBuilderInstance["render"]>[0];
 
 let pdfjsPromise: Promise<PdfJsModule> | null = null;
 let pdfViewerPromise: Promise<PdfViewerModule> | null = null;
@@ -188,7 +189,7 @@ function PdfPageCanvas(props: {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
   const textLayerHostRef = useRef<HTMLDivElement | null>(null);
-  const textLayerBuilderRef = useRef<unknown>(null);
+  const textLayerBuilderRef = useRef<TextLayerBuilderInstance | null>(null);
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
   const { ref, inView } = useInView({ root, rootMargin: "1200px 0px" });
 
@@ -254,24 +255,23 @@ function PdfPageCanvas(props: {
 
       const viewer = await loadPdfViewer();
       const { TextLayerBuilder } = viewer;
-      let builder: any = textLayerBuilderRef.current;
-      if (!builder || typeof builder.render !== "function" || !builder.div) {
+      let builder = textLayerBuilderRef.current;
+      if (!builder || !(builder.div instanceof HTMLDivElement)) {
         builder = new TextLayerBuilder({ pdfPage: page, enablePermissions: false });
         textLayerBuilderRef.current = builder;
       }
-      const div = builder?.div as HTMLDivElement | undefined;
-      if (div) {
-        try {
-          div.style.setProperty("--user-unit", "1");
-          div.style.setProperty("--total-scale-factor", String(viewport.scale));
-          div.style.setProperty("--scale-round-x", "1px");
-          div.style.setProperty("--scale-round-y", "1px");
-        } catch {
-          // ignore
-        }
+      const div = builder.div;
+      try {
+        div.style.setProperty("--user-unit", "1");
+        div.style.setProperty("--total-scale-factor", String(viewport.scale));
+        div.style.setProperty("--scale-round-x", "1px");
+        div.style.setProperty("--scale-round-y", "1px");
+      } catch {
+        // ignore
       }
-      if (div && !host.contains(div)) host.replaceChildren(div);
-      await (builder.render as (args: any) => Promise<void>)({ viewport });
+      if (!host.contains(div)) host.replaceChildren(div);
+      const renderArgs: TextLayerRenderArgs = { viewport };
+      await builder.render(renderArgs);
     })().catch((err: unknown) => {
       if (cancelled) return;
       console.error("PDF page render failed:", err);
@@ -289,9 +289,8 @@ function PdfPageCanvas(props: {
 
   useEffect(() => {
     return () => {
-      const builder = textLayerBuilderRef.current as { cancel?: () => void } | null;
       try {
-        builder?.cancel?.();
+        textLayerBuilderRef.current?.cancel();
       } catch {
         // ignore
       }
@@ -408,26 +407,20 @@ function PdfPageCanvas(props: {
   );
 }
 
-export function PdfExtractDialog(props: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  request: PdfExtractRequest | null;
-}) {
-  const { open, onOpenChange, request } = props;
-
+function PdfExtractDialogPanel(props: { request: PdfExtractRequest }) {
+  const { request } = props;
   const [extractResp, setExtractResp] = useState<PdfExtractResponse | null>(null);
-  const [loadingExtract, setLoadingExtract] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
-  const [loadingPdf, setLoadingPdf] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
-  const [pdfErrorToShow, setPdfErrorToShow] = useState<string | null>(null);
   const [pdfDoc, setPdfDoc] = useState<import("pdfjs-dist").PDFDocumentProxy | null>(null);
 
-  const scrollRootRef = useRef<HTMLDivElement | null>(null);
+  const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
   const { ref: pageWidthRef, width: pageWidth } = useObservedWidth<HTMLDivElement>();
 
-  const effectivePdfId = request?.pdfId || extractResp?.pdf?.id || null;
+  const effectivePdfId = request.pdfId || extractResp?.pdf?.id || null;
   const [currentPage, setCurrentPage] = useState(1);
+  const loadingExtract = !extractResp && !extractError;
+  const loadingPdf = Boolean(request.projektId && effectivePdfId) && !pdfDoc && !pdfError;
 
   const highlightsByPage = useMemo(() => {
     const m = new Map<number, HighlightRect[]>();
@@ -485,20 +478,23 @@ export function PdfExtractDialog(props: {
       if (absRects.length === 0) continue;
 
       const tc = await page.getTextContent();
-      const items = Array.isArray((tc as any).items) ? ((tc as any).items as any[]) : [];
+      const items = Array.isArray(tc.items) ? tc.items : [];
 
       const flip = [1, 0, 0, -1, -pageX, pageY + pageHeight];
       const hits: Array<{ y: number; x: number; str: string }> = [];
 
       for (const it of items) {
-        const str = typeof it?.str === "string" ? it.str : "";
+        if (!("str" in it) || typeof it.str !== "string") continue;
+        if (!Array.isArray(it.transform) || it.transform.length < 6) continue;
+
+        const textItem: PdfTextItem = it;
+        const str = textItem.str;
         if (!str.trim()) continue;
-        const t = Array.isArray(it?.transform) ? it.transform : null;
-        if (!t || t.length < 6) continue;
+        const t = textItem.transform;
 
         let tx: number[] | null = null;
         try {
-          tx = (pdfjs as any).Util.transform(flip, t) as number[];
+          tx = pdfjs.Util.transform(flip, t);
         } catch {
           tx = null;
         }
@@ -506,8 +502,8 @@ export function PdfExtractDialog(props: {
 
         const left = typeof tx[4] === "number" ? tx[4] : 0;
         const baselineY = typeof tx[5] === "number" ? tx[5] : 0;
-        const fontHeight = Math.hypot(Number(tx[2] || 0), Number(tx[3] || 0)) || Math.abs(Number(it?.height || 0)) || 0;
-        const width = Math.abs(Number(it?.width || 0)) || 0;
+        const fontHeight = Math.hypot(Number(tx[2] || 0), Number(tx[3] || 0)) || Math.abs(Number(textItem.height || 0)) || 0;
+        const width = Math.abs(Number(textItem.width || 0)) || 0;
 
         const top = baselineY - fontHeight;
         const right = left + width;
@@ -539,20 +535,9 @@ export function PdfExtractDialog(props: {
   };
 
   useEffect(() => {
-    if (!open) return;
-    if (!request) return;
-
     let cancelled = false;
     const extractController = new AbortController();
     qfLog("dialog open", { request });
-    setExtractResp(null);
-    setPdfDoc(null);
-    setLoadingExtract(true);
-    setLoadingPdf(false);
-    setExtractError(null);
-    setPdfError(null);
-    setPdfErrorToShow(null);
-    setCurrentPage(1);
 
     (async () => {
       const token = Cookies.get("__session");
@@ -561,7 +546,12 @@ export function PdfExtractDialog(props: {
       void loadPdfJs().catch(() => undefined);
       void loadPdfViewer().catch(() => undefined);
 
-      qfLog("extract request start", { projektId: request.projektId, runId: request.runId, stage: request.stage, docId: request.docId });
+      qfLog("extract request start", {
+        projektId: request.projektId,
+        runId: request.runId,
+        pdfDocId: request.pdfDocId,
+        sectionDocId: request.sectionDocId,
+      });
       const res = await fetch(`${API_BASE_URL}/api/quellen-finder/pdf-extract`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -569,8 +559,8 @@ export function PdfExtractDialog(props: {
         body: JSON.stringify({
           projekt_id: request.projektId,
           run_id: request.runId,
-          stage: request.stage,
-          doc_id: request.docId,
+          pdf_doc_id: request.pdfDocId,
+          section_doc_id: request.sectionDocId,
         }),
       });
 
@@ -591,11 +581,9 @@ export function PdfExtractDialog(props: {
         meta: (data?.meta as Record<string, unknown>) ?? null,
       });
       setExtractResp(data);
-      setLoadingExtract(false);
     })()
       .catch((err: unknown) => {
         if (cancelled) return;
-        setLoadingExtract(false);
         if (err instanceof DOMException && err.name === "AbortError") return;
         const msg = err instanceof Error ? err.message : String(err);
         qfLog("extract request exception", { msg });
@@ -606,33 +594,15 @@ export function PdfExtractDialog(props: {
       cancelled = true;
       extractController.abort();
     };
-  }, [open, request]);
+  }, [request]);
 
   useEffect(() => {
-    if (!open) {
-      setPdfErrorToShow(null);
-      return;
-    }
-    if (!pdfError) {
-      setPdfErrorToShow(null);
-      return;
-    }
-    const t = window.setTimeout(() => setPdfErrorToShow(pdfError), 500);
-    return () => window.clearTimeout(t);
-  }, [open, pdfError]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (!request?.projektId) return;
+    if (!request.projektId) return;
     const pdfId = effectivePdfId;
     if (!pdfId) return;
 
     let cancelled = false;
     const pdfController = new AbortController();
-
-    setLoadingPdf(true);
-    setPdfDoc(null);
-    setPdfError(null);
 
     (async () => {
       const token = Cookies.get("__session");
@@ -671,10 +641,8 @@ export function PdfExtractDialog(props: {
       }
 
       setPdfDoc(doc);
-      setLoadingPdf(false);
     })().catch((err: unknown) => {
       if (cancelled) return;
-      setLoadingPdf(false);
       if (err instanceof DOMException && err.name === "AbortError") return;
       console.error("PDF load failed:", err);
       qfLog("pdf load exception", { msg: err instanceof Error ? err.message : String(err) });
@@ -686,25 +654,23 @@ export function PdfExtractDialog(props: {
       cancelled = true;
       pdfController.abort();
     };
-  }, [open, request?.projektId, effectivePdfId]);
+  }, [request.projektId, effectivePdfId]);
 
   useEffect(() => {
-    if (!open) return;
-    const p = extractResp?.extract?.anchor_page ?? extractResp?.extract?.start?.page ?? request?.anchorPage ?? null;
+    const p = extractResp?.extract?.anchor_page ?? extractResp?.extract?.start?.page ?? request.anchorPage ?? null;
     if (!pdfDoc || !p) return;
-    const root = scrollRootRef.current;
+    const root = scrollRoot;
     if (!root) return;
 
     const el = root.querySelector(`[data-qf-page='${p}']`);
     if (el instanceof HTMLElement) {
       el.scrollIntoView({ block: "start" });
     }
-  }, [open, pdfDoc, extractResp?.extract?.anchor_page, extractResp?.extract?.start?.page, request?.anchorPage]);
+  }, [pdfDoc, extractResp?.extract?.anchor_page, extractResp?.extract?.start?.page, request.anchorPage, scrollRoot]);
 
   useEffect(() => {
-    if (!open) return;
     if (!pdfDoc) return;
-    const root = scrollRootRef.current;
+    const root = scrollRoot;
     if (!root) return;
 
     let raf = 0;
@@ -730,22 +696,23 @@ export function PdfExtractDialog(props: {
       });
     };
 
-    root.addEventListener("scroll", update, { passive: true });
+    const handleScroll: EventListener = () => update();
+    root.addEventListener("scroll", handleScroll, { passive: true });
     update();
     return () => {
-      root.removeEventListener("scroll", update as any);
+      root.removeEventListener("scroll", handleScroll);
       if (raf) window.cancelAnimationFrame(raf);
     };
-  }, [open, pdfDoc]);
+  }, [pdfDoc, scrollRoot]);
 
   const scrollToPage = (p: number) => {
-    const root = scrollRootRef.current;
+    const root = scrollRoot;
     const el = root?.querySelector(`[data-qf-page='${p}']`);
     if (el instanceof HTMLElement) el.scrollIntoView({ block: "start" });
   };
 
-  const storagePath = request?.storagePath || extractResp?.pdf?.storage_path || null;
-  const titleRaw = request?.pdfFilename || extractResp?.pdf?.filename || "PDF Preview";
+  const storagePath = request.storagePath || extractResp?.pdf?.storage_path || null;
+  const titleRaw = request.pdfFilename || extractResp?.pdf?.filename || "PDF Preview";
   const title = shortName(titleRaw);
   const totalPages = pdfDoc?.numPages ?? 0;
   const subtitle = loadingExtract
@@ -759,8 +726,7 @@ export function PdfExtractDialog(props: {
           : "No highlights";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[96vw] max-w-[96vw] h-[92vh] p-4" showCloseButton={false}>
+    <DialogContent className="sm:max-w-[96vw] max-w-[96vw] h-[92vh] p-4" showCloseButton={false}>
         <DialogHeader className="space-y-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -793,7 +759,8 @@ export function PdfExtractDialog(props: {
                     }
                     try {
                       const url = await getDownloadUrlFromStorage(path);
-                      opened.location.href = url;
+                      const anchorPage = extractResp?.extract?.anchor_page ?? request.anchorPage ?? null;
+                      opened.location.href = anchorPage ? `${url}#page=${anchorPage}` : url;
                     } catch (e) {
                       try {
                         opened.close();
@@ -848,7 +815,7 @@ export function PdfExtractDialog(props: {
 
         <div className="mt-2 grid grid-cols-1 lg:grid-cols-[1fr] gap-3 min-h-0 h-full">
           <div className="border border-border rounded-md min-h-0 h-full overflow-hidden">
-            <div ref={scrollRootRef} className="h-full overflow-auto bg-muted/20">
+            <div ref={setScrollRoot} className="h-full overflow-auto bg-muted/20">
               <div ref={pageWidthRef} className="mx-auto w-full max-w-[1100px] p-4 space-y-6">
                 {loadingExtract || loadingPdf ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -865,16 +832,16 @@ export function PdfExtractDialog(props: {
                         pdf={pdfDoc}
                         pageNumber={pno}
                         targetWidth={Math.max(320, Math.min(1100, pageWidth || 900))}
-                        root={scrollRootRef.current}
+                        root={scrollRoot}
                         highlightRects={highlightsByPage.get(pno) ?? []}
                         highlightPagesCount={highlightPageNumbers.length}
                         copyAllHighlights={copyAllHighlights}
                       />
                     </div>
                   ))
-                ) : pdfErrorToShow ? (
-                  <div className="text-sm text-destructive">PDF konnte nicht geladen werden: {pdfErrorToShow}</div>
-                ) : !loadingPdf && !loadingExtract && (request?.pdfId || extractResp?.pdf?.id) ? (
+                ) : pdfError ? (
+                  <div className="text-sm text-destructive">PDF konnte nicht geladen werden: {pdfError}</div>
+                ) : !loadingPdf && !loadingExtract && (request.pdfId || extractResp?.pdf?.id) ? (
                   <div className="text-sm text-muted-foreground">PDF not loaded yet.</div>
                 ) : null}
               </div>
@@ -934,6 +901,31 @@ export function PdfExtractDialog(props: {
           }
         `}</style>
       </DialogContent>
+  );
+}
+
+export function PdfExtractDialog(props: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  request: PdfExtractRequest | null;
+}) {
+  const { open, onOpenChange, request } = props;
+  const requestKey = request ? [request.projektId, request.runId, request.pdfDocId, request.sectionDocId].join(":") : "empty";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open ? (
+        request ? (
+          <PdfExtractDialogPanel key={requestKey} request={request} />
+        ) : (
+          <DialogContent className="sm:max-w-[96vw] max-w-[96vw] h-[92vh] p-4">
+            <DialogHeader className="space-y-1">
+              <DialogTitle>PDF Preview</DialogTitle>
+              <DialogDescription>Keine Vorschau ausgewählt.</DialogDescription>
+            </DialogHeader>
+          </DialogContent>
+        )
+      ) : null}
     </Dialog>
   );
 }

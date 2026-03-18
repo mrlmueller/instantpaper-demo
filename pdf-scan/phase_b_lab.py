@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from argparse import Namespace
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 from pathlib import Path
 
@@ -30,8 +31,9 @@ import site
 import sys
 import time
 import traceback
+import threading
 import warnings
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -39,6 +41,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 OPTIONAL_IMPORT_ERRORS = {}
+_MUPDF_DISPLAY_LOCK = threading.Lock()
+_MUPDF_DISPLAY_DEPTH = 0
+_MUPDF_PREVIOUS_ERRORS = None
+_MUPDF_PREVIOUS_WARNINGS = None
 
 try:
     import fitz  # PyMuPDF
@@ -82,6 +88,7 @@ class PhaseBOptions:
     doc_limit: Optional[int] = None
     include_doc_ids: Optional[List[str]] = None
     exclude_doc_ids: Optional[List[str]] = None
+    max_concurrent_docs: Optional[int] = None
     min_page_words: int = 20
     min_doc_chars: int = 200
     try_docling: bool = True
@@ -110,6 +117,7 @@ class PhaseBOptions:
             doc_limit=None if self.doc_limit is None else int(self.doc_limit),
             include_doc_ids=[str(x).strip() for x in (self.include_doc_ids or []) if str(x).strip()],
             exclude_doc_ids=[str(x).strip() for x in (self.exclude_doc_ids or []) if str(x).strip()],
+            max_concurrent_docs=None if self.max_concurrent_docs is None else max(1, int(self.max_concurrent_docs)),
             min_page_words=int(self.min_page_words),
             min_doc_chars=int(self.min_doc_chars),
             try_docling=bool(self.try_docling),
@@ -141,6 +149,13 @@ def utc_now_iso() -> str:
 def ensure_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def available_cpu_count() -> int:
+    try:
+        return max(1, int(os.cpu_count() or 1))
+    except Exception:
+        return 1
 
 
 def pkg_version(name: str) -> Optional[str]:
@@ -283,6 +298,83 @@ def capture_python_noise(fn: Callable[[], Any]) -> Dict[str, Any]:
         "stderr": short_blob(stderr_buf.getvalue()),
         "warnings": [short_blob(str(w.message), max_len=2000) for w in caught],
     }
+
+
+def unique_nonempty_texts(values: Any, *, max_len: int = 2000) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text:
+            continue
+        text = short_blob(text, max_len=max_len)
+        if text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
+
+
+def consume_mupdf_messages(*, max_len: int = 2000) -> List[str]:
+    if fitz is None:
+        return []
+    try:
+        raw = fitz.TOOLS.mupdf_warnings(reset=1)
+    except Exception:
+        return []
+    if isinstance(raw, (list, tuple)):
+        values = raw
+    else:
+        values = str(raw or "").splitlines()
+    return unique_nonempty_texts(values, max_len=max_len)
+
+
+@contextmanager
+def muted_mupdf_messages() -> Any:
+    global _MUPDF_DISPLAY_DEPTH, _MUPDF_PREVIOUS_ERRORS, _MUPDF_PREVIOUS_WARNINGS
+    if fitz is None:
+        yield
+        return
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with _MUPDF_DISPLAY_LOCK:
+            if _MUPDF_DISPLAY_DEPTH == 0:
+                try:
+                    _MUPDF_PREVIOUS_ERRORS = fitz.TOOLS.mupdf_display_errors()
+                except Exception:
+                    _MUPDF_PREVIOUS_ERRORS = None
+                try:
+                    _MUPDF_PREVIOUS_WARNINGS = fitz.TOOLS.mupdf_display_warnings()
+                except Exception:
+                    _MUPDF_PREVIOUS_WARNINGS = None
+                try:
+                    fitz.TOOLS.reset_mupdf_warnings()
+                except Exception:
+                    pass
+                try:
+                    fitz.TOOLS.mupdf_display_errors(False)
+                except Exception:
+                    pass
+                try:
+                    fitz.TOOLS.mupdf_display_warnings(False)
+                except Exception:
+                    pass
+            _MUPDF_DISPLAY_DEPTH += 1
+        try:
+            yield
+        finally:
+            with _MUPDF_DISPLAY_LOCK:
+                _MUPDF_DISPLAY_DEPTH = max(0, int(_MUPDF_DISPLAY_DEPTH) - 1)
+                if _MUPDF_DISPLAY_DEPTH == 0:
+                    try:
+                        fitz.TOOLS.mupdf_display_errors(_MUPDF_PREVIOUS_ERRORS)
+                    except Exception:
+                        pass
+                    try:
+                        fitz.TOOLS.mupdf_display_warnings(_MUPDF_PREVIOUS_WARNINGS)
+                    except Exception:
+                        pass
 
 
 def ping_grobid(base_url: str) -> Dict[str, Any]:
@@ -442,58 +534,64 @@ def extract_fitz_bundle(path: Path, min_page_words: int) -> Dict[str, Any]:
         "outline": [],
         "pages": [],
         "blocks": [],
+        "warnings": [],
         "error": None,
     }
     if fitz is None:
         return out
+    native_warnings: List[str] = []
     try:
-        with fitz.open(path) as doc:
-            out["page_count"] = int(doc.page_count)
-            out["metadata"] = {str(k): str(v) for k, v in dict(doc.metadata or {}).items()}
-            try:
-                toc = doc.get_toc(simple=True) or []
-            except Exception:
-                toc = []
-            out["outline"] = [
-                {
-                    "level": int(item[0]),
-                    "title": clean_text(item[1]),
-                    "page": int(item[2]) if len(item) > 2 and item[2] is not None else None,
-                }
-                for item in toc
-            ]
-            for page_index in range(doc.page_count):
-                page = doc[page_index]
+        with muted_mupdf_messages():
+            with fitz.open(path) as doc:
+                out["page_count"] = int(doc.page_count)
+                out["metadata"] = {str(k): str(v) for k, v in dict(doc.metadata or {}).items()}
                 try:
-                    page_text = clean_text(page.get_text("text", sort=True))
-                except TypeError:
-                    page_text = clean_text(page.get_text("text"))
-                page_word_count = count_words(page_text)
-                try:
-                    raw_blocks = page.get_text("blocks", sort=True)
-                except TypeError:
-                    raw_blocks = page.get_text("blocks")
-
-                block_rows = []
-                for block_idx, block in enumerate(raw_blocks or []):
-                    row = normalize_fitz_block(block, page_index + 1, block_idx)
-                    if row["text"]:
-                        block_rows.append(row)
-                out["blocks"].extend(block_rows)
-                out["pages"].append(
+                    toc = doc.get_toc(simple=True) or []
+                except Exception:
+                    toc = []
+                out["outline"] = [
                     {
-                        "page": int(page_index + 1),
-                        "text": page_text,
-                        "char_len": len(page_text),
-                        "word_count": page_word_count,
-                        "has_text": bool(page_word_count > 0),
-                        "has_substantive_text": bool(page_word_count >= int(min_page_words)),
+                        "level": int(item[0]),
+                        "title": clean_text(item[1]),
+                        "page": int(item[2]) if len(item) > 2 and item[2] is not None else None,
                     }
-                )
+                    for item in toc
+                ]
+                for page_index in range(doc.page_count):
+                    page = doc[page_index]
+                    try:
+                        page_text = clean_text(page.get_text("text", sort=True))
+                    except TypeError:
+                        page_text = clean_text(page.get_text("text"))
+                    page_word_count = count_words(page_text)
+                    try:
+                        raw_blocks = page.get_text("blocks", sort=True)
+                    except TypeError:
+                        raw_blocks = page.get_text("blocks")
+
+                    block_rows = []
+                    for block_idx, block in enumerate(raw_blocks or []):
+                        row = normalize_fitz_block(block, page_index + 1, block_idx)
+                        if row["text"]:
+                            block_rows.append(row)
+                    out["blocks"].extend(block_rows)
+                    out["pages"].append(
+                        {
+                            "page": int(page_index + 1),
+                            "text": page_text,
+                            "char_len": len(page_text),
+                            "word_count": page_word_count,
+                            "has_text": bool(page_word_count > 0),
+                            "has_substantive_text": bool(page_word_count >= int(min_page_words)),
+                        }
+                    )
+            native_warnings = consume_mupdf_messages()
         out["status"] = "ok"
     except Exception as e:
+        native_warnings = consume_mupdf_messages()
         out["status"] = f"error:{type(e).__name__}"
         out["error"] = str(e)
+    out["warnings"] = unique_nonempty_texts(native_warnings)
     return out
 
 
@@ -506,6 +604,7 @@ def _docling_converter_cache_key(options: PhaseBOptions, *, num_threads: Optiona
         bool(options.docling_do_table_structure),
         None if options.docling_document_timeout_sec is None else int(options.docling_document_timeout_sec),
         int(num_threads if num_threads is not None else options.docling_num_threads),
+        int(threading.get_ident()),
     )
 
 
@@ -700,6 +799,7 @@ def run_docling_single_attempt(
     if not bool(options.try_docling):
         out["status"] = "disabled"
         return out
+    native_warnings: List[str] = []
     try:
         convert_kwargs: Dict[str, Any] = {
             "raises_on_error": False,
@@ -708,16 +808,18 @@ def run_docling_single_attempt(
         }
         if page_range is not None:
             convert_kwargs["page_range"] = page_range
-        captured = capture_python_noise(
-            lambda: get_docling_converter(options, num_threads=num_threads).convert(
-                path,
-                **convert_kwargs,
+        with muted_mupdf_messages():
+            captured = capture_python_noise(
+                lambda: get_docling_converter(options, num_threads=num_threads).convert(
+                    path,
+                    **convert_kwargs,
+                )
             )
-        )
+            native_warnings = consume_mupdf_messages()
         res = captured["result"]
         out["stdout"] = captured["stdout"]
         out["stderr"] = captured["stderr"]
-        out["warnings"] = captured["warnings"]
+        out["warnings"] = unique_nonempty_texts(list(captured["warnings"] or []) + native_warnings)
         raw_dump = json_safe(res.model_dump()) if hasattr(res, "model_dump") else None
         out["result"] = {
             "status": raw_dump.get("status") if isinstance(raw_dump, dict) else None,
@@ -739,9 +841,11 @@ def run_docling_single_attempt(
             except Exception:
                 out["markdown_preview"] = None
     except Exception as e:
+        native_warnings = consume_mupdf_messages()
         out["status"] = "error"
         out["error"] = str(e)
         out["stderr"] = short_blob(traceback.format_exc())
+        out["warnings"] = unique_nonempty_texts(list(out.get("warnings") or []) + native_warnings)
     return out
 
 
@@ -1062,7 +1166,9 @@ def compute_phase_b_counts(
     summary_rows: List[Dict[str, Any]],
     capabilities: Dict[str, Any],
     selected_count: int,
+    failed_doc_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
+    failed_doc_ids = [str(doc_id) for doc_id in (failed_doc_ids or []) if str(doc_id)]
     low_coverage_docs = [
         row["doc_id"]
         for row in summary_rows
@@ -1084,6 +1190,8 @@ def compute_phase_b_counts(
     return {
         "selected_count": int(selected_count),
         "documents_processed": len(summary_rows),
+        "bundle_failure_count": len(failed_doc_ids),
+        "bundle_failure_doc_ids": failed_doc_ids,
         "fitz_available": bool(capabilities.get("fitz_available")),
         "pypdf_available": bool(capabilities.get("pypdf_available")),
         "docling_available": bool(capabilities.get("docling_available")),
@@ -1118,8 +1226,9 @@ def build_phase_b_assessment(
     summary_rows: List[Dict[str, Any]],
     capabilities: Dict[str, Any],
     selected_count: int,
+    failed_doc_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    counts = compute_phase_b_counts(summary_rows, capabilities, selected_count)
+    counts = compute_phase_b_counts(summary_rows, capabilities, selected_count, failed_doc_ids=failed_doc_ids)
     failures: List[str] = []
     warnings_list: List[str] = []
     infos: List[str] = []
@@ -1128,14 +1237,24 @@ def build_phase_b_assessment(
     if not counts["fitz_available"]:
         failures.append("PyMuPDF is unavailable. Phase B cannot satisfy the deterministic fallback contract.")
         next_actions.append("Install PyMuPDF in the notebook kernel and rerun Phase B.")
-    if counts["documents_processed"] != counts["selected_count"]:
+    if counts["documents_processed"] <= 0:
         failures.append(
-            f"Only {counts['documents_processed']} of {counts['selected_count']} selected PDFs produced parser bundles."
+            f"Phase B did not produce any parser bundles for the {counts['selected_count']} selected PDFs."
         )
         next_actions.append("Inspect parser logs and diagnostics for missing bundle outputs.")
-    if counts["unreadable_without_ocr_count"] > 0:
+    elif counts["bundle_failure_count"] > 0:
+        warnings_list.append(
+            f"{counts['bundle_failure_count']} selected PDF(s) failed during parser bundle creation and were skipped."
+        )
+        next_actions.append("Inspect parser logs and diagnostics for the failed PDFs before trusting full coverage.")
+    if counts["unreadable_without_ocr_count"] >= counts["documents_processed"] and counts["documents_processed"] > 0:
         failures.append(
-            f"{counts['unreadable_without_ocr_count']} PDF(s) were not readable without OCR in a digital-only benchmark."
+            f"All {counts['unreadable_without_ocr_count']} processed PDF(s) were not readable without OCR in a digital-only benchmark."
+        )
+        next_actions.append("Inspect the unreadable PDFs and confirm they are digitally extractable.")
+    elif counts["unreadable_without_ocr_count"] > 0:
+        warnings_list.append(
+            f"{counts['unreadable_without_ocr_count']} processed PDF(s) were not readable without OCR and were kept only as partial coverage."
         )
         next_actions.append("Inspect the unreadable PDFs and confirm they are digitally extractable.")
 
@@ -1223,6 +1342,7 @@ def build_qc_rows(
     summary_rows: List[Dict[str, Any]],
     capabilities: Dict[str, Any],
     selected_count: int,
+    failed_doc_ids: Optional[List[str]] = None,
     assessment: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     def qc_row(check: str, status: str, value: Any, expected: str, why: str, fix: str) -> Dict[str, Any]:
@@ -1235,7 +1355,9 @@ def build_qc_rows(
             "fix": str(fix),
         }
 
-    counts = (assessment or build_phase_b_assessment(summary_rows, capabilities, selected_count)).get("counts", {})
+    counts = (
+        assessment or build_phase_b_assessment(summary_rows, capabilities, selected_count, failed_doc_ids=failed_doc_ids)
+    ).get("counts", {})
     low_coverage_docs = list(counts.get("low_text_coverage_docs") or [])
     unreadable_docs = list(counts.get("unreadable_without_ocr_docs") or [])
     docling_success_count = int(counts.get("docling_success_count") or 0)
@@ -1245,11 +1367,21 @@ def build_qc_rows(
     qc_rows.append(
         qc_row(
             "documents_processed",
-            "OK" if int(counts.get("documents_processed") or 0) == int(selected_count) else "FAIL",
+            "OK" if int(counts.get("documents_processed") or 0) >= 1 else "FAIL",
             counts.get("documents_processed"),
-            str(selected_count),
-            "every selected PDF should emit a parser bundle",
+            f">= 1 of {selected_count}",
+            "at least one selected PDF must emit a parser bundle or the pipeline cannot continue",
             "inspect diagnostics.json for any missing document output",
+        )
+    )
+    qc_rows.append(
+        qc_row(
+            "bundle_failures",
+            "OK" if int(counts.get("bundle_failure_count") or 0) == 0 else "WARN",
+            counts.get("bundle_failure_count"),
+            "0",
+            "per-document parser failures reduce coverage but should not block the run when other PDFs succeed",
+            "inspect diagnostics.json and docling.json for the failed PDFs",
         )
     )
     qc_rows.append(
@@ -1346,6 +1478,246 @@ def build_qc_rows(
     return qc_rows
 
 
+def resolve_phase_b_doc_concurrency(options: PhaseBOptions, *, capabilities: Dict[str, Any], doc_count: int) -> int:
+    if int(doc_count) <= 1:
+        return 1
+    if options.max_concurrent_docs is not None:
+        return max(1, min(int(doc_count), int(options.max_concurrent_docs)))
+
+    cpu_count = available_cpu_count()
+    if bool(options.try_docling) and bool(capabilities.get("docling_available")):
+        per_doc_threads = max(1, int(options.docling_num_threads), int(options.docling_chunk_num_threads))
+        auto = max(1, cpu_count // per_doc_threads)
+        # Docling becomes unstable when too many PDFs are parsed in parallel.
+        # Keep auto-sizing compute-aware, but cap it conservatively for stability.
+        return max(1, min(int(doc_count), min(auto, 2)))
+    return max(1, min(int(doc_count), min(cpu_count, 6)))
+
+
+def build_phase_b_document_bundle(
+    *,
+    run_ctx: Any,
+    parser_dir: Path,
+    manifest_row: Dict[str, Any],
+    options: PhaseBOptions,
+    capabilities: Dict[str, Any],
+) -> Dict[str, Any]:
+    doc_id = str(manifest_row["doc_id"])
+    source_path = Path(str(manifest_row["path"])).resolve()
+    doc_dir = ensure_dir(parser_dir / doc_id)
+    metadata_path = doc_dir / "metadata.json"
+    diagnostics_path = doc_dir / "diagnostics.json"
+    fitz_pages_path = doc_dir / "pymupdf_pages.jsonl"
+    fitz_blocks_path = doc_dir / "pymupdf_blocks.jsonl"
+    docling_path = doc_dir / "docling.json"
+    grobid_summary_path = doc_dir / "grobid_summary.json"
+    grobid_xml_path = doc_dir / "grobid.tei.xml"
+
+    t0 = time.perf_counter()
+    fitz_bundle = extract_fitz_bundle(source_path, min_page_words=options.min_page_words)
+    pypdf_bundle = extract_pypdf_bundle(source_path)
+    page_count = fitz_bundle.get("page_count") or pypdf_bundle.get("page_count") or manifest_row.get("page_count")
+    fitz_pages = list(fitz_bundle.get("pages") or [])
+    fitz_blocks = list(fitz_bundle.get("blocks") or [])
+    pages_with_text = sum(1 for row in fitz_pages if row.get("has_text"))
+    pages_with_substantive_text = sum(1 for row in fitz_pages if row.get("has_substantive_text"))
+    total_chars = sum(int(row.get("char_len") or 0) for row in fitz_pages)
+    pct_pages_with_text = round((pages_with_text / float(page_count)) * 100.0, 2) if page_count else None
+    pct_pages_with_substantive_text = round((pages_with_substantive_text / float(page_count)) * 100.0, 2) if page_count else None
+    readable_without_ocr = bool(total_chars >= int(options.min_doc_chars) and pages_with_substantive_text >= 1)
+    ocr_required_or_unreadable = not readable_without_ocr
+    outline_count = max(len(fitz_bundle.get("outline") or []), len(pypdf_bundle.get("outline") or []))
+    page_count_agrees = (
+        fitz_bundle.get("page_count") is None
+        or pypdf_bundle.get("page_count") is None
+        or int(fitz_bundle.get("page_count")) == int(pypdf_bundle.get("page_count"))
+    )
+
+    docling_bundle = extract_docling_bundle(source_path, page_count, options)
+    docling_success = str(docling_bundle.get("status") or "") == "success"
+    grobid_bundle = extract_grobid_bundle(source_path, manifest_row, page_count, options, capabilities)
+    fallback_activated = bool(readable_without_ocr and not docling_success and str(fitz_bundle.get("status") or "") == "ok")
+    bundle_status = "ok" if readable_without_ocr and str(fitz_bundle.get("status") or "") == "ok" else "needs_attention"
+    elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 3)
+
+    metadata_payload = {
+        "generated_at_utc": utc_now_iso(),
+        "phase": "phase_b",
+        "doc_id": doc_id,
+        "label": manifest_row.get("label"),
+        "source_path": str(source_path),
+        "file_name": source_path.name,
+        "sha256": manifest_row.get("sha256"),
+        "size_mb": manifest_row.get("size_mb"),
+        "page_count": page_count,
+        "page_count_sources": {
+            "phase_a_manifest": manifest_row.get("page_count"),
+            "fitz": fitz_bundle.get("page_count"),
+            "pypdf": pypdf_bundle.get("page_count"),
+            "agree": bool(page_count_agrees),
+        },
+        "outline_counts": {
+            "fitz": len(fitz_bundle.get("outline") or []),
+            "pypdf": len(pypdf_bundle.get("outline") or []),
+        },
+        "text_coverage": {
+            "pages_with_text": pages_with_text,
+            "pages_with_substantive_text": pages_with_substantive_text,
+            "percent_pages_with_text": pct_pages_with_text,
+            "percent_pages_with_substantive_text": pct_pages_with_substantive_text,
+            "total_chars": total_chars,
+            "readable_without_ocr": bool(readable_without_ocr),
+            "ocr_required_or_unreadable": bool(ocr_required_or_unreadable),
+        },
+        "fitz": {
+            "status": fitz_bundle.get("status"),
+            "metadata": fitz_bundle.get("metadata"),
+            "outline": fitz_bundle.get("outline"),
+            "warnings": fitz_bundle.get("warnings"),
+            "error": fitz_bundle.get("error"),
+        },
+        "pypdf": {
+            "status": pypdf_bundle.get("status"),
+            "metadata": pypdf_bundle.get("metadata"),
+            "outline": pypdf_bundle.get("outline"),
+            "error": pypdf_bundle.get("error"),
+        },
+        "docling": {
+            "status": docling_bundle.get("status"),
+            "enabled": docling_bundle.get("enabled"),
+            "error": docling_bundle.get("error"),
+            "warnings": docling_bundle.get("warnings"),
+            "selected_mode": docling_bundle.get("selected_mode"),
+            "confidence_summary": docling_bundle.get("confidence_summary"),
+            "document_summary": docling_bundle.get("document_summary"),
+            "section_headers": docling_bundle.get("section_headers"),
+            "attempts": docling_bundle.get("attempts"),
+            "chunking": docling_bundle.get("chunking"),
+            "timings": ((docling_bundle.get("result") or {}).get("timings") if isinstance(docling_bundle.get("result"), dict) else None),
+        },
+        "grobid": {
+            "status": grobid_bundle.get("status"),
+            "reason": grobid_bundle.get("reason"),
+            "summary": grobid_bundle.get("summary"),
+            "error": grobid_bundle.get("error"),
+        },
+    }
+
+    summary_row = {
+        "doc_id": doc_id,
+        "file_name": source_path.name,
+        "page_count": page_count,
+        "outline_count": outline_count,
+        "pages_with_text_pct": pct_pages_with_text,
+        "substantive_text_pct": pct_pages_with_substantive_text,
+        "readable_without_ocr": bool(readable_without_ocr),
+        "fitz_warning_count": len(fitz_bundle.get("warnings") or []),
+        "docling_status": docling_bundle.get("status"),
+        "docling_mode": docling_bundle.get("selected_mode"),
+        "docling_conf_mean_grade": (docling_bundle.get("confidence_summary") or {}).get("mean_grade"),
+        "docling_conf_low_grade": (docling_bundle.get("confidence_summary") or {}).get("low_grade"),
+        "docling_warning_count": len(docling_bundle.get("warnings") or []),
+        "docling_section_header_count": int((docling_bundle.get("document_summary") or {}).get("section_header_count") or len(docling_bundle.get("section_headers") or [])),
+        "grobid_status": grobid_bundle.get("status"),
+        "grobid_reason": grobid_bundle.get("reason"),
+        "fallback_activated": bool(fallback_activated),
+        "page_count_agrees": bool(page_count_agrees),
+        "elapsed_ms": elapsed_ms,
+        "cached": False,
+        "cached_from_generated_at_utc": None,
+        "runtime_capability_mismatch": False,
+        "runtime_capability_mismatch_fields": [],
+    }
+
+    bundle_row = {
+        "doc_id": doc_id,
+        "source_path": str(source_path),
+        "metadata_json": rel_to_run(Path(run_ctx.run_dir), metadata_path),
+        "diagnostics_json": rel_to_run(Path(run_ctx.run_dir), diagnostics_path),
+        "pymupdf_pages_jsonl": rel_to_run(Path(run_ctx.run_dir), fitz_pages_path),
+        "pymupdf_blocks_jsonl": rel_to_run(Path(run_ctx.run_dir), fitz_blocks_path),
+        "docling_json": rel_to_run(Path(run_ctx.run_dir), docling_path),
+        "grobid_summary_json": rel_to_run(Path(run_ctx.run_dir), grobid_summary_path),
+        "grobid_tei_xml": rel_to_run(Path(run_ctx.run_dir), grobid_xml_path) if grobid_bundle.get("xml_text") else None,
+        "bundle_status": bundle_status,
+    }
+
+    diagnostics_payload = {
+        "generated_at_utc": utc_now_iso(),
+        "phase": "phase_b",
+        "doc_id": doc_id,
+        "bundle_status": bundle_status,
+        "summary_row": summary_row,
+        "bundle_row": bundle_row,
+        "readable_without_ocr": bool(readable_without_ocr),
+        "ocr_required_or_unreadable": bool(ocr_required_or_unreadable),
+        "fallback_activated": bool(fallback_activated),
+        "page_count_agrees": bool(page_count_agrees),
+        "parser_statuses": {
+            "fitz": fitz_bundle.get("status"),
+            "pypdf": pypdf_bundle.get("status"),
+            "docling": docling_bundle.get("status"),
+            "grobid": grobid_bundle.get("status"),
+        },
+        "fitz_warning_count": len(fitz_bundle.get("warnings") or []),
+        "fitz_warning_preview": list(fitz_bundle.get("warnings") or [])[:8],
+        "docling_mode": docling_bundle.get("selected_mode"),
+        "docling_confidence_summary": docling_bundle.get("confidence_summary"),
+        "docling_warning_count": len(docling_bundle.get("warnings") or []),
+        "docling_section_header_count": int((docling_bundle.get("document_summary") or {}).get("section_header_count") or len(docling_bundle.get("section_headers") or [])),
+        "docling_attempts": docling_bundle.get("attempts"),
+        "docling_chunking": docling_bundle.get("chunking"),
+        "grobid_reason": grobid_bundle.get("reason"),
+        "runtime_capabilities_snapshot": {
+            "fitz_available": bool(capabilities.get("fitz_available")),
+            "pypdf_available": bool(capabilities.get("pypdf_available")),
+            "docling_available": bool(capabilities.get("docling_available")),
+            "grobid_configured": bool(capabilities.get("grobid", {}).get("configured")),
+            "grobid_reachable": bool(capabilities.get("grobid", {}).get("reachable")),
+        },
+        "phase_b_options_snapshot": json_safe(options.__dict__),
+        "artifact_paths": bundle_row,
+    }
+
+    write_json_atomic(metadata_path, metadata_payload)
+    write_jsonl_rows(fitz_pages_path, fitz_pages)
+    write_jsonl_rows(fitz_blocks_path, fitz_blocks)
+    write_json_atomic(docling_path, docling_bundle)
+    write_json_atomic(grobid_summary_path, {k: v for k, v in grobid_bundle.items() if k != "xml_text"})
+    if grobid_bundle.get("xml_text"):
+        grobid_xml_path.write_text(str(grobid_bundle["xml_text"]), encoding="utf-8")
+    elif grobid_xml_path.exists() and options.force_rebuild:
+        grobid_xml_path.unlink()
+    write_json_atomic(diagnostics_path, diagnostics_payload)
+
+    return {
+        "doc_id": doc_id,
+        "summary_row": summary_row,
+        "bundle_row": bundle_row,
+        "log_payload": {
+            "page_count": page_count,
+            "fitz_status": fitz_bundle.get("status"),
+            "pypdf_status": pypdf_bundle.get("status"),
+            "docling_status": docling_bundle.get("status"),
+            "grobid_status": grobid_bundle.get("status"),
+            "fallback_activated": bool(fallback_activated),
+            "elapsed_ms": elapsed_ms,
+        },
+        "event_payload": {
+            "doc_id": doc_id,
+            "source_path": str(source_path),
+            "page_count": page_count,
+            "fitz_status": fitz_bundle.get("status"),
+            "pypdf_status": pypdf_bundle.get("status"),
+            "docling_status": docling_bundle.get("status"),
+            "grobid_status": grobid_bundle.get("status"),
+            "readable_without_ocr": bool(readable_without_ocr),
+            "fallback_activated": bool(fallback_activated),
+            "elapsed_ms": elapsed_ms,
+        },
+    }
+
+
 def run_phase_b(
     run_ctx: Any,
     pdf_manifest: List[Dict[str, Any]],
@@ -1367,27 +1739,6 @@ def run_phase_b(
     assessment_path = parser_dir / "phase_b_assessment.json"
     index_path = parser_dir / "parsed_document_bundles.jsonl"
 
-    write_json_atomic(
-        runtime_path,
-        {
-            "generated_at_utc": utc_now_iso(),
-            "phase": "phase_b",
-            "options": json_safe(options.__dict__),
-            "required_kernel_packages": required_kernel_packages,
-            "missing_kernel_packages": missing_kernel_packages,
-            "capabilities": capabilities,
-        },
-    )
-
-    config_payload = {
-        "generated_at_utc": utc_now_iso(),
-        "phase": "phase_b",
-        "options": json_safe(options.__dict__),
-        "capabilities": capabilities,
-        "runtime_path": rel_to_run(Path(run_ctx.run_dir), runtime_path),
-    }
-    write_json_atomic(config_path, config_payload)
-
     selected_rows: List[Dict[str, Any]] = []
     include_doc_ids = set(options.include_doc_ids or [])
     exclude_doc_ids = set(options.exclude_doc_ids or [])
@@ -1406,6 +1757,31 @@ def run_phase_b(
         selected_rows = selected_rows[: int(options.doc_limit)]
     if not selected_rows:
         raise RuntimeError("Phase B selected zero PDFs after filtering. Adjust PhaseBOptions filters.")
+    resolved_doc_concurrency = resolve_phase_b_doc_concurrency(options, capabilities=capabilities, doc_count=len(selected_rows))
+    write_json_atomic(
+        runtime_path,
+        {
+            "generated_at_utc": utc_now_iso(),
+            "phase": "phase_b",
+            "options": json_safe(options.__dict__),
+            "required_kernel_packages": required_kernel_packages,
+            "missing_kernel_packages": missing_kernel_packages,
+            "capabilities": capabilities,
+            "available_cpu_count": available_cpu_count(),
+            "resolved_doc_concurrency": resolved_doc_concurrency,
+        },
+    )
+
+    config_payload = {
+        "generated_at_utc": utc_now_iso(),
+        "phase": "phase_b",
+        "options": json_safe(options.__dict__),
+        "capabilities": capabilities,
+        "runtime_path": rel_to_run(Path(run_ctx.run_dir), runtime_path),
+        "available_cpu_count": available_cpu_count(),
+        "resolved_doc_concurrency": resolved_doc_concurrency,
+    }
+    write_json_atomic(config_path, config_payload)
     if run_logger is not None:
         run_logger.info(
             "Phase B runtime | python=%s | missing_kernel_packages=%s",
@@ -1413,8 +1789,10 @@ def run_phase_b(
             ",".join(missing_kernel_packages) if missing_kernel_packages else "none",
         )
         run_logger.info(
-            "Phase B started | selected=%s | force_rebuild=%s | fitz=%s | pypdf=%s | docling=%s | grobid=%s",
+            "Phase B started | selected=%s | concurrency=%s | cpu_count=%s | force_rebuild=%s | fitz=%s | pypdf=%s | docling=%s | grobid=%s",
             len(selected_rows),
+            resolved_doc_concurrency,
+            available_cpu_count(),
             options.force_rebuild,
             capabilities.get("fitz_available"),
             capabilities.get("pypdf_available"),
@@ -1422,10 +1800,11 @@ def run_phase_b(
             capabilities.get("grobid", {}).get("status"),
         )
 
-    summary_rows: List[Dict[str, Any]] = []
-    bundle_rows: List[Dict[str, Any]] = []
+    summary_rows_by_pos: Dict[int, Dict[str, Any]] = {}
+    bundle_rows_by_pos: Dict[int, Dict[str, Any]] = {}
+    pending_rows: List[tuple[int, Dict[str, Any]]] = []
 
-    for manifest_row in selected_rows:
+    for position, manifest_row in enumerate(selected_rows):
         doc_id = str(manifest_row["doc_id"])
         source_path = Path(str(manifest_row["path"])).resolve()
         doc_dir = ensure_dir(parser_dir / doc_id)
@@ -1476,8 +1855,8 @@ def run_phase_b(
                 cached_summary["cached_from_generated_at_utc"] = cached_diag.get("generated_at_utc")
                 cached_summary["runtime_capability_mismatch"] = bool(mismatch_fields)
                 cached_summary["runtime_capability_mismatch_fields"] = mismatch_fields
-                summary_rows.append(cached_summary)
-                bundle_rows.append(dict(cached_diag.get("bundle_row") or {}))
+                summary_rows_by_pos[position] = cached_summary
+                bundle_rows_by_pos[position] = dict(cached_diag.get("bundle_row") or {})
                 if run_logger is not None:
                     run_logger.info(
                         "Phase B cached document | doc_id=%s | bundle_status=%s | docling=%s | grobid=%s | mismatch=%s",
@@ -1499,214 +1878,73 @@ def run_phase_b(
                         runtime_capability_mismatch=bool(mismatch_fields),
                     )
                 continue
+        pending_rows.append((position, manifest_row))
 
-        t0 = time.perf_counter()
-        fitz_bundle = extract_fitz_bundle(source_path, min_page_words=options.min_page_words)
-        pypdf_bundle = extract_pypdf_bundle(source_path)
-        page_count = fitz_bundle.get("page_count") or pypdf_bundle.get("page_count") or manifest_row.get("page_count")
-        fitz_pages = list(fitz_bundle.get("pages") or [])
-        fitz_blocks = list(fitz_bundle.get("blocks") or [])
-        pages_with_text = sum(1 for row in fitz_pages if row.get("has_text"))
-        pages_with_substantive_text = sum(1 for row in fitz_pages if row.get("has_substantive_text"))
-        total_chars = sum(int(row.get("char_len") or 0) for row in fitz_pages)
-        pct_pages_with_text = round((pages_with_text / float(page_count)) * 100.0, 2) if page_count else None
-        pct_pages_with_substantive_text = round((pages_with_substantive_text / float(page_count)) * 100.0, 2) if page_count else None
-        readable_without_ocr = bool(total_chars >= int(options.min_doc_chars) and pages_with_substantive_text >= 1)
-        ocr_required_or_unreadable = not readable_without_ocr
-        outline_count = max(len(fitz_bundle.get("outline") or []), len(pypdf_bundle.get("outline") or []))
-        page_count_agrees = (
-            fitz_bundle.get("page_count") is None
-            or pypdf_bundle.get("page_count") is None
-            or int(fitz_bundle.get("page_count")) == int(pypdf_bundle.get("page_count"))
-        )
+    if pending_rows:
+        failed_doc_ids: List[str] = []
+        with ThreadPoolExecutor(max_workers=resolved_doc_concurrency) as executor:
+            future_map = {
+                executor.submit(
+                    build_phase_b_document_bundle,
+                    run_ctx=run_ctx,
+                    parser_dir=parser_dir,
+                    manifest_row=manifest_row,
+                    options=options,
+                    capabilities=capabilities,
+                ): (position, manifest_row)
+                for position, manifest_row in pending_rows
+            }
+            for future in as_completed(future_map):
+                position, manifest_row = future_map[future]
+                doc_id = str(manifest_row["doc_id"])
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    failed_doc_ids.append(doc_id)
+                    if run_logger is not None:
+                        run_logger.exception("Phase B doc failed | doc_id=%s | source_path=%s", doc_id, manifest_row.get("path"))
+                    if log_event_fn is not None:
+                        log_event_fn(
+                            run_ctx,
+                            stage="phase_b",
+                            event="document_failed",
+                            doc_id=doc_id,
+                            source_path=manifest_row.get("path"),
+                            error_type=type(exc).__name__,
+                            error_message=short_blob(str(exc), max_len=600) or type(exc).__name__,
+                        )
+                    continue
+                summary_rows_by_pos[position] = dict(result["summary_row"])
+                bundle_rows_by_pos[position] = dict(result["bundle_row"])
+                if run_logger is not None:
+                    log_payload = dict(result.get("log_payload") or {})
+                    run_logger.info(
+                        "Phase B parsed document | doc_id=%s | page_count=%s | fitz=%s | pypdf=%s | docling=%s | grobid=%s | fallback=%s | elapsed_ms=%s",
+                        doc_id,
+                        log_payload.get("page_count"),
+                        log_payload.get("fitz_status"),
+                        log_payload.get("pypdf_status"),
+                        log_payload.get("docling_status"),
+                        log_payload.get("grobid_status"),
+                        bool(log_payload.get("fallback_activated")),
+                        log_payload.get("elapsed_ms"),
+                    )
+                if log_event_fn is not None:
+                    log_event_fn(run_ctx, stage="phase_b", event="document_parsed", **dict(result.get("event_payload") or {}))
+    else:
+        failed_doc_ids = []
 
-        docling_bundle = extract_docling_bundle(source_path, page_count, options)
-        docling_success = str(docling_bundle.get("status") or "") == "success"
-        grobid_bundle = extract_grobid_bundle(source_path, manifest_row, page_count, options, capabilities)
-        fallback_activated = bool(readable_without_ocr and not docling_success and str(fitz_bundle.get("status") or "") == "ok")
-        bundle_status = "ok" if readable_without_ocr and str(fitz_bundle.get("status") or "") == "ok" else "needs_attention"
-        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 3)
+    summary_rows = [summary_rows_by_pos[idx] for idx in range(len(selected_rows)) if idx in summary_rows_by_pos]
+    bundle_rows = [bundle_rows_by_pos[idx] for idx in range(len(selected_rows)) if idx in bundle_rows_by_pos]
 
-        metadata_payload = {
-            "generated_at_utc": utc_now_iso(),
-            "phase": "phase_b",
-            "doc_id": doc_id,
-            "label": manifest_row.get("label"),
-            "source_path": str(source_path),
-            "file_name": source_path.name,
-            "sha256": manifest_row.get("sha256"),
-            "size_mb": manifest_row.get("size_mb"),
-            "page_count": page_count,
-            "page_count_sources": {
-                "phase_a_manifest": manifest_row.get("page_count"),
-                "fitz": fitz_bundle.get("page_count"),
-                "pypdf": pypdf_bundle.get("page_count"),
-                "agree": bool(page_count_agrees),
-            },
-            "outline_counts": {
-                "fitz": len(fitz_bundle.get("outline") or []),
-                "pypdf": len(pypdf_bundle.get("outline") or []),
-            },
-            "text_coverage": {
-                "pages_with_text": pages_with_text,
-                "pages_with_substantive_text": pages_with_substantive_text,
-                "percent_pages_with_text": pct_pages_with_text,
-                "percent_pages_with_substantive_text": pct_pages_with_substantive_text,
-                "total_chars": total_chars,
-                "readable_without_ocr": bool(readable_without_ocr),
-                "ocr_required_or_unreadable": bool(ocr_required_or_unreadable),
-            },
-            "fitz": {
-                "status": fitz_bundle.get("status"),
-                "metadata": fitz_bundle.get("metadata"),
-                "outline": fitz_bundle.get("outline"),
-                "error": fitz_bundle.get("error"),
-            },
-            "pypdf": {
-                "status": pypdf_bundle.get("status"),
-                "metadata": pypdf_bundle.get("metadata"),
-                "outline": pypdf_bundle.get("outline"),
-                "error": pypdf_bundle.get("error"),
-            },
-            "docling": {
-                "status": docling_bundle.get("status"),
-                "enabled": docling_bundle.get("enabled"),
-                "error": docling_bundle.get("error"),
-                "warnings": docling_bundle.get("warnings"),
-                "selected_mode": docling_bundle.get("selected_mode"),
-                "confidence_summary": docling_bundle.get("confidence_summary"),
-                "document_summary": docling_bundle.get("document_summary"),
-                "section_headers": docling_bundle.get("section_headers"),
-                "attempts": docling_bundle.get("attempts"),
-                "chunking": docling_bundle.get("chunking"),
-                "timings": ((docling_bundle.get("result") or {}).get("timings") if isinstance(docling_bundle.get("result"), dict) else None),
-            },
-            "grobid": {
-                "status": grobid_bundle.get("status"),
-                "reason": grobid_bundle.get("reason"),
-                "summary": grobid_bundle.get("summary"),
-                "error": grobid_bundle.get("error"),
-            },
-        }
-
-        summary_row = {
-            "doc_id": doc_id,
-            "file_name": source_path.name,
-            "page_count": page_count,
-            "outline_count": outline_count,
-            "pages_with_text_pct": pct_pages_with_text,
-            "substantive_text_pct": pct_pages_with_substantive_text,
-            "readable_without_ocr": bool(readable_without_ocr),
-            "docling_status": docling_bundle.get("status"),
-            "docling_mode": docling_bundle.get("selected_mode"),
-            "docling_conf_mean_grade": (docling_bundle.get("confidence_summary") or {}).get("mean_grade"),
-            "docling_conf_low_grade": (docling_bundle.get("confidence_summary") or {}).get("low_grade"),
-            "docling_warning_count": len(docling_bundle.get("warnings") or []),
-            "docling_section_header_count": int((docling_bundle.get("document_summary") or {}).get("section_header_count") or len(docling_bundle.get("section_headers") or [])),
-            "grobid_status": grobid_bundle.get("status"),
-            "grobid_reason": grobid_bundle.get("reason"),
-            "fallback_activated": bool(fallback_activated),
-            "page_count_agrees": bool(page_count_agrees),
-            "elapsed_ms": elapsed_ms,
-            "cached": False,
-            "cached_from_generated_at_utc": None,
-            "runtime_capability_mismatch": False,
-            "runtime_capability_mismatch_fields": [],
-        }
-
-        bundle_row = {
-            "doc_id": doc_id,
-            "source_path": str(source_path),
-            "metadata_json": rel_to_run(Path(run_ctx.run_dir), metadata_path),
-            "diagnostics_json": rel_to_run(Path(run_ctx.run_dir), diagnostics_path),
-            "pymupdf_pages_jsonl": rel_to_run(Path(run_ctx.run_dir), fitz_pages_path),
-            "pymupdf_blocks_jsonl": rel_to_run(Path(run_ctx.run_dir), fitz_blocks_path),
-            "docling_json": rel_to_run(Path(run_ctx.run_dir), docling_path),
-            "grobid_summary_json": rel_to_run(Path(run_ctx.run_dir), grobid_summary_path),
-            "grobid_tei_xml": rel_to_run(Path(run_ctx.run_dir), grobid_xml_path) if grobid_bundle.get("xml_text") else None,
-            "bundle_status": bundle_status,
-        }
-
-        diagnostics_payload = {
-            "generated_at_utc": utc_now_iso(),
-            "phase": "phase_b",
-            "doc_id": doc_id,
-            "bundle_status": bundle_status,
-            "summary_row": summary_row,
-            "bundle_row": bundle_row,
-            "readable_without_ocr": bool(readable_without_ocr),
-            "ocr_required_or_unreadable": bool(ocr_required_or_unreadable),
-            "fallback_activated": bool(fallback_activated),
-            "page_count_agrees": bool(page_count_agrees),
-            "parser_statuses": {
-                "fitz": fitz_bundle.get("status"),
-                "pypdf": pypdf_bundle.get("status"),
-                "docling": docling_bundle.get("status"),
-                "grobid": grobid_bundle.get("status"),
-            },
-            "docling_mode": docling_bundle.get("selected_mode"),
-            "docling_confidence_summary": docling_bundle.get("confidence_summary"),
-            "docling_warning_count": len(docling_bundle.get("warnings") or []),
-            "docling_section_header_count": int((docling_bundle.get("document_summary") or {}).get("section_header_count") or len(docling_bundle.get("section_headers") or [])),
-            "docling_attempts": docling_bundle.get("attempts"),
-            "docling_chunking": docling_bundle.get("chunking"),
-            "grobid_reason": grobid_bundle.get("reason"),
-            "runtime_capabilities_snapshot": {
-                "fitz_available": bool(capabilities.get("fitz_available")),
-                "pypdf_available": bool(capabilities.get("pypdf_available")),
-                "docling_available": bool(capabilities.get("docling_available")),
-                "grobid_configured": bool(capabilities.get("grobid", {}).get("configured")),
-                "grobid_reachable": bool(capabilities.get("grobid", {}).get("reachable")),
-            },
-            "phase_b_options_snapshot": json_safe(options.__dict__),
-            "artifact_paths": bundle_row,
-        }
-
-        write_json_atomic(metadata_path, metadata_payload)
-        write_jsonl_rows(fitz_pages_path, fitz_pages)
-        write_jsonl_rows(fitz_blocks_path, fitz_blocks)
-        write_json_atomic(docling_path, docling_bundle)
-        write_json_atomic(grobid_summary_path, {k: v for k, v in grobid_bundle.items() if k != "xml_text"})
-        if grobid_bundle.get("xml_text"):
-            grobid_xml_path.write_text(str(grobid_bundle["xml_text"]), encoding="utf-8")
-        elif grobid_xml_path.exists() and options.force_rebuild:
-            grobid_xml_path.unlink()
-        write_json_atomic(diagnostics_path, diagnostics_payload)
-
-        summary_rows.append(summary_row)
-        bundle_rows.append(bundle_row)
-
-        if run_logger is not None:
-            run_logger.info(
-                "Phase B parsed document | doc_id=%s | page_count=%s | fitz=%s | pypdf=%s | docling=%s | grobid=%s | fallback=%s | elapsed_ms=%s",
-                doc_id,
-                page_count,
-                fitz_bundle.get("status"),
-                pypdf_bundle.get("status"),
-                docling_bundle.get("status"),
-                grobid_bundle.get("status"),
-                bool(fallback_activated),
-                elapsed_ms,
-            )
-        if log_event_fn is not None:
-            log_event_fn(
-                run_ctx,
-                stage="phase_b",
-                event="document_parsed",
-                doc_id=doc_id,
-                source_path=str(source_path),
-                page_count=page_count,
-                fitz_status=fitz_bundle.get("status"),
-                pypdf_status=pypdf_bundle.get("status"),
-                docling_status=docling_bundle.get("status"),
-                grobid_status=grobid_bundle.get("status"),
-                readable_without_ocr=bool(readable_without_ocr),
-                fallback_activated=bool(fallback_activated),
-                elapsed_ms=elapsed_ms,
-            )
-
-    assessment = build_phase_b_assessment(summary_rows, capabilities, len(selected_rows))
-    qc_rows = build_qc_rows(summary_rows, capabilities, len(selected_rows), assessment=assessment)
+    assessment = build_phase_b_assessment(summary_rows, capabilities, len(selected_rows), failed_doc_ids=failed_doc_ids)
+    qc_rows = build_qc_rows(
+        summary_rows,
+        capabilities,
+        len(selected_rows),
+        failed_doc_ids=failed_doc_ids,
+        assessment=assessment,
+    )
 
     write_json_atomic(
         summary_path,
@@ -1760,6 +1998,7 @@ def run_phase_b(
         "grobid_reachable": bool(capabilities.get("grobid", {}).get("reachable")),
         "cached_doc_count": sum(1 for row in summary_rows if row.get("cached")),
         "runtime_capability_mismatch_count": sum(1 for row in summary_rows if row.get("runtime_capability_mismatch")),
+        "bundle_failure_count": len(failed_doc_ids),
         "status": assessment.get("status"),
         "quality_band": assessment.get("quality_band"),
         "can_continue_to_next_phase": assessment.get("can_continue_to_next_phase"),

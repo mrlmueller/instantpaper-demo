@@ -78,6 +78,16 @@ class Config:
         "TWO_LANE_SOURCES_EXECUTION_BACKEND",
         "cloud_run_job" if IS_CLOUD_RUN else "local_background",
     ).strip().lower()
+    PDF_SCAN_CLOUD_RUN_JOB_NAME: str = os.getenv(
+        "PDF_SCAN_CLOUD_RUN_JOB_NAME", "instantpaper-pdf-scan"
+    ).strip()
+    PDF_SCAN_CLOUD_RUN_JOB_REGION: str = os.getenv(
+        "PDF_SCAN_CLOUD_RUN_JOB_REGION", "europe-west3"
+    ).strip()
+    PDF_SCAN_EXECUTION_BACKEND: str = os.getenv(
+        "PDF_SCAN_EXECUTION_BACKEND",
+        "cloud_run_job" if IS_CLOUD_RUN else "local_background",
+    ).strip().lower()
 
     # Admin access endpoint (Basic Auth)
     # Used to set Firebase Auth custom claims (e.g. {"fullAccess": true}) for gating user access.

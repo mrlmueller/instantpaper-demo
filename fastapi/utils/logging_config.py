@@ -124,11 +124,6 @@ def configure_logging() -> None:
                 "level": qf_level,
                 "propagate": False,
             },
-            "services.quellen_finder_pdf_scan_pipeline": {
-                "handlers": ["quellen_finder_console"],
-                "level": qf_level,
-                "propagate": False,
-            },
             # Third-party noisy libs.
             "httpx": {"level": "WARNING"},
             "openai": {"level": "WARNING"},

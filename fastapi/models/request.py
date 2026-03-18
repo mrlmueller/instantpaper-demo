@@ -300,7 +300,6 @@ class QuellenFinderPdfScanRequest(BaseModel):
     projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
     kapitel_id: str = Field(..., description="Kapitel ID to run PDF scan for")
     pdf_ids: List[str] = Field(..., description="Project PDF document IDs to scan", min_length=1)
-    preprocess: bool = Field(default=True, description="Whether to run the LLM preprocess stage before PDF retrieval")
 
     class Config:
         json_schema_extra = {
@@ -308,25 +307,34 @@ class QuellenFinderPdfScanRequest(BaseModel):
                 "projekt_id": "proj123",
                 "kapitel_id": "kap456",
                 "pdf_ids": ["pdfA", "pdfB"],
-                "preprocess": True,
             }
         }
 
 
-class QuellenFinderPdfExtractRequest(BaseModel):
-    """Request model for extracting/highlighting a PDF section from a Stage-2 hit or Stage-3 section."""
+class QuellenFinderPdfScanCancelRequest(BaseModel):
+    """Request model for requesting cancellation of a PDF scan run."""
 
     projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
     run_id: str = Field(..., description="Research run ID (kind=pdf_scan)")
-    stage: Literal["stage2", "stage3"] = Field(..., description="Which run subcollection to read the doc from")
-    doc_id: str = Field(..., description="Stage document ID to extract from")
+
+    class Config:
+        json_schema_extra = {"example": {"projekt_id": "proj123", "run_id": "run456"}}
+
+
+class QuellenFinderPdfExtractRequest(BaseModel):
+    """Request model for extracting/highlighting a final PDF section from a PDF scan run."""
+
+    projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
+    run_id: str = Field(..., description="Research run ID (kind=pdf_scan)")
+    pdf_doc_id: str = Field(..., description="PDF summary document ID inside pdfScanDocs")
+    section_doc_id: str = Field(..., description="Final section document ID inside pdfScanSections")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "projekt_id": "proj123",
                 "run_id": "run456",
-                "stage": "stage2",
-                "doc_id": "stageDoc789",
+                "pdf_doc_id": "currency_bullion_and_accounts-d06d74cdba02",
+                "section_doc_id": "currency_bullion_and_accounts-d06d74cdba02__cf857d73af6067fc",
             }
         }

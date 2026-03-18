@@ -147,7 +147,7 @@ export function ExportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg [&>button]:hidden">
+      <DialogContent className="sm:max-w-lg" showCloseButton={false}>
         <DialogHeader className="pb-4 border-b">
           <DialogTitle className="flex items-center gap-2 text-lg">
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">

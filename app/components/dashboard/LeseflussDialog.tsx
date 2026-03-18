@@ -264,7 +264,7 @@ export function LeseflussDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[70vh] [&>button]:hidden">
+      <DialogContent className="sm:max-w-lg max-h-[70vh]" showCloseButton={false}>
         <DialogHeader className="pb-4 border-b">
           <DialogTitle className="flex items-center gap-2 text-lg">
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">

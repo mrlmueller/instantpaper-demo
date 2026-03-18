@@ -1,0 +1,11 @@
+.git
+.github
+.next
+node_modules
+venv
+__pycache__
+*.log
+output
+fastapi/.env
+pdf-scan/paper-dump
+pdf-scan/runs

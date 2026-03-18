@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 from argparse import Namespace
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from phase_a_lab import (
@@ -40,6 +41,7 @@ class PhaseCOptions:
     doc_limit: Optional[int] = None
     include_doc_ids: Optional[List[str]] = None
     exclude_doc_ids: Optional[List[str]] = None
+    max_concurrent_docs: Optional[int] = None
     prefer_outline: bool = True
     use_docling: bool = True
     use_grobid: bool = True
@@ -78,6 +80,7 @@ class PhaseCOptions:
             doc_limit=None if self.doc_limit is None else int(self.doc_limit),
             include_doc_ids=[str(x).strip() for x in (self.include_doc_ids or []) if str(x).strip()],
             exclude_doc_ids=[str(x).strip() for x in (self.exclude_doc_ids or []) if str(x).strip()],
+            max_concurrent_docs=None if self.max_concurrent_docs is None else max(1, int(self.max_concurrent_docs)),
             prefer_outline=bool(self.prefer_outline),
             use_docling=bool(self.use_docling),
             use_grobid=bool(self.use_grobid),
@@ -2270,6 +2273,294 @@ def assess_phase_c(*, summary_rows: List[Dict[str, Any]], section_rows: List[Dic
     }
 
 
+def resolve_phase_c_doc_concurrency(options: PhaseCOptions, *, doc_count: int) -> int:
+    if int(doc_count) <= 1:
+        return 1
+    if options.max_concurrent_docs is not None:
+        return max(1, min(int(doc_count), int(options.max_concurrent_docs)))
+    return max(1, min(int(doc_count), min(available_cpu_count(), 8)))
+
+
+def build_phase_c_document_bundle(
+    *,
+    run_ctx: Any,
+    normalized_dir: Path,
+    bundle_row: Dict[str, Any],
+    options: PhaseCOptions,
+    stable_hash_local: Any,
+) -> Dict[str, Any]:
+    doc_id = str(bundle_row.get("doc_id") or "")
+    doc_dir = ensure_dir(normalized_dir / doc_id)
+    doc_artifacts = {
+        "document_json": doc_dir / "document.json",
+        "section_proposals_jsonl": doc_dir / "section_proposals.jsonl",
+        "accepted_headings_jsonl": doc_dir / "accepted_headings.jsonl",
+        "sections_jsonl": doc_dir / "sections.jsonl",
+        "passages_jsonl": doc_dir / "passages.jsonl",
+        "diagnostics_json": doc_dir / "phase_c_diagnostics.json",
+    }
+
+    loaded = load_phase_b_bundle(run_ctx, bundle_row)
+    metadata = loaded["metadata"] or {}
+    block_index = build_block_index(loaded["blocks"] or [])
+    proposals: List[Dict[str, Any]] = []
+    source_counts: Dict[str, int] = {}
+    outline_props: List[Dict[str, Any]] = []
+    docling_props: List[Dict[str, Any]] = []
+    grobid_props: List[Dict[str, Any]] = []
+    if bool(options.prefer_outline):
+        outline_props = extract_outline_proposals(metadata)
+        proposals.extend(outline_props)
+        source_counts["outline"] = len(outline_props)
+    if bool(options.use_docling):
+        docling_props = extract_docling_proposals(loaded["docling"] or {})
+        proposals.extend(docling_props)
+        source_counts["docling"] = len(docling_props)
+    if bool(options.use_grobid):
+        grobid_props = extract_grobid_proposals(loaded.get("grobid_tei_text") or "")
+        proposals.extend(grobid_props)
+        source_counts["grobid"] = len(grobid_props)
+    strong_outline = has_strong_outline(metadata, options)
+    docling_noise_ratio = estimate_docling_noise_ratio(docling_props)
+    heuristic_enabled_for_doc = bool(
+        options.use_heuristic_headings
+        and not outline_props
+        and (
+            (len(docling_props) < 4 and len(grobid_props) < 4)
+            or (
+                bool(options.enable_numbered_gap_fill_when_docling_noisy)
+                and docling_noise_ratio >= float(options.docling_noise_ratio_for_gap_fill)
+            )
+        )
+    )
+    if heuristic_enabled_for_doc:
+        if len(docling_props) >= 4 or len(grobid_props) >= 4:
+            heuristic_props = extract_numbered_gap_fill_proposals(block_index["ordered_blocks"], options)
+        else:
+            heuristic_props = extract_heuristic_proposals(block_index["ordered_blocks"], options)
+        proposals.extend(heuristic_props)
+        source_counts["heuristic"] = len(heuristic_props)
+    else:
+        source_counts["heuristic"] = 0
+    existing_heading_keys = {
+        heading_key_without_numbers(item.get("title")) or normalize_heading_key(item.get("title"))
+        for item in proposals
+        if normalize_heading_display(item.get("title"))
+    }
+    structural_gap_fill_props = extract_structural_gap_fill_proposals(
+        block_index["ordered_blocks"],
+        options,
+        existing_title_keys=existing_heading_keys,
+    )
+    proposals.extend(structural_gap_fill_props)
+    source_counts["heuristic_structural_gap_fill"] = len(structural_gap_fill_props)
+    heuristic_recovery_enabled_for_doc = bool(options.use_heuristic_recovery)
+    if heuristic_recovery_enabled_for_doc and len(docling_props) > 0:
+        heuristic_recovery_enabled_for_doc = False
+    if heuristic_recovery_enabled_for_doc and bool(options.heuristic_recovery_disable_when_strong_outline) and strong_outline:
+        heuristic_recovery_enabled_for_doc = False
+    if (
+        heuristic_recovery_enabled_for_doc
+        and bool(options.heuristic_recovery_disable_when_docling_rich)
+        and len(docling_props) >= int(options.heuristic_recovery_docling_rich_threshold)
+    ):
+        heuristic_recovery_enabled_for_doc = False
+    if heuristic_recovery_enabled_for_doc:
+        existing_heading_keys = {
+            heading_key_without_numbers(item.get("title")) or normalize_heading_key(item.get("title"))
+            for item in proposals
+            if normalize_heading_display(item.get("title"))
+        }
+        heuristic_recovery_props = extract_heuristic_recovery_proposals(
+            block_index["ordered_blocks"],
+            options,
+            existing_title_keys=existing_heading_keys,
+            blocked_pages=non_body_outline_pages(metadata),
+        )
+        proposals.extend(heuristic_recovery_props)
+        source_counts["heuristic_recovery"] = len(heuristic_recovery_props)
+    else:
+        source_counts["heuristic_recovery"] = 0
+
+    filtered = filter_and_anchor_proposals(proposals, block_index=block_index, metadata=metadata, options=options)
+    accepted_headings = filtered["accepted_headings"]
+    sections = build_section_tree(
+        accepted_headings,
+        block_index=block_index,
+        metadata=metadata,
+        options=options,
+        doc_id=doc_id,
+        stable_hash_fn=stable_hash_local,
+    )
+    doc_record = build_document_record(doc_id, metadata, sections, accepted_headings, loaded)
+    passages = build_passages(sections, metadata=metadata, options=options, stable_hash_fn=stable_hash_local)
+
+    section_export_rows: List[Dict[str, Any]] = []
+    for row in sections:
+        section_export_rows.append({k: v for k, v in row.items() if k != "block_rows"})
+
+    covered_abs_indices = {
+        idx
+        for row in sections
+        for idx in range(int((row.get("span") or {}).get("start_abs_block_index") or 0), int((row.get("span") or {}).get("end_abs_block_index") or -1) + 1)
+    }
+    coverage_chars = sum(
+        int(block.get("char_len") or len(block.get("text") or ""))
+        for block in block_index["ordered_blocks"]
+        if int(block.get("abs_block_index") or -1) in covered_abs_indices
+    )
+    total_chars = int(block_index.get("total_block_chars") or 0)
+    coverage_pct = round((coverage_chars / total_chars) * 100.0, 2) if total_chars else 0.0
+    fallback_anchor_count = sum(1 for row in accepted_headings if str(row.get("anchor_method") or "") == "page_start_fallback")
+    section_types = [row.get("section_type") for row in sections]
+    tiny_section_count = sum(1 for row in sections if "tiny_section" in (row.get("quality_flags") or []))
+    deep_section_count = sum(1 for row in sections if int(row.get("level") or 0) >= 4)
+    retrieval_suppressed_section_count = sum(1 for row in sections if not bool(row.get("retrieval_eligible", True)))
+    retrieval_eligible_tiny_section_count = sum(
+        1 for row in sections if "tiny_section" in (row.get("quality_flags") or []) and bool(row.get("retrieval_eligible", True))
+    )
+    structural_wrapper_count = sum(1 for row in sections if "structural_wrapper" in (row.get("quality_flags") or []))
+    metadata_stripped_section_count = sum(1 for row in sections if "metadata_stripped" in (row.get("quality_flags") or []))
+    accepted_source_counts = {
+        "outline": sum(1 for row in accepted_headings if str(row.get("source") or "").startswith("outline")),
+        "docling": sum(1 for row in accepted_headings if str(row.get("source") or "") == "docling"),
+        "grobid": sum(1 for row in accepted_headings if str(row.get("source") or "") == "grobid"),
+        "heuristic": sum(1 for row in accepted_headings if str(row.get("source") or "").startswith("heuristic")),
+        "synthetic": sum(1 for row in accepted_headings if str(row.get("source") or "") == "synthetic"),
+    }
+    summary_row = {
+        "doc_id": doc_id,
+        "file_name": metadata.get("file_name"),
+        "page_count": metadata.get("page_count"),
+        "outline_count": (metadata.get("outline_counts") or {}).get("fitz") or (metadata.get("outline_counts") or {}).get("pypdf") or 0,
+        "proposal_count": len(filtered["proposal_rows"]),
+        "accepted_heading_count": len(accepted_headings),
+        "section_count": len(section_export_rows),
+        "passage_count": len(passages),
+        "section_coverage_pct": coverage_pct,
+        "fallback_anchor_count": fallback_anchor_count,
+        "tiny_section_count": tiny_section_count,
+        "deep_section_count": deep_section_count,
+        "retrieval_suppressed_section_count": retrieval_suppressed_section_count,
+        "retrieval_eligible_tiny_section_count": retrieval_eligible_tiny_section_count,
+        "structural_wrapper_count": structural_wrapper_count,
+        "metadata_stripped_section_count": metadata_stripped_section_count,
+        "docling_status": (loaded.get("docling") or {}).get("status"),
+        "grobid_status": (loaded.get("grobid_summary") or {}).get("status") or (loaded.get("grobid_summary") or {}).get("service_status") or "no_data",
+        "strategy": "outline_first" if source_counts.get("outline") else ("docling_first" if source_counts.get("docling") else "heuristic_only"),
+        "heading_sources": ", ".join(sorted({str(row.get("source") or "") for row in accepted_headings})) or "none",
+        "accepted_outline_heading_count": accepted_source_counts["outline"],
+        "accepted_docling_heading_count": accepted_source_counts["docling"],
+        "accepted_grobid_heading_count": accepted_source_counts["grobid"],
+        "accepted_heuristic_heading_count": accepted_source_counts["heuristic"],
+        "has_references_section": bool(any(item == "references" for item in section_types)),
+        "has_appendix_section": bool(any(item == "appendix" for item in section_types)),
+        "collapsed_to_single_section": bool(len(section_export_rows) <= 1),
+    }
+    diagnostics = {
+        "generated_at_utc": utc_now_iso(),
+        "phase": "phase_c",
+        "doc_id": doc_id,
+        "source_counts": source_counts,
+        "proposal_count": len(filtered["proposal_rows"]),
+        "accepted_heading_count": len(accepted_headings),
+        "section_count": len(section_export_rows),
+        "passage_count": len(passages),
+        "section_coverage_pct": coverage_pct,
+        "summary_row": summary_row,
+        "notes": {
+            "doc_title": filtered.get("doc_title"),
+            "docling_status": (loaded.get("docling") or {}).get("status"),
+            "grobid_status": (loaded.get("grobid_summary") or {}).get("status") or (loaded.get("grobid_summary") or {}).get("service_status") or "no_data",
+            "heuristics_enabled_for_doc": heuristic_enabled_for_doc,
+            "accepted_source_counts": accepted_source_counts,
+            "accepted_heuristic_recovery_heading_count": sum(1 for row in accepted_headings if str(row.get("source") or "") == "heuristic_recovery"),
+            "tiny_section_titles": [row.get("title") for row in sections if "tiny_section" in (row.get("quality_flags") or [])][:20],
+            "retrieval_eligible_tiny_section_titles": [
+                row.get("title")
+                for row in sections
+                if "tiny_section" in (row.get("quality_flags") or []) and bool(row.get("retrieval_eligible", True))
+            ][:20],
+            "retrieval_suppressed_titles": [row.get("title") for row in sections if not bool(row.get("retrieval_eligible", True))][:20],
+            "structural_wrapper_titles": [row.get("title") for row in sections if "structural_wrapper" in (row.get("quality_flags") or [])][:20],
+            "metadata_stripped_titles": [row.get("title") for row in sections if "metadata_stripped" in (row.get("quality_flags") or [])][:20],
+        },
+    }
+
+    doc_record.update(
+        {
+            "strategy": summary_row["strategy"],
+            "heading_sources": summary_row["heading_sources"],
+            "section_coverage_pct": coverage_pct,
+            "fallback_anchor_count": fallback_anchor_count,
+            "tiny_section_count": tiny_section_count,
+            "deep_section_count": deep_section_count,
+            "retrieval_suppressed_section_count": retrieval_suppressed_section_count,
+            "retrieval_eligible_tiny_section_count": retrieval_eligible_tiny_section_count,
+            "structural_wrapper_count": structural_wrapper_count,
+            "metadata_stripped_section_count": metadata_stripped_section_count,
+            "docling_status": summary_row["docling_status"],
+            "grobid_status": summary_row["grobid_status"],
+            "accepted_outline_heading_count": accepted_source_counts["outline"],
+            "accepted_docling_heading_count": accepted_source_counts["docling"],
+            "accepted_grobid_heading_count": accepted_source_counts["grobid"],
+            "accepted_heuristic_heading_count": accepted_source_counts["heuristic"],
+            "quality_flags": [
+                flag
+                for flag in [
+                    "fallback_anchor_headings" if fallback_anchor_count else "",
+                    "high_tiny_section_ratio" if len(section_export_rows) and (tiny_section_count / max(1, len(section_export_rows))) >= 0.25 else "",
+                    "retrieval_suppressed_sections_present" if retrieval_suppressed_section_count else "",
+                ]
+                if flag
+            ],
+            "normalization_notes": diagnostics["notes"],
+        }
+    )
+
+    write_json_atomic(doc_artifacts["document_json"], doc_record)
+    write_jsonl_rows(doc_artifacts["section_proposals_jsonl"], filtered["proposal_rows"])
+    write_jsonl_rows(doc_artifacts["accepted_headings_jsonl"], accepted_headings)
+    write_jsonl_rows(doc_artifacts["sections_jsonl"], section_export_rows)
+    write_jsonl_rows(doc_artifacts["passages_jsonl"], passages)
+    write_json_atomic(doc_artifacts["diagnostics_json"], diagnostics)
+
+    bundle_index_row = {
+        "doc_id": doc_id,
+        "document_json": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["document_json"]),
+        "section_proposals_jsonl": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["section_proposals_jsonl"]),
+        "accepted_headings_jsonl": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["accepted_headings_jsonl"]),
+        "sections_jsonl": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["sections_jsonl"]),
+        "passages_jsonl": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["passages_jsonl"]),
+        "diagnostics_json": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["diagnostics_json"]),
+        "bundle_status": "ok",
+    }
+
+    return {
+        "doc_id": doc_id,
+        "document_row": doc_record,
+        "section_rows": section_export_rows,
+        "passage_rows": passages,
+        "summary_row": summary_row,
+        "bundle_index_row": bundle_index_row,
+        "log_payload": {
+            "proposal_count": len(filtered["proposal_rows"]),
+            "accepted_heading_count": len(accepted_headings),
+            "section_count": len(section_export_rows),
+            "passage_count": len(passages),
+            "coverage_pct": coverage_pct,
+        },
+        "event_payload": {
+            "doc_id": doc_id,
+            "proposal_count": len(filtered["proposal_rows"]),
+            "accepted_heading_count": len(accepted_headings),
+            "section_count": len(section_export_rows),
+            "passage_count": len(passages),
+            "section_coverage_pct": coverage_pct,
+        },
+    }
+
+
 def run_phase_c(run_ctx: Any, options: PhaseCOptions, *, stable_hash_fn=None, log_event_fn=None, run_logger=None) -> Dict[str, Any]:
     options = options.normalized()
     stable_hash_local = stable_hash_fn or stable_hash
@@ -2306,6 +2597,7 @@ def run_phase_c(run_ctx: Any, options: PhaseCOptions, *, stable_hash_fn=None, lo
         selected_bundles.append(row)
     if options.doc_limit is not None:
         selected_bundles = selected_bundles[: int(options.doc_limit)]
+    resolved_doc_concurrency = resolve_phase_c_doc_concurrency(options, doc_count=len(selected_bundles))
 
     runtime_payload = {
         "generated_at_utc": utc_now_iso(),
@@ -2318,14 +2610,18 @@ def run_phase_c(run_ctx: Any, options: PhaseCOptions, *, stable_hash_fn=None, lo
         "phase_b_assessment_path": rel_to_run(Path(run_ctx.run_dir), phase_b_assessment_path),
         "phase_b_index_path": rel_to_run(Path(run_ctx.run_dir), phase_b_index_path),
         "selected_doc_count": len(selected_bundles),
+        "available_cpu_count": available_cpu_count(),
+        "resolved_doc_concurrency": resolved_doc_concurrency,
     }
     write_json_atomic(runtime_path, runtime_payload)
     write_json_atomic(config_path, {"generated_at_utc": utc_now_iso(), "phase": "phase_c", "options": json_safe(asdict(options))})
 
     if run_logger is not None:
         run_logger.info(
-            "Phase C start | selected_docs=%s | prefer_outline=%s | use_docling=%s | use_grobid=%s | use_heuristics=%s",
+            "Phase C start | selected_docs=%s | concurrency=%s | cpu_count=%s | prefer_outline=%s | use_docling=%s | use_grobid=%s | use_heuristics=%s",
             len(selected_bundles),
+            resolved_doc_concurrency,
+            available_cpu_count(),
             options.prefer_outline,
             options.use_docling,
             options.use_grobid,
@@ -2334,13 +2630,10 @@ def run_phase_c(run_ctx: Any, options: PhaseCOptions, *, stable_hash_fn=None, lo
     if log_event_fn is not None:
         log_event_fn(run_ctx, stage="phase_c", event="phase_started", selected_doc_count=len(selected_bundles), options=json_safe(asdict(options)))
 
-    document_rows: List[Dict[str, Any]] = []
-    section_rows: List[Dict[str, Any]] = []
-    passage_rows: List[Dict[str, Any]] = []
-    summary_rows: List[Dict[str, Any]] = []
-    bundle_index_rows: List[Dict[str, Any]] = []
+    results_by_pos: Dict[int, Dict[str, Any]] = {}
+    pending_bundles: List[tuple[int, Dict[str, Any]]] = []
 
-    for bundle_row in selected_bundles:
+    for position, bundle_row in enumerate(selected_bundles):
         doc_id = str(bundle_row.get("doc_id") or "")
         doc_dir = ensure_dir(normalized_dir / doc_id)
         doc_artifacts = {
@@ -2358,12 +2651,12 @@ def run_phase_c(run_ctx: Any, options: PhaseCOptions, *, stable_hash_fn=None, lo
             doc_sections = read_jsonl_rows(doc_artifacts["sections_jsonl"])
             doc_passages = read_jsonl_rows(doc_artifacts["passages_jsonl"])
             diagnostics = read_json(doc_artifacts["diagnostics_json"])
-            document_rows.append(doc_record)
-            section_rows.extend(doc_sections)
-            passage_rows.extend(doc_passages)
-            summary_rows.append(diagnostics.get("summary_row") or {})
-            bundle_index_rows.append(
-                {
+            results_by_pos[position] = {
+                "document_row": doc_record,
+                "section_rows": doc_sections,
+                "passage_rows": doc_passages,
+                "summary_row": diagnostics.get("summary_row") or {},
+                "bundle_index_row": {
                     "doc_id": doc_id,
                     "document_json": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["document_json"]),
                     "section_proposals_jsonl": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["section_proposals_jsonl"]),
@@ -2372,279 +2665,79 @@ def run_phase_c(run_ctx: Any, options: PhaseCOptions, *, stable_hash_fn=None, lo
                     "passages_jsonl": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["passages_jsonl"]),
                     "diagnostics_json": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["diagnostics_json"]),
                     "bundle_status": "cached",
-                }
-            )
+                },
+            }
             if run_logger is not None:
                 run_logger.info("Phase C doc cached | doc_id=%s | sections=%s | passages=%s", doc_id, len(doc_sections), len(doc_passages))
             continue
+        pending_bundles.append((position, bundle_row))
 
-        loaded = load_phase_b_bundle(run_ctx, bundle_row)
-        metadata = loaded["metadata"] or {}
-        block_index = build_block_index(loaded["blocks"] or [])
-        proposals: List[Dict[str, Any]] = []
-        source_counts: Dict[str, int] = {}
-        outline_props: List[Dict[str, Any]] = []
-        docling_props: List[Dict[str, Any]] = []
-        grobid_props: List[Dict[str, Any]] = []
-        if bool(options.prefer_outline):
-            outline_props = extract_outline_proposals(metadata)
-            proposals.extend(outline_props)
-            source_counts["outline"] = len(outline_props)
-        if bool(options.use_docling):
-            docling_props = extract_docling_proposals(loaded["docling"] or {})
-            proposals.extend(docling_props)
-            source_counts["docling"] = len(docling_props)
-        if bool(options.use_grobid):
-            grobid_props = extract_grobid_proposals(loaded.get("grobid_tei_text") or "")
-            proposals.extend(grobid_props)
-            source_counts["grobid"] = len(grobid_props)
-        strong_outline = has_strong_outline(metadata, options)
-        docling_noise_ratio = estimate_docling_noise_ratio(docling_props)
-        docling_numbered_count = count_numbered_proposals(docling_props)
-        heuristic_enabled_for_doc = bool(
-            options.use_heuristic_headings
-            and not outline_props
-            and (
-                (len(docling_props) < 4 and len(grobid_props) < 4)
-                or (
-                    bool(options.enable_numbered_gap_fill_when_docling_noisy)
-                    and docling_noise_ratio >= float(options.docling_noise_ratio_for_gap_fill)
-                )
-            )
-        )
-        if heuristic_enabled_for_doc:
-            if len(docling_props) >= 4 or len(grobid_props) >= 4:
-                heuristic_props = extract_numbered_gap_fill_proposals(block_index["ordered_blocks"], options)
-            else:
-                heuristic_props = extract_heuristic_proposals(block_index["ordered_blocks"], options)
-            proposals.extend(heuristic_props)
-            source_counts["heuristic"] = len(heuristic_props)
-        else:
-            source_counts["heuristic"] = 0
-        existing_heading_keys = {
-            heading_key_without_numbers(item.get("title")) or normalize_heading_key(item.get("title"))
-            for item in proposals
-            if normalize_heading_display(item.get("title"))
-        }
-        structural_gap_fill_props = extract_structural_gap_fill_proposals(
-            block_index["ordered_blocks"],
-            options,
-            existing_title_keys=existing_heading_keys,
-        )
-        proposals.extend(structural_gap_fill_props)
-        source_counts["heuristic_structural_gap_fill"] = len(structural_gap_fill_props)
-        heuristic_recovery_enabled_for_doc = bool(options.use_heuristic_recovery)
-        if heuristic_recovery_enabled_for_doc and len(docling_props) > 0:
-            heuristic_recovery_enabled_for_doc = False
-        if heuristic_recovery_enabled_for_doc and bool(options.heuristic_recovery_disable_when_strong_outline) and strong_outline:
-            heuristic_recovery_enabled_for_doc = False
-        if (
-            heuristic_recovery_enabled_for_doc
-            and bool(options.heuristic_recovery_disable_when_docling_rich)
-            and len(docling_props) >= int(options.heuristic_recovery_docling_rich_threshold)
-        ):
-            heuristic_recovery_enabled_for_doc = False
-        if heuristic_recovery_enabled_for_doc:
-            existing_heading_keys = {
-                heading_key_without_numbers(item.get("title")) or normalize_heading_key(item.get("title"))
-                for item in proposals
-                if normalize_heading_display(item.get("title"))
+    if pending_bundles:
+        with ThreadPoolExecutor(max_workers=resolved_doc_concurrency) as executor:
+            future_map = {
+                executor.submit(
+                    build_phase_c_document_bundle,
+                    run_ctx=run_ctx,
+                    normalized_dir=normalized_dir,
+                    bundle_row=bundle_row,
+                    options=options,
+                    stable_hash_local=stable_hash_local,
+                ): (position, bundle_row)
+                for position, bundle_row in pending_bundles
             }
-            heuristic_recovery_props = extract_heuristic_recovery_proposals(
-                block_index["ordered_blocks"],
-                options,
-                existing_title_keys=existing_heading_keys,
-                blocked_pages=non_body_outline_pages(metadata),
-            )
-            proposals.extend(heuristic_recovery_props)
-            source_counts["heuristic_recovery"] = len(heuristic_recovery_props)
-        else:
-            source_counts["heuristic_recovery"] = 0
+            for future in as_completed(future_map):
+                position, bundle_row = future_map[future]
+                doc_id = str(bundle_row.get("doc_id") or "")
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    if run_logger is not None:
+                        run_logger.exception("Phase C doc failed | doc_id=%s", doc_id)
+                    if log_event_fn is not None:
+                        log_event_fn(
+                            run_ctx,
+                            stage="phase_c",
+                            event="doc_failed",
+                            doc_id=doc_id,
+                            error_type=type(exc).__name__,
+                            error_message=short_blob(str(exc), max_len=600) or type(exc).__name__,
+                        )
+                    continue
+                results_by_pos[position] = {
+                    "document_row": dict(result["document_row"]),
+                    "section_rows": list(result["section_rows"]),
+                    "passage_rows": list(result["passage_rows"]),
+                    "summary_row": dict(result["summary_row"]),
+                    "bundle_index_row": dict(result["bundle_index_row"]),
+                }
+                if run_logger is not None:
+                    log_payload = dict(result.get("log_payload") or {})
+                    run_logger.info(
+                        "Phase C doc built | doc_id=%s | proposals=%s | accepted_headings=%s | sections=%s | passages=%s | coverage_pct=%s",
+                        doc_id,
+                        log_payload.get("proposal_count"),
+                        log_payload.get("accepted_heading_count"),
+                        log_payload.get("section_count"),
+                        log_payload.get("passage_count"),
+                        log_payload.get("coverage_pct"),
+                    )
+                if log_event_fn is not None:
+                    log_event_fn(run_ctx, stage="phase_c", event="doc_normalized", **dict(result.get("event_payload") or {}))
 
-        filtered = filter_and_anchor_proposals(proposals, block_index=block_index, metadata=metadata, options=options)
-        accepted_headings = filtered["accepted_headings"]
-        sections = build_section_tree(
-            accepted_headings,
-            block_index=block_index,
-            metadata=metadata,
-            options=options,
-            doc_id=doc_id,
-            stable_hash_fn=stable_hash_local,
-        )
-        doc_record = build_document_record(doc_id, metadata, sections, accepted_headings, loaded)
-        passages = build_passages(sections, metadata=metadata, options=options, stable_hash_fn=stable_hash_local)
-
-        section_export_rows: List[Dict[str, Any]] = []
-        for row in sections:
-            export_row = {k: v for k, v in row.items() if k != "block_rows"}
-            section_export_rows.append(export_row)
-
-        covered_abs_indices = {
-            idx
-            for row in sections
-            for idx in range(int((row.get("span") or {}).get("start_abs_block_index") or 0), int((row.get("span") or {}).get("end_abs_block_index") or -1) + 1)
-        }
-        coverage_chars = sum(
-            int(block.get("char_len") or len(block.get("text") or ""))
-            for block in block_index["ordered_blocks"]
-            if int(block.get("abs_block_index") or -1) in covered_abs_indices
-        )
-        total_chars = int(block_index.get("total_block_chars") or 0)
-        coverage_pct = round((coverage_chars / total_chars) * 100.0, 2) if total_chars else 0.0
-        fallback_anchor_count = sum(1 for row in accepted_headings if str(row.get("anchor_method") or "") == "page_start_fallback")
-        section_types = [row.get("section_type") for row in sections]
-        tiny_section_count = sum(1 for row in sections if "tiny_section" in (row.get("quality_flags") or []))
-        deep_section_count = sum(1 for row in sections if int(row.get("level") or 0) >= 4)
-        retrieval_suppressed_section_count = sum(1 for row in sections if not bool(row.get("retrieval_eligible", True)))
-        retrieval_eligible_tiny_section_count = sum(
-            1
-            for row in sections
-            if "tiny_section" in (row.get("quality_flags") or []) and bool(row.get("retrieval_eligible", True))
-        )
-        structural_wrapper_count = sum(1 for row in sections if "structural_wrapper" in (row.get("quality_flags") or []))
-        metadata_stripped_section_count = sum(1 for row in sections if "metadata_stripped" in (row.get("quality_flags") or []))
-        accepted_source_counts = {
-            "outline": sum(1 for row in accepted_headings if str(row.get("source") or "").startswith("outline")),
-            "docling": sum(1 for row in accepted_headings if str(row.get("source") or "") == "docling"),
-            "grobid": sum(1 for row in accepted_headings if str(row.get("source") or "") == "grobid"),
-            "heuristic": sum(1 for row in accepted_headings if str(row.get("source") or "").startswith("heuristic")),
-            "synthetic": sum(1 for row in accepted_headings if str(row.get("source") or "") == "synthetic"),
-        }
-        summary_row = {
-            "doc_id": doc_id,
-            "file_name": metadata.get("file_name"),
-            "page_count": metadata.get("page_count"),
-            "outline_count": (metadata.get("outline_counts") or {}).get("fitz") or (metadata.get("outline_counts") or {}).get("pypdf") or 0,
-            "proposal_count": len(filtered["proposal_rows"]),
-            "accepted_heading_count": len(accepted_headings),
-            "section_count": len(section_export_rows),
-            "passage_count": len(passages),
-            "section_coverage_pct": coverage_pct,
-            "fallback_anchor_count": fallback_anchor_count,
-            "tiny_section_count": tiny_section_count,
-            "deep_section_count": deep_section_count,
-            "retrieval_suppressed_section_count": retrieval_suppressed_section_count,
-            "retrieval_eligible_tiny_section_count": retrieval_eligible_tiny_section_count,
-            "structural_wrapper_count": structural_wrapper_count,
-            "metadata_stripped_section_count": metadata_stripped_section_count,
-            "docling_status": (loaded.get("docling") or {}).get("status"),
-            "grobid_status": (loaded.get("grobid_summary") or {}).get("status") or (loaded.get("grobid_summary") or {}).get("service_status") or "no_data",
-            "strategy": "outline_first" if source_counts.get("outline") else ("docling_first" if source_counts.get("docling") else "heuristic_only"),
-            "heading_sources": ", ".join(sorted({str(row.get("source") or "") for row in accepted_headings})) or "none",
-            "accepted_outline_heading_count": accepted_source_counts["outline"],
-            "accepted_docling_heading_count": accepted_source_counts["docling"],
-            "accepted_grobid_heading_count": accepted_source_counts["grobid"],
-            "accepted_heuristic_heading_count": accepted_source_counts["heuristic"],
-            "has_references_section": bool(any(item == "references" for item in section_types)),
-            "has_appendix_section": bool(any(item == "appendix" for item in section_types)),
-            "collapsed_to_single_section": bool(len(section_export_rows) <= 1),
-        }
-        diagnostics = {
-            "generated_at_utc": utc_now_iso(),
-            "phase": "phase_c",
-            "doc_id": doc_id,
-            "source_counts": source_counts,
-            "proposal_count": len(filtered["proposal_rows"]),
-            "accepted_heading_count": len(accepted_headings),
-            "section_count": len(section_export_rows),
-            "passage_count": len(passages),
-            "section_coverage_pct": coverage_pct,
-            "summary_row": summary_row,
-            "notes": {
-                "doc_title": filtered.get("doc_title"),
-                "docling_status": (loaded.get("docling") or {}).get("status"),
-                "grobid_status": (loaded.get("grobid_summary") or {}).get("status") or (loaded.get("grobid_summary") or {}).get("service_status") or "no_data",
-                "heuristics_enabled_for_doc": heuristic_enabled_for_doc,
-                "accepted_source_counts": accepted_source_counts,
-                "accepted_heuristic_recovery_heading_count": sum(1 for row in accepted_headings if str(row.get("source") or "") == "heuristic_recovery"),
-                "tiny_section_titles": [row.get("title") for row in sections if "tiny_section" in (row.get("quality_flags") or [])][:20],
-                "retrieval_eligible_tiny_section_titles": [
-                    row.get("title")
-                    for row in sections
-                    if "tiny_section" in (row.get("quality_flags") or []) and bool(row.get("retrieval_eligible", True))
-                ][:20],
-                "retrieval_suppressed_titles": [row.get("title") for row in sections if not bool(row.get("retrieval_eligible", True))][:20],
-                "structural_wrapper_titles": [row.get("title") for row in sections if "structural_wrapper" in (row.get("quality_flags") or [])][:20],
-                "metadata_stripped_titles": [row.get("title") for row in sections if "metadata_stripped" in (row.get("quality_flags") or [])][:20],
-            },
-        }
-
-        doc_record.update(
-            {
-                "strategy": summary_row["strategy"],
-                "heading_sources": summary_row["heading_sources"],
-                "section_coverage_pct": coverage_pct,
-                "fallback_anchor_count": fallback_anchor_count,
-                "tiny_section_count": tiny_section_count,
-                "deep_section_count": deep_section_count,
-                "retrieval_suppressed_section_count": retrieval_suppressed_section_count,
-                "retrieval_eligible_tiny_section_count": retrieval_eligible_tiny_section_count,
-                "structural_wrapper_count": structural_wrapper_count,
-                "metadata_stripped_section_count": metadata_stripped_section_count,
-                "docling_status": summary_row["docling_status"],
-                "grobid_status": summary_row["grobid_status"],
-                "accepted_outline_heading_count": accepted_source_counts["outline"],
-                "accepted_docling_heading_count": accepted_source_counts["docling"],
-                "accepted_grobid_heading_count": accepted_source_counts["grobid"],
-                "accepted_heuristic_heading_count": accepted_source_counts["heuristic"],
-                "quality_flags": [
-                    flag
-                    for flag in [
-                        "fallback_anchor_headings" if fallback_anchor_count else "",
-                        "high_tiny_section_ratio" if len(section_export_rows) and (tiny_section_count / max(1, len(section_export_rows))) >= 0.25 else "",
-                        "retrieval_suppressed_sections_present" if retrieval_suppressed_section_count else "",
-                    ]
-                    if flag
-                ],
-                "normalization_notes": diagnostics["notes"],
-            }
-        )
-
-        write_json_atomic(doc_artifacts["document_json"], doc_record)
-        write_jsonl_rows(doc_artifacts["section_proposals_jsonl"], filtered["proposal_rows"])
-        write_jsonl_rows(doc_artifacts["accepted_headings_jsonl"], accepted_headings)
-        write_jsonl_rows(doc_artifacts["sections_jsonl"], section_export_rows)
-        write_jsonl_rows(doc_artifacts["passages_jsonl"], passages)
-        write_json_atomic(doc_artifacts["diagnostics_json"], diagnostics)
-
-        document_rows.append(doc_record)
-        section_rows.extend(section_export_rows)
-        passage_rows.extend(passages)
-        summary_rows.append(summary_row)
-        bundle_index_rows.append(
-            {
-                "doc_id": doc_id,
-                "document_json": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["document_json"]),
-                "section_proposals_jsonl": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["section_proposals_jsonl"]),
-                "accepted_headings_jsonl": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["accepted_headings_jsonl"]),
-                "sections_jsonl": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["sections_jsonl"]),
-                "passages_jsonl": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["passages_jsonl"]),
-                "diagnostics_json": rel_to_run(Path(run_ctx.run_dir), doc_artifacts["diagnostics_json"]),
-                "bundle_status": "ok",
-            }
-        )
-        if run_logger is not None:
-            run_logger.info(
-                "Phase C doc built | doc_id=%s | proposals=%s | accepted_headings=%s | sections=%s | passages=%s | coverage_pct=%s",
-                doc_id,
-                len(filtered["proposal_rows"]),
-                len(accepted_headings),
-                len(section_export_rows),
-                len(passages),
-                coverage_pct,
-            )
-        if log_event_fn is not None:
-            log_event_fn(
-                run_ctx,
-                stage="phase_c",
-                event="doc_normalized",
-                doc_id=doc_id,
-                proposal_count=len(filtered["proposal_rows"]),
-                accepted_heading_count=len(accepted_headings),
-                section_count=len(section_export_rows),
-                passage_count=len(passages),
-                section_coverage_pct=coverage_pct,
-            )
+    document_rows: List[Dict[str, Any]] = []
+    section_rows: List[Dict[str, Any]] = []
+    passage_rows: List[Dict[str, Any]] = []
+    summary_rows: List[Dict[str, Any]] = []
+    bundle_index_rows: List[Dict[str, Any]] = []
+    for position in range(len(selected_bundles)):
+        result = results_by_pos.get(position)
+        if not result:
+            continue
+        document_rows.append(dict(result["document_row"]))
+        section_rows.extend(list(result["section_rows"]))
+        passage_rows.extend(list(result["passage_rows"]))
+        summary_rows.append(dict(result["summary_row"]))
+        bundle_index_rows.append(dict(result["bundle_index_row"]))
 
     write_jsonl_rows(documents_path, document_rows)
     write_jsonl_rows(sections_path, section_rows)
