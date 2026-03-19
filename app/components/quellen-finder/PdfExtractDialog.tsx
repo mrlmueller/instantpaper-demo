@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Cookies from "js-cookie";
 import { ChevronLeft, ChevronRight, Copy, ExternalLink, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -10,7 +9,6 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, Di
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { getDownloadUrlFromStorage } from "@/app/lib/firebase/storage";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
 const DEBUG = process.env.NODE_ENV !== "production";
 
 function qfLog(message: string, data?: Record<string, unknown>) {
@@ -540,9 +538,6 @@ function PdfExtractDialogPanel(props: { request: PdfExtractRequest }) {
     qfLog("dialog open", { request });
 
     (async () => {
-      const token = Cookies.get("__session");
-      if (!token) throw new Error("Session token missing.");
-
       void loadPdfJs().catch(() => undefined);
       void loadPdfViewer().catch(() => undefined);
 
@@ -552,9 +547,9 @@ function PdfExtractDialogPanel(props: { request: PdfExtractRequest }) {
         pdfDocId: request.pdfDocId,
         sectionDocId: request.sectionDocId,
       });
-      const res = await fetch(`${API_BASE_URL}/api/quellen-finder/pdf-extract`, {
+      const res = await fetch(`/api/quellen-finder/pdf-extract`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         signal: extractController.signal,
         body: JSON.stringify({
           projekt_id: request.projektId,
@@ -566,8 +561,9 @@ function PdfExtractDialogPanel(props: { request: PdfExtractRequest }) {
 
       const data = (await res.json().catch(() => null)) as PdfExtractResponse | null;
       if (!res.ok) {
-        const detail = (data as unknown as { detail?: unknown })?.detail;
-        const msg = typeof detail === "string" ? detail : "Request failed.";
+        const detail = (data as unknown as { detail?: unknown; error?: unknown })?.detail;
+        const error = (data as unknown as { detail?: unknown; error?: unknown })?.error;
+        const msg = typeof detail === "string" ? detail : typeof error === "string" ? error : "Request failed.";
         qfLog("extract request failed", { status: res.status, msg });
         throw new Error(msg);
       }
@@ -605,16 +601,12 @@ function PdfExtractDialogPanel(props: { request: PdfExtractRequest }) {
     const pdfController = new AbortController();
 
     (async () => {
-      const token = Cookies.get("__session");
-      if (!token) throw new Error("Session token missing.");
-
-      const url = new URL(`${API_BASE_URL}/api/quellen-finder/project-pdf`);
+      const url = new URL("/api/quellen-finder/project-pdf", window.location.origin);
       url.searchParams.set("projekt_id", request.projektId);
       url.searchParams.set("pdf_id", pdfId);
 
       qfLog("pdf fetch start", { projektId: request.projektId, pdfId });
       const res = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${token}` },
         signal: pdfController.signal,
       });
       if (!res.ok) {
