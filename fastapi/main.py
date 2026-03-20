@@ -34,6 +34,7 @@ from models.request import (
     QuellenFinderTwoLaneStartRequest,
     QuellenFinderTwoLaneCancelRequest,
     QuellenFinderProjectPdfDuplicateCheckRequest,
+    QuellenFinderProjectPdfColorUpdateRequest,
 )
 from models.response import ProcessQuelleResponse
 from services.quelle_service import quelle_service
@@ -5942,6 +5943,54 @@ async def quellen_finder_project_pdf_delete(
 
     pdf_ref.delete()
     return {"deleted": True, "pdf_id": pdf_id}
+
+
+@app.patch("/api/quellen-finder/project-pdf", status_code=status.HTTP_200_OK)
+async def quellen_finder_project_pdf_update(
+    request: QuellenFinderProjectPdfColorUpdateRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    projekt_id = str(request.projekt_id or "").strip()
+    pdf_id = str(request.pdf_id or "").strip()
+    color = str(request.color or "").strip().lower() or None
+
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not pdf_id:
+        raise HTTPException(status_code=400, detail="pdf_id is required")
+
+    await _require_pdf_scan_enabled(user_id)
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    allowed_colors = {"blue", "green", "teal", "lavender", "cream", "peach", "rose"}
+    if color is not None and color not in allowed_colors:
+        raise HTTPException(status_code=400, detail="Invalid PDF color.")
+
+    pdf_ref = (
+        firebase_service.db.collection("users")
+        .document(str(user_id))
+        .collection("projects")
+        .document(str(projekt_id))
+        .collection("pdfs")
+        .document(str(pdf_id))
+    )
+    pdf_snap = pdf_ref.get()
+    if not getattr(pdf_snap, "exists", False):
+        raise HTTPException(status_code=404, detail="PDF not found.")
+
+    pdf_ref.set(
+        {
+            "color": color if color is not None else None,
+            "updatedAt": SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+    return {"updated": True, "pdf_id": pdf_id, "color": color}
 
 
 @app.post("/api/quellen-finder/project-pdf-duplicate-check", status_code=status.HTTP_200_OK)

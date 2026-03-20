@@ -50,11 +50,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 import type { Kapitel } from "@/app/actions/kapitels";
 import { useAuth } from "@/app/components/providers/AuthProvider";
@@ -63,6 +65,7 @@ import { firestoreClient } from "@/app/lib/firebase/firestoreClient";
 import {
   projectPdfsCol,
   projectResearchRunsCol,
+  quellenCol,
   quellenFinderPdfScanDocsCol,
   quellenFinderPdfScanSectionsCol,
 } from "@/app/lib/firestore/refs";
@@ -70,8 +73,10 @@ import type {
   PdfScanDocSummaryDoc,
   PdfScanResultDoc,
   ProjectPdfDoc,
+  QuelleDoc,
   QuellenFinderRunDoc,
 } from "@/app/lib/firestore/types";
+import { QUELLE_COLORS, colorMap, type QuelleColor } from "@/app/lib/quellen/fieldConfig";
 import { cn } from "@/lib/utils";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
@@ -81,6 +86,7 @@ type PdfRow = WithId<ProjectPdfDoc>;
 type RunRow = WithId<QuellenFinderRunDoc>;
 type PdfDocRow = WithId<PdfScanDocSummaryDoc>;
 type PdfSectionRow = WithId<PdfScanResultDoc>;
+type QuelleRow = WithId<QuelleDoc>;
 type ToDateLike = { toDate: () => Date };
 type PdfJsModule = typeof import("pdfjs-dist");
 export type PdfScanWorkspacePreview = {
@@ -107,6 +113,8 @@ const PDF_SCAN_PIPELINE_STEPS: Array<{ key: string; label: string }> = [
   { key: "phase_g", label: "Phase G" },
   { key: "persist_results", label: "Persist" },
 ];
+
+const PDF_LIBRARY_COLOR_PICKER_ORDER: Array<QuelleColor | null> = [null, "rose", "peach", "cream", "green", "teal", "blue", "lavender"];
 
 function hasToDate(value: unknown): value is ToDateLike {
   if (typeof value !== "object" || value === null) return false;
@@ -298,6 +306,16 @@ function normalizePdfFilename(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+function normalizeLibraryMatchKey(value: string): string {
+  return String(value || "")
+    .replace(/\.pdf$/i, "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function toHex(buffer: ArrayBuffer): string {
   return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -356,7 +374,7 @@ async function checkProjectPdfDuplicate(params: {
 
 const MainEmptyState = memo(function MainEmptyState({ selectedKapitel }: { selectedKapitel: Kapitel | null }) {
   return (
-    <div className="flex min-h-[480px] items-center justify-center px-6">
+    <div className="flex min-h-full flex-1 items-center justify-center px-6">
       <div className="max-w-[640px] text-center">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm">
           <FileText className="h-7 w-7 text-slate-400" />
@@ -401,12 +419,10 @@ function ResultSkeleton() {
 export function PdfScanWorkspace({
   initialKapitels,
   projektId,
-  projektName,
   preview,
 }: {
   initialKapitels: Kapitel[];
   projektId: string;
-  projektName: string;
   preview?: PdfScanWorkspacePreview;
 }) {
   const { user } = useAuth();
@@ -426,28 +442,31 @@ export function PdfScanWorkspace({
   const [deletingPdfId, setDeletingPdfId] = useState<string | null>(null);
 
   const [runs, setRuns] = useState<RunRow[]>(() => preview?.runs ?? []);
+  const [runsLoaded, setRunsLoaded] = useState(() => previewMode);
   const [activeRunId, setActiveRunId] = useState<string | null>(() => preview?.initialActiveRunId ?? null);
+  const [activeRunCookieRestored, setActiveRunCookieRestored] = useState(() => previewMode);
 
   const [docRows, setDocRows] = useState<PdfDocRow[]>(() => preview?.docRows ?? []);
   const [docRowsLoaded, setDocRowsLoaded] = useState(() => previewMode);
-  const [activeDocId, setActiveDocId] = useState<string | null>(() => preview?.initialActiveDocId ?? null);
+  const [openDocIds, setOpenDocIds] = useState<string[]>(() => (preview?.docRows ?? []).map((row) => row.id));
   const [startConfirmOpen, setStartConfirmOpen] = useState(false);
   const [deleteConfirmPdf, setDeleteConfirmPdf] = useState<PdfRow | null>(null);
 
-  const [sectionRows, setSectionRows] = useState<PdfSectionRow[]>(() => {
-    const initialDocId = preview?.initialActiveDocId ?? null;
-    return initialDocId ? (preview?.sectionsByDocId?.[initialDocId] ?? []) : [];
-  });
+  const [sectionRowsByDocId, setSectionRowsByDocId] = useState<Record<string, PdfSectionRow[]>>(() => preview?.sectionsByDocId ?? {});
   const [sectionRowsLoaded, setSectionRowsLoaded] = useState(() => previewMode);
 
   const [extractOpen, setExtractOpen] = useState(false);
   const [extractRequest, setExtractRequest] = useState<PdfExtractRequest | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [projectQuellen, setProjectQuellen] = useState<QuelleRow[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const libraryDragDepthRef = useRef(0);
+  const pdfColorRequestSeqRef = useRef<Map<string, number>>(new Map());
   const lastRunStatus = useRef<{ runId: string; status: string } | null>(null);
   const previousActiveRunIdRef = useRef<string | null>(null);
+  const knownDocIdsForRunRef = useRef<Set<string>>(new Set((preview?.docRows ?? []).map((row) => row.id)));
+  const activeRunCookieKey = useMemo(() => `pdf_scan_active_run_${projektId}`, [projektId]);
 
   const selectedKapitel = useMemo(() => {
     if (!selectedKapitelId) return null;
@@ -459,6 +478,45 @@ export function PdfScanWorkspace({
     for (const pdf of pdfs) map.set(pdf.id, pdf);
     return map;
   }, [pdfs]);
+
+  const projectQuellenWithColor = useMemo(
+    () =>
+      projectQuellen
+        .filter((quelle) => Boolean(quelle.color))
+        .map((quelle) => ({
+          id: quelle.id,
+          color: (quelle.color as QuelleColor | null) ?? null,
+          key: normalizeLibraryMatchKey(quelle.title || ""),
+        }))
+        .filter((quelle) => quelle.color && quelle.key),
+    [projectQuellen]
+  );
+
+  const pdfColorById = useMemo(() => {
+    const map = new Map<string, QuelleColor | null>();
+    for (const pdf of pdfs) {
+      if (Object.prototype.hasOwnProperty.call(pdf, "color")) {
+        map.set(pdf.id, (pdf.color as QuelleColor | null | undefined) ?? null);
+        continue;
+      }
+
+      const pdfKey = normalizeLibraryMatchKey(pdf.filename || "");
+      let matchedColor: QuelleColor | null = null;
+
+      const exact = projectQuellenWithColor.find((quelle) => quelle.key === pdfKey);
+      if (exact?.color) {
+        matchedColor = exact.color;
+      } else {
+        const fuzzy = [...projectQuellenWithColor]
+          .sort((a, b) => b.key.length - a.key.length)
+          .find((quelle) => pdfKey.includes(quelle.key) || quelle.key.includes(pdfKey));
+        matchedColor = fuzzy?.color ?? null;
+      }
+
+      map.set(pdf.id, matchedColor);
+    }
+    return map;
+  }, [pdfs, projectQuellenWithColor]);
 
   const pdfScanRuns = useMemo(() => runs.filter((run) => run.kind === "pdf_scan"), [runs]);
 
@@ -482,8 +540,17 @@ export function PdfScanWorkspace({
 
   const filteredPdfs = useMemo(() => {
     const q = pdfLibraryFilter.trim().toLowerCase();
-    return q ? pdfs.filter((pdf) => String(pdf.filename || "").toLowerCase().includes(q)) : pdfs;
-  }, [pdfLibraryFilter, pdfs]);
+    const filtered = q ? pdfs.filter((pdf) => String(pdf.filename || "").toLowerCase().includes(q)) : pdfs;
+    const colorOrder = [...QUELLE_COLORS, null] as Array<QuelleColor | null>;
+    return [...filtered].sort((a, b) => {
+      const aColor = pdfColorById.get(a.id) ?? null;
+      const bColor = pdfColorById.get(b.id) ?? null;
+      const aIndex = colorOrder.indexOf(aColor);
+      const bIndex = colorOrder.indexOf(bColor);
+      if (aIndex !== bIndex) return aIndex - bIndex;
+      return String(a.filename || "").localeCompare(String(b.filename || ""), "de");
+    });
+  }, [pdfLibraryFilter, pdfColorById, pdfs]);
 
   const projectRunningRun = useMemo(
     () => pdfScanRuns.find((run) => run.status === "queued" || run.status === "running") ?? null,
@@ -491,17 +558,24 @@ export function PdfScanWorkspace({
   );
 
   useEffect(() => {
+    if (!previewMode && !activeRunCookieRestored) return;
     if (selectedKapitelId) return;
     if (activeRun?.kapitelIds?.[0]) {
       setSelectedKapitelId(activeRun.kapitelIds[0]);
       return;
     }
     if (kapitels.length) setSelectedKapitelId(kapitels[0]?.id ?? null);
-  }, [activeRun?.kapitelIds, kapitels, selectedKapitelId]);
+  }, [activeRun?.kapitelIds, activeRunCookieRestored, kapitels, previewMode, selectedKapitelId]);
 
   useEffect(() => {
     setSelectedPdfIds((prev) => prev.filter((id) => pdfsById.has(id)));
   }, [pdfsById]);
+
+  useEffect(() => {
+    if (previewMode) return;
+    setRunsLoaded(false);
+    setActiveRunCookieRestored(false);
+  }, [previewMode, projektId]);
 
   useEffect(() => {
     if (!activeRunId) return;
@@ -518,9 +592,10 @@ export function PdfScanWorkspace({
     if (previousActiveRunIdRef.current === nextRunId) return;
     previousActiveRunIdRef.current = nextRunId;
 
-    setActiveDocId(null);
-    setSectionRows([]);
+    setOpenDocIds([]);
+    setSectionRowsByDocId({});
     setSectionRowsLoaded(previewMode);
+    knownDocIdsForRunRef.current = new Set();
     setExtractOpen(false);
     setExtractRequest(null);
   }, [activeRun?.id, previewMode]);
@@ -545,6 +620,23 @@ export function PdfScanWorkspace({
   useEffect(() => {
     if (previewMode) return;
     if (!user?.uid || !projektId) return;
+    const q = query(quellenCol(firestoreClient, user.uid), where("projektId", "==", projektId), limit(500));
+    return onSnapshot(
+      q,
+      (snap) => {
+        const next = snap.docs.map((entry) => ({ id: entry.id, ...(entry.data() as QuelleDoc) }));
+        setProjectQuellen(next);
+      },
+      (err) => {
+        console.error("Failed to load Quellen for PDF color mapping:", err);
+        setProjectQuellen([]);
+      }
+    );
+  }, [previewMode, projektId, user?.uid]);
+
+  useEffect(() => {
+    if (previewMode) return;
+    if (!user?.uid || !projektId) return;
     const q = query(
       projectResearchRunsCol(firestoreClient, user.uid, projektId),
       where("kind", "==", "pdf_scan"),
@@ -556,14 +648,54 @@ export function PdfScanWorkspace({
         const next = snap.docs
           .map((entry) => ({ id: entry.id, ...(entry.data() as QuellenFinderRunDoc) }))
           .sort((a, b) => (toDateOrNull(b.createdAt)?.getTime() ?? 0) - (toDateOrNull(a.createdAt)?.getTime() ?? 0));
+        setRunsLoaded(true);
         setRuns(next);
       },
       (err) => {
         console.error("Failed to load PDF scan runs:", err);
+        setRunsLoaded(true);
         setRuns([]);
       }
     );
   }, [previewMode, projektId, user?.uid]);
+
+  useEffect(() => {
+    if (previewMode) return;
+    if (activeRunCookieRestored) return;
+    if (!runsLoaded) return;
+
+    const cookieRunId = String(Cookies.get(activeRunCookieKey) || "").trim();
+    if (!cookieRunId) {
+      setActiveRunCookieRestored(true);
+      return;
+    }
+
+    const cookieRun = pdfScanRuns.find((run) => run.id === cookieRunId) ?? null;
+    if (!cookieRun) {
+      Cookies.remove(activeRunCookieKey);
+      setActiveRunCookieRestored(true);
+      return;
+    }
+
+    if (activeRunId !== cookieRun.id) {
+      setActiveRunId(cookieRun.id);
+    }
+    const kapitelId = Array.isArray(cookieRun.kapitelIds) ? String(cookieRun.kapitelIds[0] || "").trim() : "";
+    if (kapitelId && selectedKapitelId !== kapitelId) {
+      setSelectedKapitelId(kapitelId);
+    }
+    setActiveRunCookieRestored(true);
+  }, [activeRunCookieKey, activeRunCookieRestored, activeRunId, pdfScanRuns, previewMode, runsLoaded, selectedKapitelId]);
+
+  useEffect(() => {
+    if (previewMode) return;
+    if (!activeRunCookieRestored) return;
+    if (activeRun?.id) {
+      Cookies.set(activeRunCookieKey, activeRun.id, { expires: 30, sameSite: "Lax" });
+      return;
+    }
+    Cookies.remove(activeRunCookieKey);
+  }, [activeRun?.id, activeRunCookieKey, activeRunCookieRestored, previewMode]);
 
   useEffect(() => {
     if (previewMode) return;
@@ -599,21 +731,17 @@ export function PdfScanWorkspace({
 
   useEffect(() => {
     if (previewMode) return;
-    if (!user?.uid || !projektId || !activeRun?.id || !activeDocId) {
-      setSectionRows([]);
+    if (!user?.uid || !projektId || !activeRun?.id) {
+      setSectionRowsByDocId({});
       setSectionRowsLoaded(false);
       return;
     }
     setSectionRowsLoaded(false);
-    const q = query(
-      quellenFinderPdfScanSectionsCol(firestoreClient, user.uid, projektId, activeRun.id),
-      where("docId", "==", activeDocId),
-      limit(200)
-    );
+    const q = query(quellenFinderPdfScanSectionsCol(firestoreClient, user.uid, projektId, activeRun.id), limit(5000));
     return onSnapshot(
       q,
       (snap) => {
-        const next = snap.docs
+        const rows = snap.docs
           .map((entry) => ({ id: entry.id, ...(entry.data() as PdfScanResultDoc) }))
           .sort((a, b) => {
             const scoreDiff = Number(b.score0To100 || 0) - Number(a.score0To100 || 0);
@@ -622,33 +750,47 @@ export function PdfScanWorkspace({
             if (rankDiff !== 0) return rankDiff;
             return Number(a.pageStart || 9999) - Number(b.pageStart || 9999);
           });
-        setSectionRows(next);
+        const grouped: Record<string, PdfSectionRow[]> = {};
+        for (const row of rows) {
+          const docId = String(row.docId || "").trim();
+          if (!docId) continue;
+          if (!grouped[docId]) grouped[docId] = [];
+          grouped[docId]!.push(row);
+        }
+        setSectionRowsByDocId(grouped);
         setSectionRowsLoaded(true);
       },
       (err) => {
         console.error("Failed to load pdfScanSections:", err);
-        setSectionRows([]);
+        setSectionRowsByDocId({});
         setSectionRowsLoaded(true);
       }
     );
-  }, [activeDocId, activeRun?.id, previewMode, projektId, user?.uid]);
+  }, [activeRun?.id, previewMode, projektId, user?.uid]);
 
   useEffect(() => {
     if (!previewMode) return;
-    if (!activeDocId) {
-      setSectionRows([]);
-      setSectionRowsLoaded(false);
-      return;
-    }
-    setSectionRows(preview?.sectionsByDocId?.[activeDocId] ?? []);
+    setSectionRowsByDocId(preview?.sectionsByDocId ?? {});
     setSectionRowsLoaded(true);
-  }, [activeDocId, previewMode, preview]);
+  }, [previewMode, preview]);
 
   useEffect(() => {
-    if (activeDocId) return;
-    if (docRows.length === 0) return;
-    setActiveDocId(docRows[0]?.id ?? null);
-  }, [activeDocId, docRows]);
+    const docIds = docRows.map((row) => row.id);
+    const docIdSet = new Set(docIds);
+    const knownDocIds = knownDocIdsForRunRef.current;
+    const newDocIds = docIds.filter((docId) => !knownDocIds.has(docId));
+    for (const docId of docIds) knownDocIds.add(docId);
+
+    setOpenDocIds((prev) => {
+      const kept = prev.filter((docId) => docIdSet.has(docId));
+      if (newDocIds.length === 0) return kept;
+      const next = [...kept];
+      for (const docId of newDocIds) {
+        if (!next.includes(docId)) next.push(docId);
+      }
+      return next;
+    });
+  }, [docRows]);
 
   useEffect(() => {
     const running = activeRun?.status === "queued" || activeRun?.status === "running";
@@ -688,7 +830,7 @@ export function PdfScanWorkspace({
 
   const selectKapitel = (kapitelId: string | null) => {
     setSelectedKapitelId(kapitelId);
-    setActiveDocId(null);
+    setOpenDocIds([]);
     setExtractOpen(false);
     setExtractRequest(null);
     if (!kapitelId) {
@@ -882,6 +1024,66 @@ export function PdfScanWorkspace({
     }
   };
 
+  const updateProjectPdfColor = async (pdfId: string, color: QuelleColor | null) => {
+    if (!user?.uid || !projektId || previewMode) return;
+    const currentPdf = pdfsById.get(pdfId);
+    if (!currentPdf) return;
+
+    const previousExplicitColor = Object.prototype.hasOwnProperty.call(currentPdf, "color")
+      ? ((currentPdf.color as QuelleColor | null | undefined) ?? null)
+      : undefined;
+    const requestSeq = (pdfColorRequestSeqRef.current.get(pdfId) ?? 0) + 1;
+    pdfColorRequestSeqRef.current.set(pdfId, requestSeq);
+
+    setPdfs((prev) =>
+      prev.map((pdf) =>
+        pdf.id === pdfId
+          ? {
+              ...pdf,
+              color,
+              updatedAt: Timestamp.now(),
+            }
+          : pdf
+      )
+    );
+
+    try {
+      const res = await fetch("/api/quellen-finder/project-pdf", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projekt_id: projektId,
+          pdf_id: pdfId,
+          color,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(await readFastApiError(res));
+      }
+    } catch (err: unknown) {
+      if (pdfColorRequestSeqRef.current.get(pdfId) === requestSeq) {
+        setPdfs((prev) =>
+          prev.map((pdf) => {
+            if (pdf.id !== pdfId) return pdf;
+            if (typeof previousExplicitColor === "undefined") {
+              const nextPdf = { ...pdf } as PdfRow;
+              delete nextPdf.color;
+              return nextPdf;
+            }
+            return {
+              ...pdf,
+              color: previousExplicitColor,
+              updatedAt: Timestamp.now(),
+            };
+          })
+        );
+      }
+      toast.error("PDF-Farbe konnte nicht gespeichert werden", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
   const requestDeleteProjectPdf = (pdf: PdfRow) => {
     if (previewMode) return;
     setDeleteConfirmPdf(pdf);
@@ -931,6 +1133,15 @@ export function PdfScanWorkspace({
       return;
     }
     setStartConfirmOpen(true);
+  };
+
+  const handleStartButtonClick = () => {
+    if (selectedPdfIds.length === 0 && !previewMode && !uploading && !projectRunningRun) {
+      setLibraryExpanded(true);
+      setLibraryManagerOpen(true);
+      return;
+    }
+    startPdfScan();
   };
 
   const confirmStartPdfScan = async () => {
@@ -1092,22 +1303,28 @@ export function PdfScanWorkspace({
     PDF_SCAN_PIPELINE_STEPS[isDone ? PDF_SCAN_PIPELINE_STEPS.length - 1 : Math.max(0, activeStepIndex)]?.label ?? "Pipeline";
   const runOutcomeLabel = isDone ? "Erfolgreich" : isCancelled ? "Abgebrochen" : isError ? "Fehler" : "Läuft";
 
-  const canStart = !previewMode && Boolean(selectedKapitelId) && selectedPdfIds.length > 0 && !uploading && !projectRunningRun;
+  const startDisabledReasons: string[] = [];
+  if (previewMode) startDisabledReasons.push("Der Scan ist in dieser Vorschau deaktiviert.");
+  if (!selectedKapitelId) startDisabledReasons.push("Wähle zuerst ein Kapitel aus.");
+  if (selectedPdfIds.length === 0) startDisabledReasons.push("Wähle mindestens eine PDF aus der Bibliothek aus.");
+  if (uploading) startDisabledReasons.push("Warte, bis der aktuelle PDF-Upload abgeschlossen ist.");
+  if (projectRunningRun) startDisabledReasons.push("In diesem Projekt läuft bereits ein anderer PDF-Scan.");
+  const canStart = startDisabledReasons.length === 0;
+  const canOpenLibraryFromStart = !previewMode && !uploading && !projectRunningRun && selectedPdfIds.length === 0;
+  const startButtonEnabled = canStart || canOpenLibraryFromStart;
 
   return (
     <div className="flex h-screen min-h-screen flex-col overflow-hidden bg-[#f7f8fb] text-slate-900">
-      <div className="shrink-0 border-b border-slate-200 bg-white">
-        <div className="flex items-start gap-3 px-6 py-4">
-          <Link
-            href="/dashboard"
-            className="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
+        <div className="flex items-center gap-4">
+          <Button asChild variant="ghost" size="icon">
+            <Link href="/dashboard" aria-label="Back to dashboard">
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+          </Button>
           <div className="min-w-0">
-            <div className="text-[17px] font-semibold tracking-[-0.02em] text-slate-950">PDF-Scan</div>
-            <div className="mt-0.5 text-sm text-slate-500">PDFs nach relevanten Inhalten für Kapitel durchsuchen</div>
-            <div className="mt-1 text-xs text-slate-400">Projekt: {projektName}</div>
+            <div className="truncate text-lg font-semibold text-slate-950">PDF-Scan</div>
+            <div className="truncate text-sm text-slate-500">PDFs nach relevanten Inhalten für Kapitel durchsuchen</div>
           </div>
         </div>
       </div>
@@ -1185,13 +1402,21 @@ export function PdfScanWorkspace({
                     {selectedPdfPreviewRows.length === 0 ? (
                       <div className="mt-3 text-sm leading-6 text-slate-500">Noch keine PDFs ausgewählt.</div>
                     ) : (
-                      <div className="mt-3 space-y-2.5">
+                      <TooltipProvider delayDuration={120}>
+                        <div className="mt-3 space-y-2.5">
                         {selectedPdfPreviewRows.map((pdf) => (
                           <div key={pdf.id} className="flex items-start gap-2.5">
                             <FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                            <span className="min-w-0 flex-1 truncate text-sm text-slate-900" title={pdf.filename}>
-                              {pdf.filename}
-                            </span>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="min-w-0 flex-1 truncate text-sm text-slate-900">
+                                  {pdf.filename}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="right" className="max-w-[360px] break-all text-xs">
+                                {pdf.filename}
+                              </TooltipContent>
+                            </Tooltip>
                             <button
                               type="button"
                               className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center text-slate-400 transition-colors hover:text-slate-700"
@@ -1211,7 +1436,8 @@ export function PdfScanWorkspace({
                             +{formatIntDe(hiddenSelectedPdfCount)} weitere...
                           </button>
                         ) : null}
-                      </div>
+                        </div>
+                      </TooltipProvider>
                     )}
                   </div>
                 </div>
@@ -1219,15 +1445,40 @@ export function PdfScanWorkspace({
             </div>
 
             <div>
-              <Button
-                size="lg"
-                onClick={startPdfScan}
-                disabled={!canStart}
-                className="h-10 w-full rounded-[4px] bg-[#1680cd] px-4 text-[15px] font-medium shadow-none hover:bg-[#0f76c2]"
-              >
-                {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                Scan starten{selectedPdfIds.length > 0 ? ` (${formatIntDe(selectedPdfIds.length)} PDFs)` : ""}
-              </Button>
+              {startButtonEnabled ? (
+                <Button
+                  size="lg"
+                  onClick={handleStartButtonClick}
+                  className="h-10 w-full rounded-[4px] bg-[#1680cd] px-4 text-[15px] font-medium shadow-none hover:bg-[#0f76c2]"
+                >
+                  {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+                  Scan starten{selectedPdfIds.length > 0 ? ` (${formatIntDe(selectedPdfIds.length)} PDFs)` : ""}
+                </Button>
+              ) : (
+                <TooltipProvider delayDuration={120}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="block w-full">
+                        <Button
+                          size="lg"
+                          disabled
+                          className="h-10 w-full rounded-[4px] bg-[#1680cd] px-4 text-[15px] font-medium shadow-none hover:bg-[#0f76c2]"
+                        >
+                          {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+                          Scan starten{selectedPdfIds.length > 0 ? ` (${formatIntDe(selectedPdfIds.length)} PDFs)` : ""}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-[320px] text-xs leading-5">
+                      <div className="space-y-1">
+                        {startDisabledReasons.map((reason) => (
+                          <div key={reason}>{reason}</div>
+                        ))}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
               {projectRunningRun && projectRunningRun.id !== activeRun?.id ? (
                 <div className="mt-3 text-xs leading-5 text-slate-500">
                   Es läuft bereits ein anderer Scan im Projekt. Wähle ihn unten aus, um den Status zu verfolgen.
@@ -1297,7 +1548,7 @@ export function PdfScanWorkspace({
         </aside>
 
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="space-y-4 px-5 py-4">
+          <div className={cn("px-5 py-4", activeRun ? "space-y-4" : "flex min-h-full")}>
               {activeRun ? (
                 <>
                   <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -1438,16 +1689,16 @@ export function PdfScanWorkspace({
                     </Card>
                   ) : (
                     <Accordion
-                      type="single"
-                      collapsible
-                      value={activeDocId ?? ""}
-                      onValueChange={(value) => setActiveDocId(value || null)}
+                      type="multiple"
+                      value={openDocIds}
+                      onValueChange={(value) => setOpenDocIds(value)}
                       className="space-y-4"
                     >
                       {filteredDocRows.map((pdfDoc) => {
                         const pdfMeta = pdfsById.get(String(pdfDoc.pdfId || ""));
                         const topScore = typeof pdfDoc.topSectionScore === "number" ? pdfDoc.topSectionScore : null;
-                        const isOpen = activeDocId === pdfDoc.id;
+                        const isOpen = openDocIds.includes(pdfDoc.id);
+                        const sectionRows = sectionRowsByDocId[pdfDoc.id] ?? [];
 
                         return (
                           <AccordionItem
@@ -1593,17 +1844,21 @@ export function PdfScanWorkspace({
           }}
         >
           <DialogContent
-            className="max-h-[86vh] max-w-[1024px] gap-0 overflow-hidden border-slate-200 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.24)] sm:max-w-[1024px]"
+            className="max-h-[86vh] max-w-[1024px] gap-0 overflow-hidden border-slate-200 bg-white p-0 shadow-[0_24px_80px_rgba(15,23,42,0.24)] sm:max-w-[1024px]"
             onDragEnter={handleLibraryDragEnter}
             onDragOver={handleLibraryDragOver}
             onDragLeave={handleLibraryDragLeave}
             onDrop={handleLibraryDrop}
           >
-            <DialogHeader className="border-b border-slate-200 px-6 py-5">
+            <DialogHeader className="border-b border-slate-200 bg-white px-6 py-5">
               <DialogTitle className="text-[20px] tracking-[-0.02em] text-slate-950">PDF-Bibliothek verwalten</DialogTitle>
+              <DialogDescription className="sr-only">
+                Verwalte die PDF-Bibliothek dieses Projekts, suche nach vorhandenen PDFs, wähle Dateien für den Scan aus,
+                ändere Farben, öffne PDFs oder lade neue PDFs hoch.
+              </DialogDescription>
             </DialogHeader>
 
-            <div className="border-b border-slate-200 px-6 py-4">
+            <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
                 <div className="relative min-w-0 flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1659,7 +1914,7 @@ export function PdfScanWorkspace({
               />
             </div>
 
-            <ScrollArea className="h-[min(62vh,640px)]">
+            <ScrollArea className="h-[min(62vh,640px)] bg-white">
               <div className="divide-y divide-slate-200">
                 {pdfs.length === 0 ? (
                   <div className="px-6 py-12 text-center text-sm text-slate-500">Noch keine PDFs hochgeladen.</div>
@@ -1669,12 +1924,13 @@ export function PdfScanWorkspace({
                   filteredPdfs.map((pdf) => {
                     const isSelected = selectedPdfIdSet.has(pdf.id);
                     const isDeleting = deletingPdfId === pdf.id;
+                    const pdfColor = pdfColorById.get(pdf.id) ?? null;
                     return (
                       <div
                         key={pdf.id}
                         className={cn(
-                          "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 px-6 py-5 transition-colors",
-                          isSelected ? "border-l-2 border-l-sky-500 bg-sky-50/60 pl-[22px]" : "hover:bg-slate-50"
+                          "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 bg-white px-6 py-4 transition-colors",
+                          isSelected ? "border-l-2 border-l-sky-500 bg-[#edf6fd] pl-[22px]" : "hover:bg-white"
                         )}
                       >
                         <Checkbox
@@ -1683,36 +1939,84 @@ export function PdfScanWorkspace({
                           aria-label={`${pdf.filename} auswählen`}
                         />
 
-                        <button
-                          type="button"
-                          onClick={() => togglePdfSelection(pdf.id, !isSelected)}
-                          className="flex min-w-0 items-start gap-4 text-left"
-                        >
-                          <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-400">
-                            <FileText className="h-5 w-5" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="truncate text-[15px] font-medium text-slate-950" title={pdf.filename}>
-                              {pdf.filename}
+                        <div className="flex min-w-0 items-center gap-3.5">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-transform hover:scale-110"
+                                style={{
+                                  backgroundColor: pdfColor ? colorMap[pdfColor] : "#FFFFFF",
+                                  borderColor: pdfColor ? colorMap[pdfColor] : "#CBD5E1",
+                                }}
+                                disabled={previewMode}
+                                aria-label={`Farbe für ${pdf.filename} auswählen`}
+                                onClick={(event) => event.stopPropagation()}
+                              />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                              align="start"
+                              sideOffset={8}
+                              className="flex items-center gap-1.5 rounded-[10px] border border-slate-200 bg-white p-1.5 shadow-[0_10px_24px_rgba(15,23,42,0.10)]"
+                            >
+                              {PDF_LIBRARY_COLOR_PICKER_ORDER.map((color) => {
+                                const swatchColor = color ? colorMap[color] : "#FFFFFF";
+                                const ringColor = color ? colorMap[color] : "#CBD5E1";
+                                const isActive = pdfColor === color;
+                                return (
+                                  <DropdownMenuItem
+                                    key={color ?? "none"}
+                                    className="flex h-8 w-8 min-h-0 min-w-0 cursor-pointer items-center justify-center rounded-full p-0 focus:bg-transparent data-[highlighted]:bg-transparent"
+                                    onSelect={() => void updateProjectPdfColor(pdf.id, color)}
+                                    title={color ?? "Keine Farbe"}
+                                  >
+                                    <span
+                                      className="block h-6 w-6 rounded-full border border-white"
+                                      style={{
+                                        backgroundColor: swatchColor,
+                                        boxShadow: isActive
+                                          ? `0 0 0 2px ${ringColor}`
+                                          : color
+                                            ? "none"
+                                            : "inset 0 0 0 1px #CBD5E1",
+                                      }}
+                                    />
+                                  </DropdownMenuItem>
+                                );
+                              })}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <button
+                            type="button"
+                            onClick={() => togglePdfSelection(pdf.id, !isSelected)}
+                            className="flex min-w-0 items-center gap-3.5 text-left"
+                          >
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-400">
+                              <FileText className="h-4.5 w-4.5" />
                             </div>
-                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-slate-500">
-                              {typeof pdf.pageCount === "number" ? (
+                            <div className="min-w-0">
+                              <div className="truncate text-[14px] font-medium text-slate-950" title={pdf.filename}>
+                                {pdf.filename}
+                              </div>
+                              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-slate-500">
+                                {typeof pdf.pageCount === "number" ? (
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <BookOpen className="h-3.5 w-3.5" />
+                                    {formatIntDe(pdf.pageCount)} Seiten
+                                  </span>
+                                ) : null}
                                 <span className="inline-flex items-center gap-1.5">
-                                  <BookOpen className="h-3.5 w-3.5" />
-                                  {formatIntDe(pdf.pageCount)} Seiten
+                                  <HardDrive className="h-3.5 w-3.5" />
+                                  {formatBytes(pdf.size)}
                                 </span>
-                              ) : null}
-                              <span className="inline-flex items-center gap-1.5">
-                                <HardDrive className="h-3.5 w-3.5" />
-                                {formatBytes(pdf.size)}
-                              </span>
-                              <span className="inline-flex items-center gap-1.5">
-                                <CalendarDays className="h-3.5 w-3.5" />
-                                {formatDateShort(pdf.createdAt)}
-                              </span>
+                                <span className="inline-flex items-center gap-1.5">
+                                  <CalendarDays className="h-3.5 w-3.5" />
+                                  {formatDateShort(pdf.createdAt)}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        </button>
+                          </button>
+                        </div>
 
                         <div className="flex items-center gap-1">
                           <Button
@@ -1742,7 +2046,7 @@ export function PdfScanWorkspace({
               </div>
             </ScrollArea>
 
-            <DialogFooter className="border-t border-slate-200 px-6 py-4 sm:items-center sm:justify-between">
+            <DialogFooter className="border-t border-slate-200 bg-slate-50 px-6 py-4 sm:items-center sm:justify-between">
               <div className="text-sm text-slate-500">
                 {formatIntDe(selectedPdfIds.length)} von {formatIntDe(pdfs.length)} ausgewählt
               </div>

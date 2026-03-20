@@ -359,3 +359,23 @@ class QuellenFinderProjectPdfDuplicateCheckRequest(BaseModel):
                 "file_hash": "8f2d1891a7f7b097c1fe5c7e8d9de79e6c95d6d95f96de4b0a3f8b9eb45af6e8",
             }
         }
+
+
+class QuellenFinderProjectPdfColorUpdateRequest(BaseModel):
+    """Request model for updating a project PDF color."""
+
+    projekt_id: str = Field(..., description="Project ID that owns the PDF library")
+    pdf_id: str = Field(..., description="PDF document ID in the project library")
+    color: Optional[Literal["blue", "green", "teal", "lavender", "cream", "peach", "rose"]] = Field(
+        default=None,
+        description="Optional explicit color for grouping and display; null clears the manual color.",
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "projekt_id": "proj123",
+                "pdf_id": "pdf_8f2d1891a7f7b097c1fe5c7e8d9de79e6c95d6d95f96de4b0a3f8b9eb45af6e8",
+                "color": "blue",
+            }
+        }

@@ -206,6 +206,7 @@ export type ProjectPdfDoc = {
   storagePath: string;
   size: number;
   contentType: string;
+  color?: 'blue' | 'green' | 'teal' | 'lavender' | 'cream' | 'peach' | 'rose' | null;
   pageCount?: number | null;
   fileHash?: string | null;
   createdAt: Timestamp;

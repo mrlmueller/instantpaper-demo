@@ -37,5 +37,5 @@ export default async function PdfScanPage() {
 
   const kapitels = await getUserKapitels(selectedProjekt.id, false, 0, { user, db });
 
-  return <PdfScanWorkspace initialKapitels={kapitels} projektId={selectedProjekt.id} projektName={selectedProjekt.name} />;
+  return <PdfScanWorkspace initialKapitels={kapitels} projektId={selectedProjekt.id} />;
 }
