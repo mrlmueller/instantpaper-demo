@@ -13,9 +13,9 @@ import tempfile
 import threading
 import time
 import traceback
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from fastapi import HTTPException
 from firebase_admin import storage
@@ -129,32 +129,6 @@ def _normalize_abs_path(value: Any) -> str:
 def _slugify_filename(name: str) -> str:
     base = re.sub(r"[^\w.\- ]+", "_", str(name or "").strip(), flags=re.UNICODE).strip(" ._")
     return base or "document.pdf"
-
-
-def _safe_subpoint_counts(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    counts: Counter[str] = Counter()
-    for row in rows:
-        for subpoint_id in list(row.get("subpoint_coverage_ids") or []):
-            sid = _as_str_or_none(subpoint_id)
-            if sid:
-                counts[sid] += 1
-    return [{"id": sid, "count": int(count)} for sid, count in counts.most_common(12)]
-
-
-def _score_band_counts(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    counts: Counter[str] = Counter()
-    for row in rows:
-        band = _as_str_or_none(row.get("score_band")) or "unknown"
-        counts[band] += 1
-    return [{"band": band, "count": int(count)} for band, count in counts.items()]
-
-
-def _section_type_counts(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    counts: Counter[str] = Counter()
-    for row in rows:
-        section_type = _as_str_or_none(row.get("section_type")) or "body_other"
-        counts[section_type] += 1
-    return [{"type": section_type, "count": int(count)} for section_type, count in counts.items()]
 
 
 def _read_json(path: Path) -> Any:
@@ -350,117 +324,6 @@ def _build_preview_sections(rows: list[dict[str, Any]], limit: int = 3) -> list[
     return out
 
 
-def _build_details_doc(
-    *,
-    doc_id: str,
-    pdf_snapshot: dict[str, Any],
-    document_row: dict[str, Any],
-    doc_feature_row: dict[str, Any],
-    accepted_headings: list[dict[str, Any]],
-    all_sections: list[dict[str, Any]],
-    candidate_packs: list[dict[str, Any]],
-    rerank_rows: list[dict[str, Any]],
-    visible_rows: list[dict[str, Any]],
-) -> dict[str, Any]:
-    headings_preview = [
-        {
-            "page": _as_int_or_none(row.get("anchor_page") or row.get("page")),
-            "source": _as_str_or_none(row.get("source")),
-            "title": _trim_text(row.get("title"), max_chars=220),
-            "level": _as_int_or_none(row.get("level_hint")),
-            "anchorMethod": _as_str_or_none(row.get("anchor_method")),
-        }
-        for row in accepted_headings[:18]
-    ]
-    section_preview = [
-        {
-            "pages": f"{_as_int_or_none(row.get('page_start')) or '?'}-{_as_int_or_none(row.get('page_end')) or '?'}",
-            "type": _as_str_or_none(row.get("section_type")) or "body_other",
-            "eligible": bool(row.get("retrieval_eligible", True)),
-            "title": _trim_text(row.get("title"), max_chars=220),
-            "flags": list(row.get("quality_flags") or [])[:6],
-        }
-        for row in all_sections[:18]
-    ]
-    retrieval_preview = [
-        {
-            "rank": _as_int_or_none(row.get("fused_rank")),
-            "pages": f"{_as_int_or_none(row.get('page_start')) or '?'}-{_as_int_or_none(row.get('page_end')) or '?'}",
-            "title": _trim_text(row.get("title"), max_chars=220),
-            "fusedScore": round(_as_float(row.get("fused_score")), 3),
-            "selectionScore": round(_as_float(row.get("selection_score")), 3),
-            "supportingPassageCount": _as_int_or_none(row.get("supporting_passage_count")),
-            "subpoints": list(row.get("chosen_subpoint_ids") or [])[:6],
-        }
-        for row in candidate_packs[:12]
-    ]
-    rerank_preview = [
-        {
-            "rank": _as_int_or_none(row.get("rerank_rank")),
-            "pages": f"{_as_int_or_none(row.get('page_start')) or '?'}-{_as_int_or_none(row.get('page_end')) or '?'}",
-            "title": _trim_text(row.get("title"), max_chars=220),
-            "rerankScore": round(_as_float(row.get("rerank_score")), 4),
-            "crossEncoderScore": round(_as_float(row.get("cross_encoder_score")), 4),
-            "judgeScore": round(_as_float(row.get("judge_score")), 4) if row.get("judge_score") is not None else None,
-            "genericHighLevel": bool(row.get("generic_high_level")),
-        }
-        for row in rerank_rows[:12]
-    ]
-    final_preview = [
-        {
-            "globalRank": _as_int_or_none(row.get("global_rank")),
-            "docRank": _as_int_or_none(row.get("doc_rank")),
-            "score0To100": round(_as_float(row.get("score_0_to_100")), 1),
-            "scoreBand": _as_str_or_none(row.get("score_band")),
-            "supportStrength": round(_as_float(row.get("support_strength")), 3),
-            "pages": f"{_as_int_or_none(row.get('page_start')) or '?'}-{_as_int_or_none(row.get('page_end')) or '?'}",
-            "title": _trim_text(row.get("title"), max_chars=220),
-            "coverage": list(row.get("subpoint_coverage_ids") or [])[:6],
-        }
-        for row in visible_rows[:12]
-    ]
-    return {
-        "docId": doc_id,
-        "pdfId": _as_str_or_none(pdf_snapshot.get("id")),
-        "pdfFilename": _as_str_or_none(pdf_snapshot.get("filename")),
-        "docTitle": _as_str_or_none(document_row.get("title")),
-        "overview": {
-            "pageCount": _as_int_or_none(document_row.get("page_count")),
-            "sectionCount": _as_int_or_none(document_row.get("section_count")),
-            "acceptedHeadingCount": _as_int_or_none(document_row.get("accepted_heading_count")),
-            "retrievalSuppressedSectionCount": _as_int_or_none(document_row.get("retrieval_suppressed_section_count")),
-            "metadataStrippedSectionCount": _as_int_or_none(document_row.get("metadata_stripped_section_count")),
-            "tinySectionCount": _as_int_or_none(document_row.get("tiny_section_count")),
-            "visibleSectionCount": int(len(visible_rows)),
-            "topSectionScore": round(_as_float(doc_feature_row.get("top_section_score")), 1),
-            "docMatchProbability": round(_as_float(doc_feature_row.get("doc_match_probability")), 3),
-            "strategy": _as_str_or_none(document_row.get("strategy")),
-            "doclingStatus": _as_str_or_none(document_row.get("docling_status")),
-            "hasOutline": bool(document_row.get("has_outline")),
-            "outlineCount": _as_int_or_none(pdf_snapshot.get("outline_count") or document_row.get("outline_count")),
-            "qualityFlags": list(document_row.get("quality_flags") or [])[:12],
-        },
-        "charts": {
-            "scoreBands": _score_band_counts(visible_rows),
-            "sectionTypes": _section_type_counts(all_sections),
-            "subpointCoverage": _safe_subpoint_counts(visible_rows),
-        },
-        "phaseC": {"headingsPreview": headings_preview, "sectionPreview": section_preview},
-        "phaseE": {"topCandidates": retrieval_preview},
-        "phaseF": {"topReranked": rerank_preview},
-        "phaseG": {
-            "docFeatures": {
-                "hasUsefulInformation": bool(doc_feature_row.get("has_useful_information")),
-                "docMatchProbability": round(_as_float(doc_feature_row.get("doc_match_probability")), 3),
-                "topSectionScore": round(_as_float(doc_feature_row.get("top_section_score")), 1),
-                "topSectionTitle": _trim_text(doc_feature_row.get("top_section_title"), max_chars=220),
-            },
-            "finalSectionsPreview": final_preview,
-        },
-        "createdAt": SERVER_TIMESTAMP,
-    }
-
-
 def _build_persisted_view_docs(
     *,
     run_dir: Path,
@@ -471,9 +334,6 @@ def _build_persisted_view_docs(
     document_rows = _read_jsonl(run_dir / "normalized" / "documents.jsonl")
     section_score_rows_all = _read_jsonl(run_dir / "final" / "section_scores.jsonl")
     doc_feature_rows = _read_jsonl(run_dir / "final" / "doc_features.jsonl")
-    rerank_rows_all = _read_jsonl(run_dir / "rerank" / "rerank_results.jsonl")
-    candidate_pack_rows_all = _read_jsonl(run_dir / "rerank" / "phase_f_candidate_packs.jsonl")
-
     manifest_rows = list((manifest_payload or {}).get("pdfs") or [])
     manifest_by_source_path = {
         _normalize_abs_path(row.get("path")): row
@@ -497,24 +357,13 @@ def _build_persisted_view_docs(
         if _as_float(row.get("score_0_to_100")) >= float(VISIBLE_SCORE_THRESHOLD)
     ]
     visible_by_doc_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    rerank_by_doc_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    candidate_packs_by_doc_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in visible_section_rows:
         doc_id = _as_str_or_none(row.get("doc_id"))
         if doc_id:
             visible_by_doc_id[doc_id].append(row)
-    for row in rerank_rows_all:
-        doc_id = _as_str_or_none(row.get("doc_id"))
-        if doc_id:
-            rerank_by_doc_id[doc_id].append(row)
-    for row in candidate_pack_rows_all:
-        doc_id = _as_str_or_none(row.get("doc_id"))
-        if doc_id:
-            candidate_packs_by_doc_id[doc_id].append(row)
 
     doc_docs: list[tuple[str, dict[str, Any]]] = []
     section_docs: list[tuple[str, dict[str, Any]]] = []
-    details_docs: list[tuple[str, dict[str, Any]]] = []
     visible_doc_count = 0
     useful_pdf_count = 0
     phase_b_counts = (((phase_b_summary_payload or {}).get("assessment") or {}).get("counts") or {})
@@ -549,7 +398,6 @@ def _build_persisted_view_docs(
             continue
 
         doc_dir = run_dir / "normalized" / doc_id
-        accepted_headings = _read_jsonl(doc_dir / "accepted_headings.jsonl")
         all_sections = _read_jsonl(doc_dir / "sections.jsonl")
         section_locator_by_id = {
             _as_str_or_none(row.get("section_id")) or "": row
@@ -560,14 +408,6 @@ def _build_persisted_view_docs(
             list(visible_rows_unsorted),
             key=lambda row: (_as_float(row.get("score_0_to_100")), -(_as_int_or_none(row.get("doc_rank")) or 10_000)),
             reverse=True,
-        )
-        rerank_rows = sorted(
-            list(rerank_by_doc_id.get(doc_id) or []),
-            key=lambda row: _as_int_or_none(row.get("rerank_rank")) or 10_000,
-        )
-        candidate_packs = sorted(
-            list(candidate_packs_by_doc_id.get(doc_id) or []),
-            key=lambda row: _as_int_or_none(row.get("fused_rank")) or 10_000,
         )
         doc_feature_row = dict(doc_feature_by_doc_id.get(doc_id) or {})
 
@@ -663,27 +503,9 @@ def _build_persisted_view_docs(
                 )
             )
 
-        details_docs.append(
-            (
-                doc_id,
-                _build_details_doc(
-                    doc_id=doc_id,
-                    pdf_snapshot=pdf_snapshot,
-                    document_row=document_row,
-                    doc_feature_row=doc_feature_row,
-                    accepted_headings=accepted_headings,
-                    all_sections=all_sections,
-                    candidate_packs=candidate_packs,
-                    rerank_rows=rerank_rows,
-                    visible_rows=visible_rows,
-                ),
-            )
-        )
-
     return {
         "doc_docs": doc_docs,
         "section_docs": section_docs,
-        "details_docs": details_docs,
         "visible_doc_count": int(visible_doc_count),
         "visible_section_count": int(len(section_docs)),
         "scanned_doc_count": int(len(document_rows)),
@@ -1124,8 +946,6 @@ async def run_quellen_finder_pdf_scan_job(
         await on_progress("prepare_inputs", "Preparing PDF scan inputs")
         await asyncio.to_thread(fs.clear_subcollection, user_id=user_id, projekt_id=projekt_id, run_id=run_id, name="pdfScanDocs")
         await asyncio.to_thread(fs.clear_subcollection, user_id=user_id, projekt_id=projekt_id, run_id=run_id, name="pdfScanSections")
-        await asyncio.to_thread(fs.clear_subcollection, user_id=user_id, projekt_id=projekt_id, run_id=run_id, name="pdfScanDetails")
-
         with tempfile.TemporaryDirectory(prefix="qf_pdf_scan_") as tmpdir:
             temp_root = Path(tmpdir)
             theme_path = temp_root / "Text Thema.md"
@@ -1186,15 +1006,6 @@ async def run_quellen_finder_pdf_scan_job(
                 name="pdfScanSections",
                 docs=list(persisted.get("section_docs") or []),
             )
-            await asyncio.to_thread(
-                fs.write_subcollection_docs,
-                user_id=user_id,
-                projekt_id=projekt_id,
-                run_id=run_id,
-                name="pdfScanDetails",
-                docs=list(persisted.get("details_docs") or []),
-            )
-
             dt = float(time.perf_counter() - t0)
             fs.mark_success(
                 user_id=user_id,

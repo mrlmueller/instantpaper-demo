@@ -10,6 +10,16 @@ import { limit, onSnapshot, query, where } from "firebase/firestore";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -424,6 +434,7 @@ export function QuellenFinder({
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>("high");
   const [rerankConcurrency, setRerankConcurrency] = useState<number>(20);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [startConfirmOpen, setStartConfirmOpen] = useState(false);
 
   const [twoLaneViewKey, setTwoLaneViewKey] = useState<TwoLaneViewKey>("match_with_abstract");
 
@@ -652,6 +663,14 @@ export function QuellenFinder({
       toast.error("Bitte ein Kapitel auswählen.");
       return;
     }
+    if (!selectedKapitelId) {
+      toast.error("Bitte ein Kapitel auswählen.");
+      return;
+    }
+    setStartConfirmOpen(true);
+  };
+
+  const confirmStartTwoLaneSources = async () => {
     const token = Cookies.get("__session");
     if (!token) {
       toast.error("Nicht eingeloggt", { description: "Session Token fehlt." });
@@ -662,6 +681,7 @@ export function QuellenFinder({
       return;
     }
     const kapitelId = selectedKapitelId;
+    setStartConfirmOpen(false);
 
     const res = await fetch(`${API_BASE_URL}/api/quellen-finder/sources-two-lane/start`, {
       method: "POST",
@@ -1279,6 +1299,32 @@ export function QuellenFinder({
               run={activeTwoLaneRun}
               kapitel={selectedKapitel}
             />
+
+            <AlertDialog open={startConfirmOpen} onOpenChange={setStartConfirmOpen}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Quellen-Suche starten?</AlertDialogTitle>
+                  <AlertDialogDescription className="space-y-2 text-sm text-muted-foreground">
+                    <span className="block">Die Suche wird als neuer Lauf gestartet.</span>
+                    <span className="block">
+                      Kapitel: <span className="font-medium text-foreground">{chapterHeading || selectedKapitelId || "—"}</span>
+                    </span>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={(event) => {
+                      event.preventDefault();
+                      void confirmStartTwoLaneSources();
+                    }}
+                    className="rounded-[4px] border-[#1680cd] bg-[#1680cd] text-white hover:bg-[#0f76c2]"
+                  >
+                    Suche starten
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       </div>

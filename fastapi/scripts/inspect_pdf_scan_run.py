@@ -15,7 +15,7 @@ if str(FASTAPI_ROOT) not in sys.path:
 from services.firebase_service import firebase_service
 
 
-SUBCOLLECTION_NAMES = ["pdfScanDocs", "pdfScanSections", "pdfScanDetails"]
+SUBCOLLECTION_NAMES = ["pdfScanDocs", "pdfScanSections"]
 
 
 def _to_iso(value: Any) -> str | None:

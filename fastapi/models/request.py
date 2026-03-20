@@ -338,3 +338,24 @@ class QuellenFinderPdfExtractRequest(BaseModel):
                 "section_doc_id": "currency_bullion_and_accounts-d06d74cdba02__cf857d73af6067fc",
             }
         }
+
+
+class QuellenFinderProjectPdfDuplicateCheckRequest(BaseModel):
+    """Request model for checking whether a project PDF is already uploaded."""
+
+    projekt_id: str = Field(..., description="Project ID that owns the PDF library")
+    filename: str = Field(..., description="Original filename of the candidate PDF")
+    size: int = Field(..., description="File size in bytes", ge=0)
+    page_count: Optional[int] = Field(default=None, description="Optional PDF page count", ge=1)
+    file_hash: Optional[str] = Field(default=None, description="Optional SHA-256 hash of the PDF file")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "projekt_id": "proj123",
+                "filename": "Ward-Perkins Fall of Rome End of Civilization.pdf",
+                "size": 2318475,
+                "page_count": 256,
+                "file_hash": "8f2d1891a7f7b097c1fe5c7e8d9de79e6c95d6d95f96de4b0a3f8b9eb45af6e8",
+            }
+        }

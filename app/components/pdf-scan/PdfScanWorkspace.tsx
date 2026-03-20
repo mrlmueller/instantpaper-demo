@@ -1,56 +1,65 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import Link from "next/link";
 import Cookies from "js-cookie";
 import {
   Timestamp,
-  addDoc,
-  deleteDoc,
-  doc,
   limit,
   onSnapshot,
   orderBy,
   query,
   where,
 } from "firebase/firestore";
-import { deleteObject, getStorage, ref as storageRef, uploadBytes } from "firebase/storage";
 import {
   AlertTriangle,
   ArrowLeft,
   Ban,
-  BarChart3,
+  BookOpen,
+  CalendarDays,
   Check,
-  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Clock3,
+  DollarSign,
+  Eye,
   FileText,
   FileUp,
+  FolderOpen,
+  HardDrive,
   Loader2,
   Play,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TooltipProvider } from "@/components/ui/tooltip";
 
 import type { Kapitel } from "@/app/actions/kapitels";
 import { useAuth } from "@/app/components/providers/AuthProvider";
-import { ViewportWarning } from "@/app/components/viewport-warning";
 import { PdfExtractDialog, type PdfExtractRequest } from "@/app/components/quellen-finder/PdfExtractDialog";
-import { firebaseApp } from "@/app/lib/firebase/config";
 import { firestoreClient } from "@/app/lib/firebase/firestoreClient";
-import { getDownloadUrlFromStorage } from "@/app/lib/firebase/storage";
 import {
   projectPdfsCol,
   projectResearchRunsCol,
@@ -63,8 +72,7 @@ import type {
   ProjectPdfDoc,
   QuellenFinderRunDoc,
 } from "@/app/lib/firestore/types";
-
-import { PdfScanDetailsDialog } from "./PdfScanDetailsDialog";
+import { cn } from "@/lib/utils";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
 
@@ -74,14 +82,17 @@ type RunRow = WithId<QuellenFinderRunDoc>;
 type PdfDocRow = WithId<PdfScanDocSummaryDoc>;
 type PdfSectionRow = WithId<PdfScanResultDoc>;
 type ToDateLike = { toDate: () => Date };
+type PdfJsModule = typeof import("pdfjs-dist");
 export type PdfScanWorkspacePreview = {
   pdfs: PdfRow[];
   runs: RunRow[];
   docRows: PdfDocRow[];
   sectionsByDocId: Record<string, PdfSectionRow[]>;
   initialSelectedKapitelId?: string | null;
+  initialSelectedPdfIds?: string[];
   initialActiveRunId?: string | null;
   initialActiveDocId?: string | null;
+  initialLibraryManagerOpen?: boolean;
 };
 
 const PDF_SCAN_PIPELINE_STEPS: Array<{ key: string; label: string }> = [
@@ -106,6 +117,18 @@ function hasToDate(value: unknown): value is ToDateLike {
 function toDateOrNull(value: unknown): Date | null {
   if (!value) return null;
   if (value instanceof Date) return value;
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value === "object" && value !== null) {
+    const rec = value as Record<string, unknown>;
+    if (typeof rec.seconds === "number") {
+      const millis = rec.seconds * 1000 + (typeof rec.nanoseconds === "number" ? rec.nanoseconds / 1_000_000 : 0);
+      const date = new Date(millis);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+  }
   if (!hasToDate(value)) return null;
   try {
     const date = value.toDate();
@@ -124,13 +147,8 @@ function formatIntDe(value: unknown): string {
 function formatScore(value: unknown, digits = 1): string {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return "—";
-  return n.toFixed(digits);
-}
-
-function formatProbability(value: unknown): string {
-  const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(n)) return "—";
-  return n.toFixed(3);
+  const fixed = n.toFixed(digits);
+  return fixed.endsWith(".0") ? fixed.slice(0, -2) : fixed;
 }
 
 function formatTimeHm(value: unknown): string {
@@ -152,6 +170,16 @@ function formatDateTimeWithSeconds(value: unknown): string {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+  });
+}
+
+function formatDateShort(value: unknown): string {
+  const d = toDateOrNull(value);
+  if (!d) return "";
+  return d.toLocaleDateString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
   });
 }
 
@@ -210,22 +238,37 @@ function stageLabel(run: RunRow | null): string {
   return "—";
 }
 
+function readRunCostUsd(run: RunRow | null): number | null {
+  if (!run || typeof run.summary !== "object" || run.summary === null) return null;
+  const summary = run.summary as Record<string, unknown>;
+  for (const key of ["total_cost_usd", "cost_usd", "estimated_cost_usd"]) {
+    const n = Number(summary[key]);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  const componentKeys = ["openai_estimated_cost_usd", "openai_embedding_estimated_cost_usd", "embedding_estimated_cost_usd"];
+  const values = componentKeys
+    .map((key) => Number(summary[key]))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0);
+}
+
+function formatUsd(value: unknown): string {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return "—";
+  const digits = n >= 0.1 ? 2 : 3;
+  return `$${n.toFixed(digits)}`;
+}
+
 function readTopScore(row: PdfDocRow): number {
   return typeof row.topSectionScore === "number" && Number.isFinite(row.topSectionScore) ? row.topSectionScore : -1;
 }
 
-function scoreToneClasses(score: number | null): string {
-  if (typeof score !== "number" || !Number.isFinite(score)) return "border-border bg-muted/40 text-muted-foreground";
-  if (score >= 70) return "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-200";
-  if (score >= 35) return "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200";
-  return "border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-800 dark:bg-rose-950/20 dark:text-rose-200";
-}
+let pdfjsUploadPromise: Promise<PdfJsModule> | null = null;
 
-function statusBadgeVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "success") return "default";
-  if (status === "running") return "secondary";
-  if (status === "error") return "destructive";
-  return "outline";
+async function loadPdfJsForUpload(): Promise<PdfJsModule> {
+  if (!pdfjsUploadPromise) pdfjsUploadPromise = import("pdfjs-dist") as Promise<PdfJsModule>;
+  return pdfjsUploadPromise;
 }
 
 async function readFastApiError(res: Response): Promise<string> {
@@ -240,41 +283,86 @@ async function readFastApiError(res: Response): Promise<string> {
   return "Request failed.";
 }
 
-const StatusPill = memo(function StatusPill({ status }: { status: string }) {
-  const normalized = String(status || "").trim();
-  const label =
-    normalized === "queued"
-      ? "Queued"
-      : normalized === "running"
-        ? "Running"
-        : normalized === "success"
-          ? "Success"
-          : normalized === "cancelled"
-            ? "Cancelled"
-            : normalized === "error"
-              ? "Error"
-              : normalized || "—";
+type DuplicateCheckResponse = {
+  duplicate?: boolean;
+  reason?: string | null;
+  pdf_id?: string | null;
+  filename?: string | null;
+  error?: string | null;
+};
 
-  return (
-    <Badge variant={statusBadgeVariant(normalized)} className="tabular-nums">
-      {label}
-    </Badge>
-  );
-});
+function normalizePdfFilename(value: string): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
 
-const SidebarEmptyState = memo(function SidebarEmptyState({ label }: { label: string }) {
-  return <div className="px-5 py-6 text-xs text-sidebar-foreground/70">{label}</div>;
-});
+function toHex(buffer: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  return toHex(digest);
+}
+
+async function readPdfUploadMetadata(file: File): Promise<{ fileHash: string; pageCount: number | null }> {
+  const bytes = await file.arrayBuffer();
+  const fileHash = await sha256Hex(bytes);
+
+  try {
+    const pdfjs = await loadPdfJsForUpload();
+    const loadingTask = pdfjs.getDocument(
+      {
+        data: new Uint8Array(bytes),
+        disableWorker: true,
+        isEvalSupported: false,
+      } as unknown as Parameters<PdfJsModule["getDocument"]>[0]
+    );
+    const pdf = await loadingTask.promise;
+    const pageCount = typeof pdf.numPages === "number" && Number.isFinite(pdf.numPages) ? pdf.numPages : null;
+    await pdf.destroy();
+    return { fileHash, pageCount };
+  } catch {
+    return { fileHash, pageCount: null };
+  }
+}
+
+async function checkProjectPdfDuplicate(params: {
+  projektId: string;
+  filename: string;
+  size: number;
+  pageCount: number | null;
+  fileHash: string;
+}): Promise<DuplicateCheckResponse> {
+  const res = await fetch("/api/quellen-finder/project-pdf-duplicate-check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projekt_id: params.projektId,
+      filename: params.filename,
+      size: params.size,
+      page_count: params.pageCount,
+      file_hash: params.fileHash,
+    }),
+  });
+  const payload = (await res.json().catch(() => ({}))) as DuplicateCheckResponse;
+  if (!res.ok) {
+    throw new Error(String(payload.error || "Duplikatsprüfung fehlgeschlagen."));
+  }
+  return payload;
+}
 
 const MainEmptyState = memo(function MainEmptyState({ selectedKapitel }: { selectedKapitel: Kapitel | null }) {
   return (
-    <div className="flex min-h-[480px] items-center justify-center px-8">
-      <div className="max-w-[620px] text-center">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-border bg-background/80 shadow-sm">
-          <FileText className="h-8 w-8 text-muted-foreground/60" />
+    <div className="flex min-h-[480px] items-center justify-center px-6">
+      <div className="max-w-[640px] text-center">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm">
+          <FileText className="h-7 w-7 text-slate-400" />
         </div>
-        <div className="mt-6 text-[38px] font-semibold tracking-[-0.02em] text-foreground/90">PDF-Scan starten</div>
-        <div className="mt-4 text-lg leading-8 text-muted-foreground">
+        <div className="mt-6 text-[26px] font-semibold tracking-[-0.03em] text-slate-950">PDF-Scan starten</div>
+        <div className="mt-4 text-base leading-8 text-slate-500">
           {selectedKapitel
             ? "Wähle links die PDFs aus und starte den Scan. Die neue Pipeline läuft deutlich länger und meldet ihren Fortschritt live zurück."
             : "Wähle links ein Kapitel, lade PDFs hoch und starte dann den Scan."}
@@ -328,8 +416,11 @@ export function PdfScanWorkspace({
   const [selectedKapitelId, setSelectedKapitelId] = useState<string | null>(() => preview?.initialSelectedKapitelId ?? null);
 
   const [pdfs, setPdfs] = useState<PdfRow[]>(() => preview?.pdfs ?? []);
-  const [selectedPdfIds, setSelectedPdfIds] = useState<string[]>(() => (preview?.pdfs ?? []).map((pdf) => pdf.id));
+  const [selectedPdfIds, setSelectedPdfIds] = useState<string[]>(() => preview?.initialSelectedPdfIds ?? (preview?.pdfs ?? []).map((pdf) => pdf.id));
   const [pdfLibraryFilter, setPdfLibraryFilter] = useState("");
+  const [libraryExpanded, setLibraryExpanded] = useState(true);
+  const [libraryManagerOpen, setLibraryManagerOpen] = useState(() => Boolean(preview?.initialLibraryManagerOpen));
+  const [libraryDragActive, setLibraryDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [deletingPdfId, setDeletingPdfId] = useState<string | null>(null);
@@ -340,6 +431,8 @@ export function PdfScanWorkspace({
   const [docRows, setDocRows] = useState<PdfDocRow[]>(() => preview?.docRows ?? []);
   const [docRowsLoaded, setDocRowsLoaded] = useState(() => previewMode);
   const [activeDocId, setActiveDocId] = useState<string | null>(() => preview?.initialActiveDocId ?? null);
+  const [startConfirmOpen, setStartConfirmOpen] = useState(false);
+  const [deleteConfirmPdf, setDeleteConfirmPdf] = useState<PdfRow | null>(null);
 
   const [sectionRows, setSectionRows] = useState<PdfSectionRow[]>(() => {
     const initialDocId = preview?.initialActiveDocId ?? null;
@@ -347,14 +440,12 @@ export function PdfScanWorkspace({
   });
   const [sectionRowsLoaded, setSectionRowsLoaded] = useState(() => previewMode);
 
-  const [resultFilter, setResultFilter] = useState("");
   const [extractOpen, setExtractOpen] = useState(false);
   const [extractRequest, setExtractRequest] = useState<PdfExtractRequest | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [detailsDoc, setDetailsDoc] = useState<PdfDocRow | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const libraryDragDepthRef = useRef(0);
   const lastRunStatus = useRef<{ runId: string; status: string } | null>(null);
   const previousActiveRunIdRef = useRef<string | null>(null);
 
@@ -384,34 +475,15 @@ export function PdfScanWorkspace({
 
   const selectedPdfIdSet = useMemo(() => new Set(selectedPdfIds), [selectedPdfIds]);
 
-  const selectedPdfBytes = useMemo(
-    () =>
-      pdfs.reduce((sum, pdf) => {
-        if (!selectedPdfIdSet.has(pdf.id)) return sum;
-        return sum + (typeof pdf.size === "number" && Number.isFinite(pdf.size) ? pdf.size : 0);
-      }, 0),
+  const selectedPdfRows = useMemo(
+    () => pdfs.filter((pdf) => selectedPdfIdSet.has(pdf.id)),
     [pdfs, selectedPdfIdSet]
   );
 
   const filteredPdfs = useMemo(() => {
     const q = pdfLibraryFilter.trim().toLowerCase();
-    const rows = q
-      ? pdfs.filter((pdf) => String(pdf.filename || "").toLowerCase().includes(q))
-      : [...pdfs];
-
-    rows.sort((a, b) => {
-      const selectedDiff = Number(selectedPdfIdSet.has(b.id)) - Number(selectedPdfIdSet.has(a.id));
-      if (selectedDiff !== 0) return selectedDiff;
-      return String(a.filename || "").localeCompare(String(b.filename || ""), "de");
-    });
-
-    return rows;
-  }, [pdfLibraryFilter, pdfs, selectedPdfIdSet]);
-
-  const selectedVisibleCount = useMemo(
-    () => filteredPdfs.reduce((sum, pdf) => sum + (selectedPdfIdSet.has(pdf.id) ? 1 : 0), 0),
-    [filteredPdfs, selectedPdfIdSet]
-  );
+    return q ? pdfs.filter((pdf) => String(pdf.filename || "").toLowerCase().includes(q)) : pdfs;
+  }, [pdfLibraryFilter, pdfs]);
 
   const projectRunningRun = useMemo(
     () => pdfScanRuns.find((run) => run.status === "queued" || run.status === "running") ?? null,
@@ -449,8 +521,6 @@ export function PdfScanWorkspace({
     setActiveDocId(null);
     setSectionRows([]);
     setSectionRowsLoaded(previewMode);
-    setDetailsDoc(null);
-    setDetailsOpen(false);
     setExtractOpen(false);
     setExtractRequest(null);
   }, [activeRun?.id, previewMode]);
@@ -575,6 +645,12 @@ export function PdfScanWorkspace({
   }, [activeDocId, previewMode, preview]);
 
   useEffect(() => {
+    if (activeDocId) return;
+    if (docRows.length === 0) return;
+    setActiveDocId(docRows[0]?.id ?? null);
+  }, [activeDocId, docRows]);
+
+  useEffect(() => {
     const running = activeRun?.status === "queued" || activeRun?.status === "running";
     if (!running) return;
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
@@ -638,9 +714,6 @@ export function PdfScanWorkspace({
     });
   };
 
-  const allVisibleSelected = filteredPdfs.length > 0 && selectedVisibleCount === filteredPdfs.length;
-  const someVisibleSelected = selectedVisibleCount > 0 && selectedVisibleCount < filteredPdfs.length;
-
   const setVisibleSelection = (checked: boolean) => {
     setSelectedPdfIds((prev) => {
       const next = new Set(prev);
@@ -652,14 +725,14 @@ export function PdfScanWorkspace({
     });
   };
 
-  const uploadProjectPdfs = async (files: FileList | null) => {
+  const uploadProjectPdfs = async (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return;
     if (!user?.uid || !projektId) {
       toast.error("Nicht eingeloggt", { description: "User fehlt." });
       return;
     }
 
-    const fileList = Array.from(files);
+    const fileList = Array.isArray(files) ? files : Array.from(files);
     const invalid = fileList.filter((file) => !String(file.name || "").toLowerCase().endsWith(".pdf"));
     if (invalid.length) {
       toast.error("Nur PDFs erlaubt", {
@@ -675,33 +748,110 @@ export function PdfScanWorkspace({
     setUploadProgress({ done: 0, total: fileList.length });
 
     try {
-      const storage = getStorage(firebaseApp);
-      const col = projectPdfsCol(firestoreClient, user.uid, projektId);
+      const knownPdfs = [...pdfs];
+      const skippedDuplicates: string[] = [];
+      let uploadedCount = 0;
 
       for (let index = 0; index < fileList.length; index += 1) {
         const file = fileList[index]!;
         const originalName = String(file.name || "document.pdf").trim() || "document.pdf";
-        const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const suffix = safeName.toLowerCase().endsWith(".pdf") ? safeName : `${safeName}.pdf`;
-        const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-        const path = `users/${user.uid}/projects/${projektId}/pdfs/${stamp}_${suffix}`.slice(0, 900);
-
         setUploadProgress({ done: index, total: fileList.length });
-        await uploadBytes(storageRef(storage, path), file, { contentType: "application/pdf" });
+        const { fileHash, pageCount } = await readPdfUploadMetadata(file);
 
-        const now = Timestamp.now();
-        await addDoc(col, {
-          filename: originalName,
-          storagePath: path,
-          size: Math.max(0, Math.trunc(file.size)),
-          contentType: "application/pdf",
-          createdAt: now,
-          updatedAt: now,
+        const duplicate = knownPdfs.find((existing) => {
+          const existingHash = String(existing.fileHash || "").trim().toLowerCase();
+          if (existingHash && existingHash === fileHash) return true;
+
+          const sameName = normalizePdfFilename(existing.filename) === normalizePdfFilename(originalName);
+          const sameSize = Number(existing.size || -1) === Math.max(0, Math.trunc(file.size));
+          const existingPages = typeof existing.pageCount === "number" ? existing.pageCount : null;
+          return sameName && sameSize && existingPages !== null && pageCount !== null && existingPages === pageCount;
         });
+
+        if (duplicate) {
+          skippedDuplicates.push(originalName);
+          setUploadProgress({ done: index + 1, total: fileList.length });
+          continue;
+        }
+
+        const duplicateCheck = await checkProjectPdfDuplicate({
+          projektId,
+          filename: originalName,
+          size: Math.max(0, Math.trunc(file.size)),
+          pageCount,
+          fileHash,
+        });
+        if (duplicateCheck.duplicate) {
+          skippedDuplicates.push(duplicateCheck.filename || originalName);
+          setUploadProgress({ done: index + 1, total: fileList.length });
+          continue;
+        }
+
+        const formData = new FormData();
+        formData.set("projekt_id", projektId);
+        if (pageCount !== null) formData.set("page_count", String(pageCount));
+        formData.set("file", file, originalName);
+
+        const uploadRes = await fetch("/api/quellen-finder/project-pdf-upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (uploadRes.status === 409) {
+          const duplicatePayload = (await uploadRes.json().catch(() => ({}))) as {
+            detail?: { filename?: string | null; duplicate?: boolean } | string;
+            error?: string;
+          };
+          const detailObj =
+            typeof duplicatePayload.detail === "object" && duplicatePayload.detail !== null
+              ? duplicatePayload.detail
+              : null;
+          skippedDuplicates.push(String(detailObj?.filename || originalName));
+          setUploadProgress({ done: index + 1, total: fileList.length });
+          continue;
+        }
+
+        if (!uploadRes.ok) {
+          throw new Error(await readFastApiError(uploadRes));
+        }
+
+        const uploadPayload = (await uploadRes.json().catch(() => ({}))) as {
+          pdf_id?: string;
+          pdf?: {
+            filename?: string;
+            storage_path?: string;
+            size?: number;
+            content_type?: string;
+            page_count?: number | null;
+            file_hash?: string | null;
+          };
+        };
+        const nextDoc: ProjectPdfDoc = {
+          filename: String(uploadPayload.pdf?.filename || originalName),
+          storagePath: String(uploadPayload.pdf?.storage_path || ""),
+          size: Number.isFinite(Number(uploadPayload.pdf?.size)) ? Number(uploadPayload.pdf?.size) : Math.max(0, Math.trunc(file.size)),
+          contentType: String(uploadPayload.pdf?.content_type || "application/pdf"),
+          pageCount:
+            typeof uploadPayload.pdf?.page_count === "number" && Number.isFinite(uploadPayload.pdf?.page_count)
+              ? uploadPayload.pdf.page_count
+              : pageCount,
+          fileHash: String(uploadPayload.pdf?.file_hash || fileHash),
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        };
+        knownPdfs.push({ id: String(uploadPayload.pdf_id || `pdf_${fileHash}`), ...nextDoc });
+        uploadedCount += 1;
         setUploadProgress({ done: index + 1, total: fileList.length });
       }
 
-      toast.success("PDFs hochgeladen", { description: `${fileList.length} Datei(en)` });
+      if (uploadedCount > 0) {
+        toast.success("PDFs hochgeladen", { description: `${uploadedCount} Datei(en)` });
+      }
+      if (skippedDuplicates.length > 0) {
+        toast.error("Bereits vorhandene PDFs übersprungen", {
+          description: skippedDuplicates.slice(0, 3).join(", "),
+        });
+      }
     } catch (err: unknown) {
       toast.error("Upload fehlgeschlagen", { description: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -713,38 +863,33 @@ export function PdfScanWorkspace({
 
   const deleteProjectPdf = async (pdf: PdfRow) => {
     if (!user?.uid || !projektId) return;
-    const confirmed = window.confirm(`PDF wirklich löschen?\n\n${pdf.filename}`);
-    if (!confirmed) return;
-
     setDeletingPdfId(pdf.id);
     try {
-      try {
-        const path = String(pdf.storagePath || "").trim();
-        if (path) {
-          const storage = getStorage(firebaseApp);
-          await deleteObject(storageRef(storage, path));
-        }
-      } catch (err: unknown) {
-        toast.error("Storage delete fehlgeschlagen", { description: err instanceof Error ? err.message : String(err) });
+      const url = new URL("/api/quellen-finder/project-pdf", window.location.origin);
+      url.searchParams.set("projekt_id", projektId);
+      url.searchParams.set("pdf_id", pdf.id);
+      const res = await fetch(url.toString(), {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        toast.error("PDF löschen fehlgeschlagen", { description: await readFastApiError(res) });
         return;
       }
-
-      try {
-        await deleteDoc(doc(firestoreClient, "users", user.uid, "projects", projektId, "pdfs", pdf.id));
-        setSelectedPdfIds((prev) => prev.filter((id) => id !== pdf.id));
-        toast.success("PDF gelöscht", { description: pdf.filename });
-      } catch (err: unknown) {
-        toast.error("Firestore delete fehlgeschlagen", { description: err instanceof Error ? err.message : String(err) });
-      }
+      setSelectedPdfIds((prev) => prev.filter((id) => id !== pdf.id));
+      toast.success("PDF gelöscht", { description: pdf.filename });
     } finally {
       setDeletingPdfId((current) => (current === pdf.id ? null : current));
     }
   };
 
+  const requestDeleteProjectPdf = (pdf: PdfRow) => {
+    if (previewMode) return;
+    setDeleteConfirmPdf(pdf);
+  };
+
   const openStoredPdf = async (pdfId: string, anchorPage?: number | null) => {
     const meta = pdfsById.get(pdfId);
-    const storagePath = String(meta?.storagePath || "").trim();
-    if (!storagePath) {
+    if (!meta) {
       toast.error("PDF kann nicht geöffnet werden", { description: "Kein Storage-Pfad gefunden." });
       return;
     }
@@ -756,9 +901,11 @@ export function PdfScanWorkspace({
     }
 
     try {
-      const url = await getDownloadUrlFromStorage(storagePath);
+      const url = new URL("/api/quellen-finder/project-pdf", window.location.origin);
+      url.searchParams.set("projekt_id", projektId);
+      url.searchParams.set("pdf_id", pdfId);
       const page = typeof anchorPage === "number" && Number.isFinite(anchorPage) ? `#page=${Math.max(1, Math.round(anchorPage))}` : "";
-      popup.location.href = `${url}${page}`;
+      popup.location.href = `${url.toString()}${page}`;
     } catch (err: unknown) {
       try {
         popup.close();
@@ -769,7 +916,7 @@ export function PdfScanWorkspace({
     }
   };
 
-  const startPdfScan = async () => {
+  const startPdfScan = () => {
     if (!selectedKapitelId) {
       toast.error("Bitte zuerst ein Kapitel auswählen.");
       return;
@@ -783,7 +930,12 @@ export function PdfScanWorkspace({
       toast.error("Es läuft bereits ein PDF-Scan", { description: `Run: ${projectRunningRun.id}` });
       return;
     }
+    setStartConfirmOpen(true);
+  };
 
+  const confirmStartPdfScan = async () => {
+    if (!selectedKapitelId || selectedPdfIds.length === 0) return;
+    setStartConfirmOpen(false);
     const token = Cookies.get("__session");
     if (!token) {
       toast.error("Nicht eingeloggt", { description: "Session-Token fehlt." });
@@ -846,20 +998,37 @@ export function PdfScanWorkspace({
     toast.success("Abbruch angefordert", { description: `Run: ${activeRun.id}` });
   };
 
-  const filteredDocRows = useMemo(() => {
-    const q = resultFilter.trim().toLowerCase();
-    if (!q) return docRows;
-    return docRows.filter((row) => {
-      const previewTitles = (row.previewSections || [])
-        .map((section) => String(section.title || "").trim())
-        .filter(Boolean)
-        .join("\n");
-      const haystack = [row.docTitle, row.pdfLabel, row.pdfFilename, row.topSectionTitle, previewTitles]
-        .map((part) => String(part || "").toLowerCase())
-        .join("\n");
-      return haystack.includes(q);
-    });
-  }, [docRows, resultFilter]);
+  const handleLibraryDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
+    event.preventDefault();
+    libraryDragDepthRef.current += 1;
+    setLibraryDragActive(true);
+  };
+
+  const handleLibraryDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    if (!libraryDragActive) setLibraryDragActive(true);
+  };
+
+  const handleLibraryDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
+    event.preventDefault();
+    libraryDragDepthRef.current = Math.max(0, libraryDragDepthRef.current - 1);
+    if (libraryDragDepthRef.current === 0) setLibraryDragActive(false);
+  };
+
+  const handleLibraryDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
+    event.preventDefault();
+    libraryDragDepthRef.current = 0;
+    setLibraryDragActive(false);
+    const dropped = Array.from(event.dataTransfer.files || []).filter((file) => file);
+    if (dropped.length > 0) void uploadProjectPdfs(dropped);
+  };
+
+  const filteredDocRows = docRows;
 
   const running = activeRun?.status === "queued" || activeRun?.status === "running";
   const isDone = activeRun?.status === "success" || String(activeRun?.progress?.stage || "") === "done";
@@ -883,7 +1052,6 @@ export function PdfScanWorkspace({
 
   const stageKey = String(activeRun?.progress?.stage || "");
   const activeStepIndex = PDF_SCAN_PIPELINE_STEPS.findIndex((step) => step.key === stageKey);
-  const completedStepCount = isDone ? PDF_SCAN_PIPELINE_STEPS.length : Math.max(0, activeStepIndex);
   const currentRatio =
     typeof activeRun?.progress?.current === "number" &&
     typeof activeRun?.progress?.total === "number" &&
@@ -912,712 +1080,747 @@ export function PdfScanWorkspace({
   const chapterNummer = String(activeKapitelSnapshot?.nummer ?? selectedKapitel?.nummer ?? "").trim();
   const chapterTitle = String(activeKapitelSnapshot?.title ?? selectedKapitel?.title ?? "").trim();
   const chapterHeading = `${chapterNummer ? `${chapterNummer} ` : ""}${chapterTitle || "Kapitel"}`.trim();
-  const chapterThema = String(activeKapitelSnapshot?.thema ?? selectedKapitel?.thema ?? "").trim();
+  const runCostUsd = readRunCostUsd(activeRun);
+  const selectedPdfPreviewRows = selectedPdfRows.slice(0, 3);
+  const hiddenSelectedPdfCount = Math.max(0, selectedPdfRows.length - selectedPdfPreviewRows.length);
+  const currentStepNumber = isDone
+    ? PDF_SCAN_PIPELINE_STEPS.length
+    : activeStepIndex >= 0
+      ? activeStepIndex + 1
+      : 0;
+  const currentStepLabel =
+    PDF_SCAN_PIPELINE_STEPS[isDone ? PDF_SCAN_PIPELINE_STEPS.length - 1 : Math.max(0, activeStepIndex)]?.label ?? "Pipeline";
+  const runOutcomeLabel = isDone ? "Erfolgreich" : isCancelled ? "Abgebrochen" : isError ? "Fehler" : "Läuft";
 
   const canStart = !previewMode && Boolean(selectedKapitelId) && selectedPdfIds.length > 0 && !uploading && !projectRunningRun;
 
   return (
-    <TooltipProvider delayDuration={150}>
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(15,23,42,0.07),transparent_38%),linear-gradient(180deg,rgba(249,250,251,0.96),rgba(244,246,248,0.96))]">
-        <div className="mx-auto flex min-h-screen max-w-[1820px] flex-col lg:flex-row">
-          <aside className="flex w-full shrink-0 flex-col border-b border-sidebar-border bg-sidebar/95 backdrop-blur lg:max-w-[372px] lg:border-r lg:border-b-0">
-            <div className="border-b border-sidebar-border px-5 py-5">
-              <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-sidebar-foreground/80 transition-colors hover:text-sidebar-foreground">
-                <ArrowLeft className="h-4 w-4" />
-                Zurück zum Dashboard
-              </Link>
-              <div className="mt-5">
-                <div className="text-[32px] font-semibold tracking-[-0.03em] text-sidebar-foreground">PDF-Scan</div>
-                <div className="mt-2 text-sm leading-6 text-sidebar-foreground/70">
-                  Finale Sections aus der neuen Langlauf-Pipeline. Angezeigt werden nur Scores ab <span className="font-medium text-sidebar-foreground">5</span>.
-                </div>
-                <div className="mt-4 inline-flex items-center rounded-full border border-sidebar-border bg-sidebar-accent/60 px-3 py-1 text-xs text-sidebar-foreground/80">
-                  Projekt: <span className="ml-1 font-medium text-sidebar-foreground">{projektName}</span>
-                </div>
-              </div>
+    <div className="flex h-screen min-h-screen flex-col overflow-hidden bg-[#f7f8fb] text-slate-900">
+      <div className="shrink-0 border-b border-slate-200 bg-white">
+        <div className="flex items-start gap-3 px-6 py-4">
+          <Link
+            href="/dashboard"
+            className="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <div className="min-w-0">
+            <div className="text-[17px] font-semibold tracking-[-0.02em] text-slate-950">PDF-Scan</div>
+            <div className="mt-0.5 text-sm text-slate-500">PDFs nach relevanten Inhalten für Kapitel durchsuchen</div>
+            <div className="mt-1 text-xs text-slate-400">Projekt: {projektName}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1">
+        <aside className="flex min-h-0 w-[340px] shrink-0 flex-col border-r border-slate-200 bg-white">
+          <div className="shrink-0 space-y-4 border-b border-slate-200 px-5 py-5">
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-slate-600">Kapitel auswählen</div>
+              <Select value={selectedKapitelId || ""} onValueChange={(value) => selectKapitel(value || null)}>
+                <SelectTrigger className="h-auto min-h-10 w-full rounded-[4px] items-center whitespace-normal border-slate-200 bg-white px-3 py-2.5 shadow-none">
+                  <div className="min-w-0 flex-1 text-left">
+                    {selectedKapitel ? (
+                      <div className="line-clamp-1 text-[14px] leading-snug">
+                        <span className="mr-2 text-slate-400 tabular-nums">{selectedKapitel.nummer}</span>
+                        {selectedKapitel.title}
+                      </div>
+                    ) : (
+                      <span className="text-slate-400">Kapitel wählen...</span>
+                    )}
+                  </div>
+                </SelectTrigger>
+                <SelectContent align="start" className="max-h-[60vh] w-[var(--radix-select-trigger-width)]">
+                  {kapitels.map((kapitel) => {
+                    const depth = kapitelDepth(kapitel.nummer);
+                    return (
+                      <SelectItem key={kapitel.id} value={kapitel.id}>
+                        <div className="flex min-w-0 w-full items-start gap-2" style={{ paddingLeft: depth * 12 }}>
+                          <span className="shrink-0 text-slate-400 tabular-nums">{kapitel.nummer}</span>
+                          <span className="min-w-0 leading-snug line-clamp-2">{kapitel.title}</span>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="space-y-5 px-5 py-5">
-              <Card className="border-sidebar-border bg-sidebar-accent/25 shadow-none">
-                <div className="p-4">
-                  <div className="text-sm font-semibold text-sidebar-foreground">Kapitel</div>
-                  <div className="mt-1 text-xs text-sidebar-foreground/70">Der Scan läuft immer für genau ein Kapitel.</div>
-                  <Select value={selectedKapitelId ?? undefined} onValueChange={(value) => selectKapitel(value || null)}>
-                    <SelectTrigger className="mt-3 h-10 w-full border-sidebar-border bg-background/80">
-                      <SelectValue placeholder="Kapitel auswählen" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {kapitels.map((kapitel) => (
-                        <SelectItem key={kapitel.id} value={kapitel.id}>
-                          <span className="truncate">
-                            {`${"".padStart(kapitelDepth(kapitel.nummer) * 2, " ")}${kapitel.nummer ? `${kapitel.nummer} ` : ""}${kapitel.title}`.trim()}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            <div>
+              <button
+                type="button"
+                onClick={() => setLibraryExpanded((current) => !current)}
+                className="flex w-full items-center justify-between gap-3 text-left"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <FolderOpen className="h-4 w-4 text-slate-500" />
+                  <span className="text-sm font-medium text-slate-700">PDF-Bibliothek</span>
+                  <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-700">
+                    {formatIntDe(selectedPdfIds.length)} ausgewählt
+                  </Badge>
                 </div>
-              </Card>
+                {libraryExpanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+              </button>
 
-              <Card className="border-sidebar-border bg-sidebar-accent/25 shadow-none">
-                <div className="p-4">
-                  <div className="flex items-start justify-between gap-3">
+              {libraryExpanded ? (
+                <div className="mt-3 rounded-[14px] border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold text-sidebar-foreground">PDF-Bibliothek</div>
-                      <div className="mt-1 text-xs text-sidebar-foreground/70">
-                        {formatIntDe(selectedPdfIds.length)} von {formatIntDe(pdfs.length)} ausgewählt
-                        {pdfLibraryFilter.trim() ? ` • ${formatIntDe(filteredPdfs.length)} sichtbar` : ""}
-                        {selectedPdfIds.length > 0 ? ` • ${formatBytes(selectedPdfBytes)}` : ""}
-                      </div>
+                      <div className="text-[18px] font-semibold leading-none tracking-[-0.03em] text-slate-950">{formatIntDe(pdfs.length)}</div>
+                      <div className="mt-2 text-[14px] font-medium text-slate-900">PDFs verfügbar</div>
+                      <div className="mt-1 text-[14px] leading-6 text-slate-500">{formatIntDe(selectedPdfIds.length)} für Scan ausgewählt</div>
                     </div>
                     <Button
                       size="sm"
                       variant="outline"
-                      className="border-sidebar-border bg-background/80"
-                      disabled={uploading || previewMode}
-                      onClick={() => fileInputRef.current?.click()}
+                      className="h-10 rounded-[4px] border-slate-200 bg-white px-4 text-sm shadow-none"
+                      onClick={() => setLibraryManagerOpen(true)}
                     >
-                      {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
-                      Upload
-                    </Button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="application/pdf,.pdf"
-                      multiple
-                      className="hidden"
-                      onChange={(event) => void uploadProjectPdfs(event.target.files)}
-                    />
-                  </div>
-
-                  {uploadProgress ? (
-                    <div className="mt-3 rounded-md border border-sidebar-border bg-background/70 px-3 py-2 text-xs text-sidebar-foreground/80">
-                      Upload läuft: {formatIntDe(uploadProgress.done)} / {formatIntDe(uploadProgress.total)}
-                    </div>
-                  ) : null}
-
-                  <div className="mt-4 flex items-center gap-2">
-                    <Input
-                      value={pdfLibraryFilter}
-                      onChange={(event) => setPdfLibraryFilter(event.target.value)}
-                      placeholder="PDFs filtern…"
-                      className="h-9 border-sidebar-border bg-background/80"
-                    />
-                    {pdfLibraryFilter.trim() ? (
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        className="h-9 w-9 border-sidebar-border bg-background/80"
-                        onClick={() => setPdfLibraryFilter("")}
-                        title="Filter löschen"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    ) : null}
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-sidebar-border bg-background/70 px-3 py-2">
-                    <div className="flex items-center gap-2 text-xs text-sidebar-foreground/80">
-                      <Checkbox
-                        checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
-                        onCheckedChange={(checked) => setVisibleSelection(Boolean(checked))}
-                      />
-                      {pdfLibraryFilter.trim() ? "Sichtbare PDFs auswählen" : "Alle PDFs auswählen"}
-                    </div>
-                    <Badge variant="outline" className="border-sidebar-border bg-background/80 tabular-nums">
-                      {formatIntDe(filteredPdfs.length)}
-                    </Badge>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="ml-auto h-7 px-2 text-xs text-sidebar-foreground/75 hover:text-sidebar-foreground"
-                      onClick={() => setSelectedPdfIds([])}
-                      disabled={selectedPdfIds.length === 0}
-                    >
-                      Auswahl löschen
+                      Verwalten
                     </Button>
                   </div>
 
-                  <ScrollArea className="mt-3 h-[380px] xl:h-[460px]">
-                    <div className="space-y-2 pr-3">
-                      {pdfs.length === 0 ? (
-                        <div className="rounded-md border border-dashed border-sidebar-border px-3 py-5 text-center text-xs text-sidebar-foreground/70">
-                          Noch keine PDFs hochgeladen.
-                        </div>
-                      ) : filteredPdfs.length === 0 ? (
-                        <div className="rounded-md border border-dashed border-sidebar-border px-3 py-5 text-center text-xs text-sidebar-foreground/70">
-                          Keine PDFs passen zum aktuellen Filter.
-                        </div>
-                      ) : (
-                        filteredPdfs.map((pdf) => {
-                          const isSelected = selectedPdfIdSet.has(pdf.id);
-                          const isDeleting = deletingPdfId === pdf.id;
-                          return (
-                            <div
-                              key={pdf.id}
-                              className={`max-w-full overflow-hidden rounded-xl border transition-all ${
-                                isSelected
-                                  ? "border-primary/40 bg-background shadow-sm ring-1 ring-primary/10"
-                                  : "border-sidebar-border bg-background/70 hover:bg-background/90"
-                              }`}
+                  <div className="mt-5 border-t border-slate-200 pt-5">
+                    <div className="text-[13px] font-medium text-slate-500">Ausgewählte PDFs:</div>
+                    {selectedPdfPreviewRows.length === 0 ? (
+                      <div className="mt-3 text-sm leading-6 text-slate-500">Noch keine PDFs ausgewählt.</div>
+                    ) : (
+                      <div className="mt-3 space-y-2.5">
+                        {selectedPdfPreviewRows.map((pdf) => (
+                          <div key={pdf.id} className="flex items-start gap-2.5">
+                            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                            <span className="min-w-0 flex-1 truncate text-sm text-slate-900" title={pdf.filename}>
+                              {pdf.filename}
+                            </span>
+                            <button
+                              type="button"
+                              className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center text-slate-400 transition-colors hover:text-slate-700"
+                              onClick={() => togglePdfSelection(pdf.id, false)}
+                              title="Aus Auswahl entfernen"
                             >
-                              <div
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => togglePdfSelection(pdf.id, !isSelected)}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter" || event.key === " ") {
-                                    event.preventDefault();
-                                    togglePdfSelection(pdf.id, !isSelected);
-                                  }
-                                }}
-                                className="cursor-pointer px-3 py-3 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/30"
-                              >
-                                <div className="flex items-start gap-3">
-                                  <Checkbox
-                                    checked={isSelected}
-                                    onClick={(event) => event.stopPropagation()}
-                                    onCheckedChange={(checked) => togglePdfSelection(pdf.id, Boolean(checked))}
-                                    className="mt-0.5"
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <div className="truncate text-sm font-medium text-sidebar-foreground" title={pdf.filename}>
-                                      {pdf.filename}
-                                    </div>
-                                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-sidebar-foreground/65">
-                                      <span>{formatBytes(pdf.size)}</span>
-                                      {isSelected ? (
-                                        <Badge variant="outline" className="h-5 border-primary/25 bg-primary/5 px-1.5 text-[10px] font-medium">
-                                          ausgewählt
-                                        </Badge>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex min-w-0 items-center justify-between gap-2 border-t border-sidebar-border/70 bg-background/45 px-3 py-2">
-                                <div className="min-w-0 truncate text-[11px] text-sidebar-foreground/55">
-                                  {isSelected ? "Für den nächsten Scan markiert" : "Klicken zum Auswählen"}
-                                </div>
-                                <div className="flex shrink-0 items-center gap-1">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 gap-1 px-2 text-[11px]"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      void openStoredPdf(pdf.id);
-                                    }}
-                                    title="PDF öffnen"
-                                  >
-                                    <ExternalLink className="h-3.5 w-3.5" />
-                                    Öffnen
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 gap-1 px-2 text-[11px] text-destructive hover:text-destructive"
-                                    disabled={isDeleting || previewMode}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      void deleteProjectPdf(pdf);
-                                    }}
-                                    title="PDF löschen"
-                                  >
-                                    {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                                    Löschen
-                                  </Button>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </ScrollArea>
-
-                  <Button size="lg" onClick={startPdfScan} disabled={!canStart} className="mt-4 w-full">
-                    {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                    Scan starten
-                  </Button>
-
-                  {projectRunningRun && projectRunningRun.id !== activeRun?.id ? (
-                    <div className="mt-3 text-xs leading-5 text-sidebar-foreground/70">
-                      Es läuft bereits ein anderer Scan im Projekt. Wähle ihn unten aus, um den Status zu verfolgen.
-                    </div>
-                  ) : null}
-                </div>
-              </Card>
-            </div>
-
-            <Separator className="bg-sidebar-border" />
-
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <div className="px-5 py-4 text-sm font-semibold text-sidebar-foreground">Runs</div>
-              <div className="h-full overflow-auto divide-y divide-sidebar-border">
-                {pdfScanRuns.length === 0 ? (
-                  <SidebarEmptyState label="Noch keine PDF-Scans." />
-                ) : (
-                  pdfScanRuns.map((run) => {
-                    const snapshot = run.kapitelSnapshots?.[0] ?? null;
-                    const label = `${snapshot?.nummer ? `${snapshot.nummer} ` : ""}${snapshot?.title || run.id}`.trim();
-                    const subtitle =
-                      run.status === "queued" || run.status === "running"
-                        ? `${formatTimeHm(run.startedAt ?? run.createdAt)}  Läuft…`
-                        : run.status === "success"
-                          ? `${formatTimeHm(run.startedAt ?? run.createdAt)}  ${formatIntDe(run.pdfScanSectionCount ?? run.resultCount ?? 0)} Sections`
-                          : run.status === "cancelled"
-                            ? `${formatTimeHm(run.startedAt ?? run.createdAt)}  Abgebrochen`
-                            : `${formatTimeHm(run.startedAt ?? run.createdAt)}  Fehler`;
-                    const active = run.id === activeRun?.id;
-                    const icon =
-                      run.status === "queued" || run.status === "running" ? (
-                        <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
-                      ) : run.status === "success" ? (
-                        <Check className="h-4 w-4 text-emerald-600" />
-                      ) : run.status === "cancelled" ? (
-                        <Ban className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <AlertTriangle className="h-4 w-4 text-red-600" />
-                      );
-
-                    return (
-                      <button
-                        key={run.id}
-                        type="button"
-                        onClick={() => selectRun(run)}
-                        className={`w-full px-5 py-3 text-left transition-colors hover:bg-sidebar-accent/70 ${
-                          active ? "bg-sidebar-accent" : ""
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-medium text-sidebar-foreground">{label}</div>
-                            <div className="mt-1 truncate text-xs text-sidebar-foreground/70">{subtitle}</div>
+                              <X className="h-3.5 w-3.5" />
+                            </button>
                           </div>
-                          <div className="shrink-0 pt-0.5">{icon}</div>
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </aside>
-
-          <main className="min-w-0 flex-1 overflow-visible lg:overflow-auto">
-            <div className="mx-auto max-w-[1320px] space-y-6 px-4 py-4 sm:px-6 sm:py-6">
-              <Card className="overflow-hidden border-border/70 shadow-sm">
-                <div className="bg-[linear-gradient(135deg,rgba(15,23,42,0.05),rgba(255,255,255,0.9)),radial-gradient(circle_at_top_right,rgba(20,184,166,0.14),transparent_42%)] p-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="text-[28px] font-semibold tracking-[-0.03em] text-foreground">{chapterHeading || "Kapitel auswählen"}</div>
-                      <div className="mt-2 text-sm text-muted-foreground">
-                        {activeRun ? (
-                          <>
-                            Gestartet: {formatDateTimeWithSeconds(runStartedAt)}
-                            {runFinishedAt ? <> | Abgeschlossen: {formatDateTimeWithSeconds(runFinishedAt)}</> : null}
-                          </>
-                        ) : selectedKapitel ? (
-                          "Noch kein PDF-Scan für dieses Kapitel. Starte links einen neuen Lauf."
-                        ) : (
-                          "Wähle links ein Kapitel, lade PDFs hoch und starte dann die Pipeline."
-                        )}
-                      </div>
-                      {chapterThema ? (
-                        <div className="mt-3 max-w-[860px] text-sm leading-7 text-muted-foreground">{chapterThema}</div>
-                      ) : null}
-                    </div>
-
-                    {activeRun ? (
-                      <div className="flex flex-wrap items-center justify-end gap-3">
-                        <StatusPill status={String(activeRun.status || "")} />
-                        {running ? (
-                          <>
-                            <Badge variant="outline" className="tabular-nums">
-                              {formatElapsedShort(elapsedMs)} gesamt
-                            </Badge>
-                            <Badge variant="outline" className="tabular-nums">
-                              {formatElapsedShort(stageElapsedMs)} Phase
-                            </Badge>
-                            <Button size="sm" variant="outline" onClick={cancelPdfScan} disabled={isCancelRequested}>
-                              {isCancelRequested ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <X className="mr-2 h-4 w-4" />}
-                              {isCancelRequested ? "Wird abgebrochen…" : "Abbrechen"}
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Badge variant="outline" className="tabular-nums">
-                              {formatIntDe(visibleDocCount)} PDFs
-                            </Badge>
-                            <Badge variant="outline" className="tabular-nums">
-                              {formatIntDe(visibleSectionCount)} Sections
-                            </Badge>
-                            <Badge variant="outline" className="tabular-nums">
-                              {formatIntDe(usefulPdfCount)} nützlich
-                            </Badge>
-                          </>
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </Card>
-
-              {activeRun ? (
-                <Card className="overflow-hidden border-border/70 shadow-sm">
-                  <div className="border-b border-border/70 bg-muted/20 px-5 py-4">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold">Pipeline-Status</div>
-                        <div className="mt-1 text-xs text-muted-foreground">{stageLabel(activeRun)}</div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span className="tabular-nums">{formatIntDe(completedStepCount)} / {formatIntDe(PDF_SCAN_PIPELINE_STEPS.length)} Schritte</span>
-                        {activeRun.hadPartialFailures ? (
-                          <Badge
-                            variant="outline"
-                            className="border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200"
+                        ))}
+                        {hiddenSelectedPdfCount > 0 ? (
+                          <button
+                            type="button"
+                            className="text-sm text-sky-700 transition-colors hover:text-sky-800"
+                            onClick={() => setLibraryManagerOpen(true)}
                           >
-                            Partial failures
-                          </Badge>
+                            +{formatIntDe(hiddenSelectedPdfCount)} weitere...
+                          </button>
                         ) : null}
                       </div>
-                    </div>
-                    <Progress value={progressValue} className="mt-4 h-2.5" />
+                    )}
                   </div>
+                </div>
+              ) : null}
+            </div>
 
-                  <div className="grid grid-cols-2 gap-3 p-5 md:grid-cols-5">
-                    {PDF_SCAN_PIPELINE_STEPS.map((step, index) => {
-                      const done = isDone || index < activeStepIndex;
-                      const active = !isDone && !isError && !isCancelled && index === activeStepIndex;
-                      const classes = done
-                        ? "border-emerald-300 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/20"
-                        : active
-                          ? "border-primary/35 bg-primary/5"
-                          : "border-border bg-background";
-                      return (
-                        <div key={step.key} className={`rounded-xl border px-3 py-3 ${classes}`}>
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-xs font-medium">{step.label}</div>
-                            <div className="shrink-0">
-                              {done ? (
-                                <Check className="h-4 w-4 text-emerald-600" />
-                              ) : active ? (
-                                <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
-                              ) : (
-                                <div className="h-4 w-4 rounded-full border border-muted-foreground/30" />
-                              )}
-                            </div>
-                          </div>
-                          <div className="mt-1 text-[11px] text-muted-foreground">{step.key}</div>
+            <div>
+              <Button
+                size="lg"
+                onClick={startPdfScan}
+                disabled={!canStart}
+                className="h-10 w-full rounded-[4px] bg-[#1680cd] px-4 text-[15px] font-medium shadow-none hover:bg-[#0f76c2]"
+              >
+                {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+                Scan starten{selectedPdfIds.length > 0 ? ` (${formatIntDe(selectedPdfIds.length)} PDFs)` : ""}
+              </Button>
+              {projectRunningRun && projectRunningRun.id !== activeRun?.id ? (
+                <div className="mt-3 text-xs leading-5 text-slate-500">
+                  Es läuft bereits ein anderer Scan im Projekt. Wähle ihn unten aus, um den Status zu verfolgen.
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto border-t border-slate-200">
+            <div className="px-5 py-4 text-sm font-semibold text-slate-800">Runs</div>
+            <div className="divide-y divide-slate-200">
+              {pdfScanRuns.length === 0 ? (
+                <div className="px-5 py-14 text-center">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+                    <FileText className="h-6 w-6 text-slate-400" />
+                  </div>
+                  <div className="mt-4 text-base font-medium text-slate-800">Noch keine Scans</div>
+                  <div className="mt-2 text-sm leading-6 text-slate-500">Wähle Kapitel und PDFs aus, um zu starten.</div>
+                </div>
+              ) : (
+                pdfScanRuns.map((run) => {
+                  const snapshot = run.kapitelSnapshots?.[0] ?? null;
+                  const label = `${snapshot?.nummer ? `${snapshot.nummer} ` : ""}${snapshot?.title || run.id}`.trim();
+                  const subtitle =
+                    run.status === "queued" || run.status === "running"
+                      ? `${formatTimeHm(run.startedAt ?? run.createdAt)}  Läuft...`
+                      : run.status === "success"
+                        ? `${formatTimeHm(run.startedAt ?? run.createdAt)}  ${formatIntDe(run.pdfScanDocCount ?? 0)} PDFs · ${formatIntDe(run.usefulPdfCount ?? run.pdfScanSectionCount ?? 0)} nützlich`
+                        : run.status === "cancelled"
+                          ? `${formatTimeHm(run.startedAt ?? run.createdAt)}  Abgebrochen`
+                          : `${formatTimeHm(run.startedAt ?? run.createdAt)}  Fehler`;
+                  const active = run.id === activeRun?.id;
+                  const icon =
+                    run.status === "queued" || run.status === "running" ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+                    ) : run.status === "success" ? (
+                      <Check className="h-4 w-4 text-sky-600" />
+                    ) : run.status === "cancelled" ? (
+                      <Ban className="h-4 w-4 text-slate-400" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-rose-500" />
+                    );
+
+                  return (
+                    <button
+                      key={run.id}
+                      type="button"
+                      onClick={() => selectRun(run)}
+                      className={cn(
+                        "w-full px-5 py-3.5 text-left transition-colors hover:bg-slate-50",
+                        active && "bg-sky-50/70"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-slate-900">{label}</div>
+                          <div className="mt-1 truncate text-xs text-slate-500">{subtitle}</div>
                         </div>
-                      );
-                    })}
+                        <div className="shrink-0 pt-0.5">{icon}</div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </aside>
+
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="space-y-4 px-5 py-4">
+              {activeRun ? (
+                <>
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-[18px] font-semibold tracking-[-0.02em] text-slate-950">{chapterHeading}</div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        Gestartet: {formatDateTimeWithSeconds(runStartedAt)}
+                        {runFinishedAt ? <> · Abgeschlossen: {formatDateTimeWithSeconds(runFinishedAt)}</> : null}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 xl:justify-end">
+                      {running ? (
+                        <>
+                          <div className="inline-flex items-center gap-1.5">
+                            <Clock3 className="h-3.5 w-3.5" />
+                            <span className="tabular-nums">{formatElapsedShort(elapsedMs)}</span>
+                          </div>
+                          <span className="text-slate-300">|</span>
+                          <div className="inline-flex items-center gap-1.5">
+                            <span>Phase:</span>
+                            <span className="tabular-nums">{formatElapsedShort(stageElapsedMs)}</span>
+                          </div>
+                        </>
+                      ) : null}
+                      {runCostUsd !== null ? (
+                        <>
+                          {running ? <span className="text-slate-300">|</span> : null}
+                          <div className="inline-flex items-center gap-1.5">
+                            <DollarSign className="h-3.5 w-3.5" />
+                            <span className="tabular-nums">{formatUsd(runCostUsd)}</span>
+                          </div>
+                        </>
+                      ) : null}
+                      {running ? (
+                        <Button size="sm" variant="outline" className="h-8 rounded-[4px] border-slate-200 bg-white px-3 text-xs shadow-none" onClick={cancelPdfScan} disabled={isCancelRequested}>
+                          {isCancelRequested ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <X className="mr-2 h-3.5 w-3.5" />}
+                          {isCancelRequested ? "Wird abgebrochen..." : "Abbrechen"}
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
 
-                  {isError ? (
-                    <div className="border-t border-border bg-destructive/5 px-5 py-4 text-sm text-destructive">
-                      {String(activeRun.errorMessage || "").trim() || "Unbekannter Fehler"}
+                  <Card className="rounded-[14px] border border-slate-200 bg-white shadow-sm">
+                    <div className="p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-950">Pipeline-Status</div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                          <span className="tabular-nums">
+                            {formatIntDe(currentStepNumber)} / {formatIntDe(PDF_SCAN_PIPELINE_STEPS.length)} Schritte
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <div className="relative h-[7px] overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className={cn("absolute inset-y-0 left-0 rounded-full", isCancelled ? "bg-slate-400" : isError ? "bg-rose-500" : "bg-[#1680cd]")}
+                            style={{ width: `${Math.max(0, Math.min(100, progressValue))}%` }}
+                          />
+                          <div className="absolute inset-0 grid grid-cols-10">
+                            {PDF_SCAN_PIPELINE_STEPS.map((step, index) => (
+                              <div key={step.key} className={index < PDF_SCAN_PIPELINE_STEPS.length - 1 ? "border-r border-white/80" : ""} />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2 text-slate-600">
+                            {running ? <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" /> : isDone ? <Check className="h-3.5 w-3.5 text-sky-600" /> : null}
+                            <span>
+                              {isDone ? "Abgeschlossen" : isCancelled ? "Abgebrochen" : isError ? "Fehlgeschlagen" : `${currentStepLabel}: ${stageLabel(activeRun)}`}
+                            </span>
+                          </div>
+                          <div className="tabular-nums text-slate-500">
+                            {formatIntDe(currentStepNumber)}/{formatIntDe(PDF_SCAN_PIPELINE_STEPS.length)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {isError ? (
+                        <div className="mt-4 rounded-[12px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                          {String(activeRun.errorMessage || "").trim() || "Unbekannter Fehler"}
+                        </div>
+                      ) : null}
                     </div>
-                  ) : null}
-                </Card>
+                  </Card>
+
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+                      <div className="text-[13px] text-slate-500">Status</div>
+                      <div
+                        className={cn(
+                          "mt-4.5 text-[16px] font-semibold tracking-[-0.02em]",
+                          isError ? "text-rose-600" : isCancelled ? "text-slate-500" : running ? "text-amber-600" : "text-sky-700"
+                        )}
+                      >
+                        {runOutcomeLabel}
+                      </div>
+                    </Card>
+                    <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+                      <div className="text-[13px] text-slate-500">PDFs</div>
+                      <div className="mt-4.5 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{formatIntDe(visibleDocCount)}</div>
+                    </Card>
+                    <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+                      <div className="text-[13px] text-slate-500">Abschnitte</div>
+                      <div className="mt-4.5 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{formatIntDe(visibleSectionCount)}</div>
+                    </Card>
+                    <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+                      <div className="text-[13px] text-slate-500">Nützlich</div>
+                      <div className="mt-4.5 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{formatIntDe(usefulPdfCount)}</div>
+                    </Card>
+                  </div>
+                </>
               ) : null}
 
               {!activeRun ? (
                 <MainEmptyState selectedKapitel={selectedKapitel} />
               ) : (
-                <Card className="border-border/70 shadow-sm">
-                  <div className="border-b border-border/70 px-5 py-4">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold">Finale Section Scores</div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          Ein Card pro PDF. Angezeigt werden nur finale Sections mit Score <span className="font-medium text-foreground">&gt;= 5</span>.
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline" className="tabular-nums">
-                          {formatIntDe(filteredDocRows.length)} PDFs
-                        </Badge>
-                        <Badge variant="outline" className="tabular-nums">
-                          {formatIntDe(visibleSectionCount)} Sections
-                        </Badge>
-                        <Input
-                          value={resultFilter}
-                          onChange={(event) => setResultFilter(event.target.value)}
-                          placeholder="PDF oder Section suchen…"
-                          className="h-9 w-full sm:w-[280px]"
-                        />
-                      </div>
-                    </div>
+                <div className="space-y-5 pt-2">
+                  <div className="min-w-0">
+                    <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-950">Ergebnisse</div>
                   </div>
 
-                  <div className="p-5">
-                    {!docRowsLoaded ? (
-                      <ResultSkeleton />
-                    ) : filteredDocRows.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-border bg-muted/10 px-5 py-12 text-center">
-                        <div className="text-base font-medium">
-                          {running ? "Noch keine finalen Ergebnisse" : "Keine sichtbaren Sections"}
-                        </div>
-                        <div className="mt-2 text-sm leading-7 text-muted-foreground">
-                          {running
-                            ? "Die Cards erscheinen erst nach Phase G und dem Persistieren der Ergebnisse."
-                            : "Für diesen Lauf wurden keine finalen Sections mit Score >= 5 gespeichert."}
-                        </div>
+                  {!docRowsLoaded ? (
+                    <ResultSkeleton />
+                  ) : filteredDocRows.length === 0 ? (
+                    <Card className="rounded-[14px] border border-dashed border-slate-200 bg-white px-5 py-14 text-center shadow-none">
+                      <div className="text-base font-medium text-slate-900">
+                        {running ? "Noch keine finalen Ergebnisse" : "Keine sichtbaren Sections"}
                       </div>
-                    ) : (
-                      <Accordion
-                        type="single"
-                        collapsible
-                        value={activeDocId ?? ""}
-                        onValueChange={(value) => setActiveDocId(value || null)}
-                        className="space-y-4"
-                      >
-                        {filteredDocRows.map((pdfDoc) => {
-                          const pdfMeta = pdfsById.get(String(pdfDoc.pdfId || ""));
-                          const topScore = typeof pdfDoc.topSectionScore === "number" ? pdfDoc.topSectionScore : null;
-                          const isOpen = activeDocId === pdfDoc.id;
-                          const previewSections = (pdfDoc.previewSections || []).slice(0, 3);
+                      <div className="mt-2 text-sm leading-7 text-slate-500">
+                        {running
+                          ? "Die Ergebnisse erscheinen nach Phase G und dem Persistieren der finalen Section-Scores."
+                          : "Für diesen Lauf wurden keine finalen Sections gespeichert."}
+                      </div>
+                    </Card>
+                  ) : (
+                    <Accordion
+                      type="single"
+                      collapsible
+                      value={activeDocId ?? ""}
+                      onValueChange={(value) => setActiveDocId(value || null)}
+                      className="space-y-4"
+                    >
+                      {filteredDocRows.map((pdfDoc) => {
+                        const pdfMeta = pdfsById.get(String(pdfDoc.pdfId || ""));
+                        const topScore = typeof pdfDoc.topSectionScore === "number" ? pdfDoc.topSectionScore : null;
+                        const isOpen = activeDocId === pdfDoc.id;
 
-                          return (
-                            <AccordionItem key={pdfDoc.id} value={pdfDoc.id} className="overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
-                              <AccordionTrigger className="px-5 py-5 hover:no-underline">
-                                <div className="flex min-w-0 flex-1 flex-col gap-4 text-left lg:flex-row lg:items-start lg:justify-between">
+                        return (
+                          <AccordionItem
+                            key={pdfDoc.id}
+                            value={pdfDoc.id}
+                            className="overflow-hidden rounded-[14px] border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)]"
+                          >
+                            <AccordionTrigger className="items-center px-6 py-8 hover:no-underline [&>svg]:hidden">
+                              <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_72px] items-center gap-5 text-left">
+                                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-4.5">
+                                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-400">
+                                    <FileText className="h-4 w-4" />
+                                  </div>
                                   <div className="min-w-0 flex-1">
-                                    <div className="flex flex-wrap items-start gap-3">
-                                      <div className={`inline-flex h-10 min-w-[72px] items-center justify-center rounded-xl border px-3 text-sm font-semibold tabular-nums ${scoreToneClasses(topScore)}`}>
-                                        {topScore !== null ? formatScore(topScore) : "—"}
-                                      </div>
-                                      <div className="min-w-0 flex-1">
-                                        <div className="line-clamp-2 text-base font-semibold leading-6 text-foreground">
-                                          {pdfDoc.docTitle || pdfDoc.pdfLabel || "Unbenanntes PDF"}
-                                        </div>
-                                        <div className="mt-1 text-sm text-muted-foreground">
-                                          {pdfDoc.pdfFilename || pdfDoc.pdfLabel || "PDF"}
-                                        </div>
-                                      </div>
+                                    <div
+                                      className="block w-full truncate pr-4 text-[14px] font-medium leading-6 text-slate-950"
+                                      title={pdfDoc.docTitle || pdfDoc.pdfLabel || "Unbenanntes PDF"}
+                                    >
+                                      {pdfDoc.docTitle || pdfDoc.pdfLabel || "Unbenanntes PDF"}
                                     </div>
-
-                                    <div className="mt-4 flex flex-wrap gap-2">
-                                      <Badge variant="outline" className="tabular-nums">
-                                        {formatIntDe(pdfDoc.visibleSectionCount ?? 0)} Sections
-                                      </Badge>
-                                      {typeof pdfDoc.docMatchProbability === "number" ? (
-                                        <Badge variant="outline" className="tabular-nums">
-                                          p={formatProbability(pdfDoc.docMatchProbability)}
-                                        </Badge>
-                                      ) : null}
-                                      {typeof pdfDoc.pageCount === "number" ? (
-                                        <Badge variant="outline" className="tabular-nums">
-                                          {formatIntDe(pdfDoc.pageCount)} Seiten
-                                        </Badge>
-                                      ) : null}
-                                      {typeof pdfDoc.acceptedHeadingCount === "number" ? (
-                                        <Badge variant="outline" className="tabular-nums">
-                                          {formatIntDe(pdfDoc.acceptedHeadingCount)} Headings
-                                        </Badge>
-                                      ) : null}
-                                      {pdfDoc.doclingStatus ? <Badge variant="outline">{pdfDoc.doclingStatus}</Badge> : null}
-                                    </div>
-
-                                    {previewSections.length > 0 ? (
-                                      <div className="mt-4 flex flex-wrap gap-2">
-                                        {previewSections.map((section, index) => (
-                                          <div
-                                            key={`${pdfDoc.id}_${section.sectionId ?? index}`}
-                                            className="rounded-full border border-border bg-muted/30 px-3 py-1 text-xs text-muted-foreground"
-                                          >
-                                            <span className="font-medium text-foreground">{formatScore(section.score0To100)}</span>
-                                            <span className="mx-1 text-muted-foreground/70">•</span>
-                                            <span>{section.title || "Section"}</span>
-                                            <span className="mx-1 text-muted-foreground/70">•</span>
-                                            <span>{formatPageRange(section.pageStart, section.pageEnd)}</span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : null}
-                                  </div>
-
-                                  <div className="shrink-0">
-                                    <div className="rounded-xl border border-border bg-muted/20 px-3 py-2 text-right">
-                                      <div className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Top Section</div>
-                                      <div className="mt-1 max-w-[260px] truncate text-sm font-medium text-foreground">
-                                        {pdfDoc.topSectionTitle || "—"}
-                                      </div>
+                                    <div className="mt-1.5 text-[13px] leading-5 text-slate-500">
+                                      {typeof pdfDoc.pageCount === "number" ? `${formatIntDe(pdfDoc.pageCount)} Seiten` : "PDF"}
+                                      {typeof pdfDoc.visibleSectionCount === "number" ? ` · ${formatIntDe(pdfDoc.visibleSectionCount)} Abschnitte` : ""}
                                     </div>
                                   </div>
                                 </div>
-                              </AccordionTrigger>
 
-                              <AccordionContent className="px-5 pb-5">
-                                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-5">
-                                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                                    <span>{pdfDoc.strategy ? `Strategie: ${pdfDoc.strategy}` : "Section-first locator preview"}</span>
-                                    {pdfDoc.hasUsefulInformation === true ? (
-                                      <Badge
-                                        variant="outline"
-                                        className="border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-200"
-                                      >
-                                        useful
-                                      </Badge>
-                                    ) : null}
+                                <div className="flex h-full w-[72px] shrink-0 items-center justify-end gap-2 text-right">
+                                  <div className="text-[15px] font-semibold leading-none tabular-nums text-sky-700">
+                                    {topScore !== null ? formatScore(topScore, 1) : "—"}
                                   </div>
+                                  <ChevronDown
+                                    className={cn(
+                                      "h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200",
+                                      isOpen ? "rotate-180" : ""
+                                    )}
+                                  />
+                                </div>
+                              </div>
+                            </AccordionTrigger>
 
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => {
-                                        setDetailsDoc(pdfDoc);
-                                        setDetailsOpen(true);
-                                      }}
-                                    >
-                                      <BarChart3 className="mr-2 h-4 w-4" />
-                                      Pipeline Details
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      disabled={!pdfMeta?.storagePath}
-                                      onClick={() => void openStoredPdf(String(pdfDoc.pdfId || ""))}
-                                    >
-                                      <ExternalLink className="mr-2 h-4 w-4" />
-                                      PDF öffnen
-                                    </Button>
+                            <AccordionContent className="bg-white pb-0">
+                              {!isOpen || !sectionRowsLoaded ? (
+                                <div className="space-y-3 border-t border-slate-100 px-5 pb-6 pt-4">
+                                  {isOpen
+                                    ? Array.from({ length: 2 }).map((_, idx) => (
+                                        <Card key={idx} className="rounded-[14px] border border-slate-200 bg-white p-4 shadow-none">
+                                          <Skeleton className="h-5 w-2/3" />
+                                          <Skeleton className="mt-3 h-4 w-1/2" />
+                                        </Card>
+                                      ))
+                                    : null}
+                                </div>
+                              ) : sectionRows.length === 0 ? (
+                                <div className="border-t border-slate-100 px-5 pb-6 pt-4">
+                                  <div className="rounded-[14px] border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                                    Für dieses PDF wurden keine finalen Sections geladen.
                                   </div>
                                 </div>
-
-                                <div className="mt-4 space-y-3">
-                                  {!isOpen || !sectionRowsLoaded ? (
-                                    <div className="space-y-3">
-                                      {isOpen
-                                        ? Array.from({ length: 2 }).map((_, idx) => (
-                                            <Card key={idx} className="p-4">
-                                              <Skeleton className="h-5 w-2/3" />
-                                              <Skeleton className="mt-3 h-4 w-1/2" />
-                                              <Skeleton className="mt-4 h-20 w-full" />
-                                            </Card>
-                                          ))
-                                        : null}
-                                    </div>
-                                  ) : sectionRows.length === 0 ? (
-                                    <div className="rounded-xl border border-dashed border-border bg-muted/10 px-4 py-8 text-center text-sm text-muted-foreground">
-                                      Für dieses PDF wurden keine finalen Sections geladen.
-                                    </div>
-                                  ) : (
-                                    sectionRows.map((section) => {
-                                      const sectionScore =
-                                        typeof section.score0To100 === "number" ? section.score0To100 : null;
-                                      return (
-                                        <Card key={section.id} className="overflow-hidden border-border/80 shadow-none">
-                                          <div className="p-4">
-                                            <div className="flex flex-wrap items-start justify-between gap-4">
-                                              <div className="min-w-0 flex-1">
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                  <div className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold tabular-nums ${scoreToneClasses(sectionScore)}`}>
-                                                    {sectionScore !== null ? formatScore(sectionScore) : "—"}
-                                                  </div>
-                                                  <Badge variant="outline" className="tabular-nums">
-                                                    {formatPageRange(section.pageStart, section.pageEnd)}
-                                                  </Badge>
-                                                  {section.scoreBand ? <Badge variant="outline">{section.scoreBand}</Badge> : null}
-                                                  {typeof section.supportingPassageCount === "number" ? (
-                                                    <Badge variant="outline" className="tabular-nums">
-                                                      {formatIntDe(section.supportingPassageCount)} Evidenz
-                                                    </Badge>
-                                                  ) : null}
-                                                </div>
-
-                                                <div className="mt-3 line-clamp-2 text-base font-semibold leading-6">{section.title || section.sectionPathText || "Untitled section"}</div>
-                                                {section.sectionPathText && section.sectionPathText !== section.title ? (
-                                                  <div className="mt-1 text-sm text-muted-foreground">{section.sectionPathText}</div>
-                                                ) : null}
-
-                                                <div className="mt-3 flex flex-wrap gap-2">
-                                                  {(section.subpointCoverageIds || []).slice(0, 8).map((subpointId) => (
-                                                    <Badge key={`${section.id}_${subpointId}`} variant="outline">
-                                                      {subpointId}
-                                                    </Badge>
-                                                  ))}
-                                                  {typeof section.supportStrength === "number" ? (
-                                                    <Badge variant="outline" className="tabular-nums">
-                                                      Support {formatScore(section.supportStrength, 3)}
-                                                    </Badge>
-                                                  ) : null}
-                                                </div>
-                                              </div>
-
-                                              <div className="shrink-0">
-                                                <Button
-                                                  size="sm"
-                                                  onClick={() => {
-                                                    setExtractRequest({
-                                                      projektId,
-                                                      runId: String(activeRun?.id || ""),
-                                                      pdfDocId: String(pdfDoc.id),
-                                                      sectionDocId: String(section.id),
-                                                      pdfId: String(section.pdfId || "") || undefined,
-                                                      pdfFilename: section.pdfFilename || pdfDoc.pdfFilename || pdfDoc.pdfLabel,
-                                                      storagePath: pdfMeta?.storagePath,
-                                                      anchorPage:
-                                                        typeof section.anchorPage === "number" ? section.anchorPage : undefined,
-                                                    });
-                                                    setExtractOpen(true);
-                                                  }}
-                                                >
-                                                  Preview
-                                                </Button>
+                              ) : (
+                                <div className="border-t border-slate-100 bg-white pb-5">
+                                  <div className="divide-y divide-slate-100">
+                                  {sectionRows.map((section) => {
+                                    const sectionScore = typeof section.score0To100 === "number" ? section.score0To100 : null;
+                                    return (
+                                      <div key={section.id} className="px-5 py-[15px]">
+                                        <div className="flex items-center justify-between gap-4">
+                                          <div className="flex min-w-0 items-center gap-4">
+                                            <div className="shrink-0">
+                                              <div className="inline-flex min-w-[40px] items-center justify-center rounded-[4px] border border-sky-400 bg-white px-2.5 py-0.5 text-[12px] font-semibold leading-none tabular-nums text-sky-700">
+                                                {sectionScore !== null ? formatScore(sectionScore, 1) : "—"}
                                               </div>
                                             </div>
-
-                                            {section.evidencePreview && section.evidencePreview.length > 0 ? (
-                                              <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                                                {section.evidencePreview.slice(0, 2).map((evidence, index) => (
-                                                  <div key={`${section.id}_evidence_${index}`} className="rounded-xl border border-border bg-muted/20 p-3">
-                                                    <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                                                      <span>{formatPageRange(evidence.pageStart, evidence.pageEnd)}</span>
-                                                      {(evidence.lanes || []).length > 0 ? (
-                                                        <span>{(evidence.lanes || []).join(", ")}</span>
-                                                      ) : null}
-                                                    </div>
-                                                    <div className="mt-2 text-sm leading-6 text-muted-foreground">{evidence.text || "—"}</div>
-                                                  </div>
+                                            <div className="min-w-0">
+                                              <div
+                                                className="truncate text-[14px] font-medium leading-6 text-slate-950"
+                                                title={section.title || section.sectionPathText || "Untitled section"}
+                                              >
+                                                {section.title || section.sectionPathText || "Untitled section"}
+                                              </div>
+                                              <div className="mt-1.5 flex flex-wrap items-center gap-2.5 text-[13px] leading-5 text-slate-500">
+                                                <span>{formatPageRange(section.pageStart, section.pageEnd)}</span>
+                                                {(section.subpointCoverageIds || []).slice(0, 6).map((subpointId) => (
+                                                  <Badge key={`${section.id}_${subpointId}`} variant="outline" className="rounded-[4px] border-slate-200 bg-slate-50 px-1.5 py-0 text-[11px] text-slate-600">
+                                                    {subpointId}
+                                                  </Badge>
                                                 ))}
                                               </div>
-                                            ) : null}
+                                            </div>
                                           </div>
-                                        </Card>
-                                      );
-                                    })
-                                  )}
+
+                                          <div className="shrink-0">
+                                            <Button
+                                              size="icon"
+                                              variant="ghost"
+                                              className="h-8 w-8 rounded-[6px] text-slate-500 shadow-none hover:bg-slate-50 hover:text-slate-900"
+                                              onClick={() => {
+                                                setExtractRequest({
+                                                  projektId,
+                                                  runId: String(activeRun?.id || ""),
+                                                  pdfDocId: String(pdfDoc.id),
+                                                  sectionDocId: String(section.id),
+                                                  pdfId: String(section.pdfId || "") || undefined,
+                                                  pdfFilename: section.pdfFilename || pdfDoc.pdfFilename || pdfDoc.pdfLabel,
+                                                  storagePath: pdfMeta?.storagePath,
+                                                  anchorPage:
+                                                    typeof section.anchorPage === "number" ? section.anchorPage : undefined,
+                                                });
+                                                setExtractOpen(true);
+                                              }}
+                                              title="Preview"
+                                            >
+                                              <Eye className="h-4 w-4" />
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  </div>
                                 </div>
-                              </AccordionContent>
-                            </AccordionItem>
-                          );
-                        })}
-                      </Accordion>
-                    )}
-                  </div>
-                </Card>
+                              )}
+                            </AccordionContent>
+                          </AccordionItem>
+                        );
+                      })}
+                    </Accordion>
+                  )}
+                </div>
               )}
             </div>
           </main>
         </div>
 
+        <Dialog
+          open={libraryManagerOpen}
+          onOpenChange={(open) => {
+            setLibraryManagerOpen(open);
+            if (!open) {
+              libraryDragDepthRef.current = 0;
+              setLibraryDragActive(false);
+            }
+          }}
+        >
+          <DialogContent
+            className="max-h-[86vh] max-w-[1024px] gap-0 overflow-hidden border-slate-200 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.24)] sm:max-w-[1024px]"
+            onDragEnter={handleLibraryDragEnter}
+            onDragOver={handleLibraryDragOver}
+            onDragLeave={handleLibraryDragLeave}
+            onDrop={handleLibraryDrop}
+          >
+            <DialogHeader className="border-b border-slate-200 px-6 py-5">
+              <DialogTitle className="text-[20px] tracking-[-0.02em] text-slate-950">PDF-Bibliothek verwalten</DialogTitle>
+            </DialogHeader>
+
+            <div className="border-b border-slate-200 px-6 py-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    value={pdfLibraryFilter}
+                    onChange={(event) => setPdfLibraryFilter(event.target.value)}
+                    placeholder="PDFs durchsuchen..."
+                    className="h-11 border-slate-200 bg-white pl-10 shadow-none"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-10 border-slate-200 bg-white px-4 shadow-none"
+                    onClick={() => setVisibleSelection(true)}
+                  >
+                    Alle wählen
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-10 border-slate-200 bg-white px-4 shadow-none"
+                    onClick={() => setVisibleSelection(false)}
+                  >
+                    Keine
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-10 bg-[#1680cd] px-4 shadow-none hover:bg-[#0f76c2]"
+                    disabled={uploading || previewMode}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
+                    Upload
+                  </Button>
+                </div>
+              </div>
+
+              {uploadProgress ? (
+                <div className="mt-3 rounded-[14px] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  Upload läuft: {formatIntDe(uploadProgress.done)} / {formatIntDe(uploadProgress.total)}
+                </div>
+              ) : null}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                multiple
+                className="hidden"
+                onChange={(event) => void uploadProjectPdfs(event.target.files)}
+              />
+            </div>
+
+            <ScrollArea className="h-[min(62vh,640px)]">
+              <div className="divide-y divide-slate-200">
+                {pdfs.length === 0 ? (
+                  <div className="px-6 py-12 text-center text-sm text-slate-500">Noch keine PDFs hochgeladen.</div>
+                ) : filteredPdfs.length === 0 ? (
+                  <div className="px-6 py-12 text-center text-sm text-slate-500">Keine PDFs passen zum aktuellen Filter.</div>
+                ) : (
+                  filteredPdfs.map((pdf) => {
+                    const isSelected = selectedPdfIdSet.has(pdf.id);
+                    const isDeleting = deletingPdfId === pdf.id;
+                    return (
+                      <div
+                        key={pdf.id}
+                        className={cn(
+                          "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 px-6 py-5 transition-colors",
+                          isSelected ? "border-l-2 border-l-sky-500 bg-sky-50/60 pl-[22px]" : "hover:bg-slate-50"
+                        )}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={(checked) => togglePdfSelection(pdf.id, Boolean(checked))}
+                          aria-label={`${pdf.filename} auswählen`}
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => togglePdfSelection(pdf.id, !isSelected)}
+                          className="flex min-w-0 items-start gap-4 text-left"
+                        >
+                          <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-400">
+                            <FileText className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate text-[15px] font-medium text-slate-950" title={pdf.filename}>
+                              {pdf.filename}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-slate-500">
+                              {typeof pdf.pageCount === "number" ? (
+                                <span className="inline-flex items-center gap-1.5">
+                                  <BookOpen className="h-3.5 w-3.5" />
+                                  {formatIntDe(pdf.pageCount)} Seiten
+                                </span>
+                              ) : null}
+                              <span className="inline-flex items-center gap-1.5">
+                                <HardDrive className="h-3.5 w-3.5" />
+                                {formatBytes(pdf.size)}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <CalendarDays className="h-3.5 w-3.5" />
+                                {formatDateShort(pdf.createdAt)}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-9 w-9 text-slate-500 hover:text-slate-900"
+                            onClick={() => void openStoredPdf(pdf.id)}
+                            title="PDF öffnen"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-9 w-9 text-rose-500 hover:text-rose-600"
+                            disabled={isDeleting || previewMode}
+                            onClick={() => requestDeleteProjectPdf(pdf)}
+                            title="PDF löschen"
+                          >
+                            {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </ScrollArea>
+
+            <DialogFooter className="border-t border-slate-200 px-6 py-4 sm:items-center sm:justify-between">
+              <div className="text-sm text-slate-500">
+                {formatIntDe(selectedPdfIds.length)} von {formatIntDe(pdfs.length)} ausgewählt
+              </div>
+              <Button className="bg-[#1680cd] shadow-none hover:bg-[#0f76c2]" onClick={() => setLibraryManagerOpen(false)}>
+                Fertig
+              </Button>
+            </DialogFooter>
+
+            {libraryDragActive ? (
+              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-sky-950/8 p-6">
+                <div className="rounded-[18px] border-2 border-dashed border-sky-400 bg-white/96 px-10 py-10 text-center shadow-xl">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                    <FileUp className="h-6 w-6" />
+                  </div>
+                  <div className="mt-4 text-lg font-semibold text-slate-950">PDFs hier ablegen</div>
+                  <div className="mt-2 text-sm text-slate-500">Die Dateien werden direkt in die Projektbibliothek hochgeladen.</div>
+                </div>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+
+        <AlertDialog open={startConfirmOpen} onOpenChange={setStartConfirmOpen}>
+          <AlertDialogContent className="max-w-[520px] rounded-[14px] border-slate-200 shadow-xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>PDF-Scan starten?</AlertDialogTitle>
+              <AlertDialogDescription className="text-left text-sm leading-6 text-slate-600">
+                <span className="block">Der Scan wird als neuer Lauf gestartet.</span>
+                <span className="mt-2 block">
+                  Kapitel: <span className="font-medium text-slate-900">{chapterHeading}</span>
+                </span>
+                <span className="block">
+                  PDFs: <span className="font-medium text-slate-900">{formatIntDe(selectedPdfIds.length)}</span>
+                </span>
+                <span className="mt-3 block">
+                  Die Verarbeitung kann je nach Anzahl und Grösse der PDFs bis zu eine Stunde oder länger dauern.
+                </span>
+                <span className="block">Der Fortschritt wird live im Pipeline-Status angezeigt und der Lauf kann bei Bedarf abgebrochen werden.</span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="rounded-[4px]">Abbrechen</AlertDialogCancel>
+              <AlertDialogAction
+                className="rounded-[4px] border-[#1680cd] bg-[#1680cd] text-white hover:bg-[#0f76c2]"
+                onClick={() => void confirmStartPdfScan()}
+              >
+                Scan starten
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={Boolean(deleteConfirmPdf)} onOpenChange={(open) => (!open ? setDeleteConfirmPdf(null) : null)}>
+          <AlertDialogContent className="max-w-[520px] rounded-[14px] border-slate-200 shadow-xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>PDF löschen?</AlertDialogTitle>
+              <AlertDialogDescription className="text-left text-sm leading-6 text-slate-600">
+                <span className="block">Diese PDF wird aus der Projektbibliothek entfernt.</span>
+                <span className="mt-2 block font-medium text-slate-900">{deleteConfirmPdf?.filename || "Unbenannte PDF"}</span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="rounded-[4px]">Abbrechen</AlertDialogCancel>
+              <AlertDialogAction
+                className="rounded-[4px]"
+                onClick={() => {
+                  const pdf = deleteConfirmPdf;
+                  setDeleteConfirmPdf(null);
+                  if (pdf) void deleteProjectPdf(pdf);
+                }}
+              >
+                PDF löschen
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         <PdfExtractDialog open={extractOpen} onOpenChange={setExtractOpen} request={extractRequest} />
-        <PdfScanDetailsDialog
-          open={detailsOpen}
-          onOpenChange={setDetailsOpen}
-          uid={user?.uid || ""}
-          projektId={projektId}
-          runId={activeRun?.id || ""}
-          pdfDoc={detailsDoc}
-        />
       </div>
-      <ViewportWarning />
-    </TooltipProvider>
   );
 }

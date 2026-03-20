@@ -55,3 +55,47 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const token = await getAuthTokenOrNullAsync();
+    if (!token) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const url = joinUrlWithSearchParams(`${API_BASE_URL}/api/quellen-finder/project-pdf`, request);
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: 'no-store',
+    });
+
+    const text = await res.text().catch(() => '');
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok) {
+      return new NextResponse(text || JSON.stringify({ error: 'Request failed.' }), {
+        status: res.status,
+        headers: {
+          'content-type': contentType.includes('application/json') ? contentType : 'application/json',
+          'cache-control': 'no-store',
+        },
+      });
+    }
+
+    if (contentType.includes('application/json')) {
+      return new NextResponse(text, {
+        status: res.status,
+        headers: {
+          'content-type': 'application/json',
+          'cache-control': 'no-store',
+        },
+      });
+    }
+    return NextResponse.json({ error: 'Unexpected backend response.' }, { status: 502 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unbekannter Fehler';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

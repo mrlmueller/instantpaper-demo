@@ -206,6 +206,8 @@ export type ProjectPdfDoc = {
   storagePath: string;
   size: number;
   contentType: string;
+  pageCount?: number | null;
+  fileHash?: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
@@ -380,19 +382,5 @@ export type PdfScanResultDoc = {
     lanes?: string[] | null;
     text?: string | null;
   }> | null;
-  createdAt: Timestamp;
-};
-
-export type PdfScanDetailsDoc = {
-  docId: string;
-  pdfId: string;
-  pdfFilename?: string | null;
-  docTitle?: string | null;
-  overview?: Record<string, unknown> | null;
-  charts?: Record<string, unknown> | null;
-  phaseC?: Record<string, unknown> | null;
-  phaseE?: Record<string, unknown> | null;
-  phaseF?: Record<string, unknown> | null;
-  phaseG?: Record<string, unknown> | null;
   createdAt: Timestamp;
 };

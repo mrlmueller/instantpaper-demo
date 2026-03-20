@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, BackgroundTasks, status, HTTPException, Request
+from fastapi import FastAPI, Depends, BackgroundTasks, status, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from contextlib import asynccontextmanager
@@ -33,6 +33,7 @@ from models.request import (
     RefineResultRequest,
     QuellenFinderTwoLaneStartRequest,
     QuellenFinderTwoLaneCancelRequest,
+    QuellenFinderProjectPdfDuplicateCheckRequest,
 )
 from models.response import ProcessQuelleResponse
 from services.quelle_service import quelle_service
@@ -50,6 +51,7 @@ from services.quellen_finder_sources_two_lane_job import run_quellen_finder_sour
 from services.quellen_finder_pdf_scan_job import (
     run_quellen_finder_pdf_scan_job_from_run_doc,
     _download_pdf_from_firebase_storage,
+    _candidate_bucket_names,
 )
 from services.quellen_finder_pdf_extract_service import extract_quellen_finder_pdf_section
 from firebase_admin import auth, storage
@@ -550,6 +552,10 @@ async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any
         "canUseQuellenFinder": can_use_quellen_finder,
         "canUsePdfScan": can_use_pdf_scan,
     }
+
+
+def _normalize_project_pdf_filename(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
 def _as_float(value, default: float = 0.0) -> float:
@@ -5382,7 +5388,6 @@ async def quellen_finder_pdf_scan(
     and writes results under:
       .../pdfScanDocs/*
       .../pdfScanSections/*
-      .../pdfScanDetails/*
     """
 
     projekt_id = str(request.projekt_id or "").strip()
@@ -5733,6 +5738,280 @@ async def quellen_finder_project_pdf(
         headers={"Content-Disposition": f'inline; filename=\"{safe_filename}\"'},
         background=BackgroundTask(_cleanup_tmp),
     )
+
+
+@app.post("/api/quellen-finder/project-pdf-upload", status_code=status.HTTP_201_CREATED)
+async def quellen_finder_project_pdf_upload(
+    projekt_id: str = Form(...),
+    page_count: int | None = Form(default=None),
+    file: UploadFile = File(...),
+    user_id: str = Depends(verify_firebase_token),
+):
+    projekt_id = str(projekt_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+
+    await _require_pdf_scan_enabled(user_id)
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    filename = str((getattr(file, "filename", None) or "")).strip() or "document.pdf"
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+
+    try:
+        file_bytes = await file.read()
+    finally:
+        try:
+            await file.close()
+        except Exception:
+            pass
+
+    size = len(file_bytes)
+    if size <= 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if size >= 60 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="PDF exceeds the 60 MB limit.")
+    if not file_bytes.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="Uploaded file does not look like a valid PDF.")
+
+    file_hash = hashlib.sha256(file_bytes).hexdigest().lower()
+    page_count_value = int(page_count) if page_count is not None and int(page_count) > 0 else None
+    filename_norm = _normalize_project_pdf_filename(filename)
+    pdf_collection = (
+        firebase_service.db.collection("users")
+        .document(str(user_id))
+        .collection("projects")
+        .document(str(projekt_id))
+        .collection("pdfs")
+    )
+
+    for snap in pdf_collection.stream():
+        if not getattr(snap, "exists", False):
+            continue
+        row = snap.to_dict() or {}
+        existing_hash = str(row.get("fileHash") or "").strip().lower() or None
+        if existing_hash and existing_hash == file_hash:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "duplicate": True,
+                    "reason": "hash_match",
+                    "pdf_id": str(snap.id),
+                    "filename": str(row.get("filename") or "").strip() or None,
+                },
+            )
+
+        existing_name = _normalize_project_pdf_filename(str(row.get("filename") or ""))
+        existing_size = int(row.get("size") or 0)
+        existing_pages = row.get("pageCount")
+        if (
+            existing_name
+            and existing_name == filename_norm
+            and existing_size == size
+            and page_count_value is not None
+            and isinstance(existing_pages, (int, float))
+            and int(existing_pages) == page_count_value
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "duplicate": True,
+                    "reason": "name_size_page_match",
+                    "pdf_id": str(snap.id),
+                    "filename": str(row.get("filename") or "").strip() or None,
+                },
+            )
+
+    doc_id = f"pdf_{file_hash}"
+    storage_path = f"users/{user_id}/projects/{projekt_id}/pdfs/{file_hash}.pdf"
+    content_type = "application/pdf"
+    upload_exc: Exception | None = None
+    for bucket_name in _candidate_bucket_names(config.FIREBASE_PROJECT_ID, config.FIREBASE_STORAGE_BUCKET):
+        try:
+            bucket = storage.bucket(bucket_name)
+            blob = bucket.blob(storage_path)
+            blob.upload_from_string(file_bytes, content_type=content_type)
+            upload_exc = None
+            break
+        except NotFound as exc:
+            upload_exc = exc
+            continue
+        except Exception as exc:
+            upload_exc = exc
+            continue
+
+    if upload_exc is not None:
+        raise HTTPException(status_code=502, detail="Failed to upload PDF to storage.") from upload_exc
+
+    pdf_doc = {
+        "filename": filename,
+        "storagePath": storage_path,
+        "size": int(size),
+        "contentType": content_type,
+        "pageCount": page_count_value,
+        "fileHash": file_hash,
+        "createdAt": SERVER_TIMESTAMP,
+        "updatedAt": SERVER_TIMESTAMP,
+    }
+    try:
+        pdf_collection.document(doc_id).set(pdf_doc, merge=False)
+    except Exception as exc:
+        try:
+            for bucket_name in _candidate_bucket_names(config.FIREBASE_PROJECT_ID, config.FIREBASE_STORAGE_BUCKET):
+                bucket = storage.bucket(bucket_name)
+                blob = bucket.blob(storage_path)
+                if blob.exists():
+                    blob.delete()
+                    break
+        except Exception:
+            pass
+        raise HTTPException(status_code=502, detail="Failed to save PDF metadata.") from exc
+
+    return {
+        "uploaded": True,
+        "pdf_id": doc_id,
+        "pdf": {
+            "filename": filename,
+            "storage_path": storage_path,
+            "size": int(size),
+            "content_type": content_type,
+            "page_count": page_count_value,
+            "file_hash": file_hash,
+        },
+    }
+
+
+@app.delete("/api/quellen-finder/project-pdf", status_code=status.HTTP_200_OK)
+async def quellen_finder_project_pdf_delete(
+    projekt_id: str,
+    pdf_id: str,
+    user_id: str = Depends(verify_firebase_token),
+):
+    projekt_id = str(projekt_id or "").strip()
+    pdf_id = str(pdf_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not pdf_id:
+        raise HTTPException(status_code=400, detail="pdf_id is required")
+
+    await _require_pdf_scan_enabled(user_id)
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    pdf_ref = (
+        firebase_service.db.collection("users")
+        .document(str(user_id))
+        .collection("projects")
+        .document(str(projekt_id))
+        .collection("pdfs")
+        .document(str(pdf_id))
+    )
+    pdf_snap = pdf_ref.get()
+    if not getattr(pdf_snap, "exists", False):
+        raise HTTPException(status_code=404, detail="PDF not found.")
+    pdf_doc = pdf_snap.to_dict() or {}
+    storage_path = str(pdf_doc.get("storagePath") or "").strip()
+
+    if storage_path:
+        delete_exc: Exception | None = None
+        for bucket_name in _candidate_bucket_names(config.FIREBASE_PROJECT_ID, config.FIREBASE_STORAGE_BUCKET):
+            try:
+                bucket = storage.bucket(bucket_name)
+                blob = bucket.blob(storage_path)
+                if blob.exists():
+                    blob.delete()
+                delete_exc = None
+                break
+            except NotFound as exc:
+                delete_exc = exc
+                continue
+            except Exception as exc:
+                delete_exc = exc
+                continue
+        if delete_exc is not None:
+            raise HTTPException(status_code=502, detail="Failed to delete PDF from storage.") from delete_exc
+
+    pdf_ref.delete()
+    return {"deleted": True, "pdf_id": pdf_id}
+
+
+@app.post("/api/quellen-finder/project-pdf-duplicate-check", status_code=status.HTTP_200_OK)
+async def quellen_finder_project_pdf_duplicate_check(
+    request: QuellenFinderProjectPdfDuplicateCheckRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    projekt_id = str(request.projekt_id or "").strip()
+    filename = str(request.filename or "").strip()
+    size = int(request.size or 0)
+    page_count = int(request.page_count) if request.page_count is not None else None
+    file_hash = str(request.file_hash or "").strip().lower() or None
+
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not filename:
+        raise HTTPException(status_code=400, detail="filename is required")
+
+    await _require_pdf_scan_enabled(user_id)
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    filename_norm = _normalize_project_pdf_filename(filename)
+    pdf_collection = (
+        firebase_service.db.collection("users")
+        .document(str(user_id))
+        .collection("projects")
+        .document(str(projekt_id))
+        .collection("pdfs")
+    )
+    pdf_snaps = list(pdf_collection.stream())
+
+    for snap in pdf_snaps:
+        if not getattr(snap, "exists", False):
+            continue
+        row = snap.to_dict() or {}
+        existing_hash = str(row.get("fileHash") or "").strip().lower() or None
+        if file_hash and existing_hash and existing_hash == file_hash:
+            return {
+                "duplicate": True,
+                "reason": "hash_match",
+                "pdf_id": str(snap.id),
+                "filename": str(row.get("filename") or "").strip() or None,
+            }
+
+    for snap in pdf_snaps:
+        if not getattr(snap, "exists", False):
+            continue
+        row = snap.to_dict() or {}
+        existing_name = _normalize_project_pdf_filename(str(row.get("filename") or ""))
+        existing_size = row.get("size")
+        existing_pages = row.get("pageCount")
+        if existing_name != filename_norm:
+            continue
+        if not isinstance(existing_size, (int, float)) or int(existing_size) != size:
+            continue
+        if page_count is None or not isinstance(existing_pages, (int, float)) or int(existing_pages) != page_count:
+            continue
+        return {
+            "duplicate": True,
+            "reason": "filename_size_page_count_match",
+            "pdf_id": str(snap.id),
+            "filename": str(row.get("filename") or "").strip() or None,
+        }
+
+    return {"duplicate": False}
 
 
 @app.post("/api/process", status_code=status.HTTP_202_ACCEPTED)

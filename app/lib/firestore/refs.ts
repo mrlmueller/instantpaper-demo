@@ -11,7 +11,6 @@ import type {
   KapitelDoc,
   ProjectDoc,
   ProjectPdfDoc,
-  PdfScanDetailsDoc,
   PdfScanDocSummaryDoc,
   PdfScanResultDoc,
   QuellenFinderRunDoc,
@@ -239,18 +238,6 @@ export function quellenFinderPdfScanSectionsCol(
 ): CollectionReference<PdfScanResultDoc> {
   return collection(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'pdfScanSections').withConverter(
     identityConverter<PdfScanResultDoc>()
-  );
-}
-
-export function quellenFinderPdfScanDetailsDoc(
-  db: Firestore,
-  uid: string,
-  projektId: string,
-  runId: string,
-  docId: string
-): DocumentReference<PdfScanDetailsDoc> {
-  return doc(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'pdfScanDetails', docId).withConverter(
-    identityConverter<PdfScanDetailsDoc>()
   );
 }
 
