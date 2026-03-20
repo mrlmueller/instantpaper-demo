@@ -6,11 +6,11 @@ from typing import Any
 import sys
 
 import fitz  # PyMuPDF
-from utils.runtime_paths import resolve_pdf_scan_dir
+from utils.runtime_paths import resolve_pdf_scan_runtime_dir
 
-PDF_SCAN_DIR = resolve_pdf_scan_dir(__file__)
-if str(PDF_SCAN_DIR) not in sys.path:
-    sys.path.insert(0, str(PDF_SCAN_DIR))
+PDF_SCAN_RUNTIME_DIR = resolve_pdf_scan_runtime_dir(__file__)
+if str(PDF_SCAN_RUNTIME_DIR) not in sys.path:
+    sys.path.insert(0, str(PDF_SCAN_RUNTIME_DIR))
 
 from phase_b_lab import extract_fitz_bundle  # noqa: E402
 from phase_c_lab import build_block_index  # noqa: E402

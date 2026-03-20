@@ -15,6 +15,7 @@ fastapi/.prompt_dumps
 fastapi/firebase-debug.log
 pdf-scan/paper-dump
 pdf-scan/runs
+pdf-scan
 .claude
 .playwright-cli
 .vscode

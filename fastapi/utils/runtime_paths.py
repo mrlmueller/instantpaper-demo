@@ -11,15 +11,12 @@ def resolve_fastapi_root(anchor: str | Path) -> Path:
     raise RuntimeError(f"Could not resolve FastAPI root from {current}")
 
 
-def resolve_pdf_scan_dir(anchor: str | Path) -> Path:
-    current = Path(anchor).resolve()
-    for base in [current.parent, *current.parents]:
-        candidate = base / "pdf-scan"
-        if candidate.is_dir() and (candidate / "phase_a_lab.py").is_file():
-            return candidate
-        if base.name == "pdf-scan" and (base / "phase_a_lab.py").is_file():
-            return base
-    raise RuntimeError(f"Could not resolve pdf-scan directory from {current}")
+def resolve_pdf_scan_runtime_dir(anchor: str | Path) -> Path:
+    fastapi_root = resolve_fastapi_root(anchor)
+    runtime_dir = fastapi_root / "pdf_scan_runtime"
+    if runtime_dir.is_dir() and (runtime_dir / "phase_a_lab.py").is_file():
+        return runtime_dir
+    raise RuntimeError(f"Could not resolve vendored pdf_scan_runtime directory from {fastapi_root}")
 
 
 def resolve_pdf_scan_pipeline_script(anchor: str | Path) -> Path:

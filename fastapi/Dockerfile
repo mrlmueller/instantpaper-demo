@@ -11,7 +11,6 @@ COPY fastapi/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY fastapi/ ./
-COPY pdf-scan ./pdf-scan
 
 EXPOSE 8080
 

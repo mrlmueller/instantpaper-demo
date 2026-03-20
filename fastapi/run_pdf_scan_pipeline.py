@@ -7,10 +7,11 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-PDF_SCAN_DIR = REPO_ROOT / "pdf-scan"
-if str(PDF_SCAN_DIR) not in sys.path:
-    sys.path.insert(0, str(PDF_SCAN_DIR))
+from utils.runtime_paths import resolve_pdf_scan_runtime_dir
+
+PDF_SCAN_RUNTIME_DIR = resolve_pdf_scan_runtime_dir(__file__)
+if str(PDF_SCAN_RUNTIME_DIR) not in sys.path:
+    sys.path.insert(0, str(PDF_SCAN_RUNTIME_DIR))
 
 from phase_a_lab import (  # noqa: E402
     load_metrics,
