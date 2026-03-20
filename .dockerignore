@@ -7,6 +7,12 @@ __pycache__
 *.log
 output
 fastapi/.env
+fastapi/venv
+fastapi/__pycache__
+fastapi/.quellen_finder_cache
+fastapi/.two_lane_artifacts
+fastapi/.prompt_dumps
+fastapi/firebase-debug.log
 pdf-scan/paper-dump
 pdf-scan/runs
 .claude
