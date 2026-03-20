@@ -35,6 +35,13 @@ FALLBACK_MODEL_PRICING: dict[str, tuple[Decimal, Decimal, Decimal]] = {
 }
 
 
+def _as_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value if value is not None else default)
+    except Exception:
+        return float(default)
+
+
 def _sanitize_map_key(value: str) -> str:
     """
     Sanitize a string for use as a Firestore map key segment in dot-path updates.
@@ -405,6 +412,211 @@ class CostService:
             operation_type=operation_type,
             cost_usd=cost_usd,
             spend_rate=spend_rate_value,
+        )
+
+        return operation_id
+
+    async def log_billed_operation(
+        self,
+        *,
+        operation_id: str | None = None,
+        operation_type: str,
+        user_id: str,
+        user_action_id: str,
+        cost_usd: float,
+        credits_source: str,
+        operation_details: Optional[dict] = None,
+        model: str | None = None,
+        usage: TokenUsage | None = None,
+        key_source: str = "aggregate",
+        billing_components: Optional[dict] = None,
+        projekt_id: Optional[str] = None,
+        kapitel_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+        quelle_id: Optional[str] = None,
+        projekt_snapshot: Optional[dict] = None,
+        kapitel_snapshot: Optional[dict] = None,
+        run_snapshot: Optional[dict] = None,
+        quelle_snapshot: Optional[dict] = None,
+        status: str = "success",
+        error_message: Optional[str] = None,
+        spend_rate: float | None = None,
+    ) -> str:
+        operation_id_in = (operation_id or "").strip()
+        operation_id = operation_id_in or str(uuid.uuid4())
+        usage_payload = usage or TokenUsage.from_any(0, 0, 0)
+        year_month = datetime.utcnow().strftime("%Y-%m")
+
+        model_name = (str(model or "").strip() or str(operation_type or "").strip() or str(credits_source or "").strip() or "custom_operation")
+        model_key = _sanitize_map_key(model_name)
+        projekt_key = _sanitize_map_key(projekt_id or "unknown")
+
+        op_ref = (
+            self.firebase.db.collection("users")
+            .document(user_id)
+            .collection("costMetrics")
+            .document(_COST_METRICS_ROOT_DOC_ID)
+            .collection("operations")
+            .document(operation_id)
+        )
+
+        if operation_id_in:
+            try:
+                existing = op_ref.get()
+                existing_data = existing.to_dict() if existing.exists else {}
+                existing_costs = existing_data.get("costs") if isinstance(existing_data.get("costs"), dict) else {}
+                if (
+                    str((existing_data or {}).get("status") or "").strip().lower() == "success"
+                    and _as_float(existing_costs.get("totalCostUsd"), 0.0) >= 0.0
+                    and (
+                        _as_float(existing_costs.get("totalCostUsd"), 0.0) > 0.0
+                        or _as_float((existing_data or {}).get("creditsDebited"), 0.0) > 0.0
+                    )
+                ):
+                    return operation_id
+            except Exception:
+                pass
+
+        credits_service = get_credits_service(self.firebase)
+        spend_rate_value: float | None = None
+        try:
+            spend_rate_value = float(spend_rate) if spend_rate is not None else float(await credits_service.get_spend_rate_for_user(user_id))
+            if spend_rate_value <= 0:
+                spend_rate_value = None
+        except Exception:
+            spend_rate_value = None
+
+        total_cost_usd = float(max(cost_usd, 0.0))
+        credits_debited = float(total_cost_usd * spend_rate_value) if spend_rate_value is not None else 0.0
+        costs_payload = {
+            "inputCostUsd": 0.0,
+            "cachedInputCostUsd": 0.0,
+            "outputCostUsd": 0.0,
+            "totalCostUsd": float(total_cost_usd),
+        }
+        if isinstance(billing_components, dict) and billing_components:
+            costs_payload["components"] = billing_components
+
+        operation_data = {
+            "operationId": operation_id,
+            "userId": user_id,
+            "userActionId": user_action_id,
+            "operationType": operation_type,
+            "operationDetails": operation_details,
+            "status": status,
+            "errorMessage": error_message,
+            "timestamp": SERVER_TIMESTAMP,
+            "projektId": projekt_id,
+            "kapitelId": kapitel_id,
+            "runId": run_id,
+            "quelleId": quelle_id,
+            "snapshots": {
+                "projekt": projekt_snapshot,
+                "kapitel": kapitel_snapshot,
+                "run": run_snapshot,
+                "quelle": quelle_snapshot,
+            },
+            "model": model_name,
+            "modelNormalized": model_name,
+            "modelKey": model_key,
+            "keySource": str(key_source or "aggregate"),
+            "tokens": {
+                "inputTokens": int(usage_payload.input_tokens),
+                "cachedInputTokens": int(usage_payload.cached_input_tokens),
+                "outputTokens": int(usage_payload.output_tokens),
+                "totalTokens": int(usage_payload.total_tokens),
+                "uncachedInputTokens": int(usage_payload.uncached_input_tokens),
+            },
+            "costs": costs_payload,
+            "creditsDebited": float(credits_debited),
+            "spendRate": float(spend_rate_value) if spend_rate_value is not None else None,
+            "yearMonth": year_month,
+        }
+
+        op_ref.set(operation_data, merge=bool(operation_id_in))
+
+        try:
+            user_ref = (
+                self.firebase.db.collection("users")
+                .document(user_id)
+                .collection("costMetrics")
+                .document(_COST_METRICS_ROOT_DOC_ID)
+                .collection("aggregatesByUser")
+                .document("lifetime")
+            )
+
+            user_ref.set(
+                {
+                    "userId": user_id,
+                    "totalCostUsd": Increment(total_cost_usd),
+                    "operationCount": Increment(1),
+                    "totalInputTokens": Increment(int(usage_payload.input_tokens)),
+                    "totalCachedInputTokens": Increment(int(usage_payload.cached_input_tokens)),
+                    "totalOutputTokens": Increment(int(usage_payload.output_tokens)),
+                    "totalTokens": Increment(int(usage_payload.total_tokens)),
+                    "lastUpdated": SERVER_TIMESTAMP,
+                    f"byOperationType.{operation_type}.count": Increment(1),
+                    f"byOperationType.{operation_type}.totalCostUsd": Increment(total_cost_usd),
+                    f"byModel.{model_key}.count": Increment(1),
+                    f"byModel.{model_key}.totalCostUsd": Increment(total_cost_usd),
+                    f"byTimePeriod.{year_month}.count": Increment(1),
+                    f"byTimePeriod.{year_month}.totalCostUsd": Increment(total_cost_usd),
+                    f"byProject.{projekt_key}.count": Increment(1),
+                    f"byProject.{projekt_key}.totalCostUsd": Increment(total_cost_usd),
+                },
+                merge=True,
+            )
+        except Exception as exc:
+            logger.error(f"Non-critical: failed to update user billed cost aggregate: {exc}")
+
+        if projekt_id:
+            try:
+                proj_ref = (
+                    self.firebase.db.collection("users")
+                    .document(user_id)
+                    .collection("costMetrics")
+                    .document(_COST_METRICS_ROOT_DOC_ID)
+                    .collection("aggregatesByProject")
+                    .document(projekt_id)
+                )
+
+                proj_ref.set(
+                    {
+                        "userId": user_id,
+                        "projektId": projekt_id,
+                        "projektSnapshot": projekt_snapshot,
+                        "totalCostUsd": Increment(total_cost_usd),
+                        "operationCount": Increment(1),
+                        "totalInputTokens": Increment(int(usage_payload.input_tokens)),
+                        "totalCachedInputTokens": Increment(int(usage_payload.cached_input_tokens)),
+                        "totalOutputTokens": Increment(int(usage_payload.output_tokens)),
+                        "totalTokens": Increment(int(usage_payload.total_tokens)),
+                        "lastUpdated": SERVER_TIMESTAMP,
+                        f"byOperationType.{operation_type}.count": Increment(1),
+                        f"byOperationType.{operation_type}.totalCostUsd": Increment(total_cost_usd),
+                        f"byModel.{model_key}.count": Increment(1),
+                        f"byModel.{model_key}.totalCostUsd": Increment(total_cost_usd),
+                        f"byTimePeriod.{year_month}.count": Increment(1),
+                        f"byTimePeriod.{year_month}.totalCostUsd": Increment(total_cost_usd),
+                    },
+                    merge=True,
+                )
+            except Exception as exc:
+                logger.error(f"Non-critical: failed to update project billed cost aggregate: {exc}")
+
+        await credits_service.debit_tracked_operation(
+            user_id=user_id,
+            operation_id=operation_id,
+            operation_type=operation_type,
+            source=credits_source,
+            cost_usd=total_cost_usd,
+            spend_rate=spend_rate_value,
+            metadata={
+                "runId": run_id,
+                "projektId": projekt_id,
+                "kapitelId": kapitel_id,
+                "billingComponents": dict(billing_components or {}),
+            },
         )
 
         return operation_id

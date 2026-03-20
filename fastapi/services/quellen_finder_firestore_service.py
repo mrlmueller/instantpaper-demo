@@ -80,6 +80,7 @@ class QuellenFinderFirestoreService:
         *,
         user_id: str,
         projekt_id: str,
+        run_id: str | None = None,
         kind: str,
         kapitel_ids: list[str],
         kapitel_snapshots: Optional[list[dict]] = None,
@@ -87,7 +88,8 @@ class QuellenFinderFirestoreService:
         pdf_ids: Optional[list[str]] = None,
         extra: Optional[dict] = None,
     ) -> str:
-        doc_ref = self.runs_col(user_id, projekt_id).document()
+        run_id_norm = _as_str(run_id)
+        doc_ref = self.runs_col(user_id, projekt_id).document(run_id_norm) if run_id_norm else self.runs_col(user_id, projekt_id).document()
 
         payload: dict[str, Any] = {
             "kind": str(kind),

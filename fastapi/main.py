@@ -44,6 +44,7 @@ from services.gliederung_service import gliederung_service
 from services.refinement_service import refinement_service
 from services.firebase_service import firebase_service
 from services.credits_service import get_credits_service
+from services.openai_budget_service import get_openai_budget_service
 from services.prompt_service import prompt_service
 from services.export_service import export_service
 from services.cloud_run_job_launcher import cloud_run_job_launcher
@@ -5418,7 +5419,8 @@ async def quellen_finder_pdf_scan(
     if bool((kapitel or {}).get("archived") is True):
         raise HTTPException(status_code=400, detail="Kapitel is archived.")
 
-    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+    credits_service = get_credits_service(firebase_service)
+    await credits_service.assert_not_negative_balance(user_id)
 
     fs = QuellenFinderFirestoreService()
 
@@ -5476,43 +5478,106 @@ async def quellen_finder_pdf_scan(
     if any(not str((row or {}).get("storagePath") or "").strip() for row in pdf_snapshots):
         raise HTTPException(status_code=400, detail="One or more selected PDFs are missing storagePath.")
 
+    run_id = fs.runs_col(user_id, projekt_id).document().id
+    reservation_operation_id = f"{run_id}_pdf_scan_run"
+    estimate_payload = await credits_service.estimate_pdf_scan_run(
+        user_id=user_id,
+        pdf_count=len(pdf_snapshots),
+    )
+
+    budget_service = get_openai_budget_service(firebase_service)
+    reservation = await budget_service.reserve_operation(
+        user_id=user_id,
+        operation_id=reservation_operation_id,
+        operation_type="pdf_scan_run",
+        user_action_id=run_id,
+        estimate={
+            "operationType": "pdf_scan_run",
+            "pipelineVersion": "pdf_scan_v3_topic_best",
+            "pdfCount": int(len(pdf_snapshots)),
+            "costUsd": float(estimate_payload.get("total_estimate_usd") or 0.0),
+            "openaiEstimateUsd": float(estimate_payload.get("openai_estimate_usd") or 0.0),
+            "computeEstimateUsd": float(estimate_payload.get("compute_estimate_usd") or 0.0),
+            "spendRate": float(estimate_payload.get("spend_rate") or 0.0),
+            "credits": float(estimate_payload.get("credits") or 0.0),
+        },
+        projekt_id=projekt_id,
+        kapitel_id=kapitel_id,
+        run_id=run_id,
+        operation_details={
+            "pdfCount": int(len(pdf_snapshots)),
+            "pipelineVersion": "pdf_scan_v3_topic_best",
+        },
+    )
+    if reservation.result == "blocked":
+        raise HTTPException(
+            status_code=402,
+            detail="Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
+        )
+    if reservation.result in {"already_reserved", "finalized"}:
+        raise HTTPException(status_code=409, detail="PDF scan billing operation already exists. Please retry later.")
+
     execution_backend = str(config.PDF_SCAN_EXECUTION_BACKEND or "").strip().lower()
     if execution_backend not in {"cloud_run_job", "local_background"}:
         execution_backend = "cloud_run_job" if config.IS_CLOUD_RUN else "local_background"
 
-    run_id = fs.create_run(
-        user_id=user_id,
-        projekt_id=projekt_id,
-        kind="pdf_scan",
-        kapitel_ids=[kapitel_id],
-        kapitel_snapshots=[kapitel_snapshot],
-        model="pdf_scan_v3_topic_best",
-        pdf_ids=pdf_ids,
-        extra={
-            "chapterInputSnapshot": {
-                "chapterTitle": str((kapitel or {}).get("title") or "").strip() or None,
-                "chapterSpecText": str((kapitel or {}).get("thema") or "").strip() or None,
+    try:
+        run_id = fs.create_run(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            kind="pdf_scan",
+            kapitel_ids=[kapitel_id],
+            kapitel_snapshots=[kapitel_snapshot],
+            model="pdf_scan_v3_topic_best",
+            pdf_ids=pdf_ids,
+            extra={
+                "chapterInputSnapshot": {
+                    "chapterTitle": str((kapitel or {}).get("title") or "").strip() or None,
+                    "chapterSpecText": str((kapitel or {}).get("thema") or "").strip() or None,
+                },
+                "pdfSnapshots": pdf_snapshots,
+                "billing": {
+                    "status": "reserved",
+                    "reservationOperationId": reservation_operation_id,
+                    "estimateCredits": float(estimate_payload.get("credits") or 0.0),
+                    "estimateTotalUsd": float(estimate_payload.get("total_estimate_usd") or 0.0),
+                    "estimateOpenaiUsd": float(estimate_payload.get("openai_estimate_usd") or 0.0),
+                    "estimateComputeUsd": float(estimate_payload.get("compute_estimate_usd") or 0.0),
+                    "spendRate": float(estimate_payload.get("spend_rate") or 0.0),
+                },
+                "job": {
+                    "provider": "cloud_run_jobs" if execution_backend == "cloud_run_job" else "local_background_task",
+                    "jobName": (
+                        str(config.PDF_SCAN_CLOUD_RUN_JOB_NAME or "").strip() or None
+                        if execution_backend == "cloud_run_job"
+                        else None
+                    ),
+                    "region": (
+                        str(config.PDF_SCAN_CLOUD_RUN_JOB_REGION or "").strip() or None
+                        if execution_backend == "cloud_run_job"
+                        else None
+                    ),
+                    "operationName": None,
+                    "executionName": None,
+                    "launchedAt": None,
+                    "launchError": None,
+                },
             },
-            "pdfSnapshots": pdf_snapshots,
-            "job": {
-                "provider": "cloud_run_jobs" if execution_backend == "cloud_run_job" else "local_background_task",
-                "jobName": (
-                    str(config.PDF_SCAN_CLOUD_RUN_JOB_NAME or "").strip() or None
-                    if execution_backend == "cloud_run_job"
-                    else None
-                ),
-                "region": (
-                    str(config.PDF_SCAN_CLOUD_RUN_JOB_REGION or "").strip() or None
-                    if execution_backend == "cloud_run_job"
-                    else None
-                ),
-                "operationName": None,
-                "executionName": None,
-                "launchedAt": None,
-                "launchError": None,
-            },
-        },
-    )
+        )
+    except Exception:
+        await budget_service.mark_status(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            status="error",
+            error_message="Failed to create pdf scan run.",
+        )
+        await budget_service.release_reservation(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            reason="error",
+        )
+        raise
 
     if execution_backend == "local_background":
         background_tasks.add_task(
@@ -5540,6 +5605,17 @@ async def quellen_finder_pdf_scan(
         )
     except Exception as exc:
         msg = str(exc or "Cloud Run Job launch failed.")[:1000]
+        await budget_service.mark_status(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            status="error",
+            error_message=msg,
+        )
+        await budget_service.release_reservation(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            reason="error",
+        )
         fs.mark_launch_failed(
             user_id=user_id,
             projekt_id=projekt_id,
@@ -5547,6 +5623,10 @@ async def quellen_finder_pdf_scan(
             error_message=msg,
             job_name=str(config.PDF_SCAN_CLOUD_RUN_JOB_NAME or "").strip() or None,
             region=str(config.PDF_SCAN_CLOUD_RUN_JOB_REGION or "").strip() or None,
+        )
+        fs.run_ref(user_id, projekt_id, run_id).set(
+            {"billing": {"status": "error", "reservationOperationId": reservation_operation_id}},
+            merge=True,
         )
         raise HTTPException(status_code=502, detail=msg) from exc
 

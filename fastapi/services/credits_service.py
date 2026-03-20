@@ -32,6 +32,14 @@ class CreditsConfig:
     subscription_credits_per_period: float
     topup_price_id: str
     subscription_price_id: str
+    pdf_scan_openai_estimate_usd_base: float
+    pdf_scan_openai_estimate_usd_per_pdf: float
+    pdf_scan_compute_estimate_usd_base: float
+    pdf_scan_compute_estimate_usd_per_pdf: float
+    pdf_scan_compute_actual_usd_base: float
+    pdf_scan_compute_actual_usd_per_pdf: float
+    pdf_scan_compute_actual_usd_per_second: float
+    pdf_scan_compute_estimated_seconds_per_pdf: float
 
 
 DEFAULT_CREDITS_CONFIG = CreditsConfig(
@@ -41,6 +49,14 @@ DEFAULT_CREDITS_CONFIG = CreditsConfig(
     subscription_credits_per_period=85.0,
     topup_price_id="price_1SpqTADXfswW2xixLU9G63O6",
     subscription_price_id="price_1SpqOYDXfswW2xixZsMQLjUI",
+    pdf_scan_openai_estimate_usd_base=0.01,
+    pdf_scan_openai_estimate_usd_per_pdf=0.005,
+    pdf_scan_compute_estimate_usd_base=0.03,
+    pdf_scan_compute_estimate_usd_per_pdf=0.004,
+    pdf_scan_compute_actual_usd_base=0.03,
+    pdf_scan_compute_actual_usd_per_pdf=0.004,
+    pdf_scan_compute_actual_usd_per_second=0.00003,
+    pdf_scan_compute_estimated_seconds_per_pdf=180.0,
 )
 
 
@@ -228,6 +244,38 @@ class CreditsService:
                 or (data or {}).get("subscriptionPriceID")
             )
             or DEFAULT_CREDITS_CONFIG.subscription_price_id,
+            pdf_scan_openai_estimate_usd_base=_as_float(
+                (data or {}).get("pdfScanOpenaiEstimateUsdBase"),
+                DEFAULT_CREDITS_CONFIG.pdf_scan_openai_estimate_usd_base,
+            ),
+            pdf_scan_openai_estimate_usd_per_pdf=_as_float(
+                (data or {}).get("pdfScanOpenaiEstimateUsdPerPdf"),
+                DEFAULT_CREDITS_CONFIG.pdf_scan_openai_estimate_usd_per_pdf,
+            ),
+            pdf_scan_compute_estimate_usd_base=_as_float(
+                (data or {}).get("pdfScanComputeEstimateUsdBase"),
+                DEFAULT_CREDITS_CONFIG.pdf_scan_compute_estimate_usd_base,
+            ),
+            pdf_scan_compute_estimate_usd_per_pdf=_as_float(
+                (data or {}).get("pdfScanComputeEstimateUsdPerPdf"),
+                DEFAULT_CREDITS_CONFIG.pdf_scan_compute_estimate_usd_per_pdf,
+            ),
+            pdf_scan_compute_actual_usd_base=_as_float(
+                (data or {}).get("pdfScanComputeActualUsdBase"),
+                DEFAULT_CREDITS_CONFIG.pdf_scan_compute_actual_usd_base,
+            ),
+            pdf_scan_compute_actual_usd_per_pdf=_as_float(
+                (data or {}).get("pdfScanComputeActualUsdPerPdf"),
+                DEFAULT_CREDITS_CONFIG.pdf_scan_compute_actual_usd_per_pdf,
+            ),
+            pdf_scan_compute_actual_usd_per_second=_as_float(
+                (data or {}).get("pdfScanComputeActualUsdPerSecond"),
+                DEFAULT_CREDITS_CONFIG.pdf_scan_compute_actual_usd_per_second,
+            ),
+            pdf_scan_compute_estimated_seconds_per_pdf=_as_float(
+                (data or {}).get("pdfScanComputeEstimatedSecondsPerPdf"),
+                DEFAULT_CREDITS_CONFIG.pdf_scan_compute_estimated_seconds_per_pdf,
+            ),
         )
 
         self._config_cache = cfg
@@ -605,6 +653,180 @@ class CreditsService:
                 status_code=402,
                 detail="Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
             )
+
+    async def estimate_pdf_scan_run(self, *, user_id: str, pdf_count: int) -> dict[str, float]:
+        cfg = await self.get_config()
+        spend_rate = float(await self.get_spend_rate_for_user(user_id))
+        pdf_count_value = max(int(pdf_count or 0), 0)
+        openai_estimate_usd = float(
+            max(cfg.pdf_scan_openai_estimate_usd_base, 0.0)
+            + max(cfg.pdf_scan_openai_estimate_usd_per_pdf, 0.0) * float(pdf_count_value)
+        )
+        compute_estimate_usd = float(
+            max(cfg.pdf_scan_compute_estimate_usd_base, 0.0)
+            + max(cfg.pdf_scan_compute_estimate_usd_per_pdf, 0.0) * float(pdf_count_value)
+            + max(cfg.pdf_scan_compute_actual_usd_per_second, 0.0)
+            * max(cfg.pdf_scan_compute_estimated_seconds_per_pdf, 0.0)
+            * float(pdf_count_value)
+        )
+        total_estimate_usd = float(max(openai_estimate_usd + compute_estimate_usd, 0.0))
+        credits = float(total_estimate_usd * max(spend_rate, 0.0))
+        if pdf_count_value > 0 and credits <= 0.0:
+            credits = 0.0001
+        return {
+            "pdf_count": float(pdf_count_value),
+            "spend_rate": float(spend_rate),
+            "openai_estimate_usd": float(round(openai_estimate_usd, 8)),
+            "compute_estimate_usd": float(round(compute_estimate_usd, 8)),
+            "total_estimate_usd": float(round(total_estimate_usd, 8)),
+            "credits": float(round(credits, 8)),
+        }
+
+    async def calculate_pdf_scan_compute_cost(
+        self,
+        *,
+        user_id: str,
+        pdf_count: int,
+        seconds_total: float,
+    ) -> dict[str, float]:
+        cfg = await self.get_config()
+        spend_rate = float(await self.get_spend_rate_for_user(user_id))
+        pdf_count_value = max(int(pdf_count or 0), 0)
+        seconds_total_value = max(float(seconds_total or 0.0), 0.0)
+        cost_usd = float(
+            max(cfg.pdf_scan_compute_actual_usd_base, 0.0)
+            + max(cfg.pdf_scan_compute_actual_usd_per_pdf, 0.0) * float(pdf_count_value)
+            + max(cfg.pdf_scan_compute_actual_usd_per_second, 0.0) * float(seconds_total_value)
+        )
+        credits = float(cost_usd * max(spend_rate, 0.0))
+        return {
+            "pdf_count": float(pdf_count_value),
+            "seconds_total": float(round(seconds_total_value, 3)),
+            "spend_rate": float(spend_rate),
+            "cost_usd": float(round(cost_usd, 8)),
+            "credits": float(round(credits, 8)),
+        }
+
+    async def debit_tracked_operation(
+        self,
+        *,
+        user_id: str,
+        operation_id: str,
+        operation_type: str,
+        source: str,
+        cost_usd: float,
+        spend_rate: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        op_id = (operation_id or "").strip()
+        source_key = _as_str(source) or "tracked"
+        if not op_id:
+            return
+
+        cost = float(cost_usd or 0.0)
+        if cost <= 0:
+            return
+
+        spend_rate_value = float(spend_rate) if spend_rate is not None else await self.get_spend_rate_for_user(user_id)
+        if spend_rate_value <= 0:
+            return
+
+        debit_credits = float(cost * spend_rate_value)
+        if not debit_credits:
+            return
+
+        ledger_id = f"{source_key}_{op_id}"
+        ledger_ref = (
+            self.firebase.db.collection("users")
+            .document(user_id)
+            .collection("creditLedger")
+            .document(ledger_id)
+        )
+        balance_ref = (
+            self.firebase.db.collection("users")
+            .document(user_id)
+            .collection("billing")
+            .document("balance")
+        )
+
+        now = datetime.now(timezone.utc)
+        transaction = self.firebase.db.transaction()
+
+        @firestore.transactional
+        def txn(transaction):
+            existing = ledger_ref.get(transaction=transaction)
+            if existing.exists:
+                return False
+
+            bal_snap = balance_ref.get(transaction=transaction)
+            bal = bal_snap.to_dict() if bal_snap.exists else {}
+
+            sub_raw = _as_float(bal.get("subscriptionCredits"), 0.0)
+            topup_raw = _as_float(bal.get("topupCredits"), 0.0)
+            expires_at = bal.get("subscriptionExpiresAt")
+
+            sub_active = sub_raw
+            if expires_at:
+                try:
+                    dt = expires_at.to_datetime() if hasattr(expires_at, "to_datetime") else expires_at
+                    if isinstance(dt, datetime):
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        if dt <= now:
+                            sub_active = 0.0
+                except Exception:
+                    pass
+
+            from_sub = min(float(sub_active), float(debit_credits))
+            remaining = float(debit_credits) - float(from_sub)
+            new_sub = float(sub_active) - float(from_sub)
+            new_topup = float(topup_raw) - float(remaining)
+
+            transaction.set(
+                balance_ref,
+                {
+                    "subscriptionCredits": float(new_sub),
+                    "topupCredits": float(new_topup),
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+
+            transaction.set(
+                ledger_ref,
+                {
+                    "type": "debit",
+                    "source": source_key,
+                    "credits": float(-debit_credits),
+                    "createdAt": SERVER_TIMESTAMP,
+                    "expiresAt": None,
+                    "trackedOperation": {
+                        "operationId": op_id,
+                        "operationType": str(operation_type or ""),
+                        "costUsd": float(cost),
+                        "spendRate": float(spend_rate_value),
+                        "deducted": {
+                            "subscription": float(from_sub),
+                            "topup": float(remaining),
+                        },
+                        "metadata": dict(metadata or {}),
+                    },
+                },
+            )
+
+            return True
+
+        try:
+            txn(transaction)
+        except Exception as exc:
+            logger.error(
+                "Failed to debit tracked credits for operation %s user %s: %s",
+                op_id,
+                user_id,
+                exc,
+                exc_info=True,
+            )
+            raise
 
     async def debit_openai_operation(
         self,

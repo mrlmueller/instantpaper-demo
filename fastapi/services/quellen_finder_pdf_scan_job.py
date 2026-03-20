@@ -22,6 +22,10 @@ from firebase_admin import storage
 from google.api_core.exceptions import NotFound
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
+from services.cost_service import TokenUsage, get_cost_service
+from services.credits_service import get_credits_service
+from services.firebase_service import firebase_service
+from services.openai_budget_service import get_openai_budget_service
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
 from utils.config import config
 
@@ -148,6 +152,77 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
             if isinstance(payload, dict):
                 rows.append(payload)
     return rows
+
+
+def _read_pdf_scan_api_usage(run_dir: Path) -> dict[str, Any]:
+    metrics_path = run_dir / "metrics.json"
+    api_calls_path = run_dir / "api_calls.jsonl"
+
+    totals = {
+        "call_count": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "cost_usd": 0.0,
+    }
+    by_stage: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "call_count": 0,
+            "input_tokens": 0,
+            "cached_input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cost_usd": 0.0,
+        }
+    )
+
+    try:
+        for row in _read_jsonl(api_calls_path):
+            stage = _as_str_or_none(row.get("stage")) or "unknown"
+            input_tokens = max(int(row.get("input_tokens") or 0), 0)
+            cached_input_tokens = max(int(row.get("cached_input_tokens") or 0), 0)
+            output_tokens = max(int(row.get("output_tokens") or 0), 0)
+            total_tokens = max(int(row.get("total_tokens") or (input_tokens + output_tokens)), 0)
+            cost_usd = max(_as_float(row.get("cost_usd"), 0.0), 0.0)
+
+            totals["call_count"] += 1
+            totals["input_tokens"] += input_tokens
+            totals["cached_input_tokens"] += cached_input_tokens
+            totals["output_tokens"] += output_tokens
+            totals["total_tokens"] += total_tokens
+            totals["cost_usd"] = round(float(totals["cost_usd"]) + float(cost_usd), 10)
+
+            stage_totals = by_stage[stage]
+            stage_totals["call_count"] += 1
+            stage_totals["input_tokens"] += input_tokens
+            stage_totals["cached_input_tokens"] += cached_input_tokens
+            stage_totals["output_tokens"] += output_tokens
+            stage_totals["total_tokens"] += total_tokens
+            stage_totals["cost_usd"] = round(float(stage_totals["cost_usd"]) + float(cost_usd), 10)
+    except Exception:
+        pass
+
+    if totals["call_count"] <= 0 and metrics_path.exists():
+        try:
+            metrics = _read_json(metrics_path)
+            summary = metrics.get("api_usage_summary") if isinstance(metrics, dict) else {}
+            if isinstance(summary, dict):
+                totals = {
+                    "call_count": max(int(summary.get("call_count") or 0), 0),
+                    "input_tokens": max(int(summary.get("input_tokens") or 0), 0),
+                    "cached_input_tokens": max(int(summary.get("cached_input_tokens") or 0), 0),
+                    "output_tokens": max(int(summary.get("output_tokens") or 0), 0),
+                    "total_tokens": max(int(summary.get("total_tokens") or 0), 0),
+                    "cost_usd": round(max(_as_float(summary.get("cost_usd"), 0.0), 0.0), 10),
+                }
+        except Exception:
+            pass
+
+    return {
+        **totals,
+        "by_stage": {str(stage): dict(values) for stage, values in by_stage.items()},
+    }
 
 
 def _candidate_bucket_names(project_id: str, configured: str) -> list[str]:
@@ -844,6 +919,23 @@ async def run_quellen_finder_pdf_scan_job(
     settings: dict[str, Any],
 ) -> None:
     fs = QuellenFinderFirestoreService()
+    budget_service = get_openai_budget_service(firebase_service)
+    credits_service = get_credits_service(firebase_service)
+    cost_service = get_cost_service(firebase_service)
+    try:
+        run_doc = await asyncio.to_thread(
+            fs.get_run,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+        )
+    except Exception:
+        run_doc = {}
+    billing_state = run_doc.get("billing") if isinstance(run_doc.get("billing"), dict) else {}
+    reservation_operation_id = _as_str_or_none((billing_state or {}).get("reservationOperationId")) or f"{run_id}_pdf_scan_run"
+    kapitel_snapshots = run_doc.get("kapitelSnapshots") if isinstance(run_doc.get("kapitelSnapshots"), list) else []
+    kapitel_snapshot = kapitel_snapshots[0] if kapitel_snapshots and isinstance(kapitel_snapshots[0], dict) else None
+    model_name = _as_str_or_none(run_doc.get("model")) or "pdf_scan_v3_topic_best"
     t0 = time.perf_counter()
     heartbeat_stop = asyncio.Event()
 
@@ -942,7 +1034,18 @@ async def run_quellen_finder_pdf_scan_job(
 
     try:
         await check_cancel()
+        await budget_service.mark_running(user_id=user_id, operation_id=reservation_operation_id)
         fs.mark_running(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+        fs.run_ref(user_id, projekt_id, run_id).set(
+            {
+                "billing": {
+                    "status": "running",
+                    "reservationOperationId": reservation_operation_id,
+                    "startedAt": SERVER_TIMESTAMP,
+                }
+            },
+            merge=True,
+        )
         await on_progress("prepare_inputs", "Preparing PDF scan inputs")
         await asyncio.to_thread(fs.clear_subcollection, user_id=user_id, projekt_id=projekt_id, run_id=run_id, name="pdfScanDocs")
         await asyncio.to_thread(fs.clear_subcollection, user_id=user_id, projekt_id=projekt_id, run_id=run_id, name="pdfScanSections")
@@ -1007,6 +1110,59 @@ async def run_quellen_finder_pdf_scan_job(
                 docs=list(persisted.get("section_docs") or []),
             )
             dt = float(time.perf_counter() - t0)
+            api_usage = _read_pdf_scan_api_usage(pipeline_run_dir)
+            compute_billing = await credits_service.calculate_pdf_scan_compute_cost(
+                user_id=user_id,
+                pdf_count=len(pdf_snapshot_rows),
+                seconds_total=dt,
+            )
+            openai_cost_usd = float(max(_as_float(api_usage.get("cost_usd"), 0.0), 0.0))
+            compute_cost_usd = float(max(_as_float(compute_billing.get("cost_usd"), 0.0), 0.0))
+            total_cost_usd = float(round(openai_cost_usd + compute_cost_usd, 10))
+            spend_rate_value = float(max(_as_float(compute_billing.get("spend_rate"), 0.0), 0.0))
+            usage_payload = TokenUsage.from_any(
+                api_usage.get("input_tokens"),
+                api_usage.get("cached_input_tokens"),
+                api_usage.get("output_tokens"),
+            )
+            await cost_service.log_billed_operation(
+                operation_id=reservation_operation_id,
+                operation_type="pdf_scan_run",
+                user_id=user_id,
+                user_action_id=run_id,
+                cost_usd=total_cost_usd,
+                credits_source="pdf_scan",
+                operation_details={
+                    "pdfCount": int(len(pdf_snapshot_rows)),
+                    "pipelineVersion": model_name,
+                    "visibleDocCount": int(persisted.get("visible_doc_count") or 0),
+                    "visibleSectionCount": int(persisted.get("visible_section_count") or 0),
+                    "hadPartialFailures": bool(persisted.get("had_partial_failures")),
+                },
+                model=model_name,
+                usage=usage_payload,
+                key_source="pdf_scan_pipeline",
+                billing_components={
+                    "openaiCostUsd": float(round(openai_cost_usd, 10)),
+                    "computeCostUsd": float(round(compute_cost_usd, 10)),
+                    "openaiCallCount": int(api_usage.get("call_count") or 0),
+                    "secondsTotal": float(round(dt, 3)),
+                    "openaiByStage": dict(api_usage.get("by_stage") or {}),
+                    "computeBilling": dict(compute_billing or {}),
+                },
+                projekt_id=projekt_id,
+                kapitel_id=kapitel_id,
+                run_id=run_id,
+                kapitel_snapshot=kapitel_snapshot,
+                run_snapshot={"id": run_id, "kind": "pdf_scan"},
+                status="success",
+                spend_rate=spend_rate_value if spend_rate_value > 0 else None,
+            )
+            await budget_service.release_reservation(
+                user_id=user_id,
+                operation_id=reservation_operation_id,
+                reason="success",
+            )
             fs.mark_success(
                 user_id=user_id,
                 projekt_id=projekt_id,
@@ -1023,21 +1179,57 @@ async def run_quellen_finder_pdf_scan_job(
                         "visible_doc_count": int(persisted.get("visible_doc_count") or 0),
                         "visible_section_count": int(persisted.get("visible_section_count") or 0),
                         "useful_pdf_count": int(persisted.get("useful_pdf_count") or 0),
+                        "openai_call_count": int(api_usage.get("call_count") or 0),
+                        "openai_input_tokens": int(api_usage.get("input_tokens") or 0),
+                        "openai_cached_input_tokens": int(api_usage.get("cached_input_tokens") or 0),
+                        "openai_output_tokens": int(api_usage.get("output_tokens") or 0),
+                        "openai_total_tokens": int(api_usage.get("total_tokens") or 0),
+                        "openai_cost_usd": float(round(openai_cost_usd, 10)),
+                        "compute_cost_usd": float(round(compute_cost_usd, 10)),
+                        "total_cost_usd": float(round(total_cost_usd, 10)),
+                    },
+                    "billing": {
+                        "status": "charged",
+                        "reservationOperationId": reservation_operation_id,
+                        "chargedOperationId": reservation_operation_id,
+                        "spendRate": float(spend_rate_value),
+                        "openaiCostUsd": float(round(openai_cost_usd, 10)),
+                        "computeCostUsd": float(round(compute_cost_usd, 10)),
+                        "totalCostUsd": float(round(total_cost_usd, 10)),
+                        "creditsDebited": float(round(total_cost_usd * spend_rate_value, 8)),
+                        "openaiCallCount": int(api_usage.get("call_count") or 0),
+                        "chargedAt": SERVER_TIMESTAMP,
                     },
                 },
             )
             logger.info(
-                "QF pdf scan success | run_id=%s seconds=%.2f docs=%s sections=%s useful=%s partial=%s",
+                "QF pdf scan success | run_id=%s seconds=%.2f docs=%s sections=%s useful=%s partial=%s total_cost_usd=%.5f",
                 run_id,
                 dt,
                 int(persisted.get("visible_doc_count") or 0),
                 int(persisted.get("visible_section_count") or 0),
                 int(persisted.get("useful_pdf_count") or 0),
                 bool(persisted.get("had_partial_failures")),
+                total_cost_usd,
             )
     except PdfScanRunCancelled:
         logger.info("QF pdf scan cancelled | run_id=%s kapitel_id=%s", run_id, kapitel_id)
+        await budget_service.mark_status(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            status="cancelled",
+            error_message="Cancellation requested.",
+        )
+        await budget_service.release_reservation(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            reason="cancelled",
+        )
         fs.mark_cancelled(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+        fs.run_ref(user_id, projekt_id, run_id).set(
+            {"billing": {"status": "cancelled", "reservationOperationId": reservation_operation_id}},
+            merge=True,
+        )
     except HTTPException as exc:
         logger.error(
             "QF pdf scan HTTPException | run_id=%s status=%s detail=%s",
@@ -1048,12 +1240,42 @@ async def run_quellen_finder_pdf_scan_job(
         )
         detail = getattr(exc, "detail", None)
         msg = _exception_message(exc if detail is None else Exception(str(detail)))[:1000]
+        await budget_service.mark_status(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            status="error",
+            error_message=msg,
+        )
+        await budget_service.release_reservation(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            reason="error",
+        )
         fs.mark_error(user_id=user_id, projekt_id=projekt_id, run_id=run_id, error_message=msg, had_partial_failures=False)
+        fs.run_ref(user_id, projekt_id, run_id).set(
+            {"billing": {"status": "error", "reservationOperationId": reservation_operation_id}},
+            merge=True,
+        )
     except Exception as exc:
         logger.error("QF pdf scan failed | run_id=%s error=%s", run_id, exc, exc_info=True)
         logger.debug("Traceback:\n%s", traceback.format_exc())
         msg = _exception_message(exc)[:1000]
+        await budget_service.mark_status(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            status="error",
+            error_message=msg,
+        )
+        await budget_service.release_reservation(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            reason="error",
+        )
         fs.mark_error(user_id=user_id, projekt_id=projekt_id, run_id=run_id, error_message=msg, had_partial_failures=False)
+        fs.run_ref(user_id, projekt_id, run_id).set(
+            {"billing": {"status": "error", "reservationOperationId": reservation_operation_id}},
+            merge=True,
+        )
     finally:
         heartbeat_stop.set()
         with contextlib.suppress(Exception):
