@@ -58,16 +58,37 @@ except Exception as e:
     PdfReader = None
     OPTIONAL_IMPORT_ERRORS["pypdf"] = f"{type(e).__name__}: {e}"
 
-try:
-    from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions
-    from docling.document_converter import DocumentConverter, PdfFormatOption
-except Exception as e:
-    InputFormat = None
-    PdfPipelineOptions = None
-    PdfFormatOption = None
-    DocumentConverter = None
-    OPTIONAL_IMPORT_ERRORS["docling"] = f"{type(e).__name__}: {e}"
+InputFormat = None
+PdfPipelineOptions = None
+PdfFormatOption = None
+DocumentConverter = None
+_DOCLING_IMPORT_ATTEMPTED = False
+
+
+def _ensure_docling_imported() -> bool:
+    global InputFormat, PdfPipelineOptions, PdfFormatOption, DocumentConverter, _DOCLING_IMPORT_ATTEMPTED
+    if DocumentConverter is not None:
+        return True
+    if _DOCLING_IMPORT_ATTEMPTED:
+        return False
+    _DOCLING_IMPORT_ATTEMPTED = True
+    try:
+        from docling.datamodel.base_models import InputFormat as _InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions as _PdfPipelineOptions
+        from docling.document_converter import DocumentConverter as _DocumentConverter, PdfFormatOption as _PdfFormatOption
+    except Exception as e:
+        OPTIONAL_IMPORT_ERRORS["docling"] = f"{type(e).__name__}: {e}"
+        InputFormat = None
+        PdfPipelineOptions = None
+        PdfFormatOption = None
+        DocumentConverter = None
+        return False
+    OPTIONAL_IMPORT_ERRORS.pop("docling", None)
+    InputFormat = _InputFormat
+    PdfPipelineOptions = _PdfPipelineOptions
+    PdfFormatOption = _PdfFormatOption
+    DocumentConverter = _DocumentConverter
+    return True
 
 try:
     import requests
@@ -401,6 +422,7 @@ def ping_grobid(base_url: str) -> Dict[str, Any]:
 
 
 def detect_capabilities(grobid_base_url: str) -> Dict[str, Any]:
+    docling_available = _ensure_docling_imported()
     return {
         "generated_at_utc": utc_now_iso(),
         "runtime": runtime_env_snapshot(),
@@ -408,7 +430,7 @@ def detect_capabilities(grobid_base_url: str) -> Dict[str, Any]:
         "fitz_version": pkg_version("PyMuPDF"),
         "pypdf_available": bool(PdfReader is not None),
         "pypdf_version": pkg_version("pypdf"),
-        "docling_available": bool(DocumentConverter is not None),
+        "docling_available": bool(docling_available),
         "docling_version": pkg_version("docling"),
         "requests_available": bool(requests is not None),
         "requests_version": pkg_version("requests"),
@@ -609,6 +631,8 @@ def _docling_converter_cache_key(options: PhaseBOptions, *, num_threads: Optiona
 
 
 def get_docling_converter(options: PhaseBOptions, *, num_threads: Optional[int] = None) -> Any:
+    if not _ensure_docling_imported():
+        return None
     if DocumentConverter is None or PdfPipelineOptions is None or PdfFormatOption is None or InputFormat is None:
         return None
     key = _docling_converter_cache_key(options, num_threads=num_threads)
@@ -779,8 +803,9 @@ def run_docling_single_attempt(
     page_range: Optional[tuple[int, int]] = None,
     num_threads: Optional[int] = None,
 ) -> Dict[str, Any]:
+    docling_available = _ensure_docling_imported()
     out: Dict[str, Any] = {
-        "available": bool(DocumentConverter is not None),
+        "available": bool(docling_available),
         "enabled": bool(options.try_docling),
         "status": "unavailable",
         "error": None,
@@ -794,7 +819,7 @@ def run_docling_single_attempt(
         "section_headers": [],
         "document_summary": {},
     }
-    if DocumentConverter is None:
+    if not docling_available or DocumentConverter is None:
         return out
     if not bool(options.try_docling):
         out["status"] = "disabled"
@@ -984,8 +1009,9 @@ def run_docling_chunked_attempt(path: Path, page_count: int, options: PhaseBOpti
 
 
 def extract_docling_bundle(path: Path, page_count: Optional[int], options: PhaseBOptions) -> Dict[str, Any]:
+    docling_available = _ensure_docling_imported()
     out: Dict[str, Any] = {
-        "available": bool(DocumentConverter is not None),
+        "available": bool(docling_available),
         "enabled": False,
         "status": "unavailable",
         "error": None,
@@ -1002,7 +1028,7 @@ def extract_docling_bundle(path: Path, page_count: Optional[int], options: Phase
         "attempts": [],
         "chunking": None,
     }
-    if DocumentConverter is None:
+    if not docling_available or DocumentConverter is None:
         return out
     if not bool(options.try_docling):
         out["status"] = "disabled"

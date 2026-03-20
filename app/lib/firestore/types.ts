@@ -224,6 +224,15 @@ export type QuellenFinderProgress = {
   stageStartedAt?: Timestamp | null;
 };
 
+export type QuellenFinderPipelineStage = {
+  status?: 'pending' | 'running' | 'completed' | 'error' | 'cancelled' | null;
+  current?: number | null;
+  total?: number | null;
+  startedAtMs?: number | null;
+  completedAtMs?: number | null;
+  elapsedMs?: number | null;
+};
+
 export type KapitelSnapshot = {
   id: string;
   nummer?: string;
@@ -250,6 +259,7 @@ export type QuellenFinderRunDoc = ArchiveFields & {
   hadPartialFailures?: boolean;
   errorMessage?: string | null;
   progress?: QuellenFinderProgress;
+  pipelineStages?: Record<string, QuellenFinderPipelineStage> | null;
   cancelRequestedAt?: Timestamp | null;
   cancelledAt?: Timestamp | null;
   twoLaneSettings?: Record<string, unknown>;

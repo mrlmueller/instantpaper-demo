@@ -7,6 +7,7 @@ import re
 import time
 from argparse import Namespace
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import combinations
 
 from phase_d_lab import *  # noqa: F401,F403
@@ -190,6 +191,19 @@ def embed_texts(texts: List[str], model: str, batch_size: int, timeout_sec: int,
         mat = mat / norms
     usage = {"input_tokens": prompt_tokens or None, "total_tokens": total_tokens or prompt_tokens or None, "output_tokens": 0}
     return mat, usage, {**embed_price(used_model, usage.get("input_tokens")), "usage": usage}
+
+
+def resolve_phase_e_dense_task_concurrency(*, task_count: int) -> int:
+    if int(task_count) <= 1:
+        return 1
+    cpu_count = available_cpu_count()
+    if cpu_count <= 2:
+        auto = 1
+    elif cpu_count <= 4:
+        auto = 2
+    else:
+        auto = 3
+    return max(1, min(int(task_count), auto))
 
 def build_inputs(sections: List[Dict[str, Any]], passages: List[Dict[str, Any]], opt: PhaseEOptions):
     sec_lookup = {str(r.get("section_id")): r for r in sections if str(r.get("section_id") or "")}
@@ -993,14 +1007,40 @@ def run_phase_e(run_ctx: Any, *, options: PhaseEOptions, stable_hash_fn=None, lo
 
     if bool(opt.use_openai_dense) and PhaseEOpenAI is not None and PHASE_E_API_KEY and np is not None:
         q_texts = [trunc(v.get("query_text"), opt.dense_query_max_chars) for v in views]
-        qmat, qusage, qcost = embed_texts(q_texts, opt.openai_embedding_model, opt.dense_batch_size, opt.openai_timeout_sec, opt.dense_dimensions)
-        query_mats = {str(v.get("view_id")): qmat[i : i + 1] for i, v in enumerate(views)}
+        dense_jobs = [("queries", q_texts)]
         if lane_inputs["section_dense"]["texts"]:
-            smat, susage, _ = embed_texts(list(lane_inputs["section_dense"]["texts"]), opt.openai_embedding_model, opt.dense_batch_size, opt.openai_timeout_sec, opt.dense_dimensions)
+            dense_jobs.append(("sections", list(lane_inputs["section_dense"]["texts"])))
+        if lane_inputs["passage_dense"]["texts"]:
+            dense_jobs.append(("passages", list(lane_inputs["passage_dense"]["texts"])))
+        resolved_dense_task_concurrency = resolve_phase_e_dense_task_concurrency(task_count=len(dense_jobs))
+        dense_results: Dict[str, Any] = {}
+
+        def run_dense_job(job_name: str, texts: List[str]):
+            mat, usage, cost = embed_texts(texts, opt.openai_embedding_model, opt.dense_batch_size, opt.openai_timeout_sec, opt.dense_dimensions)
+            return job_name, mat, usage, cost
+
+        if resolved_dense_task_concurrency <= 1:
+            for job_name, texts in dense_jobs:
+                _, mat, usage, cost = run_dense_job(job_name, texts)
+                dense_results[job_name] = (mat, usage, cost)
+        else:
+            with ThreadPoolExecutor(max_workers=resolved_dense_task_concurrency) as executor:
+                future_map = {
+                    executor.submit(run_dense_job, job_name, texts): job_name
+                    for job_name, texts in dense_jobs
+                }
+                for future in as_completed(future_map):
+                    job_name, mat, usage, cost = future.result()
+                    dense_results[job_name] = (mat, usage, cost)
+
+        qmat, qusage, qcost = dense_results["queries"]
+        query_mats = {str(v.get("view_id")): qmat[i : i + 1] for i, v in enumerate(views)}
+        if "sections" in dense_results:
+            smat, susage, _ = dense_results["sections"]
         else:
             smat, susage = np.zeros((0, 0), dtype=np.float32), {"input_tokens": None, "total_tokens": None, "output_tokens": 0}
-        if lane_inputs["passage_dense"]["texts"]:
-            pmat, pusage, _ = embed_texts(list(lane_inputs["passage_dense"]["texts"]), opt.openai_embedding_model, opt.dense_batch_size, opt.openai_timeout_sec, opt.dense_dimensions)
+        if "passages" in dense_results:
+            pmat, pusage, _ = dense_results["passages"]
         else:
             pmat, pusage = np.zeros((0, 0), dtype=np.float32), {"input_tokens": None, "total_tokens": None, "output_tokens": 0}
         input_tokens = sum(v for v in [qusage.get("input_tokens"), susage.get("input_tokens"), pusage.get("input_tokens")] if isinstance(v, int)) or None
@@ -1013,6 +1053,8 @@ def run_phase_e(run_ctx: Any, *, options: PhaseEOptions, stable_hash_fn=None, lo
             "query_count": len(views),
             "section_count": len(lane_inputs["section_dense"]["items"]),
             "passage_count": len(lane_inputs["passage_dense"]["items"]),
+            "resolved_task_concurrency": resolved_dense_task_concurrency,
+            "cpu_count": available_cpu_count(),
         }
         lane_rows["section_dense"] = score_dense_lane("section_dense", lane_inputs["section_dense"]["items"], smat, query_mats, views, query_plan, opt)
         lane_rows["passage_dense"] = score_dense_lane("passage_dense", lane_inputs["passage_dense"]["items"], pmat, query_mats, views, query_plan, opt)

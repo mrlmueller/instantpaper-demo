@@ -222,6 +222,7 @@ class QuellenFinderFirestoreService:
         current: int | None = None,
         total: int | None = None,
         stage_started_at: bool = False,
+        pipeline_stages: dict[str, Any] | None = None,
     ) -> None:
         progress: dict[str, Any] = {
             "stage": str(stage),
@@ -236,6 +237,8 @@ class QuellenFinderFirestoreService:
             "updatedAt": SERVER_TIMESTAMP,
             "progress": progress,
         }
+        if isinstance(pipeline_stages, dict):
+            payload["pipelineStages"] = dict(pipeline_stages)
         self.run_ref(user_id, projekt_id, run_id).set(payload, merge=True)
 
     def mark_running(self, *, user_id: str, projekt_id: str, run_id: str) -> None:

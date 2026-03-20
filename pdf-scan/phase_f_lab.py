@@ -7,6 +7,7 @@ import statistics
 import time
 from argparse import Namespace
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 
 from phase_e_lab import *  # noqa: F401,F403
@@ -536,6 +537,7 @@ def call_openai_llm_judge(
     active_subpoints: List[Dict[str, Any]],
     options: PhaseFOptions,
     stable_hash_fn: Any,
+    record_usage: bool = True,
 ) -> Dict[str, Any]:
     if PhaseFOpenAI is None or LLMJudgeVerdictModel is None:
         raise RuntimeError("OpenAI or pydantic is unavailable for the Phase F LLM judge.")
@@ -618,23 +620,24 @@ def call_openai_llm_judge(
                 for passage_id in list(payload.get("top_evidence_passage_ids") or [])
                 if str(passage_id or "") in allowed_passage_ids
             ][:3]
-            record_api_call(
-                run_ctx,
-                stage="phase_f",
-                provider="openai",
-                model=str(getattr(response, "model", None) or attempt["model"]),
-                input_tokens=int(usage.get("input_tokens") or 0),
-                cached_input_tokens=int(usage.get("cached_input_tokens") or 0),
-                output_tokens=int(usage.get("output_tokens") or 0),
-                cost_usd=float(cost.get("estimated_cost_usd") or 0.0),
-                meta={
+            api_call_entry = {
+                "stage": "phase_f",
+                "provider": "openai",
+                "model": str(getattr(response, "model", None) or attempt["model"]),
+                "input_tokens": int(usage.get("input_tokens") or 0),
+                "cached_input_tokens": int(usage.get("cached_input_tokens") or 0),
+                "output_tokens": int(usage.get("output_tokens") or 0),
+                "cost_usd": float(cost.get("estimated_cost_usd") or 0.0),
+                "meta": {
                     "api_mode": attempt["api_mode"],
                     "candidate_id": candidate_pack.get("candidate_id"),
                     "pricing_model": cost.get("pricing_model"),
                     "pricing_source_url": cost.get("pricing_source_url"),
                     "pricing_verified_date": cost.get("pricing_verified_date"),
                 },
-            )
+            }
+            if record_usage:
+                record_api_call(run_ctx, **api_call_entry)
             return {
                 "payload": payload,
                 "usage": usage,
@@ -642,6 +645,7 @@ def call_openai_llm_judge(
                 "model_used": str(getattr(response, "model", None) or attempt["model"]),
                 "api_mode": attempt["api_mode"],
                 "attempts": attempt_traces + [attempt],
+                "api_call_entry": api_call_entry,
             }
         except Exception as e:
             last_error = e
@@ -680,6 +684,21 @@ def build_phase_f_preview(rows: List[Dict[str, Any]], limit: int) -> List[Dict[s
 
 def maybe_existing(path: Path) -> bool:
     return path.exists() and path.stat().st_size > 0
+
+
+def resolve_phase_f_judge_concurrency(*, candidate_count: int) -> int:
+    if int(candidate_count) <= 1:
+        return 1
+    cpu_count = available_cpu_count()
+    if cpu_count <= 2:
+        auto = 1
+    elif cpu_count <= 4:
+        auto = 2
+    elif cpu_count <= 8:
+        auto = 3
+    else:
+        auto = 4
+    return max(1, min(int(candidate_count), auto))
 
 
 def judge_payload_is_inconsistent(payload: Dict[str, Any]) -> bool:
@@ -990,9 +1009,19 @@ def run_phase_f(run_ctx: Any, *, options: PhaseFOptions, stable_hash_fn=None, lo
                     break
             if len(judge_candidates) >= effective_candidate_limit:
                 break
-        judge_runtime.update({"candidate_limit": len(judge_candidates), "model": opt.judge_model})
+        resolved_judge_concurrency = resolve_phase_f_judge_concurrency(candidate_count=len(judge_candidates))
+        judge_runtime.update(
+            {
+                "candidate_limit": len(judge_candidates),
+                "model": opt.judge_model,
+                "resolved_concurrency": resolved_judge_concurrency,
+                "cpu_count": available_cpu_count(),
+            }
+        )
         judge_started = time.perf_counter()
-        for row in judge_candidates:
+        judge_results = []
+
+        def run_judge_candidate(index: int, row: Dict[str, Any]):
             try:
                 judge_payload = call_openai_llm_judge(
                     run_ctx=run_ctx,
@@ -1003,7 +1032,29 @@ def run_phase_f(run_ctx: Any, *, options: PhaseFOptions, stable_hash_fn=None, lo
                     active_subpoints=active_subpoints,
                     options=opt,
                     stable_hash_fn=stable_hash_fn or stable_hash,
+                    record_usage=False,
                 )
+                return index, row, judge_payload, None
+            except Exception as e:
+                return index, row, None, e
+
+        if resolved_judge_concurrency <= 1:
+            for index, row in enumerate(judge_candidates):
+                judge_results.append(run_judge_candidate(index, row))
+        else:
+            with ThreadPoolExecutor(max_workers=resolved_judge_concurrency) as executor:
+                futures = [
+                    executor.submit(run_judge_candidate, index, row)
+                    for index, row in enumerate(judge_candidates)
+                ]
+                for future in as_completed(futures):
+                    judge_results.append(future.result())
+
+        for _, row, judge_payload, error in sorted(judge_results, key=lambda item: item[0]):
+            if error is None and judge_payload is not None:
+                api_call_entry = dict(judge_payload.get("api_call_entry") or {})
+                if api_call_entry:
+                    record_api_call(run_ctx, **api_call_entry)
                 payload = dict(judge_payload.get("payload") or {})
                 inconsistent = judge_payload_is_inconsistent(payload)
                 llm_judge_rows.append(
@@ -1019,19 +1070,19 @@ def run_phase_f(run_ctx: Any, *, options: PhaseFOptions, stable_hash_fn=None, lo
                         **payload,
                     }
                 )
-            except Exception as e:
-                warnings.append(f"LLM judge failed for candidate {row.get('candidate_id')}: {type(e).__name__}")
-                llm_judge_rows.append(
-                    {
-                        "candidate_id": row.get("candidate_id"),
-                        "doc_id": row.get("doc_id"),
-                        "section_id": row.get("section_id"),
-                        "title": row.get("title"),
-                        "judge_error_type": type(e).__name__,
-                        "judge_error_message": str(e),
-                        "judge_score": None,
-                    }
-                )
+                continue
+            warnings.append(f"LLM judge failed for candidate {row.get('candidate_id')}: {type(error).__name__}")
+            llm_judge_rows.append(
+                {
+                    "candidate_id": row.get("candidate_id"),
+                    "doc_id": row.get("doc_id"),
+                    "section_id": row.get("section_id"),
+                    "title": row.get("title"),
+                    "judge_error_type": type(error).__name__,
+                    "judge_error_message": str(error),
+                    "judge_score": None,
+                }
+            )
         judge_runtime["elapsed_ms"] = round((time.perf_counter() - judge_started) * 1000.0, 3)
         judge_runtime["completed_count"] = len([row for row in llm_judge_rows if row.get("judge_score") is not None])
     else:

@@ -74,6 +74,7 @@ import type {
   PdfScanResultDoc,
   ProjectPdfDoc,
   QuelleDoc,
+  QuellenFinderPipelineStage,
   QuellenFinderRunDoc,
 } from "@/app/lib/firestore/types";
 import { QUELLE_COLORS, colorMap, type QuelleColor } from "@/app/lib/quellen/fieldConfig";
@@ -101,17 +102,17 @@ export type PdfScanWorkspacePreview = {
   initialLibraryManagerOpen?: boolean;
 };
 
-const PDF_SCAN_PIPELINE_STEPS: Array<{ key: string; label: string }> = [
-  { key: "prepare_inputs", label: "Inputs" },
-  { key: "download_pdfs", label: "Download" },
-  { key: "phase_a", label: "Phase A" },
-  { key: "phase_b", label: "Phase B" },
-  { key: "phase_c", label: "Phase C" },
-  { key: "phase_d", label: "Phase D" },
-  { key: "phase_e", label: "Phase E" },
-  { key: "phase_f", label: "Phase F" },
-  { key: "phase_g", label: "Phase G" },
-  { key: "persist_results", label: "Persist" },
+const PDF_SCAN_PIPELINE_STEPS: Array<{ key: string; label: string; title: string; description: string }> = [
+  { key: "prepare_inputs", label: "Inputs", title: "Inputs", description: "Prepare run inputs" },
+  { key: "download_pdfs", label: "Download", title: "Download", description: "Download selected PDFs" },
+  { key: "phase_a", label: "Phase A", title: "Phase A", description: "Build pipeline manifest" },
+  { key: "phase_b", label: "Phase B", title: "Phase B", description: "Text extraction" },
+  { key: "phase_c", label: "Phase C", title: "Phase C", description: "Normalize sections" },
+  { key: "phase_d", label: "Phase D", title: "Phase D", description: "Plan retrieval" },
+  { key: "phase_e", label: "Phase E", title: "Phase E", description: "Retrieve candidates" },
+  { key: "phase_f", label: "Phase F", title: "Phase F", description: "Rerank candidates" },
+  { key: "phase_g", label: "Phase G", title: "Phase G", description: "Score final sections" },
+  { key: "persist_results", label: "Persist", title: "Persist", description: "Save UI results" },
 ];
 
 const PDF_LIBRARY_COLOR_PICKER_ORDER: Array<QuelleColor | null> = [null, "rose", "peach", "cream", "green", "teal", "blue", "lavender"];
@@ -244,6 +245,13 @@ function stageLabel(run: RunRow | null): string {
   if (message) return `${message}${counts}`;
   if (stage) return `${stage}${counts}`;
   return "—";
+}
+
+function readPipelineStage(run: RunRow | null, stageKey: string): QuellenFinderPipelineStage | null {
+  if (!run || typeof run.pipelineStages !== "object" || run.pipelineStages === null) return null;
+  const raw = run.pipelineStages[stageKey];
+  if (!raw || typeof raw !== "object") return null;
+  return raw as QuellenFinderPipelineStage;
 }
 
 function readRunCostUsd(run: RunRow | null): number | null {
@@ -1269,12 +1277,6 @@ export function PdfScanWorkspace({
     activeRun.progress.total > 0
       ? Math.max(0, Math.min(1, activeRun.progress.current / activeRun.progress.total))
       : 0;
-  const progressValue =
-    isDone || isCancelled
-      ? 100
-      : activeStepIndex < 0
-        ? 0
-        : ((activeStepIndex + currentRatio) / PDF_SCAN_PIPELINE_STEPS.length) * 100;
 
   const visibleDocCount =
     typeof activeRun?.pdfScanDocCount === "number" ? activeRun.pdfScanDocCount : docRows.length;
@@ -1606,16 +1608,79 @@ export function PdfScanWorkspace({
                       </div>
 
                       <div className="mt-4">
-                        <div className="relative h-[7px] overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className={cn("absolute inset-y-0 left-0 rounded-full", isCancelled ? "bg-slate-400" : isError ? "bg-rose-500" : "bg-[#1680cd]")}
-                            style={{ width: `${Math.max(0, Math.min(100, progressValue))}%` }}
-                          />
-                          <div className="absolute inset-0 grid grid-cols-10">
-                            {PDF_SCAN_PIPELINE_STEPS.map((step, index) => (
-                              <div key={step.key} className={index < PDF_SCAN_PIPELINE_STEPS.length - 1 ? "border-r border-white/80" : ""} />
-                            ))}
-                          </div>
+                        <div className="overflow-hidden rounded-full bg-slate-100">
+                          <TooltipProvider delayDuration={120}>
+                            <div className="flex">
+                              {PDF_SCAN_PIPELINE_STEPS.map((step, index) => {
+                                const stageSnapshot = readPipelineStage(activeRun, step.key);
+                                const snapshotStatus = String(stageSnapshot?.status || "").trim();
+                                const isStageCompleted =
+                                  snapshotStatus === "completed" || (!snapshotStatus && (isDone || index < activeStepIndex));
+                                const isStageActive =
+                                  snapshotStatus === "running" || (!snapshotStatus && running && activeStepIndex === index);
+                                const isStageError = snapshotStatus === "error";
+                                const isStageCancelled = snapshotStatus === "cancelled";
+                                const fillWidth = isStageCompleted || isStageError || isStageCancelled ? 100 : isStageActive ? currentRatio * 100 : 0;
+                                const fillClass = isStageCancelled
+                                  ? "bg-slate-400"
+                                  : isStageError
+                                    ? "bg-rose-500"
+                                    : isStageCompleted
+                                      ? "bg-[#1680cd]"
+                                      : isStageActive
+                                        ? "bg-amber-400"
+                                        : "bg-transparent";
+                                const durationMs =
+                                  typeof stageSnapshot?.elapsedMs === "number"
+                                    ? stageSnapshot.elapsedMs
+                                    : isStageActive && stageKey === step.key
+                                      ? stageElapsedMs
+                                      : null;
+                                const stageCurrent =
+                                  typeof stageSnapshot?.current === "number"
+                                    ? stageSnapshot.current
+                                    : isStageActive && typeof activeRun?.progress?.current === "number"
+                                      ? activeRun.progress.current
+                                      : null;
+                                const stageTotal =
+                                  typeof stageSnapshot?.total === "number"
+                                    ? stageSnapshot.total
+                                    : isStageActive && typeof activeRun?.progress?.total === "number"
+                                      ? activeRun.progress.total
+                                      : null;
+
+                                return (
+                                  <Tooltip key={step.key}>
+                                    <TooltipTrigger asChild>
+                                      <div
+                                        className={cn(
+                                          "relative h-[7px] flex-1 cursor-default overflow-hidden bg-slate-100",
+                                          index < PDF_SCAN_PIPELINE_STEPS.length - 1 ? "border-r border-white/80" : ""
+                                        )}
+                                        aria-label={`${step.title}: ${step.description}`}
+                                      >
+                                        <div className={cn("absolute inset-y-0 left-0", fillClass)} style={{ width: `${Math.max(0, Math.min(100, fillWidth))}%` }} />
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="max-w-[240px] rounded-[8px] px-3 py-2 text-left">
+                                      <div className="text-[12px] font-semibold text-white">{step.title}</div>
+                                      <div className="mt-0.5 text-[11px] leading-5 text-slate-200">{step.description}</div>
+                                      {durationMs !== null ? (
+                                        <div className="mt-2 text-[11px] tabular-nums text-slate-300">
+                                          {isStageCompleted || isStageError || isStageCancelled ? `Dauer: ${formatElapsedShort(durationMs)}` : `Läuft seit: ${formatElapsedShort(durationMs)}`}
+                                        </div>
+                                      ) : null}
+                                      {typeof stageCurrent === "number" && typeof stageTotal === "number" && stageTotal > 0 ? (
+                                        <div className="mt-1 text-[11px] tabular-nums text-slate-300">
+                                          {formatIntDe(stageCurrent)}/{formatIntDe(stageTotal)}
+                                        </div>
+                                      ) : null}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                );
+                              })}
+                            </div>
+                          </TooltipProvider>
                         </div>
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
                           <div className="flex items-center gap-2 text-slate-600">

@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - master
+      - feature/source-search
 
 permissions:
   contents: read

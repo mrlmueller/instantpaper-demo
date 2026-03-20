@@ -658,7 +658,13 @@ async def _run_pipeline_subprocess(
         if event == "stage_complete" and stage:
             total = _as_int_or_none(payload.get("total"))
             current = _as_int_or_none(payload.get("current")) or total
-            await on_progress(stage, f"{label or PDF_SCAN_STAGE_LABELS.get(stage, stage)} complete", current=current, total=total)
+            await on_progress(
+                stage,
+                f"{label or PDF_SCAN_STAGE_LABELS.get(stage, stage)} complete",
+                current=current,
+                total=total,
+                stage_completed=True,
+            )
             return
         if event == "run_complete":
             state["pipeline_run_id"] = _as_str_or_none(payload.get("pipeline_run_id"))
@@ -955,13 +961,83 @@ async def run_quellen_finder_pdf_scan_job(
         "current": None,
         "total": None,
     }
+    pipeline_stages: dict[str, dict[str, Any]] = {}
 
-    async def on_progress(stage: str, message: str, *, current: int | None = None, total: int | None = None) -> None:
+    def _snapshot_pipeline_stages() -> dict[str, dict[str, Any]]:
+        return {str(key): dict(value) for key, value in pipeline_stages.items()}
+
+    def _now_epoch_ms() -> int:
+        return int(round(time.time() * 1000.0))
+
+    def _update_pipeline_stages(
+        *,
+        stage: str,
+        current: int | None,
+        total: int | None,
+        stage_started_at: bool,
+        stage_completed: bool,
+        terminal_status: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        now_ms = _now_epoch_ms()
+        stage_s = str(stage or "")
+        if stage_started_at:
+            previous_stage = _as_str_or_none(last_progress.get("stage"))
+            if previous_stage and previous_stage != stage_s:
+                previous_entry = pipeline_stages.setdefault(previous_stage, {})
+                if str(previous_entry.get("status") or "") == "running":
+                    started_at_ms = _as_int_or_none(previous_entry.get("startedAtMs")) or now_ms
+                    previous_entry["status"] = "completed"
+                    previous_entry["completedAtMs"] = now_ms
+                    previous_entry["elapsedMs"] = max(0, now_ms - started_at_ms)
+        entry = pipeline_stages.setdefault(stage_s, {})
+        if stage_started_at or not isinstance(entry.get("startedAtMs"), int):
+            entry["startedAtMs"] = now_ms
+            entry.pop("completedAtMs", None)
+            entry.pop("elapsedMs", None)
+        if isinstance(current, int):
+            entry["current"] = int(current)
+        if isinstance(total, int):
+            entry["total"] = int(total)
+        entry["status"] = terminal_status or ("completed" if stage_completed else "running")
+        if stage_completed or terminal_status in {"error", "cancelled"}:
+            started_at_ms = _as_int_or_none(entry.get("startedAtMs")) or now_ms
+            entry["completedAtMs"] = now_ms
+            entry["elapsedMs"] = max(0, now_ms - started_at_ms)
+        return _snapshot_pipeline_stages()
+
+    def _mark_current_stage_terminal(status: str) -> dict[str, dict[str, Any]] | None:
+        stage_s = _as_str_or_none(last_progress.get("stage"))
+        if not stage_s:
+            return None
+        return _update_pipeline_stages(
+            stage=stage_s,
+            current=_as_int_or_none(last_progress.get("current")),
+            total=_as_int_or_none(last_progress.get("total")),
+            stage_started_at=False,
+            stage_completed=False,
+            terminal_status=str(status or "").strip() or None,
+        )
+
+    async def on_progress(
+        stage: str,
+        message: str,
+        *,
+        current: int | None = None,
+        total: int | None = None,
+        stage_completed: bool = False,
+    ) -> None:
         nonlocal last_stage
         stage_s = str(stage or "")
         stage_started_at = stage_s != (last_stage or "")
         if stage_started_at:
             last_stage = stage_s
+        pipeline_stage_snapshot = _update_pipeline_stages(
+            stage=stage_s,
+            current=current,
+            total=total,
+            stage_started_at=bool(stage_started_at),
+            stage_completed=bool(stage_completed),
+        )
         last_progress.update(
             {
                 "stage": stage_s,
@@ -980,14 +1056,29 @@ async def run_quellen_finder_pdf_scan_job(
             current=current,
             total=total,
             stage_started_at=bool(stage_started_at),
+            pipeline_stages=pipeline_stage_snapshot,
         )
 
-    def on_progress_sync(stage: str, message: str, *, current: int | None = None, total: int | None = None) -> None:
+    def on_progress_sync(
+        stage: str,
+        message: str,
+        *,
+        current: int | None = None,
+        total: int | None = None,
+        stage_completed: bool = False,
+    ) -> None:
         nonlocal last_stage
         stage_s = str(stage or "")
         stage_started_at = stage_s != (last_stage or "")
         if stage_started_at:
             last_stage = stage_s
+        pipeline_stage_snapshot = _update_pipeline_stages(
+            stage=stage_s,
+            current=current,
+            total=total,
+            stage_started_at=bool(stage_started_at),
+            stage_completed=bool(stage_completed),
+        )
         last_progress.update(
             {
                 "stage": stage_s,
@@ -1005,6 +1096,7 @@ async def run_quellen_finder_pdf_scan_job(
             current=current,
             total=total,
             stage_started_at=bool(stage_started_at),
+            pipeline_stages=pipeline_stage_snapshot,
         )
 
     async def progress_heartbeat() -> None:
@@ -1028,6 +1120,7 @@ async def run_quellen_finder_pdf_scan_job(
                 current=_as_int_or_none(last_progress.get("current")),
                 total=_as_int_or_none(last_progress.get("total")),
                 stage_started_at=False,
+                pipeline_stages=_snapshot_pipeline_stages(),
             )
 
     heartbeat_task = asyncio.create_task(progress_heartbeat())
@@ -1108,6 +1201,13 @@ async def run_quellen_finder_pdf_scan_job(
                 run_id=run_id,
                 name="pdfScanSections",
                 docs=list(persisted.get("section_docs") or []),
+            )
+            await on_progress(
+                "persist_results",
+                "Saving PDF result cards complete",
+                current=total_docs,
+                total=total_docs,
+                stage_completed=True,
             )
             dt = float(time.perf_counter() - t0)
             api_usage = _read_pdf_scan_api_usage(pipeline_run_dir)
@@ -1226,10 +1326,11 @@ async def run_quellen_finder_pdf_scan_job(
             reason="cancelled",
         )
         fs.mark_cancelled(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
-        fs.run_ref(user_id, projekt_id, run_id).set(
-            {"billing": {"status": "cancelled", "reservationOperationId": reservation_operation_id}},
-            merge=True,
-        )
+        terminal_stages = _mark_current_stage_terminal("cancelled")
+        payload: dict[str, Any] = {"billing": {"status": "cancelled", "reservationOperationId": reservation_operation_id}}
+        if terminal_stages is not None:
+            payload["pipelineStages"] = terminal_stages
+        fs.run_ref(user_id, projekt_id, run_id).set(payload, merge=True)
     except HTTPException as exc:
         logger.error(
             "QF pdf scan HTTPException | run_id=%s status=%s detail=%s",
@@ -1252,10 +1353,11 @@ async def run_quellen_finder_pdf_scan_job(
             reason="error",
         )
         fs.mark_error(user_id=user_id, projekt_id=projekt_id, run_id=run_id, error_message=msg, had_partial_failures=False)
-        fs.run_ref(user_id, projekt_id, run_id).set(
-            {"billing": {"status": "error", "reservationOperationId": reservation_operation_id}},
-            merge=True,
-        )
+        terminal_stages = _mark_current_stage_terminal("error")
+        payload: dict[str, Any] = {"billing": {"status": "error", "reservationOperationId": reservation_operation_id}}
+        if terminal_stages is not None:
+            payload["pipelineStages"] = terminal_stages
+        fs.run_ref(user_id, projekt_id, run_id).set(payload, merge=True)
     except Exception as exc:
         logger.error("QF pdf scan failed | run_id=%s error=%s", run_id, exc, exc_info=True)
         logger.debug("Traceback:\n%s", traceback.format_exc())
@@ -1272,10 +1374,11 @@ async def run_quellen_finder_pdf_scan_job(
             reason="error",
         )
         fs.mark_error(user_id=user_id, projekt_id=projekt_id, run_id=run_id, error_message=msg, had_partial_failures=False)
-        fs.run_ref(user_id, projekt_id, run_id).set(
-            {"billing": {"status": "error", "reservationOperationId": reservation_operation_id}},
-            merge=True,
-        )
+        terminal_stages = _mark_current_stage_terminal("error")
+        payload: dict[str, Any] = {"billing": {"status": "error", "reservationOperationId": reservation_operation_id}}
+        if terminal_stages is not None:
+            payload["pipelineStages"] = terminal_stages
+        fs.run_ref(user_id, projekt_id, run_id).set(payload, merge=True)
     finally:
         heartbeat_stop.set()
         with contextlib.suppress(Exception):
