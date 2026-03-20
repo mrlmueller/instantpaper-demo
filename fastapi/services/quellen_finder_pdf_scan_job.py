@@ -27,12 +27,12 @@ from services.credits_service import get_credits_service
 from services.firebase_service import firebase_service
 from services.openai_budget_service import get_openai_budget_service
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
+from utils.runtime_paths import resolve_pdf_scan_pipeline_script
 from utils.config import config
 
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-PIPELINE_CHILD_SCRIPT = REPO_ROOT / "fastapi" / "run_pdf_scan_pipeline.py"
+PIPELINE_CHILD_SCRIPT = resolve_pdf_scan_pipeline_script(__file__)
 PIPELINE_EVENT_PREFIX = "PDF_SCAN_EVENT\t"
 VISIBLE_SCORE_THRESHOLD = 5.0
 PDF_SCAN_STAGE_LABELS = {

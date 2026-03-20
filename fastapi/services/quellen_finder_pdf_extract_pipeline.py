@@ -6,9 +6,9 @@ from typing import Any
 import sys
 
 import fitz  # PyMuPDF
+from utils.runtime_paths import resolve_pdf_scan_dir
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-PDF_SCAN_DIR = REPO_ROOT / "pdf-scan"
+PDF_SCAN_DIR = resolve_pdf_scan_dir(__file__)
 if str(PDF_SCAN_DIR) not in sys.path:
     sys.path.insert(0, str(PDF_SCAN_DIR))
 

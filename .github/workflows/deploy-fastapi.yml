@@ -43,12 +43,23 @@ jobs:
         run: |
           gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 
-      - name: Build and push Docker image
+      - name: Set image tag
         run: |
           IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${IMAGE_REPOSITORY}/${CLOUD_RUN_SERVICE}:${GITHUB_SHA}"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
-          docker build -f fastapi/Dockerfile -t "$IMAGE" .
-          docker push "$IMAGE"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: fastapi/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Migrate Firebase runtime vars off secrets
         run: |
