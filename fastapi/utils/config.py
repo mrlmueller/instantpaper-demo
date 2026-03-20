@@ -23,6 +23,13 @@ def _read_int_env(name: str, default: int) -> int:
         return default
 
 
+def _read_bool_env(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "yes", "on"}
+
+
 class Config:
     """Application configuration loaded from environment variables"""
 
@@ -84,9 +91,17 @@ class Config:
     PDF_SCAN_CLOUD_RUN_JOB_REGION: str = os.getenv(
         "PDF_SCAN_CLOUD_RUN_JOB_REGION", "europe-west3"
     ).strip()
+    PDF_SCAN_FORCE_CLOUD_RUN_FROM_LOCAL: bool = _read_bool_env(
+        "PDF_SCAN_FORCE_CLOUD_RUN_FROM_LOCAL",
+        False,
+    )
     PDF_SCAN_EXECUTION_BACKEND: str = os.getenv(
         "PDF_SCAN_EXECUTION_BACKEND",
-        "cloud_run_job" if IS_CLOUD_RUN else "local_background",
+        (
+            "cloud_run_job"
+            if IS_CLOUD_RUN
+            else ("cloud_run_job" if PDF_SCAN_FORCE_CLOUD_RUN_FROM_LOCAL else "local_background")
+        ),
     ).strip().lower()
 
     # Admin access endpoint (Basic Auth)

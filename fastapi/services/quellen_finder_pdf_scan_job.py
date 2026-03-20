@@ -27,11 +27,12 @@ from services.credits_service import get_credits_service
 from services.firebase_service import firebase_service
 from services.openai_budget_service import get_openai_budget_service
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
-from utils.runtime_paths import resolve_pdf_scan_pipeline_script
+from utils.runtime_paths import resolve_fastapi_root, resolve_pdf_scan_pipeline_script
 from utils.config import config
 
 logger = logging.getLogger(__name__)
 
+FASTAPI_ROOT = resolve_fastapi_root(__file__)
 PIPELINE_CHILD_SCRIPT = resolve_pdf_scan_pipeline_script(__file__)
 PIPELINE_EVENT_PREFIX = "PDF_SCAN_EVENT\t"
 VISIBLE_SCORE_THRESHOLD = 5.0
@@ -687,7 +688,7 @@ async def _run_pipeline_subprocess(
         nonlocal cancel_requested
         proc = subprocess.Popen(
             args,
-            cwd=str(REPO_ROOT),
+            cwd=str(FASTAPI_ROOT),
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -792,7 +793,7 @@ async def _run_pipeline_subprocess(
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
-            cwd=str(REPO_ROOT),
+            cwd=str(FASTAPI_ROOT),
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

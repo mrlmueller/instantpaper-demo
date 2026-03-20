@@ -1271,13 +1271,6 @@ export function PdfScanWorkspace({
 
   const stageKey = String(activeRun?.progress?.stage || "");
   const activeStepIndex = PDF_SCAN_PIPELINE_STEPS.findIndex((step) => step.key === stageKey);
-  const currentRatio =
-    typeof activeRun?.progress?.current === "number" &&
-    typeof activeRun?.progress?.total === "number" &&
-    activeRun.progress.total > 0
-      ? Math.max(0, Math.min(1, activeRun.progress.current / activeRun.progress.total))
-      : 0;
-
   const visibleDocCount =
     typeof activeRun?.pdfScanDocCount === "number" ? activeRun.pdfScanDocCount : docRows.length;
   const visibleSectionCount =
@@ -1620,7 +1613,7 @@ export function PdfScanWorkspace({
                                   snapshotStatus === "running" || (!snapshotStatus && running && activeStepIndex === index);
                                 const isStageError = snapshotStatus === "error";
                                 const isStageCancelled = snapshotStatus === "cancelled";
-                                const fillWidth = isStageCompleted || isStageError || isStageCancelled ? 100 : isStageActive ? currentRatio * 100 : 0;
+                                const fillWidth = isStageCompleted || isStageError || isStageCancelled || isStageActive ? 100 : 0;
                                 const fillClass = isStageCancelled
                                   ? "bg-slate-400"
                                   : isStageError
@@ -1628,7 +1621,7 @@ export function PdfScanWorkspace({
                                     : isStageCompleted
                                       ? "bg-[#1680cd]"
                                       : isStageActive
-                                        ? "bg-amber-400"
+                                        ? "bg-[#f59e0b] animate-[pulse_1.25s_ease-in-out_infinite]"
                                         : "bg-transparent";
                                 const durationMs =
                                   typeof stageSnapshot?.elapsedMs === "number"
