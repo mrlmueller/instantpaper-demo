@@ -19,7 +19,7 @@ from typing import Any, Callable
 
 from fastapi import HTTPException
 from firebase_admin import storage
-from google.api_core.exceptions import DeadlineExceeded, NotFound, RetryError
+from google.api_core.exceptions import DeadlineExceeded, GoogleAPICallError, NotFound, RetryError
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from services.cost_service import TokenUsage, get_cost_service
@@ -36,6 +36,16 @@ FASTAPI_ROOT = resolve_fastapi_root(__file__)
 PIPELINE_CHILD_SCRIPT = resolve_pdf_scan_pipeline_script(__file__)
 PIPELINE_EVENT_PREFIX = "PDF_SCAN_EVENT\t"
 VISIBLE_SCORE_THRESHOLD = 5.0
+PDF_SCAN_MAX_PDF_BYTES = max(1, int(getattr(config, "PDF_SCAN_MAX_PDF_BYTES", 50 * 1024 * 1024) or 50 * 1024 * 1024))
+PDF_SCAN_MAX_PDF_MB = max(1, (PDF_SCAN_MAX_PDF_BYTES + (1024 * 1024) - 1) // (1024 * 1024))
+FINALIZATION_TRANSIENT_EXCEPTIONS = (
+    ConnectionError,
+    TimeoutError,
+    asyncio.TimeoutError,
+    DeadlineExceeded,
+    RetryError,
+    GoogleAPICallError,
+)
 PDF_SCAN_STAGE_LABELS = {
     "prepare_inputs": "Preparing run inputs",
     "download_pdfs": "Downloading selected PDFs",
@@ -259,6 +269,41 @@ def _resolve_pipeline_run_dir(raw_run_dir: Any, *, expected_root: Path) -> Path:
     return run_dir
 
 
+async def _load_required_run_doc(
+    *,
+    fs: QuellenFinderFirestoreService,
+    user_id: str,
+    projekt_id: str,
+    run_id: str,
+    purpose: str,
+) -> dict[str, Any]:
+    try:
+        data = await asyncio.to_thread(
+            fs.get_run,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error(
+            "Failed to load PDF scan run doc | purpose=%s user_id=%s projekt_id=%s run_id=%s",
+            purpose,
+            user_id,
+            projekt_id,
+            run_id,
+            exc_info=True,
+        )
+        raise RuntimeError(
+            f"Failed to load PDF scan run doc for {purpose} (user_id={user_id}, projekt_id={projekt_id}, run_id={run_id})."
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            f"PDF scan run doc for {purpose} is invalid (user_id={user_id}, projekt_id={projekt_id}, run_id={run_id})."
+        )
+    return data
+
+
 def _candidate_bucket_names(project_id: str, configured: str) -> list[str]:
     names: list[str] = []
     configured = str(configured or "").strip()
@@ -306,6 +351,8 @@ def _download_pdf_from_firebase_storage(
     storage_path = str(storage_path or "").strip().lstrip("/")
     if not storage_path:
         raise ValueError("storage_path is required")
+    if expected_size is not None and int(expected_size) > PDF_SCAN_MAX_PDF_BYTES:
+        raise ValueError(f"PDF exceeds the {PDF_SCAN_MAX_PDF_MB} MB limit: {storage_path}")
 
     def raise_if_stop_requested() -> None:
         if callable(termination_requested_sync) and termination_requested_sync():
@@ -334,6 +381,9 @@ def _download_pdf_from_firebase_storage(
                 if not blob.exists(timeout=timeout_sec):
                     continue
                 blob.download_to_filename(str(dest_path), timeout=timeout_sec)
+                actual_size = int(dest_path.stat().st_size) if dest_path.exists() else 0
+                if actual_size > PDF_SCAN_MAX_PDF_BYTES:
+                    raise ValueError(f"PDF exceeds the {PDF_SCAN_MAX_PDF_MB} MB limit: {storage_path}")
                 _verify_pdf_file(dest_path, expected_size=expected_size)
                 return
             except NotFound as exc:
@@ -341,6 +391,10 @@ def _download_pdf_from_firebase_storage(
                 with contextlib.suppress(FileNotFoundError):
                     dest_path.unlink()
                 continue
+            except ValueError:
+                with contextlib.suppress(FileNotFoundError):
+                    dest_path.unlink()
+                raise
             except (DeadlineExceeded, RetryError, TimeoutError) as exc:
                 last_exc = exc
                 with contextlib.suppress(FileNotFoundError):
@@ -987,34 +1041,49 @@ async def run_quellen_finder_pdf_scan_job_from_run_doc(
         billing_state = data.get("billing") if isinstance(data.get("billing"), dict) else {}
         return _as_str_or_none((billing_state or {}).get("reservationOperationId")) or f"{run_id}_pdf_scan_run"
 
+    def _log_preflight_cleanup_warning(action: str, exc: BaseException) -> None:
+        logger.warning(
+            "PDF scan preflight cleanup transient failure | action=%s user_id=%s projekt_id=%s run_id=%s err=%s",
+            action,
+            user_id,
+            projekt_id,
+            run_id,
+            exc,
+        )
+
     async def _finalize_preflight_failure(*, message: str, cancelled: bool) -> None:
         normalized_message = _trim_text(message, max_chars=1000) or ("Cancellation requested." if cancelled else "Unknown error")
-        data = {}
-        with contextlib.suppress(Exception):
-            data = await asyncio.to_thread(
-                fs.get_run,
-                user_id=user_id,
-                projekt_id=projekt_id,
-                run_id=run_id,
-            )
-        reservation_operation_id = _reservation_operation_id_from_data(data if isinstance(data, dict) else {})
+        data = await _load_required_run_doc(
+            fs=fs,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            purpose="preflight_failure_cleanup",
+        )
+        reservation_operation_id = _reservation_operation_id_from_data(data)
         if cancelled:
-            with contextlib.suppress(Exception):
+            try:
                 await budget_service.mark_status(
                     user_id=user_id,
                     operation_id=reservation_operation_id,
                     status="cancelled",
                     error_message=normalized_message,
                 )
-            with contextlib.suppress(Exception):
+            except FINALIZATION_TRANSIENT_EXCEPTIONS as exc:
+                _log_preflight_cleanup_warning("budget_mark_cancelled", exc)
+            try:
                 await budget_service.release_reservation(
                     user_id=user_id,
                     operation_id=reservation_operation_id,
                     reason="cancelled",
                 )
-            with contextlib.suppress(Exception):
+            except FINALIZATION_TRANSIENT_EXCEPTIONS as exc:
+                _log_preflight_cleanup_warning("budget_release_cancelled", exc)
+            try:
                 fs.mark_cancelled(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
-            with contextlib.suppress(Exception):
+            except FINALIZATION_TRANSIENT_EXCEPTIONS as exc:
+                _log_preflight_cleanup_warning("firestore_mark_cancelled", exc)
+            try:
                 fs.run_ref(user_id, projekt_id, run_id).set(
                     {
                         "billing": {
@@ -1024,22 +1093,28 @@ async def run_quellen_finder_pdf_scan_job_from_run_doc(
                     },
                     merge=True,
                 )
+            except FINALIZATION_TRANSIENT_EXCEPTIONS as exc:
+                _log_preflight_cleanup_warning("firestore_set_cancelled_billing", exc)
             return
 
-        with contextlib.suppress(Exception):
+        try:
             await budget_service.mark_status(
                 user_id=user_id,
                 operation_id=reservation_operation_id,
                 status="error",
                 error_message=normalized_message,
             )
-        with contextlib.suppress(Exception):
+        except FINALIZATION_TRANSIENT_EXCEPTIONS as exc:
+            _log_preflight_cleanup_warning("budget_mark_error", exc)
+        try:
             await budget_service.release_reservation(
                 user_id=user_id,
                 operation_id=reservation_operation_id,
                 reason="error",
             )
-        with contextlib.suppress(Exception):
+        except FINALIZATION_TRANSIENT_EXCEPTIONS as exc:
+            _log_preflight_cleanup_warning("budget_release_error", exc)
+        try:
             fs.mark_error(
                 user_id=user_id,
                 projekt_id=projekt_id,
@@ -1047,16 +1122,20 @@ async def run_quellen_finder_pdf_scan_job_from_run_doc(
                 error_message=normalized_message,
                 had_partial_failures=False,
             )
-        with contextlib.suppress(Exception):
+        except FINALIZATION_TRANSIENT_EXCEPTIONS as exc:
+            _log_preflight_cleanup_warning("firestore_mark_error", exc)
+        try:
             fs.run_ref(user_id, projekt_id, run_id).set(
                 {
                     "billing": {
                         "status": "error",
                         "reservationOperationId": reservation_operation_id,
                     }
-                },
-                merge=True,
-            )
+                    },
+                    merge=True,
+                )
+        except FINALIZATION_TRANSIENT_EXCEPTIONS as exc:
+            _log_preflight_cleanup_warning("firestore_set_error_billing", exc)
 
     def _load() -> tuple[dict[str, Any], str | None]:
         data = fs.get_run(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
@@ -1124,15 +1203,13 @@ async def run_quellen_finder_pdf_scan_job(
     budget_service = get_openai_budget_service(firebase_service)
     credits_service = get_credits_service(firebase_service)
     cost_service = get_cost_service(firebase_service)
-    try:
-        run_doc = await asyncio.to_thread(
-            fs.get_run,
-            user_id=user_id,
-            projekt_id=projekt_id,
-            run_id=run_id,
-        )
-    except Exception:
-        run_doc = {}
+    run_doc = await _load_required_run_doc(
+        fs=fs,
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        purpose="run_execution",
+    )
     billing_state = run_doc.get("billing") if isinstance(run_doc.get("billing"), dict) else {}
     reservation_operation_id = _as_str_or_none((billing_state or {}).get("reservationOperationId")) or f"{run_id}_pdf_scan_run"
     kapitel_snapshots = run_doc.get("kapitelSnapshots") if isinstance(run_doc.get("kapitelSnapshots"), list) else []
@@ -1396,20 +1473,12 @@ async def run_quellen_finder_pdf_scan_job(
             total_docs = int(len(list(persisted.get("doc_docs") or [])))
             await on_progress("persist_results", "Saving PDF result cards", current=total_docs, total=total_docs)
             await asyncio.to_thread(
-                fs.write_subcollection_docs,
+                fs.replace_pdf_scan_results,
                 user_id=user_id,
                 projekt_id=projekt_id,
                 run_id=run_id,
-                name="pdfScanDocs",
-                docs=list(persisted.get("doc_docs") or []),
-            )
-            await asyncio.to_thread(
-                fs.write_subcollection_docs,
-                user_id=user_id,
-                projekt_id=projekt_id,
-                run_id=run_id,
-                name="pdfScanSections",
-                docs=list(persisted.get("section_docs") or []),
+                doc_docs=list(persisted.get("doc_docs") or []),
+                section_docs=list(persisted.get("section_docs") or []),
             )
             await on_progress(
                 "persist_results",

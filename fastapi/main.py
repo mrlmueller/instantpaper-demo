@@ -630,7 +630,8 @@ def _normalize_project_pdf_filename(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
-PDF_UPLOAD_MAX_BYTES = 100 * 1024 * 1024
+PDF_UPLOAD_MAX_BYTES = max(1, int(getattr(config, "PDF_SCAN_MAX_PDF_BYTES", 50 * 1024 * 1024) or 50 * 1024 * 1024))
+PDF_UPLOAD_MAX_MB = max(1, (PDF_UPLOAD_MAX_BYTES + (1024 * 1024) - 1) // (1024 * 1024))
 PDF_UPLOAD_MAX_PAGES = 2000
 PDF_UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
 PDF_UPLOAD_TEXT_SAMPLE_PAGES = 12
@@ -665,7 +666,7 @@ async def _read_upload_file_with_limit(
             break
         buf.extend(chunk)
         if len(buf) > max_bytes:
-            raise HTTPException(status_code=400, detail="PDF exceeds the 100 MB limit.")
+            raise HTTPException(status_code=400, detail=f"PDF exceeds the {PDF_UPLOAD_MAX_MB} MB limit.")
     return bytes(buf)
 
 
@@ -674,7 +675,7 @@ def _validate_uploaded_pdf_bytes(file_bytes: bytes) -> dict[str, int]:
     if size <= 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
     if size > PDF_UPLOAD_MAX_BYTES:
-        raise HTTPException(status_code=400, detail="PDF exceeds the 100 MB limit.")
+        raise HTTPException(status_code=400, detail=f"PDF exceeds the {PDF_UPLOAD_MAX_MB} MB limit.")
     if not _looks_like_pdf_bytes(file_bytes):
         raise HTTPException(status_code=400, detail="Uploaded file does not look like a valid PDF.")
 
@@ -5645,12 +5646,21 @@ async def quellen_finder_pdf_scan(
         if not isinstance(pdf_doc, dict):
             missing_pdf_ids.append(pdf_id)
             continue
+        pdf_size = int((pdf_doc or {}).get("size") or 0)
+        if pdf_size > PDF_UPLOAD_MAX_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"PDF '{str((pdf_doc or {}).get('filename') or pdf_id).strip() or pdf_id}' "
+                    f"exceeds the {PDF_UPLOAD_MAX_MB} MB limit."
+                ),
+            )
         pdf_snapshots.append(
             {
                 "id": pdf_id,
                 "filename": str((pdf_doc or {}).get("filename") or "").strip() or None,
                 "storagePath": str((pdf_doc or {}).get("storagePath") or "").strip() or None,
-                "size": int((pdf_doc or {}).get("size") or 0) or None,
+                "size": pdf_size or None,
                 "contentType": str((pdf_doc or {}).get("contentType") or "").strip() or None,
             }
         )

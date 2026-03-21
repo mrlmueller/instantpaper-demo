@@ -393,3 +393,55 @@ class QuellenFinderFirestoreService:
                     str(run_id),
                     int(count),
                 )
+
+    def replace_pdf_scan_results(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        doc_docs: Iterable[tuple[str, dict]],
+        section_docs: Iterable[tuple[str, dict]],
+    ) -> None:
+        docs_list = list(doc_docs)
+        sections_list = list(section_docs)
+        docs_col = self.run_ref(user_id, projekt_id, run_id).collection("pdfScanDocs")
+        sections_col = self.run_ref(user_id, projekt_id, run_id).collection("pdfScanSections")
+        operations: list[tuple[Any, str, dict]] = []
+        operations.extend((docs_col, str(doc_id), payload) for doc_id, payload in docs_list)
+        operations.extend((sections_col, str(doc_id), payload) for doc_id, payload in sections_list)
+
+        sanitized_any = False
+        count = 0
+        try:
+            for start in range(0, len(operations), 400):
+                chunk = operations[start : start + 400]
+                if not chunk:
+                    continue
+                batch = self.firebase.db.batch()
+                for col, doc_id, payload in chunk:
+                    payload2, changed = _sanitize_firestore_value(payload)
+                    sanitized_any = sanitized_any or changed
+                    batch.set(col.document(doc_id), payload2)
+                    count += 1
+                batch.commit()
+        except Exception:
+            logger.exception(
+                "Failed replacing PDF scan results; cleaning partial writes | run_id=%s docs=%s sections=%s",
+                str(run_id),
+                len(docs_list),
+                len(sections_list),
+            )
+            try:
+                self.clear_subcollection(user_id=user_id, projekt_id=projekt_id, run_id=run_id, name="pdfScanDocs")
+                self.clear_subcollection(user_id=user_id, projekt_id=projekt_id, run_id=run_id, name="pdfScanSections")
+            except Exception:
+                logger.exception("Failed cleaning partial PDF scan results after write error | run_id=%s", str(run_id))
+            raise
+
+        if count and sanitized_any:
+            logger.warning(
+                "Firestore payload sanitized (nested arrays / non-finite numbers) | subcollections=pdfScanDocs,pdfScanSections run_id=%s docs=%s",
+                str(run_id),
+                int(count),
+            )

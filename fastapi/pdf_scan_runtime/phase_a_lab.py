@@ -741,6 +741,11 @@ def build_phase_a_assessment(cfg: PhaseAConfig, manifest_rows: List[Dict[str, An
 
     inspect_errors = [row["file_name"] for row in manifest_rows if str(row.get("inspect_status") or "") != "ok"]
     missing_page_count = [row["file_name"] for row in manifest_rows if not isinstance(row.get("page_count"), int)]
+    zero_page_count = [
+        row["file_name"]
+        for row in manifest_rows
+        if isinstance(row.get("page_count"), int) and int(row.get("page_count") or 0) <= 0
+    ]
     zero_byte = [row["file_name"] for row in manifest_rows if float(row.get("size_mb") or 0.0) <= 0.0]
     duplicate_sha = sorted({row["sha256"] for row in manifest_rows if sum(1 for item in manifest_rows if item.get("sha256") == row.get("sha256")) > 1})
     truncated = int(cfg.source_discovery_total_count) > int(cfg.resolved_source_count)
@@ -753,6 +758,8 @@ def build_phase_a_assessment(cfg: PhaseAConfig, manifest_rows: List[Dict[str, An
         failures.append(f"PDF inspection failed for {len(inspect_errors)} file(s).")
     if missing_page_count:
         failures.append(f"Page counts are missing for {len(missing_page_count)} file(s).")
+    if zero_page_count:
+        failures.append(f"Zero-page PDF(s) detected: {', '.join(zero_page_count[:4])}")
     if zero_byte:
         failures.append(f"Zero-byte PDF(s) detected: {', '.join(zero_byte[:4])}")
     if duplicate_sha:
@@ -786,6 +793,7 @@ def build_phase_a_assessment(cfg: PhaseAConfig, manifest_rows: List[Dict[str, An
             "pdf_count": len(manifest_rows),
             "inspect_error_count": len(inspect_errors),
             "missing_page_count_count": len(missing_page_count),
+            "zero_page_count": len(zero_page_count),
             "zero_byte_count": len(zero_byte),
             "duplicate_sha_count": len(duplicate_sha),
             "selected_pdf_count": int(cfg.resolved_source_count),

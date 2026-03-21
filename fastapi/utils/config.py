@@ -111,6 +111,10 @@ class Config:
         PDF_SCAN_STORAGE_RPC_TIMEOUT_SEC,
         _read_int_env("PDF_SCAN_STORAGE_TOTAL_DOWNLOAD_TIMEOUT_SEC", 240),
     )
+    PDF_SCAN_MAX_PDF_BYTES: int = max(
+        1,
+        _read_int_env("PDF_SCAN_MAX_PDF_BYTES", 50 * 1024 * 1024),
+    )
 
     # Admin access endpoint (Basic Auth)
     # Used to set Firebase Auth custom claims (e.g. {"fullAccess": true}) for gating user access.
