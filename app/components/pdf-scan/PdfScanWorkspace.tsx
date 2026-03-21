@@ -567,6 +567,28 @@ export function PdfScanWorkspace({
     [pdfScanRuns]
   );
 
+  const pdfDeleteBlockers = useMemo(() => {
+    const blockers = new Map<string, { runId: string; isActive: boolean }>();
+
+    for (const run of pdfScanRuns) {
+      const status = String(run.status || "").trim();
+      if (status !== "queued" && status !== "running" && status !== "success") continue;
+
+      const isActive = status === "queued" || status === "running";
+      for (const rawPdfId of Array.isArray(run.pdfIds) ? run.pdfIds : []) {
+        const pdfId = String(rawPdfId || "").trim();
+        if (!pdfId) continue;
+
+        const existing = blockers.get(pdfId);
+        if (!existing || (isActive && !existing.isActive)) {
+          blockers.set(pdfId, { runId: run.id, isActive });
+        }
+      }
+    }
+
+    return blockers;
+  }, [pdfScanRuns]);
+
   useEffect(() => {
     if (!previewMode && !activeRunCookieRestored) return;
     if (selectedKapitelId) return;
@@ -1067,6 +1089,17 @@ export function PdfScanWorkspace({
 
   const deleteProjectPdf = async (pdf: PdfRow) => {
     if (!user?.uid || !projektId) return;
+
+    const blocker = pdfDeleteBlockers.get(pdf.id);
+    if (blocker) {
+      toast.error("PDF kann nicht gelöscht werden", {
+        description: blocker.isActive
+          ? `Die PDF wird im aktiven Scan ${blocker.runId} verwendet.`
+          : `Die PDF wird von Run ${blocker.runId} referenziert.`,
+      });
+      return;
+    }
+
     setDeletingPdfId(pdf.id);
     try {
       const url = new URL("/api/quellen-finder/project-pdf", window.location.origin);
@@ -1148,6 +1181,17 @@ export function PdfScanWorkspace({
 
   const requestDeleteProjectPdf = (pdf: PdfRow) => {
     if (previewMode) return;
+
+    const blocker = pdfDeleteBlockers.get(pdf.id);
+    if (blocker) {
+      toast.error("PDF kann nicht gelöscht werden", {
+        description: blocker.isActive
+          ? `Die PDF wird im aktiven Scan ${blocker.runId} verwendet.`
+          : `Die PDF wird von Run ${blocker.runId} referenziert.`,
+      });
+      return;
+    }
+
     setDeleteConfirmPdf(pdf);
   };
 
@@ -2051,6 +2095,12 @@ export function PdfScanWorkspace({
                   filteredPdfs.map((pdf) => {
                     const isSelected = selectedPdfIdSet.has(pdf.id);
                     const isDeleting = deletingPdfId === pdf.id;
+                    const deleteBlocker = pdfDeleteBlockers.get(pdf.id);
+                    const deleteTitle = deleteBlocker
+                      ? deleteBlocker.isActive
+                        ? `PDF wird im aktiven Scan ${deleteBlocker.runId} verwendet`
+                        : `PDF wird von Run ${deleteBlocker.runId} referenziert`
+                      : "PDF löschen";
                     const pdfColor = pdfColorById.get(pdf.id) ?? null;
                     return (
                       <div
@@ -2159,9 +2209,9 @@ export function PdfScanWorkspace({
                             size="icon"
                             variant="ghost"
                             className="h-9 w-9 text-rose-500 hover:text-rose-600"
-                            disabled={isDeleting || previewMode}
+                            disabled={isDeleting || previewMode || Boolean(deleteBlocker)}
                             onClick={() => requestDeleteProjectPdf(pdf)}
-                            title="PDF löschen"
+                            title={deleteTitle}
                           >
                             {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                           </Button>

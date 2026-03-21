@@ -513,6 +513,61 @@ async def _require_pdf_scan_enabled(uid: str) -> None:
         raise HTTPException(status_code=404, detail="Not found.")
 
 
+def _pdf_scan_run_pdf_ids(run_data: dict) -> set[str]:
+    pdf_ids: set[str] = set()
+
+    raw_pdf_ids = run_data.get("pdfIds")
+    if isinstance(raw_pdf_ids, list):
+        for raw_pdf_id in raw_pdf_ids:
+            pdf_id = str(raw_pdf_id or "").strip()
+            if pdf_id:
+                pdf_ids.add(pdf_id)
+
+    raw_pdf_snapshots = run_data.get("pdfSnapshots")
+    if isinstance(raw_pdf_snapshots, list):
+        for raw_snapshot in raw_pdf_snapshots:
+            if not isinstance(raw_snapshot, dict):
+                continue
+            pdf_id = str(raw_snapshot.get("id") or "").strip()
+            if pdf_id:
+                pdf_ids.add(pdf_id)
+
+    return pdf_ids
+
+
+def _find_pdf_scan_run(
+    *,
+    fs: QuellenFinderFirestoreService,
+    user_id: str,
+    projekt_id: str,
+    statuses: set[str] | None = None,
+    pdf_id: str | None = None,
+) -> tuple[str, dict] | None:
+    allowed_statuses = {
+        str(status or "").strip()
+        for status in (statuses or set())
+        if str(status or "").strip()
+    } or None
+    pdf_id_norm = str(pdf_id or "").strip()
+
+    for snap in fs.runs_col(user_id, projekt_id).where(filter=firestore.FieldFilter("kind", "==", "pdf_scan")).stream():
+        if snap is None or not getattr(snap, "exists", False):
+            continue
+        data = snap.to_dict() if snap is not None else {}
+        if not isinstance(data, dict):
+            continue
+
+        status_now = str((data or {}).get("status") or "").strip()
+        if allowed_statuses is not None and status_now not in allowed_statuses:
+            continue
+        if pdf_id_norm and pdf_id_norm not in _pdf_scan_run_pdf_ids(data):
+            continue
+
+        return str(snap.id), data
+
+    return None
+
+
 @app.get("/api/me")
 async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any_user)):
     uid = str(decoded_token.get("uid") or "").strip()
@@ -5520,21 +5575,25 @@ async def quellen_finder_pdf_scan(
     fs = QuellenFinderFirestoreService()
 
     try:
-        active_pdf_scan = None
-        for snap in fs.runs_col(user_id, projekt_id).where(filter=firestore.FieldFilter("kind", "==", "pdf_scan")).stream():
-            if snap is None or not getattr(snap, "exists", False):
-                continue
-            data = snap.to_dict() if snap is not None else {}
-            status_now = str((data or {}).get("status") or "").strip()
-            if status_now in {"queued", "running"}:
-                active_pdf_scan = str(snap.id)
-                break
-        if active_pdf_scan:
-            raise HTTPException(status_code=409, detail=f"Quellen-Finder PDF scan is already running ({active_pdf_scan}).")
-    except HTTPException:
-        raise
-    except Exception:
-        pass
+        active_pdf_scan = _find_pdf_scan_run(
+            fs=fs,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            statuses={"queued", "running"},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to verify active PDF scan state before start | user_id=%s projekt_id=%s",
+            user_id,
+            projekt_id,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to verify active PDF scan state. Please retry.",
+        ) from exc
+    if active_pdf_scan:
+        active_pdf_scan_id, _ = active_pdf_scan
+        raise HTTPException(status_code=409, detail=f"Quellen-Finder PDF scan is already running ({active_pdf_scan_id}).")
 
     kapitel_snapshot = {
         "id": kapitel_id,
@@ -6093,6 +6152,35 @@ async def quellen_finder_project_pdf_delete(
         raise HTTPException(status_code=404, detail="PDF not found.")
     pdf_doc = pdf_snap.to_dict() or {}
     storage_path = str(pdf_doc.get("storagePath") or "").strip()
+
+    fs = QuellenFinderFirestoreService()
+    try:
+        blocking_pdf_scan = _find_pdf_scan_run(
+            fs=fs,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            statuses={"queued", "running", "success"},
+            pdf_id=pdf_id,
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to verify PDF scan references before deleting project PDF | user_id=%s projekt_id=%s pdf_id=%s",
+            user_id,
+            projekt_id,
+            pdf_id,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to verify PDF scan state. Please retry.",
+        ) from exc
+    if blocking_pdf_scan:
+        blocking_run_id, blocking_run = blocking_pdf_scan
+        blocking_status = str((blocking_run or {}).get("status") or "").strip()
+        if blocking_status in {"queued", "running"}:
+            detail = f"Cannot delete PDF while PDF scan is running ({blocking_run_id})."
+        else:
+            detail = f"Cannot delete PDF because it is referenced by PDF scan run ({blocking_run_id})."
+        raise HTTPException(status_code=409, detail=detail)
 
     if storage_path:
         delete_exc: Exception | None = None
