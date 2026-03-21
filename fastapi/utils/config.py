@@ -103,6 +103,14 @@ class Config:
             else ("cloud_run_job" if PDF_SCAN_FORCE_CLOUD_RUN_FROM_LOCAL else "local_background")
         ),
     ).strip().lower()
+    PDF_SCAN_STORAGE_RPC_TIMEOUT_SEC: int = max(
+        10,
+        _read_int_env("PDF_SCAN_STORAGE_RPC_TIMEOUT_SEC", 90),
+    )
+    PDF_SCAN_STORAGE_TOTAL_DOWNLOAD_TIMEOUT_SEC: int = max(
+        PDF_SCAN_STORAGE_RPC_TIMEOUT_SEC,
+        _read_int_env("PDF_SCAN_STORAGE_TOTAL_DOWNLOAD_TIMEOUT_SEC", 240),
+    )
 
     # Admin access endpoint (Basic Auth)
     # Used to set Firebase Auth custom claims (e.g. {"fullAccess": true}) for gating user access.

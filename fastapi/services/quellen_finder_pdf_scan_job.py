@@ -15,11 +15,11 @@ import time
 import traceback
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import HTTPException
 from firebase_admin import storage
-from google.api_core.exceptions import NotFound
+from google.api_core.exceptions import DeadlineExceeded, NotFound, RetryError
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from services.cost_service import TokenUsage, get_cost_service
@@ -52,6 +52,10 @@ PDF_SCAN_STAGE_LABELS = {
 
 class PdfScanRunCancelled(RuntimeError):
     """Raised when a PDF scan run is cancelled by the user."""
+
+
+class PdfScanRunTerminated(RuntimeError):
+    """Raised when a PDF scan worker is terminated externally."""
 
 
 def _exception_message(exc: BaseException, *, fallback: str = "Unknown error") -> str:
@@ -97,6 +101,15 @@ def _trim_text(value: Any, *, max_chars: int = 5000) -> str | None:
     if len(text) <= int(max_chars):
         return text
     return text[: max(0, int(max_chars) - 1)].rstrip() + "..."
+
+
+def _termination_message(message_getter: Callable[[], str | None] | None = None) -> str:
+    text = None
+    if callable(message_getter):
+        with contextlib.suppress(Exception):
+            text = message_getter()
+    trimmed = _trim_text(text, max_chars=500)
+    return trimmed or "PDF scan worker termination requested."
 
 
 def _is_mupdf_noise_line(text: Any) -> bool:
@@ -266,31 +279,64 @@ def _download_pdf_from_firebase_storage(
     dest_path: Path,
     expected_size: int | None,
     max_retries: int = 6,
+    cancel_requested_sync: Callable[[], bool] | None = None,
+    termination_requested_sync: Callable[[], bool] | None = None,
+    termination_message_getter: Callable[[], str | None] | None = None,
 ) -> None:
     storage_path = str(storage_path or "").strip().lstrip("/")
     if not storage_path:
         raise ValueError("storage_path is required")
 
+    def raise_if_stop_requested() -> None:
+        if callable(termination_requested_sync) and termination_requested_sync():
+            raise PdfScanRunTerminated(_termination_message(termination_message_getter))
+        if callable(cancel_requested_sync) and cancel_requested_sync():
+            raise PdfScanRunCancelled("Cancellation requested.")
+
+    total_timeout_sec = max(10, int(getattr(config, "PDF_SCAN_STORAGE_TOTAL_DOWNLOAD_TIMEOUT_SEC", 240) or 240))
+    rpc_timeout_sec = max(10, int(getattr(config, "PDF_SCAN_STORAGE_RPC_TIMEOUT_SEC", 90) or 90))
+    deadline = time.monotonic() + float(total_timeout_sec)
     last_exc: Exception | None = None
     for attempt in range(1, int(max_retries) + 1):
+        raise_if_stop_requested()
+        remaining_total = float(deadline - time.monotonic())
+        if remaining_total <= 0:
+            raise TimeoutError(f"Timed out downloading {storage_path} from Firebase Storage after {total_timeout_sec}s") from last_exc
         for bucket_name in _candidate_bucket_names(config.FIREBASE_PROJECT_ID, config.FIREBASE_STORAGE_BUCKET):
+            raise_if_stop_requested()
             try:
+                remaining_total = float(deadline - time.monotonic())
+                if remaining_total <= 0:
+                    raise TimeoutError(f"Timed out downloading {storage_path} from Firebase Storage after {total_timeout_sec}s")
+                timeout_sec = max(10.0, min(float(rpc_timeout_sec), remaining_total))
                 bucket = storage.bucket(bucket_name)
                 blob = bucket.blob(storage_path)
-                if not blob.exists():
+                if not blob.exists(timeout=timeout_sec):
                     continue
-                blob.download_to_filename(str(dest_path))
+                blob.download_to_filename(str(dest_path), timeout=timeout_sec)
                 _verify_pdf_file(dest_path, expected_size=expected_size)
                 return
             except NotFound as exc:
                 last_exc = exc
+                with contextlib.suppress(FileNotFoundError):
+                    dest_path.unlink()
+                continue
+            except (DeadlineExceeded, RetryError, TimeoutError) as exc:
+                last_exc = exc
+                with contextlib.suppress(FileNotFoundError):
+                    dest_path.unlink()
                 continue
             except Exception as exc:
                 last_exc = exc
+                with contextlib.suppress(FileNotFoundError):
+                    dest_path.unlink()
                 continue
 
         sleep_s = min(8.0, 0.8 * (2 ** (attempt - 1)))
-        time.sleep(float(sleep_s))
+        stop_sleep_at = time.monotonic() + float(sleep_s)
+        while time.monotonic() < stop_sleep_at:
+            raise_if_stop_requested()
+            time.sleep(min(0.25, max(0.05, stop_sleep_at - time.monotonic())))
 
     raise RuntimeError(f"Failed to download {storage_path} from Firebase Storage") from last_exc
 
@@ -354,11 +400,18 @@ def _download_selected_pdfs(
     pdf_snapshots: list[dict[str, Any]],
     pdf_root: Path,
     on_progress_sync: Any,
+    cancel_requested_sync: Callable[[], bool] | None = None,
+    termination_requested_sync: Callable[[], bool] | None = None,
+    termination_message_getter: Callable[[], str | None] | None = None,
 ) -> dict[str, dict[str, Any]]:
     pdf_root.mkdir(parents=True, exist_ok=True)
     resolved: dict[str, dict[str, Any]] = {}
     total = len(pdf_snapshots)
     for index, snapshot in enumerate(pdf_snapshots, start=1):
+        if callable(termination_requested_sync) and termination_requested_sync():
+            raise PdfScanRunTerminated(_termination_message(termination_message_getter))
+        if callable(cancel_requested_sync) and cancel_requested_sync():
+            raise PdfScanRunCancelled("Cancellation requested.")
         pdf_id = _as_str_or_none(snapshot.get("id"))
         storage_path = _as_str_or_none(snapshot.get("storagePath"))
         filename = _slugify_filename(_as_str_or_none(snapshot.get("filename")) or f"{pdf_id or index}.pdf")
@@ -375,6 +428,9 @@ def _download_selected_pdfs(
             storage_path=storage_path,
             dest_path=dest_path,
             expected_size=expected_size,
+            cancel_requested_sync=cancel_requested_sync,
+            termination_requested_sync=termination_requested_sync,
+            termination_message_getter=termination_message_getter,
         )
         resolved[pdf_id] = {
             **snapshot,
@@ -597,6 +653,8 @@ async def _run_pipeline_subprocess(
     max_pdfs: int,
     on_progress: Any,
     cancel_requested_sync: Any,
+    termination_requested_sync: Callable[[], bool] | None = None,
+    termination_message_getter: Callable[[], str | None] | None = None,
 ) -> dict[str, Any]:
     args = [
         sys.executable,
@@ -631,6 +689,7 @@ async def _run_pipeline_subprocess(
     }
 
     cancel_requested = False
+    termination_requested = False
 
     async def handle_event(payload: dict[str, Any]) -> None:
         event = _as_str_or_none(payload.get("event")) or ""
@@ -685,7 +744,7 @@ async def _run_pipeline_subprocess(
         fut.result()
 
     def run_threaded_subprocess() -> dict[str, Any]:
-        nonlocal cancel_requested
+        nonlocal cancel_requested, termination_requested
         proc = subprocess.Popen(
             args,
             cwd=str(FASTAPI_ROOT),
@@ -722,8 +781,15 @@ async def _run_pipeline_subprocess(
         stderr_thread.start()
 
         while True:
-            if cancel_requested_sync() and proc.poll() is None:
+            stop_requested = False
+            if callable(termination_requested_sync) and termination_requested_sync() and proc.poll() is None:
+                termination_requested = True
+                stop_requested = True
+            elif cancel_requested_sync() and proc.poll() is None:
                 cancel_requested = True
+                stop_requested = True
+
+            if stop_requested:
                 with contextlib.suppress(Exception):
                     proc.terminate()
                 deadline = time.time() + 15.0
@@ -775,6 +841,8 @@ async def _run_pipeline_subprocess(
         return_code = proc.wait(timeout=5)
         _flush_suppressed_child_lines(state)
 
+        if termination_requested:
+            raise PdfScanRunTerminated(_termination_message(termination_message_getter))
         if cancel_requested:
             raise PdfScanRunCancelled("Cancellation requested.")
         if return_code != 0:
@@ -832,10 +900,16 @@ async def _run_pipeline_subprocess(
             logger.info("PDF scan child %s | %s", "stderr" if is_stderr else "stdout", text)
 
     async def watch_cancel() -> None:
-        nonlocal cancel_requested
+        nonlocal cancel_requested, termination_requested
         while proc.returncode is None:
-            if cancel_requested_sync():
+            stop_requested = False
+            if callable(termination_requested_sync) and termination_requested_sync():
+                termination_requested = True
+                stop_requested = True
+            elif cancel_requested_sync():
                 cancel_requested = True
+                stop_requested = True
+            if stop_requested:
                 try:
                     proc.terminate()
                 except ProcessLookupError:
@@ -861,6 +935,8 @@ async def _run_pipeline_subprocess(
             await cancel_task
         _flush_suppressed_child_lines(state)
 
+    if termination_requested:
+        raise PdfScanRunTerminated(_termination_message(termination_message_getter))
     if cancel_requested:
         raise PdfScanRunCancelled("Cancellation requested.")
     if return_code != 0:
@@ -879,8 +955,86 @@ async def run_quellen_finder_pdf_scan_job_from_run_doc(
     user_id: str,
     projekt_id: str,
     run_id: str,
+    external_termination_event: asyncio.Event | None = None,
+    external_termination_message_getter: Callable[[], str | None] | None = None,
 ) -> None:
     fs = QuellenFinderFirestoreService()
+    budget_service = get_openai_budget_service(firebase_service)
+
+    def _reservation_operation_id_from_data(data: dict[str, Any]) -> str:
+        billing_state = data.get("billing") if isinstance(data.get("billing"), dict) else {}
+        return _as_str_or_none((billing_state or {}).get("reservationOperationId")) or f"{run_id}_pdf_scan_run"
+
+    async def _finalize_preflight_failure(*, message: str, cancelled: bool) -> None:
+        normalized_message = _trim_text(message, max_chars=1000) or ("Cancellation requested." if cancelled else "Unknown error")
+        data = {}
+        with contextlib.suppress(Exception):
+            data = await asyncio.to_thread(
+                fs.get_run,
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+            )
+        reservation_operation_id = _reservation_operation_id_from_data(data if isinstance(data, dict) else {})
+        if cancelled:
+            with contextlib.suppress(Exception):
+                await budget_service.mark_status(
+                    user_id=user_id,
+                    operation_id=reservation_operation_id,
+                    status="cancelled",
+                    error_message=normalized_message,
+                )
+            with contextlib.suppress(Exception):
+                await budget_service.release_reservation(
+                    user_id=user_id,
+                    operation_id=reservation_operation_id,
+                    reason="cancelled",
+                )
+            with contextlib.suppress(Exception):
+                fs.mark_cancelled(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+            with contextlib.suppress(Exception):
+                fs.run_ref(user_id, projekt_id, run_id).set(
+                    {
+                        "billing": {
+                            "status": "cancelled",
+                            "reservationOperationId": reservation_operation_id,
+                        }
+                    },
+                    merge=True,
+                )
+            return
+
+        with contextlib.suppress(Exception):
+            await budget_service.mark_status(
+                user_id=user_id,
+                operation_id=reservation_operation_id,
+                status="error",
+                error_message=normalized_message,
+            )
+        with contextlib.suppress(Exception):
+            await budget_service.release_reservation(
+                user_id=user_id,
+                operation_id=reservation_operation_id,
+                reason="error",
+            )
+        with contextlib.suppress(Exception):
+            fs.mark_error(
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+                error_message=normalized_message,
+                had_partial_failures=False,
+            )
+        with contextlib.suppress(Exception):
+            fs.run_ref(user_id, projekt_id, run_id).set(
+                {
+                    "billing": {
+                        "status": "error",
+                        "reservationOperationId": reservation_operation_id,
+                    }
+                },
+                merge=True,
+            )
 
     def _load() -> tuple[dict[str, Any], str | None]:
         data = fs.get_run(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
@@ -904,17 +1058,34 @@ async def run_quellen_finder_pdf_scan_job_from_run_doc(
         )
         return
 
-    if str((data or {}).get("kind") or "") != "pdf_scan":
-        raise RuntimeError("Run is not a pdf_scan run.")
+    try:
+        if external_termination_event is not None and external_termination_event.is_set():
+            raise PdfScanRunTerminated(_termination_message(external_termination_message_getter))
 
-    kapitel_id, settings = _build_runtime_settings_from_run_doc(data)
-    await run_quellen_finder_pdf_scan_job(
-        user_id=user_id,
-        projekt_id=projekt_id,
-        kapitel_id=kapitel_id,
-        run_id=run_id,
-        settings=settings,
-    )
+        if str((data or {}).get("kind") or "") != "pdf_scan":
+            raise RuntimeError("Run is not a pdf_scan run.")
+
+        kapitel_id, settings = _build_runtime_settings_from_run_doc(data)
+        if external_termination_event is not None and external_termination_event.is_set():
+            raise PdfScanRunTerminated(_termination_message(external_termination_message_getter))
+
+        await run_quellen_finder_pdf_scan_job(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            settings=settings,
+            external_termination_event=external_termination_event,
+            external_termination_message_getter=external_termination_message_getter,
+        )
+    except PdfScanRunCancelled as exc:
+        logger.info("QF pdf scan preflight cancelled | run_id=%s err=%s", run_id, exc)
+        await _finalize_preflight_failure(message=_exception_message(exc), cancelled=True)
+        raise
+    except Exception as exc:
+        logger.error("QF pdf scan preflight failed | run_id=%s error=%s", run_id, exc, exc_info=True)
+        await _finalize_preflight_failure(message=_exception_message(exc), cancelled=False)
+        raise
 
 
 async def run_quellen_finder_pdf_scan_job(
@@ -924,6 +1095,8 @@ async def run_quellen_finder_pdf_scan_job(
     kapitel_id: str,
     run_id: str,
     settings: dict[str, Any],
+    external_termination_event: asyncio.Event | None = None,
+    external_termination_message_getter: Callable[[], str | None] | None = None,
 ) -> None:
     fs = QuellenFinderFirestoreService()
     budget_service = get_openai_budget_service(firebase_service)
@@ -946,13 +1119,18 @@ async def run_quellen_finder_pdf_scan_job(
     t0 = time.perf_counter()
     heartbeat_stop = asyncio.Event()
 
-    def cancel_requested_sync() -> bool:
+    def user_cancel_requested_sync() -> bool:
         snap = fs.run_ref(user_id, projekt_id, run_id).get()
         data = snap.to_dict() if snap is not None else {}
         return bool((data or {}).get("cancelRequestedAt"))
 
+    def termination_requested_sync() -> bool:
+        return bool(external_termination_event is not None and external_termination_event.is_set())
+
     async def check_cancel() -> None:
-        if await asyncio.to_thread(cancel_requested_sync):
+        if termination_requested_sync():
+            raise PdfScanRunTerminated(_termination_message(external_termination_message_getter))
+        if await asyncio.to_thread(user_cancel_requested_sync):
             raise PdfScanRunCancelled("Cancellation requested.")
 
     last_stage: str | None = None
@@ -1161,6 +1339,9 @@ async def run_quellen_finder_pdf_scan_job(
                 pdf_snapshots=pdf_snapshot_rows,
                 pdf_root=pdf_root,
                 on_progress_sync=on_progress_sync,
+                cancel_requested_sync=user_cancel_requested_sync,
+                termination_requested_sync=termination_requested_sync,
+                termination_message_getter=external_termination_message_getter,
             )
             await check_cancel()
 
@@ -1169,7 +1350,9 @@ async def run_quellen_finder_pdf_scan_job(
                 pdf_root=pdf_root,
                 max_pdfs=len(pdf_snapshot_rows),
                 on_progress=on_progress,
-                cancel_requested_sync=cancel_requested_sync,
+                cancel_requested_sync=user_cancel_requested_sync,
+                termination_requested_sync=termination_requested_sync,
+                termination_message_getter=external_termination_message_getter,
             )
             await check_cancel()
 
@@ -1329,6 +1512,26 @@ async def run_quellen_finder_pdf_scan_job(
         fs.mark_cancelled(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
         terminal_stages = _mark_current_stage_terminal("cancelled")
         payload: dict[str, Any] = {"billing": {"status": "cancelled", "reservationOperationId": reservation_operation_id}}
+        if terminal_stages is not None:
+            payload["pipelineStages"] = terminal_stages
+        fs.run_ref(user_id, projekt_id, run_id).set(payload, merge=True)
+    except PdfScanRunTerminated as exc:
+        logger.error("QF pdf scan terminated | run_id=%s reason=%s", run_id, exc)
+        msg = _exception_message(exc)[:1000]
+        await budget_service.mark_status(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            status="error",
+            error_message=msg,
+        )
+        await budget_service.release_reservation(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            reason="error",
+        )
+        fs.mark_error(user_id=user_id, projekt_id=projekt_id, run_id=run_id, error_message=msg, had_partial_failures=False)
+        terminal_stages = _mark_current_stage_terminal("error")
+        payload: dict[str, Any] = {"billing": {"status": "error", "reservationOperationId": reservation_operation_id}}
         if terminal_stages is not None:
             payload["pipelineStages"] = terminal_stages
         fs.run_ref(user_id, projekt_id, run_id).set(payload, merge=True)

@@ -299,6 +299,10 @@ class QuellenFinderPdfScanRequest(BaseModel):
 
     projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
     kapitel_id: str = Field(..., description="Kapitel ID to run PDF scan for")
+    confirm_duplicate_kapitel_run: bool = Field(
+        default=False,
+        description="Explicit confirmation required to start another PDF scan while the same Kapitel already has a queued or running scan",
+    )
     pdf_ids: List[str] = Field(
         ...,
         description="Project PDF document IDs to scan (max 30 per run)",
@@ -310,6 +314,7 @@ class QuellenFinderPdfScanRequest(BaseModel):
             "example": {
                 "projekt_id": "proj123",
                 "kapitel_id": "kap456",
+                "confirm_duplicate_kapitel_run": False,
                 "pdf_ids": ["pdfA", "pdfB"],
             }
         }

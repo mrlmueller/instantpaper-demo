@@ -289,12 +289,35 @@ async function loadPdfJsForUpload(): Promise<PdfJsModule> {
   return pdfjsUploadPromise;
 }
 
+type FastApiErrorPayload = {
+  detail?: unknown;
+  error?: unknown;
+  message?: unknown;
+};
+
+function getFastApiErrorDetailObject(payload: FastApiErrorPayload): Record<string, unknown> | null {
+  return typeof payload.detail === "object" && payload.detail !== null && !Array.isArray(payload.detail)
+    ? (payload.detail as Record<string, unknown>)
+    : null;
+}
+
+function extractFastApiError(payload: FastApiErrorPayload): string {
+  for (const candidate of [payload.detail, payload.error, payload.message]) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+    if (typeof candidate === "object" && candidate !== null && !Array.isArray(candidate)) {
+      for (const key of ["message", "detail", "error"]) {
+        const value = (candidate as Record<string, unknown>)[key];
+        if (typeof value === "string" && value.trim()) return value.trim();
+      }
+    }
+  }
+  return "Request failed.";
+}
+
 async function readFastApiError(res: Response): Promise<string> {
   try {
-    const payload = (await res.json().catch(() => ({}))) as { detail?: unknown; error?: unknown; message?: unknown };
-    for (const candidate of [payload.detail, payload.error, payload.message]) {
-      if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
-    }
+    const payload = (await res.json().catch(() => ({}))) as FastApiErrorPayload;
+    return extractFastApiError(payload);
   } catch {
     // ignore
   }
@@ -328,6 +351,11 @@ function normalizeLibraryMatchKey(value: string): string {
 
 function toHex(buffer: ArrayBuffer): string {
   return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function isPdfScanRunActive(run: { status?: unknown } | null | undefined): boolean {
+  const status = String(run?.status || "").trim();
+  return status === "queued" || status === "running";
 }
 
 async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
@@ -460,6 +488,8 @@ export function PdfScanWorkspace({
   const [docRowsLoaded, setDocRowsLoaded] = useState(() => previewMode);
   const [openDocIds, setOpenDocIds] = useState<string[]>(() => (preview?.docRows ?? []).map((row) => row.id));
   const [startConfirmOpen, setStartConfirmOpen] = useState(false);
+  const [duplicateKapitelConfirmOpen, setDuplicateKapitelConfirmOpen] = useState(false);
+  const [duplicateKapitelConflictRunId, setDuplicateKapitelConflictRunId] = useState<string | null>(null);
   const [deleteConfirmPdf, setDeleteConfirmPdf] = useState<PdfRow | null>(null);
 
   const [sectionRowsByDocId, setSectionRowsByDocId] = useState<Record<string, PdfSectionRow[]>>(() => preview?.sectionsByDocId ?? {});
@@ -530,6 +560,15 @@ export function PdfScanWorkspace({
 
   const pdfScanRuns = useMemo(() => runs.filter((run) => run.kind === "pdf_scan"), [runs]);
 
+  const selectedKapitelRunningRuns = useMemo(() => {
+    if (!selectedKapitelId) return [];
+    return pdfScanRuns.filter(
+      (run) => isPdfScanRunActive(run) && Array.isArray(run.kapitelIds) && run.kapitelIds.includes(selectedKapitelId)
+    );
+  }, [pdfScanRuns, selectedKapitelId]);
+
+  const sameKapitelRunningRun = selectedKapitelRunningRuns[0] ?? null;
+
   const activeRun = useMemo(() => {
     if (activeRunId) {
       const found = pdfScanRuns.find((run) => run.id === activeRunId);
@@ -562,9 +601,9 @@ export function PdfScanWorkspace({
     });
   }, [pdfLibraryFilter, pdfColorById, pdfs]);
 
-  const projectRunningRun = useMemo(
-    () => pdfScanRuns.find((run) => run.status === "queued" || run.status === "running") ?? null,
-    [pdfScanRuns]
+  const otherProjectRunningRun = useMemo(
+    () => pdfScanRuns.find((run) => isPdfScanRunActive(run) && run.id !== activeRun?.id) ?? null,
+    [activeRun?.id, pdfScanRuns]
   );
 
   const pdfDeleteBlockers = useMemo(() => {
@@ -574,7 +613,7 @@ export function PdfScanWorkspace({
       const status = String(run.status || "").trim();
       if (status !== "queued" && status !== "running" && status !== "success") continue;
 
-      const isActive = status === "queued" || status === "running";
+      const isActive = isPdfScanRunActive(run);
       for (const rawPdfId of Array.isArray(run.pdfIds) ? run.pdfIds : []) {
         const pdfId = String(rawPdfId || "").trim();
         if (!pdfId) continue;
@@ -1237,16 +1276,13 @@ export function PdfScanWorkspace({
       showPdfSelectionLimitToast();
       return;
     }
-    if (projectRunningRun) {
-      setActiveRunId(projectRunningRun.id);
-      toast.error("Es läuft bereits ein PDF-Scan", { description: `Run: ${projectRunningRun.id}` });
-      return;
-    }
+    setDuplicateKapitelConfirmOpen(false);
+    setDuplicateKapitelConflictRunId(null);
     setStartConfirmOpen(true);
   };
 
   const handleStartButtonClick = () => {
-    if (selectedPdfIds.length === 0 && !previewMode && !uploading && !projectRunningRun) {
+    if (selectedPdfIds.length === 0 && !previewMode && !uploading) {
       setLibraryExpanded(true);
       setLibraryManagerOpen(true);
       return;
@@ -1254,13 +1290,23 @@ export function PdfScanWorkspace({
     startPdfScan();
   };
 
-  const confirmStartPdfScan = async () => {
+  const confirmStartPdfScan = async (allowDuplicateKapitelRun = false) => {
     if (!selectedKapitelId || selectedPdfIds.length === 0) return;
     if (selectedPdfIds.length > PDF_SCAN_MAX_PDFS_PER_RUN) {
       showPdfSelectionLimitToast();
       return;
     }
+
+    if (sameKapitelRunningRun && !allowDuplicateKapitelRun) {
+      setStartConfirmOpen(false);
+      setDuplicateKapitelConflictRunId(sameKapitelRunningRun.id);
+      setDuplicateKapitelConfirmOpen(true);
+      return;
+    }
+
     setStartConfirmOpen(false);
+    setDuplicateKapitelConfirmOpen(false);
+    setDuplicateKapitelConflictRunId(null);
     const token = Cookies.get("__session");
     if (!token) {
       toast.error("Nicht eingeloggt", { description: "Session-Token fehlt." });
@@ -1273,17 +1319,27 @@ export function PdfScanWorkspace({
       body: JSON.stringify({
         projekt_id: projektId,
         kapitel_id: selectedKapitelId,
+        confirm_duplicate_kapitel_run: allowDuplicateKapitelRun,
         pdf_ids: selectedPdfIds,
       }),
     });
 
     if (!res.ok) {
-      const detail = await readFastApiError(res);
+      const payload = (await res.json().catch(() => ({}))) as FastApiErrorPayload;
+      const detail = extractFastApiError(payload);
+      const detailObject = getFastApiErrorDetailObject(payload);
       if (res.status === 402) {
         toast.error("Nicht genügend Credits", { description: detail });
         return;
       }
       if (res.status === 409) {
+        const code = typeof detailObject?.code === "string" ? detailObject.code : "";
+        const runId = typeof detailObject?.run_id === "string" ? detailObject.run_id : null;
+        if (code === "same_kapitel_scan_running" && !allowDuplicateKapitelRun) {
+          setDuplicateKapitelConflictRunId(runId);
+          setDuplicateKapitelConfirmOpen(true);
+          return;
+        }
         toast.error("PDF-Scan läuft bereits", { description: detail });
         return;
       }
@@ -1403,6 +1459,7 @@ export function PdfScanWorkspace({
   const currentStepLabel =
     PDF_SCAN_PIPELINE_STEPS[isDone ? PDF_SCAN_PIPELINE_STEPS.length - 1 : Math.max(0, activeStepIndex)]?.label ?? "Pipeline";
   const runOutcomeLabel = isDone ? "Erfolgreich" : isCancelled ? "Abgebrochen" : isError ? "Fehler" : "Läuft";
+  const duplicateKapitelPromptRunId = duplicateKapitelConflictRunId ?? sameKapitelRunningRun?.id ?? null;
 
   const startDisabledReasons: string[] = [];
   if (previewMode) startDisabledReasons.push("Der Scan ist in dieser Vorschau deaktiviert.");
@@ -1412,9 +1469,8 @@ export function PdfScanWorkspace({
     startDisabledReasons.push(`Maximal ${PDF_SCAN_MAX_PDFS_PER_RUN} PDFs pro Scan sind erlaubt.`);
   }
   if (uploading) startDisabledReasons.push("Warte, bis der aktuelle PDF-Upload abgeschlossen ist.");
-  if (projectRunningRun) startDisabledReasons.push("In diesem Projekt läuft bereits ein anderer PDF-Scan.");
   const canStart = startDisabledReasons.length === 0;
-  const canOpenLibraryFromStart = !previewMode && !uploading && !projectRunningRun && selectedPdfIds.length === 0;
+  const canOpenLibraryFromStart = !previewMode && !uploading && selectedPdfIds.length === 0;
   const startButtonEnabled = canStart || canOpenLibraryFromStart;
 
   return (
@@ -1583,9 +1639,14 @@ export function PdfScanWorkspace({
                   </Tooltip>
                 </TooltipProvider>
               )}
-              {projectRunningRun && projectRunningRun.id !== activeRun?.id ? (
+              {sameKapitelRunningRun ? (
+                <div className="mt-3 text-xs leading-5 text-amber-700">
+                  Für dieses Kapitel läuft bereits ein aktiver Scan
+                  {duplicateKapitelPromptRunId ? ` (${duplicateKapitelPromptRunId})` : ""}. Ein weiterer Scan ist möglich, erfordert aber eine zweite Bestätigung.
+                </div>
+              ) : otherProjectRunningRun ? (
                 <div className="mt-3 text-xs leading-5 text-slate-500">
-                  Es läuft bereits ein anderer Scan im Projekt. Wähle ihn unten aus, um den Status zu verfolgen.
+                  Im Projekt läuft bereits mindestens ein weiterer Scan parallel. Unten kannst du zwischen den Runs wechseln.
                 </div>
               ) : null}
             </div>
@@ -2271,6 +2332,42 @@ export function PdfScanWorkspace({
                 onClick={() => void confirmStartPdfScan()}
               >
                 Scan starten
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          open={duplicateKapitelConfirmOpen}
+          onOpenChange={(open) => {
+            setDuplicateKapitelConfirmOpen(open);
+            if (!open) setDuplicateKapitelConflictRunId(null);
+          }}
+        >
+          <AlertDialogContent className="max-w-[560px] rounded-[14px] border-slate-200 shadow-xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Für dieses Kapitel läuft bereits ein Scan</AlertDialogTitle>
+              <AlertDialogDescription className="text-left text-sm leading-6 text-slate-600">
+                <span className="block">
+                  Für <span className="font-medium text-slate-900">{chapterHeading}</span> läuft bereits
+                  {selectedKapitelRunningRuns.length > 1 ? ` ${formatIntDe(selectedKapitelRunningRuns.length)} aktive Scans` : " ein aktiver Scan"}
+                  {duplicateKapitelPromptRunId ? ` (${duplicateKapitelPromptRunId})` : ""}.
+                </span>
+                <span className="mt-3 block">
+                  Wenn du jetzt noch einen weiteren Scan startest, laufen mehrere PDF-Scans parallel für dasselbe Kapitel.
+                </span>
+                <span className="mt-3 block font-medium text-slate-900">
+                  Bist du wirklich wirklich wirklich sicher, dass du noch einen weiteren Scan starten willst?
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="rounded-[4px]">Abbrechen</AlertDialogCancel>
+              <AlertDialogAction
+                className="rounded-[4px] border-[#1680cd] bg-[#1680cd] text-white hover:bg-[#0f76c2]"
+                onClick={() => void confirmStartPdfScan(true)}
+              >
+                Ja, weiteren Scan starten
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -541,6 +541,7 @@ def _find_pdf_scan_run(
     user_id: str,
     projekt_id: str,
     statuses: set[str] | None = None,
+    kapitel_id: str | None = None,
     pdf_id: str | None = None,
 ) -> tuple[str, dict] | None:
     allowed_statuses = {
@@ -548,6 +549,7 @@ def _find_pdf_scan_run(
         for status in (statuses or set())
         if str(status or "").strip()
     } or None
+    kapitel_id_norm = str(kapitel_id or "").strip()
     pdf_id_norm = str(pdf_id or "").strip()
 
     for snap in fs.runs_col(user_id, projekt_id).where(filter=firestore.FieldFilter("kind", "==", "pdf_scan")).stream():
@@ -560,6 +562,17 @@ def _find_pdf_scan_run(
         status_now = str((data or {}).get("status") or "").strip()
         if allowed_statuses is not None and status_now not in allowed_statuses:
             continue
+        if kapitel_id_norm:
+            run_kapitel_ids = data.get("kapitelIds")
+            if not isinstance(run_kapitel_ids, list):
+                continue
+            run_kapitel_id_set = {
+                str(raw_kapitel_id or "").strip()
+                for raw_kapitel_id in run_kapitel_ids
+                if str(raw_kapitel_id or "").strip()
+            }
+            if kapitel_id_norm not in run_kapitel_id_set:
+                continue
         if pdf_id_norm and pdf_id_norm not in _pdf_scan_run_pdf_ids(data):
             continue
 
@@ -5539,6 +5552,7 @@ async def quellen_finder_pdf_scan(
 
     projekt_id = str(request.projekt_id or "").strip()
     kapitel_id = str(request.kapitel_id or "").strip()
+    confirm_duplicate_kapitel_run = bool(request.confirm_duplicate_kapitel_run)
     pdf_ids = list(dict.fromkeys(str(x or "").strip() for x in (request.pdf_ids or []) if str(x or "").strip()))
 
     if not projekt_id:
@@ -5575,25 +5589,38 @@ async def quellen_finder_pdf_scan(
     fs = QuellenFinderFirestoreService()
 
     try:
-        active_pdf_scan = _find_pdf_scan_run(
+        active_kapitel_pdf_scan = _find_pdf_scan_run(
             fs=fs,
             user_id=user_id,
             projekt_id=projekt_id,
             statuses={"queued", "running"},
+            kapitel_id=kapitel_id,
         )
     except Exception as exc:
         logger.exception(
-            "Failed to verify active PDF scan state before start | user_id=%s projekt_id=%s",
+            "Failed to verify active PDF scan state before start | user_id=%s projekt_id=%s kapitel_id=%s",
             user_id,
             projekt_id,
+            kapitel_id,
         )
         raise HTTPException(
             status_code=503,
             detail="Failed to verify active PDF scan state. Please retry.",
         ) from exc
-    if active_pdf_scan:
-        active_pdf_scan_id, _ = active_pdf_scan
-        raise HTTPException(status_code=409, detail=f"Quellen-Finder PDF scan is already running ({active_pdf_scan_id}).")
+    if active_kapitel_pdf_scan and not confirm_duplicate_kapitel_run:
+        active_pdf_scan_id, _ = active_kapitel_pdf_scan
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "same_kapitel_scan_running",
+                "message": (
+                    "Für dieses Kapitel läuft bereits ein PDF-Scan. "
+                    "Set confirm_duplicate_kapitel_run=true to start another run."
+                ),
+                "run_id": active_pdf_scan_id,
+                "kapitel_id": kapitel_id,
+            },
+        )
 
     kapitel_snapshot = {
         "id": kapitel_id,

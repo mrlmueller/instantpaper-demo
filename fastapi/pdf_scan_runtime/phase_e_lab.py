@@ -1006,58 +1006,71 @@ def run_phase_e(run_ctx: Any, *, options: PhaseEOptions, stable_hash_fn=None, lo
     lane_rows["passage_lexical"] = score_text_lane("passage_lexical", lane_inputs["passage_lexical"]["items"], lane_inputs["passage_lexical"]["texts"], views, query_plan, opt)
 
     if bool(opt.use_openai_dense) and PhaseEOpenAI is not None and PHASE_E_API_KEY and np is not None:
-        q_texts = [trunc(v.get("query_text"), opt.dense_query_max_chars) for v in views]
-        dense_jobs = [("queries", q_texts)]
-        if lane_inputs["section_dense"]["texts"]:
-            dense_jobs.append(("sections", list(lane_inputs["section_dense"]["texts"])))
-        if lane_inputs["passage_dense"]["texts"]:
-            dense_jobs.append(("passages", list(lane_inputs["passage_dense"]["texts"])))
-        resolved_dense_task_concurrency = resolve_phase_e_dense_task_concurrency(task_count=len(dense_jobs))
-        dense_results: Dict[str, Any] = {}
+        try:
+            q_texts = [trunc(v.get("query_text"), opt.dense_query_max_chars) for v in views]
+            dense_jobs = [("queries", q_texts)]
+            if lane_inputs["section_dense"]["texts"]:
+                dense_jobs.append(("sections", list(lane_inputs["section_dense"]["texts"])))
+            if lane_inputs["passage_dense"]["texts"]:
+                dense_jobs.append(("passages", list(lane_inputs["passage_dense"]["texts"])))
+            resolved_dense_task_concurrency = resolve_phase_e_dense_task_concurrency(task_count=len(dense_jobs))
+            dense_results: Dict[str, Any] = {}
 
-        def run_dense_job(job_name: str, texts: List[str]):
-            mat, usage, cost = embed_texts(texts, opt.openai_embedding_model, opt.dense_batch_size, opt.openai_timeout_sec, opt.dense_dimensions)
-            return job_name, mat, usage, cost
+            def run_dense_job(job_name: str, texts: List[str]):
+                mat, usage, cost = embed_texts(texts, opt.openai_embedding_model, opt.dense_batch_size, opt.openai_timeout_sec, opt.dense_dimensions)
+                return job_name, mat, usage, cost
 
-        if resolved_dense_task_concurrency <= 1:
-            for job_name, texts in dense_jobs:
-                _, mat, usage, cost = run_dense_job(job_name, texts)
-                dense_results[job_name] = (mat, usage, cost)
-        else:
-            with ThreadPoolExecutor(max_workers=resolved_dense_task_concurrency) as executor:
-                future_map = {
-                    executor.submit(run_dense_job, job_name, texts): job_name
-                    for job_name, texts in dense_jobs
-                }
-                for future in as_completed(future_map):
-                    job_name, mat, usage, cost = future.result()
+            if resolved_dense_task_concurrency <= 1:
+                for job_name, texts in dense_jobs:
+                    _, mat, usage, cost = run_dense_job(job_name, texts)
                     dense_results[job_name] = (mat, usage, cost)
+            else:
+                with ThreadPoolExecutor(max_workers=resolved_dense_task_concurrency) as executor:
+                    future_map = {
+                        executor.submit(run_dense_job, job_name, texts): job_name
+                        for job_name, texts in dense_jobs
+                    }
+                    for future in as_completed(future_map):
+                        job_name, mat, usage, cost = future.result()
+                        dense_results[job_name] = (mat, usage, cost)
 
-        qmat, qusage, qcost = dense_results["queries"]
-        query_mats = {str(v.get("view_id")): qmat[i : i + 1] for i, v in enumerate(views)}
-        if "sections" in dense_results:
-            smat, susage, _ = dense_results["sections"]
-        else:
-            smat, susage = np.zeros((0, 0), dtype=np.float32), {"input_tokens": None, "total_tokens": None, "output_tokens": 0}
-        if "passages" in dense_results:
-            pmat, pusage, _ = dense_results["passages"]
-        else:
-            pmat, pusage = np.zeros((0, 0), dtype=np.float32), {"input_tokens": None, "total_tokens": None, "output_tokens": 0}
-        input_tokens = sum(v for v in [qusage.get("input_tokens"), susage.get("input_tokens"), pusage.get("input_tokens")] if isinstance(v, int)) or None
-        total_tokens = sum(v for v in [qusage.get("total_tokens"), susage.get("total_tokens"), pusage.get("total_tokens")] if isinstance(v, int)) or None
-        dense_trace = {
-            "dense_mode": "openai",
-            "model_used": qcost.get("model_name") or opt.openai_embedding_model,
-            "usage": {"input_tokens": input_tokens, "total_tokens": total_tokens, "output_tokens": 0},
-            "cost": {**embed_price(qcost.get("model_name") or opt.openai_embedding_model, input_tokens), "usage": {"input_tokens": input_tokens, "total_tokens": total_tokens, "output_tokens": 0}},
-            "query_count": len(views),
-            "section_count": len(lane_inputs["section_dense"]["items"]),
-            "passage_count": len(lane_inputs["passage_dense"]["items"]),
-            "resolved_task_concurrency": resolved_dense_task_concurrency,
-            "cpu_count": available_cpu_count(),
-        }
-        lane_rows["section_dense"] = score_dense_lane("section_dense", lane_inputs["section_dense"]["items"], smat, query_mats, views, query_plan, opt)
-        lane_rows["passage_dense"] = score_dense_lane("passage_dense", lane_inputs["passage_dense"]["items"], pmat, query_mats, views, query_plan, opt)
+            qmat, qusage, qcost = dense_results["queries"]
+            query_mats = {str(v.get("view_id")): qmat[i : i + 1] for i, v in enumerate(views)}
+            if "sections" in dense_results:
+                smat, susage, _ = dense_results["sections"]
+            else:
+                smat, susage = np.zeros((0, 0), dtype=np.float32), {"input_tokens": None, "total_tokens": None, "output_tokens": 0}
+            if "passages" in dense_results:
+                pmat, pusage, _ = dense_results["passages"]
+            else:
+                pmat, pusage = np.zeros((0, 0), dtype=np.float32), {"input_tokens": None, "total_tokens": None, "output_tokens": 0}
+            input_tokens = sum(v for v in [qusage.get("input_tokens"), susage.get("input_tokens"), pusage.get("input_tokens")] if isinstance(v, int)) or None
+            total_tokens = sum(v for v in [qusage.get("total_tokens"), susage.get("total_tokens"), pusage.get("total_tokens")] if isinstance(v, int)) or None
+            dense_trace = {
+                "dense_mode": "openai",
+                "model_used": qcost.get("model_name") or opt.openai_embedding_model,
+                "usage": {"input_tokens": input_tokens, "total_tokens": total_tokens, "output_tokens": 0},
+                "cost": {**embed_price(qcost.get("model_name") or opt.openai_embedding_model, input_tokens), "usage": {"input_tokens": input_tokens, "total_tokens": total_tokens, "output_tokens": 0}},
+                "query_count": len(views),
+                "section_count": len(lane_inputs["section_dense"]["items"]),
+                "passage_count": len(lane_inputs["passage_dense"]["items"]),
+                "resolved_task_concurrency": resolved_dense_task_concurrency,
+                "cpu_count": available_cpu_count(),
+            }
+            lane_rows["section_dense"] = score_dense_lane("section_dense", lane_inputs["section_dense"]["items"], smat, query_mats, views, query_plan, opt)
+            lane_rows["passage_dense"] = score_dense_lane("passage_dense", lane_inputs["passage_dense"]["items"], pmat, query_mats, views, query_plan, opt)
+        except Exception as exc:
+            dense_trace = {
+                "dense_mode": "fallback_lexical_only" if bool(opt.allow_lexical_only_fallback) else "failed",
+                "errors": [f"{type(exc).__name__}: {exc}"],
+                "query_count": len(views),
+                "section_count": len(lane_inputs["section_dense"]["items"]),
+                "passage_count": len(lane_inputs["passage_dense"]["items"]),
+            }
+            if run_logger is not None:
+                run_logger.warning("Phase E dense retrieval failed; falling back to lexical-only retrieval | error=%s", exc)
+            if not bool(opt.allow_lexical_only_fallback):
+                raise
     elif bool(opt.use_openai_dense):
         dense_trace = {"dense_mode": "skipped_missing_openai", "errors": ["OpenAI embeddings unavailable or OPENAI_API_KEY missing."]}
 
