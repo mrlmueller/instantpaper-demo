@@ -82,6 +82,9 @@ fastapi/.prompt_dumps
 # Quellen-Finder caches / dev artifacts
 fastapi/.quellen_finder_cache/
 fastapi/.two_lane_artifacts/
+/.pdf_scan_artifacts/
+fastapi/.pdf_scan_artifacts/
+fastapi/pdf_scan_runtime/runs/
 pdf-scan/pdf-scan-test.extracted.py
 pdf-scan/runs/
 

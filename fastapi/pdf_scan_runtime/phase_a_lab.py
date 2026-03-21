@@ -7,6 +7,8 @@ import json
 import logging
 import os
 import platform
+import shutil
+import tempfile
 import sys
 import time
 from contextlib import contextmanager
@@ -158,16 +160,26 @@ def append_jsonl(path: Path, payload: Any) -> None:
         handle.write(json.dumps(payload, ensure_ascii=False, default=_json_default) + "\n")
 
 
-def _find_repo_root_and_pdf_scan_dir() -> tuple[Path, Path]:
+def _read_int_env(name: str, default: int) -> int:
+    raw = str(os.getenv(name, "") or "").strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except ValueError:
+        return int(default)
+
+
+def _find_roots() -> tuple[Path, Path, Path]:
     runtime_dir = Path(__file__).resolve().parent
     fastapi_root = runtime_dir.parent
     repo_root = fastapi_root.parent
     if not (fastapi_root / "main.py").is_file():
         raise RuntimeError(f"Could not resolve FastAPI root from vendored runtime path: {runtime_dir}")
-    return repo_root, runtime_dir
+    return repo_root, fastapi_root, runtime_dir
 
 
-REPO_ROOT, PDF_SCAN_DIR = _find_repo_root_and_pdf_scan_dir()
+REPO_ROOT, FASTAPI_ROOT, PDF_SCAN_DIR = _find_roots()
 load_dotenv(REPO_ROOT / ".env", override=False)
 load_dotenv((PDF_SCAN_DIR.parent / ".env"), override=False)
 
@@ -193,6 +205,29 @@ def resolve_output_dir(raw: str) -> Path:
     if path.is_absolute():
         return path.resolve()
     return (Path.cwd().resolve() / path).resolve()
+
+
+def default_runs_root() -> Path:
+    configured = str(os.getenv("PDF_SCAN_ARTIFACTS_ROOT", "") or "").strip()
+    if configured:
+        return resolve_output_dir(configured)
+    return (Path(tempfile.gettempdir()).resolve() / "instantpaper_pdf_scan_artifacts" / "runs").resolve()
+
+
+def prune_old_run_dirs(root: Path, *, keep: int) -> None:
+    keep_count = max(1, int(keep))
+    try:
+        if not root.exists():
+            return
+        dirs = [path for path in root.iterdir() if path.is_dir()]
+        dirs.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+        for path in dirs[keep_count:]:
+            try:
+                shutil.rmtree(path, ignore_errors=True)
+            except Exception:
+                pass
+    except Exception:
+        return
 
 
 class PdfSource(BaseModel):
@@ -777,6 +812,7 @@ def build_runtime_snapshot() -> Dict[str, Any]:
         },
         "environment": {
             "repo_root": str(REPO_ROOT),
+            "fastapi_root": str(FASTAPI_ROOT),
             "pdf_scan_dir": str(PDF_SCAN_DIR),
             "openai_api_key_present": bool((os.getenv("OPENAI_API_KEY") or "").strip()),
         },
@@ -795,7 +831,8 @@ def run_phase_a(args: argparse.Namespace) -> Dict[str, Any]:
     else:
         resolved = resolve_manual_inputs(args)
 
-    runs_root = ensure_dir(resolve_output_dir(args.runs_root) if args.runs_root else (PDF_SCAN_DIR / "runs").resolve())
+    runs_root = ensure_dir(resolve_output_dir(args.runs_root) if args.runs_root else default_runs_root())
+    prune_old_run_dirs(runs_root, keep=_read_int_env("PDF_SCAN_LOCAL_ARTIFACT_RETENTION_RUNS", 20))
     config = PhaseAConfig(
         pipeline_version=str(args.pipeline_version or "").strip(),
         input_mode=resolved["input_mode"],

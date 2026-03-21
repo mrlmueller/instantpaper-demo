@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +14,17 @@ from typing import Any, Dict, Iterable, List, Optional
 
 
 PDF_REPORTS_DIRNAME = "pdf_reports"
+
+
+def _read_bool_env(name: str, default: bool) -> bool:
+    raw = str(os.getenv(name, "") or "").strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "yes", "on"}
+
+
+def pdf_reports_enabled() -> bool:
+    return _read_bool_env("PDF_SCAN_WRITE_REPORTS", False)
 
 
 def utc_now_iso() -> str:
@@ -1245,6 +1257,17 @@ def build_index_html(index_payload: Dict[str, Any]) -> str:
 
 
 def update_run_pdf_reports(run_ctx: Any, *, phase_name: str = "") -> Dict[str, Any]:
+    if not pdf_reports_enabled():
+        run_dir = Path(run_ctx.run_dir).resolve()
+        return {
+            "report_root": run_dir / PDF_REPORTS_DIRNAME,
+            "index_path": run_dir / PDF_REPORTS_DIRNAME / "index.json",
+            "readme_path": run_dir / PDF_REPORTS_DIRNAME / "README.md",
+            "html_path": run_dir / PDF_REPORTS_DIRNAME / "index.html",
+            "document_count": 0,
+            "disabled": True,
+        }
+
     state = load_global_state(run_ctx)
     run_dir = state["run_dir"]
     report_root = ensure_dir(run_dir / PDF_REPORTS_DIRNAME)

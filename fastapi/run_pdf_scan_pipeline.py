@@ -72,6 +72,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the standalone PDF scan pipeline and emit structured progress events.")
     parser.add_argument("--theme-md", required=True, help="Path to the topic Text Thema.md file.")
     parser.add_argument("--pdf-dir", required=True, help="Directory containing the PDFs for the topic.")
+    parser.add_argument("--runs-root", default="", help="Optional root directory for pipeline run artifacts.")
     parser.add_argument("--pipeline-version", default="pdf_scan_v3_topic_best")
     parser.add_argument("--pdf-glob", default="*.pdf")
     parser.add_argument("--pdf-recursive", action="store_true")
@@ -100,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         input_mode="manual",
         pipeline_version=str(args.pipeline_version or "pdf_scan_v3_topic_best"),
         force_rebuild=bool(args.force_rebuild_phase_a),
-        runs_root="",
+        runs_root=str(args.runs_root or ""),
         suite_manifest="",
         chapter_index=0,
         doc_limit=None,

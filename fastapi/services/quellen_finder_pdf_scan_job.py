@@ -239,6 +239,26 @@ def _read_pdf_scan_api_usage(run_dir: Path) -> dict[str, Any]:
     }
 
 
+def _resolve_pipeline_run_dir(raw_run_dir: Any, *, expected_root: Path) -> Path:
+    run_dir_text = _as_str_or_none(raw_run_dir)
+    if not run_dir_text:
+        raise RuntimeError("Standalone PDF scan pipeline did not report a run directory.")
+
+    run_dir = Path(run_dir_text).resolve()
+    expected_root_resolved = Path(expected_root).resolve()
+    try:
+        run_dir.relative_to(expected_root_resolved)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Standalone PDF scan pipeline reported an unexpected run directory outside {expected_root_resolved}: {run_dir}"
+        ) from exc
+
+    if not run_dir.exists() or not run_dir.is_dir():
+        raise RuntimeError(f"Standalone PDF scan pipeline run directory is missing: {run_dir}")
+
+    return run_dir
+
+
 def _candidate_bucket_names(project_id: str, configured: str) -> list[str]:
     names: list[str] = []
     configured = str(configured or "").strip()
@@ -650,6 +670,7 @@ async def _run_pipeline_subprocess(
     *,
     theme_path: Path,
     pdf_root: Path,
+    runs_root: Path,
     max_pdfs: int,
     on_progress: Any,
     cancel_requested_sync: Any,
@@ -661,6 +682,7 @@ async def _run_pipeline_subprocess(
         str(PIPELINE_CHILD_SCRIPT),
         f"--theme-md={str(theme_path)}",
         f"--pdf-dir={str(pdf_root)}",
+        f"--runs-root={str(runs_root)}",
         f"--max-pdfs={int(max_pdfs)}",
         "--pdf-recursive",
         "--force-rebuild-phase-a",
@@ -1325,6 +1347,7 @@ async def run_quellen_finder_pdf_scan_job(
             temp_root = Path(tmpdir)
             theme_path = temp_root / "Text Thema.md"
             pdf_root = temp_root / "pdfs"
+            pipeline_runs_root = temp_root / "pipeline_runs"
             theme_path.write_text(
                 _build_theme_markdown(
                     chapter_title=str((settings or {}).get("chapter_title") or "").strip(),
@@ -1348,6 +1371,7 @@ async def run_quellen_finder_pdf_scan_job(
             pipeline_state = await _run_pipeline_subprocess(
                 theme_path=theme_path,
                 pdf_root=pdf_root,
+                runs_root=pipeline_runs_root,
                 max_pdfs=len(pdf_snapshot_rows),
                 on_progress=on_progress,
                 cancel_requested_sync=user_cancel_requested_sync,
@@ -1356,9 +1380,10 @@ async def run_quellen_finder_pdf_scan_job(
             )
             await check_cancel()
 
-            pipeline_run_dir = Path(str(pipeline_state.get("run_dir") or "")).resolve()
-            if not pipeline_run_dir.exists():
-                raise RuntimeError("Standalone PDF scan pipeline did not produce a run directory.")
+            pipeline_run_dir = _resolve_pipeline_run_dir(
+                pipeline_state.get("run_dir"),
+                expected_root=pipeline_runs_root,
+            )
 
             await on_progress("persist_results", "Preparing PDF result cards")
             persisted = await asyncio.to_thread(

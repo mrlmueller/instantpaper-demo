@@ -601,11 +601,6 @@ export function PdfScanWorkspace({
     });
   }, [pdfLibraryFilter, pdfColorById, pdfs]);
 
-  const otherProjectRunningRun = useMemo(
-    () => pdfScanRuns.find((run) => isPdfScanRunActive(run) && run.id !== activeRun?.id) ?? null,
-    [activeRun?.id, pdfScanRuns]
-  );
-
   const pdfDeleteBlockers = useMemo(() => {
     const blockers = new Map<string, { runId: string; isActive: boolean }>();
 
@@ -1639,16 +1634,6 @@ export function PdfScanWorkspace({
                   </Tooltip>
                 </TooltipProvider>
               )}
-              {sameKapitelRunningRun ? (
-                <div className="mt-3 text-xs leading-5 text-amber-700">
-                  Für dieses Kapitel läuft bereits ein aktiver Scan
-                  {duplicateKapitelPromptRunId ? ` (${duplicateKapitelPromptRunId})` : ""}. Ein weiterer Scan ist möglich, erfordert aber eine zweite Bestätigung.
-                </div>
-              ) : otherProjectRunningRun ? (
-                <div className="mt-3 text-xs leading-5 text-slate-500">
-                  Im Projekt läuft bereits mindestens ein weiterer Scan parallel. Unten kannst du zwischen den Runs wechseln.
-                </div>
-              ) : null}
             </div>
           </div>
 
