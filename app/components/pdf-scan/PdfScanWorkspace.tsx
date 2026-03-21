@@ -1309,7 +1309,7 @@ export function PdfScanWorkspace({
   const startButtonEnabled = canStart || canOpenLibraryFromStart;
 
   return (
-    <div className="flex h-screen min-h-screen flex-col overflow-hidden bg-[#f7f8fb] text-slate-900">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#f7f8fb] text-slate-900">
       <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
         <div className="flex items-center gap-4">
           <Button asChild variant="ghost" size="icon">
@@ -1325,7 +1325,7 @@ export function PdfScanWorkspace({
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="flex min-h-0 w-[340px] shrink-0 flex-col border-r border-slate-200 bg-white">
+        <aside className="flex min-h-0 w-[340px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white">
           <div className="shrink-0 space-y-4 border-b border-slate-200 px-5 py-5">
             <div className="space-y-2">
               <div className="text-xs font-medium text-slate-600">Kapitel auswählen</div>
@@ -1542,10 +1542,11 @@ export function PdfScanWorkspace({
           </div>
         </aside>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
-          <div className={cn("px-5 py-4", activeRun ? "space-y-4" : "flex min-h-full")}>
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-5 py-4", activeRun ? "gap-4" : "")}>
               {activeRun ? (
                 <>
+                  <div className="shrink-0 space-y-4">
                   <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                     <div className="min-w-0">
                       <div className="text-[18px] font-semibold tracking-[-0.02em] text-slate-950">{chapterHeading}</div>
@@ -1721,17 +1722,19 @@ export function PdfScanWorkspace({
                       <div className="mt-4.5 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{formatIntDe(usefulPdfCount)}</div>
                     </Card>
                   </div>
+                  </div>
                 </>
               ) : null}
 
               {!activeRun ? (
                 <MainEmptyState selectedKapitel={selectedKapitel} />
               ) : (
-                <div className="space-y-5 pt-2">
+                <div className="space-y-5 pb-4 pt-2">
                   <div className="min-w-0">
                     <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-950">Ergebnisse</div>
                   </div>
 
+                  <div className="pt-0">
                   {!docRowsLoaded ? (
                     <ResultSkeleton />
                   ) : filteredDocRows.length === 0 ? (
@@ -1885,6 +1888,7 @@ export function PdfScanWorkspace({
                       })}
                     </Accordion>
                   )}
+                  </div>
                 </div>
               )}
             </div>
