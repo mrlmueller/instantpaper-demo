@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import {
   setUserBlockedByEmail,
   setUserCanDuplicateSystemPromptsByEmail,
+  setUserCanUsePdfScanByEmail,
+  setUserCanUseQuellenFinderByEmail,
   setUserCanViewUsageInsightsByEmail,
   setUserFullAccessByEmail,
 } from '@/app/lib/api/adminServer';
@@ -62,6 +64,32 @@ export async function adminSetCanViewUsageInsights(formData: FormData) {
   }
 
   await setUserCanViewUsageInsightsByEmail(email, allow);
+  revalidatePath('/admin');
+}
+
+export async function adminSetCanUseQuellenFinder(formData: FormData) {
+  const email = normalizeEmail(formData.get('email'));
+  const allowRaw = String(formData.get('canUseQuellenFinder') ?? 'false').trim().toLowerCase();
+  const allow = allowRaw === 'true' || allowRaw === '1' || allowRaw === 'yes' || allowRaw === 'on';
+
+  if (!email || !email.includes('@')) {
+    throw new Error('Bitte eine gültige E-Mail angeben.');
+  }
+
+  await setUserCanUseQuellenFinderByEmail(email, allow);
+  revalidatePath('/admin');
+}
+
+export async function adminSetCanUsePdfScan(formData: FormData) {
+  const email = normalizeEmail(formData.get('email'));
+  const allowRaw = String(formData.get('canUsePdfScan') ?? 'false').trim().toLowerCase();
+  const allow = allowRaw === 'true' || allowRaw === '1' || allowRaw === 'yes' || allowRaw === 'on';
+
+  if (!email || !email.includes('@')) {
+    throw new Error('Bitte eine gültige E-Mail angeben.');
+  }
+
+  await setUserCanUsePdfScanByEmail(email, allow);
   revalidatePath('/admin');
 }
 

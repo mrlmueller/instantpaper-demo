@@ -1,0 +1,2191 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "evolving_techniques_in_sentiment_analysis_a_comp-68fe188f165a",
+  "doc_title": "Evolving techniques in sentiment analysis a comprehensive review",
+  "has_useful_information": true,
+  "document_label_0_to_3": 1,
+  "document_label_band": "weak_or_marginal",
+  "document_notes": "Weak-but-positive source. Mostly technical, but includes useful material around review analysis, manipulated reviews, helpfulness, and feature-level review information. Existing benchmark note: User-marked weak-but-positive. Not a strong overall fit, but it contains one useful region around review manipulation, helpfulness, and information quality.",
+  "manual_review_basis": [
+    "full extracted section inventory",
+    "run 386e04657c41c805f8c1b974 section inspection packets",
+    "benchmark target direct excerpt review where available"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "Corpus based approach",
+      "page_start": 17,
+      "page_end": 18,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "methods_or_low_value",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Corpus-based approach discussion includes handling contextual polarity and mentions detecting manipulated reviews and factors affecting helpfulness — directly relevant to perceived trust, review quality, and signals that reduce uncertainty. Benchmark-reviewed note: This section contains methodological content (statistical and semantic corpus approaches, detection of manipulated reviews, helpful‑vote analysis) that directly supports discussion of fake/ manipulated reviews and signals that reduce uncertainty. It was not retrieved in initial recall, likely because the query did not匹"
+    }
+  ],
+  "near_miss_sections": [
+    {
+      "section_title": "INTRODUCTION",
+      "page_start": 1,
+      "page_end": 3,
+      "usefulness_0_to_10": 3,
+      "notes": "Intro to sentiment analysis in social media/e-commerce. Potentially useful for methods of extracting user opinions, review analysis and information presentation, but not directly about decision psychology, nudging, or perceived risk."
+    },
+    {
+      "section_title": "Data collection",
+      "page_start": 6,
+      "page_end": 7,
+      "usefulness_0_to_10": 3,
+      "notes": "Data-collection notes mention e-commerce websites and product reviews as sources — potentially relevant when discussing information signals, trust and perceived risk in online purchases. Still methodological and not directly about consumer‑"
+    },
+    {
+      "section_title": "Sentiment identification",
+      "page_start": 7,
+      "page_end": 10,
+      "usefulness_0_to_10": 5,
+      "notes": "Discusses document/ sentence/ aspect-level sentiment identification — useful for understanding how product reviews can be aggregated or parsed to inform perceived product sentiment and decision support, but is technical and method-focused,远"
+    },
+    {
+      "section_title": "Feature selection",
+      "page_start": 10,
+      "page_end": 11,
+      "usefulness_0_to_10": 4,
+      "notes": "Covers feature selection (n-grams, emojis, pragmatics) relevant to extracting signals from user reviews. Potentially useful for designing information displays or trust signals, but mainly low-level NLP detail rather than decision-psychology"
+    },
+    {
+      "section_title": "Feature extraction",
+      "page_start": 11,
+      "page_end": 12,
+      "usefulness_0_to_10": 4,
+      "notes": "Feature extraction overview explains types of textual features used to derive sentiment — can inform what kinds of review attributes are reliable indicators for consumers, yet remains technical and not directly about consumer decision heur­"
+    },
+    {
+      "section_title": "Dependency parsing",
+      "page_start": 12,
+      "page_end": 12,
+      "usefulness_0_to_10": 3,
+      "notes": "Short note on dependency parsing as a way to get syntactic sentiment-bearing patterns. Niche NLP technique with limited direct applicability to decision psychology chapter; could be cited when explaining automated review analysis."
+    },
+    {
+      "section_title": "Parts of speech tagging",
+      "page_start": 12,
+      "page_end": 12,
+      "usefulness_0_to_10": 3,
+      "notes": "Describes POS tagging and importance of adjectives for sentiment. Minor relevance: helps justify which textual cues carry evaluative meaning in reviews, but is basic NLP method detail."
+    },
+    {
+      "section_title": "Sentiment lexicons",
+      "page_start": 12,
+      "page_end": 12,
+      "usefulness_0_to_10": 3,
+      "notes": "Explains sentiment lexicons — useful background on how sentiment polarity is assigned in reviews, which can inform trust/quality signals, but is elementary method content rather than theory or design guidance."
+    },
+    {
+      "section_title": "Term frequency-inverse document frequency",
+      "page_start": 12,
+      "page_end": 12,
+      "usefulness_0_to_10": 3,
+      "notes": "TF–IDF is a common feature extraction technique useful for analyzing review text to surface salient terms related to trust/uncertainty, but it's methodological and not directly about decision psychology or nudging."
+    },
+    {
+      "section_title": "Emotion lexicons",
+      "page_start": 13,
+      "page_end": 13,
+      "usefulness_0_to_10": 4,
+      "notes": "Emotion lexicons directly link textual features to affective states (e.g., fear, anxiety) that relate to perceived risk and decision confidence; useful for discussing how review sentiment maps to consumer uncertainty, though still method‑or"
+    },
+    {
+      "section_title": "Semantic role labeling",
+      "page_start": 13,
+      "page_end": 13,
+      "usefulness_0_to_10": 3,
+      "notes": "Semantic role labeling can help identify attitudes toward product aspects in text (who/what is blamed/praised), which can inform understanding of trust and perceived risk from reviews—relevant but technical."
+    },
+    {
+      "section_title": "Word embedding",
+      "page_start": 13,
+      "page_end": 15,
+      "usefulness_0_to_10": 3,
+      "notes": "Word embeddings enable more advanced sentiment and semantic analysis of consumer text, useful for extracting nuanced signals about uncertainty or product attributes, but primarily methodological rather than theoretical for decision‑psychol"
+    },
+    {
+      "section_title": "Multilingual sentiment analysis",
+      "page_start": 37,
+      "page_end": 37,
+      "usefulness_0_to_10": 4,
+      "notes": "Explains multilingual/cultural issues in sentiment interpretation (sarcasm, idioms, translation loss). Helpful background on limits of review-based signals and their impact on trust/uncertainty in online purchases."
+    },
+    {
+      "section_title": "Cross-domain sentiment analysis",
+      "page_start": 38,
+      "page_end": 39,
+      "usefulness_0_to_10": 5,
+      "notes": "Covers cross-domain and aspect-level sentiment classification, pivot vs non-pivot features. Relevant for using review analytics to present comparable product information and surface trustworthy feature-level signals for complex products."
+    },
+    {
+      "section_title": "Ambiguity",
+      "page_start": 39,
+      "page_end": 39,
+      "usefulness_0_to_10": 4,
+      "notes": "Describes ambiguity types (structural, syntactic, lexical) affecting interpretation of feedback. Useful for discussing limits of automated review signals and how ambiguity can undermine decision confidence."
+    },
+    {
+      "section_title": "Negation",
+      "page_start": 39,
+      "page_end": 39,
+      "usefulness_0_to_10": 3,
+      "notes": "Discusses negation in text which affects accurate sentiment interpretation of reviews/opinions — relevant for assessing information quality and signals that influence perceived trust/uncertainty in online purchases, but it's technical and N"
+    },
+    {
+      "section_title": "Sarcasm",
+      "page_start": 39,
+      "page_end": 39,
+      "usefulness_0_to_10": 3,
+      "notes": "Sarcasm detection affects reliability of user-generated content and sentiment signals used to infer decision confidence; relevant background but primarily NLP-focused and not directly about buyer psychology or choice architecture."
+    },
+    {
+      "section_title": "Handling emojis based text",
+      "page_start": 40,
+      "page_end": 40,
+      "usefulness_0_to_10": 3,
+      "notes": "Emojis influence emotional interpretation of reviews and may bias perceived product sentiment — useful for understanding information cues that reduce/increase uncertainty, but mainly technical processing detail."
+    },
+    {
+      "section_title": "Evolving trends",
+      "page_start": 42,
+      "page_end": 42,
+      "usefulness_0_to_10": 4,
+      "notes": "Overview of recent sentiment-analysis trends (aspect-based analysis, emotion ID, multilingual, real-time) is moderately useful: informs methods to extract product-feature signals and emotion cues relevant to perceived risk and decision‑conf"
+    },
+    {
+      "section_title": "Advantages",
+      "page_start": 43,
+      "page_end": 43,
+      "usefulness_0_to_10": 3,
+      "notes": "Lists practical advantages of sentiment analysis (insight into customer satisfaction, tracking reviews, product development). Marginally relevant as background on how review-derived signals can reduce uncertainty and inform trustworthiness,"
+    },
+    {
+      "section_title": "FUTURE DIRECTIONS",
+      "page_start": 45,
+      "page_end": 46,
+      "usefulness_0_to_10": 4,
+      "notes": "Future directions (multimodal, real-time, XAI, personalization) touch on explainability, ethics, and richer signals from reviews—useful contextual material for sections on transparency, quality signals, and methods to reduce perceived risk."
+    }
+  ],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "527443264375b8c7",
+        "section_title": "ABSTRACT",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "abstract"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty abstract; no usable content for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "5cd24105e6e8bd78",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Front matter only and contains no substantive material relevant to the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "474898ff893fcef5",
+        "section_title": "INTRODUCTION",
+        "page_start": 1,
+        "page_end": 3,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Intro to sentiment analysis in social media/e-commerce. Potentially useful for methods of extracting user opinions, review analysis and information presentation, but not directly about decision psychology, nudging, or perceived risk.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b3aebdfa996779f0",
+        "section_title": "Motivation",
+        "page_start": 3,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Motivation for a sentiment-analysis review—high-level and methodological. Only tangentially useful for chapter sections on review quality or automated signals; limited direct relevance to decision psychology or choice architecture.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c0e5b2e01284b89e",
+        "section_title": "Intended audience",
+        "page_start": 4,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Front-matter (intended audience) for a sentiment-analysis review. Provides no theory or actionable content relevant to decision psychology, nudging, or perceived risk in webshops — minimal, background-only value.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e70aabe52085d1ae",
+        "section_title": "Timeline of sentiment analysis",
+        "page_start": 4,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Historical timeline of sentiment-analysis techniques. Interesting for general background on NLP evolution but not useful for chapter topics (heuristics, choice architecture, perceived risk) beyond very indirect context.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "9f4e2866c525ac72",
+        "section_title": "SURVEY METHODOLOGY",
+        "page_start": 5,
+        "page_end": 6,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Survey methodology describes literature-selection procedures. Useful only to judge evidence quality if one were to mine sentiment-analysis literature for user-opinion signals, but otherwise low direct relevance to decision psychology, nudg‑",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c5d0c7eb567d64e8",
+        "section_title": "STAGES OF SENTIMENT ANALYSIS",
+        "page_start": 6,
+        "page_end": 6,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "High-level enumeration of sentiment-analysis stages. Too generic to inform decision‑psychology, nudging, or risk-reduction strategies in webshops.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c1ff12f81ad97f67",
+        "section_title": "Data collection",
+        "page_start": 6,
+        "page_end": 7,
+        "section_type": "methods"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Data-collection notes mention e-commerce websites and product reviews as sources — potentially relevant when discussing information signals, trust and perceived risk in online purchases. Still methodological and not directly about consumer‑",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 208,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c6f4c07aa4080f95",
+        "section_title": "Pre-processing",
+        "page_start": 7,
+        "page_end": 7,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Pre-processing details (tokenization, normalization, noise removal) are technical. Only marginally relevant insofar as they affect quality of review/opinion data used to signal trust or reduce uncertainty in online shopping.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a5ca0483b064ed43",
+        "section_title": "Sentiment identification",
+        "page_start": 7,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses document/ sentence/ aspect-level sentiment identification — useful for understanding how product reviews can be aggregated or parsed to inform perceived product sentiment and decision support, but is technical and method-focused,远",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "9260322d48c44669",
+        "section_title": "Feature selection",
+        "page_start": 10,
+        "page_end": 11,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Covers feature selection (n-grams, emojis, pragmatics) relevant to extracting signals from user reviews. Potentially useful for designing information displays or trust signals, but mainly low-level NLP detail rather than decision-psychology",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d1851884087f011a",
+        "section_title": "Feature extraction",
+        "page_start": 11,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Feature extraction overview explains types of textual features used to derive sentiment — can inform what kinds of review attributes are reliable indicators for consumers, yet remains technical and not directly about consumer decision heur­",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b01301a5b5c4734c",
+        "section_title": "Dependency parsing",
+        "page_start": 12,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Short note on dependency parsing as a way to get syntactic sentiment-bearing patterns. Niche NLP technique with limited direct applicability to decision psychology chapter; could be cited when explaining automated review analysis.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "58d084b0fe09237f",
+        "section_title": "Parts of speech tagging",
+        "page_start": 12,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes POS tagging and importance of adjectives for sentiment. Minor relevance: helps justify which textual cues carry evaluative meaning in reviews, but is basic NLP method detail.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "8cb577fa839bfe4c",
+        "section_title": "Sentiment lexicons",
+        "page_start": 12,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Explains sentiment lexicons — useful background on how sentiment polarity is assigned in reviews, which can inform trust/quality signals, but is elementary method content rather than theory or design guidance.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7b591c2102d62888",
+        "section_title": "Term frequency",
+        "page_start": 12,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Basic term-frequency description is a low-level NLP method; only marginally relevant as a tooling note for extracting signals from customer text (reviews) about perceived risk or confidence.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e31daa6b458a1297",
+        "section_title": "Term frequency-inverse document frequency",
+        "page_start": 12,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [],
+      "notes": "TF–IDF is a common feature extraction technique useful for analyzing review text to surface salient terms related to trust/uncertainty, but it's methodological and not directly about decision psychology or nudging.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3b1bad896df3597d",
+        "section_title": "Bag of words",
+        "page_start": 13,
+        "page_end": 13,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Bag-of-words is a basic NLP representation; of limited conceptual value for the chapter beyond noting simple approaches to quantify review content or extract signals about buyer uncertainty.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4d5269b92b7eeeba",
+        "section_title": "Emotion lexicons",
+        "page_start": 13,
+        "page_end": 13,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Emotion lexicons directly link textual features to affective states (e.g., fear, anxiety) that relate to perceived risk and decision confidence; useful for discussing how review sentiment maps to consumer uncertainty, though still method‑or",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6e6cbde7eabbeaa8",
+        "section_title": "Semantic role labeling",
+        "page_start": 13,
+        "page_end": 13,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Semantic role labeling can help identify attitudes toward product aspects in text (who/what is blamed/praised), which can inform understanding of trust and perceived risk from reviews—relevant but technical.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "2b9bf84d64682375",
+        "section_title": "Word embedding",
+        "page_start": 13,
+        "page_end": 15,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Word embeddings enable more advanced sentiment and semantic analysis of consumer text, useful for extracting nuanced signals about uncertainty or product attributes, but primarily methodological rather than theoretical for decision‑psychol",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 130,
+        "phase_f_doc_rank": 167,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 17.39,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "77a4656e58d2fd15",
+        "section_title": "SENTIMENT ANALYSIS APPROACHES",
+        "page_start": 15,
+        "page_end": 15,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Very high-level taxonomy of sentiment analysis approaches; provides little actionable insight for decision psychology, nudging, or perceived risk in webshops beyond generic context.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "9849b721120e9ebf",
+        "section_title": "Lexicon based approach",
+        "page_start": 15,
+        "page_end": 16,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes lexicon-based sentiment analysis mechanics and domain dependence. Low direct relevance to decision psychology or choice architecture, but marginally useful as background on techniques that could be used to analyze reviews or user‑",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "2c885f5930c31ce0",
+        "section_title": "Dictionary based approach",
+        "page_start": 16,
+        "page_end": 17,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Dictionary-based sentiment methods described; limited direct application but tangentially relevant for detecting opinion words and domain effects when assessing review authenticity and information quality.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e2183431a6d3d433",
+        "section_title": "Corpus based approach",
+        "page_start": 17,
+        "page_end": 18,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "methods_or_low_value",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Corpus-based approach discussion includes handling contextual polarity and mentions detecting manipulated reviews and factors affecting helpfulness — directly relevant to perceived trust, review quality, and signals that reduce uncertainty. Benchmark-reviewed note: This section contains methodological content (statistical and semantic corpus approaches, detection of manipulated reviews, helpful‑vote analysis) that directly supports discussion of fake/ manipulated reviews and signals that reduce uncertainty. It was not retrieved in initial recall, likely because the query did not匹",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "Corpus based approach",
+        "benchmark_label_0_to_3": 2,
+        "benchmark_notes": "Score 8/10. Best matching area in the paper. User specifically called out the statistical approach content within the corpus-based section as relevant to manipulated reviews and helpful voting.",
+        "miss_reason": "phase_e_retrieval_miss",
+        "pipeline_reason": "phase_e_retrieval_miss"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e2e885bbfea26bf4",
+        "section_title": "Machine learning approach",
+        "page_start": 18,
+        "page_end": 18,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Overview of machine learning approaches (supervised/unsupervised, clustering) for sentiment classification. Background relevance for automated review analysis and anomaly/manipulation detection, but not directly about decision heuristics or",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "53434986497886b2",
+        "section_title": "Linear approach",
+        "page_start": 19,
+        "page_end": 20,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Technical description of linear classifiers for sentiment tasks. Procedural and technical; minimal direct applicability to chapter topics beyond being another background method for analyzing textual signals.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e8fbbb9e1ffcb7e6",
+        "section_title": "Probabilistic approach",
+        "page_start": 20,
+        "page_end": 22,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Technical description of probabilistic classifiers (Naïve Bayes) for sentiment analysis. Mostly methodological ML content with little direct relevance to decision psychology, nudging, perceived risk, or ecommerce product examples. Could be,",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d82ab6c8209d9b26",
+        "section_title": "Ruled based approach",
+        "page_start": 22,
+        "page_end": 23,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Rule-based sentiment-classification methods — procedural/algorithmic detail that does not inform psychological mechanisms, choice architecture, trust, or product-specific uncertainty reduction beyond a distant measurement tool role.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3d6d472b1476c38e",
+        "section_title": "Decision tree approach",
+        "page_start": 23,
+        "page_end": 23,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Overview of decision-tree classifiers for sentiment tasks. Purely technical ML method section; minimal applicability to the chapter themes except as an incidental analytic tool for studying online opinions.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 149,
+        "phase_f_doc_rank": 161,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 0.76,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "505e7fd6992eb4a5",
+        "section_title": "Instance based approach",
+        "page_start": 23,
+        "page_end": 23,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Brief note on KNN/instance-based approaches in sentiment analysis. Methodological ML content with negligible direct value for the chapter topics beyond possible use as a measurement approach.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e77d11dcd8b96457",
+        "section_title": "Deep learning approach",
+        "page_start": 23,
+        "page_end": 27,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Survey of deep-learning methods for sentiment analysis. Contains no material on decision heuristics, nudging, perceived risk, or design/ethical issues in webshops—only potential as background on tools to measure consumer sentiment.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "86c8806fb4d911e6",
+        "section_title": "The hybrid CNN and BiLSTMs were enhanced with an",
+        "page_start": 28,
+        "page_end": 29,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Details on hybrid CNN/BiLSTM models and attention for sentiment tasks. Highly technical and focused on model performance—no substantive insight into decision psychology, nudging/choice architecture, trust, or online purchase uncertainty.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b4283f0a1f4b1d27",
+        "section_title": "Transformer based approach",
+        "page_start": 29,
+        "page_end": 33,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Technical description of transformer models (BERT, GPT) and applications to sentiment analysis. Useful only as background on methods that could be used to extract user reviews/opinions, but provides little content directly relevant to buyer",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b1bd21379385bc53",
+        "section_title": "Hybrid approach",
+        "page_start": 33,
+        "page_end": 35,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discussion of hybrid sentiment-analysis approaches and ensemble classifiers. Methodological detail is of limited direct use for decision‑psychology, nudging, or perceived risk, though it supplies background on how opinion signals might be生成",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "8e9ea673b521f7ba",
+        "section_title": "APPLICATION OF SENTIMENT ANALYSIS",
+        "page_start": 35,
+        "page_end": 35,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty/placeholder section — no usable content for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e8bf429c69915d16",
+        "section_title": "Business intelligence",
+        "page_start": 35,
+        "page_end": 35,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes business intelligence uses of sentiment analysis for product analysis, market research and consumer opinions. Relevant for sections on perceived risk, information quality and how review/sentiment signals can reduce buyer_uncertnty",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e1544bc0b4cea289",
+        "section_title": "Capital market prediction",
+        "page_start": 36,
+        "page_end": 36,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Application to capital‑market prediction is tangential to online consumer decision processes; offers little directly applicable insight for webshop decision confidence.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "fabae83beb2ca52d",
+        "section_title": "Reviews analysis",
+        "page_start": 36,
+        "page_end": 36,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses customer and aspect-based reviews and how aspect-based sentiment analysis (ABSA) surfaces feature-level feedback. Useful for sections on information presentation, comparability, and signals that reduce uncertainty in online buying",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 200,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e17b3fdbdfe7a18e",
+        "section_title": "Health care",
+        "page_start": 36,
+        "page_end": 37,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Healthcare sentiment‑analysis examples illustrate general applicability of sentiment signals to understand user experiences, but are peripheral to online purchase of consumer electronics or nudging/choice architecture.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f7855e9f3218174a",
+        "section_title": "CHALLENGES OF SENTIMENT ANALYSIS",
+        "page_start": 37,
+        "page_end": 37,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty/placeholder section with no content; no use for chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "40b6087fcecc94a7",
+        "section_title": "Multilingual sentiment analysis",
+        "page_start": 37,
+        "page_end": 37,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Explains multilingual/cultural issues in sentiment interpretation (sarcasm, idioms, translation loss). Helpful background on limits of review-based signals and their impact on trust/uncertainty in online purchases.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "13277553b36fb561",
+        "section_title": "Code-switched sentiment analysis",
+        "page_start": 37,
+        "page_end": 38,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Technical discussion of code-switched sentiment analysis. Niche relevance: highlights difficulties in interpreting multilingual reviews which can affect perceived review reliability, but low direct applicability to decision psychology or UI",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "83d47456882faaed",
+        "section_title": "Cross-domain sentiment analysis",
+        "page_start": 38,
+        "page_end": 39,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Covers cross-domain and aspect-level sentiment classification, pivot vs non-pivot features. Relevant for using review analytics to present comparable product information and surface trustworthy feature-level signals for complex products.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "1d21fe559a9d9d7e",
+        "section_title": "Ambiguity",
+        "page_start": 39,
+        "page_end": 39,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes ambiguity types (structural, syntactic, lexical) affecting interpretation of feedback. Useful for discussing limits of automated review signals and how ambiguity can undermine decision confidence.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "0473270ded2ddea4",
+        "section_title": "Negation",
+        "page_start": 39,
+        "page_end": 39,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison",
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses negation in text which affects accurate sentiment interpretation of reviews/opinions — relevant for assessing information quality and signals that influence perceived trust/uncertainty in online purchases, but it's technical and N",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "cf61a1398153c39b",
+        "section_title": "Sarcasm",
+        "page_start": 39,
+        "page_end": 39,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison",
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Sarcasm detection affects reliability of user-generated content and sentiment signals used to infer decision confidence; relevant background but primarily NLP-focused and not directly about buyer psychology or choice architecture.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "da3f58ef4dc917e3",
+        "section_title": "Handling emojis based text",
+        "page_start": 40,
+        "page_end": 40,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison",
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Emojis influence emotional interpretation of reviews and may bias perceived product sentiment — useful for understanding information cues that reduce/increase uncertainty, but mainly technical processing detail.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f5e7fbf61a26947b",
+        "section_title": "Other challenges",
+        "page_start": 40,
+        "page_end": 42,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Lists general NLP challenges (data imbalance, long sentences, idioms) that limit reliable extraction of consumer signals — marginally useful as limitations commentary but low direct relevance to decision psychology or nudging.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b27c6b12d540a5b9",
+        "section_title": "EVOLVING TRENDS AND ADVANTAGES IN SENTIMENT ANALYSIS",
+        "page_start": 42,
+        "page_end": 42,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Single heading with no substantive content; no useful information for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d3180d4692123fa1",
+        "section_title": "Evolving trends",
+        "page_start": 42,
+        "page_end": 42,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Overview of recent sentiment-analysis trends (aspect-based analysis, emotion ID, multilingual, real-time) is moderately useful: informs methods to extract product-feature signals and emotion cues relevant to perceived risk and decision‑conf",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "31da8378bae64ac7",
+        "section_title": "Advantages",
+        "page_start": 43,
+        "page_end": 43,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Lists practical advantages of sentiment analysis (insight into customer satisfaction, tracking reviews, product development). Marginally relevant as background on how review-derived signals can reduce uncertainty and inform trustworthiness,",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "88d48c430b966878",
+        "section_title": "PERFORMANCE EVALUATION PARAMETER",
+        "page_start": 43,
+        "page_end": 45,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes evaluation metrics for sentiment classifiers (accuracy, precision, confusion matrix). Methodological detail that is not directly useful for decision psychology, nudging, or presenting consumer-product uncertainty in webshops.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b2831f8533f8ece2",
+        "section_title": "FUTURE DIRECTIONS",
+        "page_start": 45,
+        "page_end": 46,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "information_presentation_filtering_comparison",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Future directions (multimodal, real-time, XAI, personalization) touch on explainability, ethics, and richer signals from reviews—useful contextual material for sections on transparency, quality signals, and methods to reduce perceived risk.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6a860b4fb748ac03",
+        "section_title": "CONCLUSION",
+        "page_start": 46,
+        "page_end": 47,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "General conclusion about sentiment analysis approaches and limitations. Offers high-level context but little directly applicable content for decision psychology or choice architecture in webshops.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "89334fdeef879a8c",
+        "section_title": "ACKNOWLEDGEMENTS",
+        "page_start": 47,
+        "page_end": 47,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Acknowledgements — contains no substantive content relevant to the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "131b7a91bfbce763",
+        "section_title": "ADDITIONAL INFORMATION AND DECLARATIONS",
+        "page_start": 47,
+        "page_end": 47,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty 'additional information' section — no usable content for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "49917e673bd74f14",
+        "section_title": "Competing Interests",
+        "page_start": 47,
+        "page_end": 47,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Competing interests statement contains no substantive content relevant to decision psychology, nudging, trust, or presentation—administrative only.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a7a7149be1538446",
+        "section_title": "Data Availability",
+        "page_start": 47,
+        "page_end": 47,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Data availability note (literature review) provides no usable content for the chapter beyond meta-information about the paper type.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "8c97ed50c3650d22",
+        "section_title": "Funding",
+        "page_start": 47,
+        "page_end": 47,
+        "section_type": "acknowledgements"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Funding acknowledgement is administrative and not informative for the chapter topics.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "89eee7902be27bc3",
+        "section_title": "Grant Disclosures",
+        "page_start": 47,
+        "page_end": 47,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Grant disclosure text is administrative; no substantive relevance to the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "cf71356245faced3",
+        "section_title": "REFERENCES",
+        "page_start": 48,
+        "page_end": 61,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Reference list could point to useful sources (background reading) but as presented contains no synthesized content, theory, or evidence useful for writing the chapter itself.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    }
+  ]
+}

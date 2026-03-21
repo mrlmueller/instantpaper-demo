@@ -1,0 +1,610 @@
+{
+  "chapter_id": "chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi",
+  "doc_id": "the_late_roman_field_army_in_northern-6602b86edf55",
+  "doc_title": "The late Roman field army in Northern",
+  "has_useful_information": false,
+  "document_label_0_to_3": 1,
+  "document_label_band": "weak_or_marginal",
+  "document_notes": "Archaeology and isotope-based mobility/diet study of late Roman burials in northern Britain (Scorton/Catterick area). Relevant mainly as weak context for military presence/mobility and material culture; provides little direct evidence about economic mechanisms or West-Roman fiscal/market structures.",
+  "manual_review_basis": [
+    "direct PDF reading",
+    "run cde2f3959baf36fa0d09956c normalized sections",
+    "review packet with extracted section text and current pipeline trace"
+  ],
+  "gold_section_refs": [],
+  "near_miss_sections": [
+    {
+      "section_title": "ABSTRACT",
+      "page_start": 3,
+      "page_end": 3,
+      "usefulness_0_to_10": 4,
+      "notes": "Gives the clearest summary of the site's interpretation (late Roman burials, material culture and isotope evidence for mobility), but still only indirectly connected to economic arguments."
+    },
+    {
+      "section_title": "CONCLUSION",
+      "page_start": 28,
+      "page_end": 28,
+      "usefulness_0_to_10": 5,
+      "notes": "Summarizes mobility findings (non-local individuals) that could be used as minimal context for late Roman military movement in Britain; not economic evidence."
+    },
+    {
+      "section_title": "Isotopes and archaeology",
+      "page_start": 21,
+      "page_end": 28,
+      "usefulness_0_to_10": 5,
+      "notes": "Most useful discussion section in the paper for the benchmark because it explicitly connects burial artefacts, mobility, and the wider Roman world, but it still remains indirect background rather than economic evidence."
+    }
+  ],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "bd0981950e3a5aec",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 2,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "metadata_noise"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Repository/publisher guidance and metadata; no substantive content for the benchmark.",
+      "section_text_excerpt": "Britain? Mobility, material culture and multi-isotope analysis at Scorton (N. Yorks) Britain? Mobility, material culture and multi-isotope analysis at It is advisable to refer to the publisher’s version if you intend to cite from the work. See Guidance on citing. All outputs in CentAUR are protected by Intellectual Property Rights law, including copyright law. Copyright and IPR is retained by the creators or other the End User Agreement .",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "adda0201ba85d6f0",
+        "section_title": "CentAUR",
+        "page_start": 2,
+        "page_end": 2,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "metadata_noise"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Repository/landing-page fragment only.",
+      "section_text_excerpt": "Reading’s research outputs online",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "937848c7d37965ed",
+        "section_title": "ABSTRACT",
+        "page_start": 3,
+        "page_end": 3,
+        "section_type": "abstract"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "military_mobility",
+        "burial_archaeology",
+        "isotope_summary"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Best short overview of the study (late Roman burials, material culture, isotope evidence for non-local individuals). Useful only as weak context for military movement/presence, not economic evidence.",
+      "section_text_excerpt": "At Hollow Banks Quarry, Brompton-upon-Swale/Scorton, located just north of Catterick (N. Yorks.), a highly unusual group of 15 late Roman burials was excavated between 1998 and 2000. The small cemetery consists of almost exclusively male burials, dated to the fourth century. An unusually large proportion of these individuals was buried with crossbow brooches and belt fittings, suggesting that they may have been serving in the late Roman army or administration and may have come to Scorton from the continent. Multi-isotope analyses (carbon, nitrogen, oxygen and strontium) of nine sufficiently well-preserved individuals indicates that seven males, all equipped with crossbow brooches and/or belt fittings, were not local to the Catterick area and that at least six of them probably came from the European mainland. Dietary (carbon and nitrogen isotope) analysis only of a tenth individual also suggests a non-local origin. At Scorton it appears that the presence of crossbow brooches and belts in the grave was more important for suggesting non-British origins than whether or not they were worn. This paper argues that cultural and social factors played a crucial part in the creation of funerary identities and highlights the need for both multi-proxy analyses and the careful contextual study of artefacts. Keywords: Scorton, late Roman cemetery, isotope anlysis, mobility, crossbow brooches",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 142,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "10b42aeb2f01b47e",
+        "section_title": "INTRODUCTION",
+        "page_start": 3,
+        "page_end": 5,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "burial_context",
+        "military_association"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Site/cemetery background and methods framing (isotopes + material culture) for assessing non-local individuals; useful only as weak context for mobility and military association, not economic mechanisms.",
+      "section_text_excerpt": "Roman inhumation graves, preliminarily dated to the fourth century (FIGS 1–3). These late burials are separated from the Roman fort and town of Catterick to the south only by the river Swale,1 making a connection between the two likely. Immediately to the north-west, but set spatially apart from the Roman burials, lies a much larger (105 burials) Anglian cemetery. A number of the burials from Scorton were equipped with crossbow brooches and/or belt sets, suggesting a military association and possibly a continental origin for the individuals.2 With a grant from the Roman Research Trust, multi-isotope analyses (carbon, nitrogen, oxygen and strontium) of nine individuals (and carbon and nitrogen isotope analysis only of a tenth) were carried out in order to investigate this possibility and to explore differences or similarities to burials from nearby Catterick.3 Isotope analysis has now been applied to a considerable number of Romano-British burials.4 The isotopic systems traditionally employed to reconstruct past mobility are oxygen and strontium; however, dietary (carbon and nitrogen) isotopes have also been shown to be extremely useful in the identification of incomers to Roman Britain.5 Since the isotopic range of the Romano-British diet can by now be relatively well defined, it is likely that individuals with extremely different, ‘exotic’ diets in early life moved to Britain from abroad.6 Previous work on Roman burials from Britain has demonstrated that many later Roman towns had very diverse populations, although there is no simplistic relationship between unusual grave goods and the origin of the individuals buried with them. Immigrants came both from warmer/more coastal and cooler, more continental areas, and it was not only men that travelled in their roles as soldiers, administrators or traders but also women and children. These findings support and enhance epigraphic and historical research which has long posited that the Roman Empire as a whole was characterised by high levels of mobility.7 Previous isotope studies have also highlighted the current limitations of the method for studying migration to Roman Britain, namely that the isotopic ‘profiles’ of…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 14,
+        "phase_f_doc_rank": 3,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 57.63,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "5f4a316e97f3a018",
+        "section_title": "The Late Roman Field Army in Northern Britain? Mobility, Material Culture and Multi-Isotope Analysis at Scorton (N. Yorks.)",
+        "page_start": 3,
+        "page_end": 3,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "structural_noise"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty/tiny title wrapper section (no content).",
+      "section_text_excerpt": "",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "1b310080fd3b4ee9",
+        "section_title": "THE LATE ROMAN BURIALS AT HOLLOW BANKS QUARRY",
+        "page_start": 5,
+        "page_end": 7,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "burial_context",
+        "military_association"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed cemetery and site description with some military association context. Useful only as background for the provenance argument, not as direct economic evidence.",
+      "section_text_excerpt": "The excavations at Hollow Banks Farm were undertaken in 1998–2000 by Northern Archaeological Associates Ltd on behalf of Tilcon (North) Ltd in advance of sand and gravel extraction. Initial post-excavation analysis was funded by Tarmac Northern Ltd, with additional funding for the analysis of the cemetery assemblage provided by English Heritage from the Aggregate Sustainability Levy Fund. The excavated area at Hollow Banks Farm, Scorton lies immediately across the parish boundary within Brompton-upon-Swale, North Yorkshire, and only 200 m north-east of Catterick Bridge, with the Roman cemetery centred at SE 22850 99660 (FIGS 1–2). The burials lay within a multi-period palimpsest of archaeological features including Neolithic ‘ritual’ monuments, a Beaker barrow and Iron Age settlement. However, during the Roman period the area seems to been under agricultural use, laid out in large rectangular fields, and there is no evidence to suggest that any of the earlier features were still recognisable. Later use of the site included the large Anglian cemetery located 30 m to the north-west, which is further discussed below; otherwise, the area has subsequently remained in agricultural usage. The solid geology of the area is complex. Although the site itself overlies Carboniferous Millstone Grit,10 this is covered by deposits of fluvio-glacial sands and gravels accumulated during early deglaciation.11 The soils across the site are mapped as Wick 1 Association, which comprises deep, well-drained, coarse loamy earth.12 Work by Taylor and Macklin13 has shown that until c. 2000 BP the Swale floodplain had been occupied by shallow channels characteristic of a ‘braided’ river system and accumulating alluvial deposits. These were subsequently incised by a single-thread meandering channel which has produced a series of lower-level terraces and resulted in substantial lowering of the floodplain surface. To the south, the river has been constrained by a limestone outcrop forming the hill on which the Roman fort and town were located. The Hollow Banks Farm Roman cemetery was located on a slight promontory (65.5 m AOD) at the edge of the upper terrace gravels, which was created by fo…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 3,
+        "phase_f_doc_rank": 39,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 44.22,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "070fddf550e32a79",
+        "section_title": "ARCHAEOLOGICAL ANALYSIS OF CROSSBOW BROOCHES AND BELT FITTINGS",
+        "page_start": 7,
+        "page_end": 14,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "military_material_culture",
+        "burial_archaeology"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Useful for identifying military/administrative associations through artefacts, but still far from the chapter's economic focus.",
+      "section_text_excerpt": "ARCHAEOLOGICAL ANALYSIS OF CROSSBOW BROOCHES AND BELT FITTINGS A striking feature of the Hollow Banks late Roman cemetery is the frequency with which crossbow brooches and belt buckles occur. No less than four graves (Nos 1, 5, 7 and 14) have crossbow brooches and six have belt fittings (Nos 1, 5, 6, 7, 12 and 14: see FIGS 4–8). Crossbow brooches appear to have been worn by males in positions of authority and in the later Roman period may have been associated specifically with administrators rather than just military men.18 Archaeological evidence, for example from Lankhills (Winchester), confirms the overwhelming association with male burials and adults.19 The relative proportion of burials with crossbow brooches at Scorton (4/15) is highly unusual for Roman Britain. In general, and relative to the continent, Britain has few of these types of furnished inhumations. Lankhills is the only other Romano-British cemetery for which high numbers of crossbow brooches have been reported, but there the equivalent numbers is 6/306 from the recent and 8/444 from the old, 1970s, excavations.20 For the classification of crossbow brooches, continental typologies are usually followed; however, Swift’s 21 analysis provides an excellent summary of the Romano-British material and makes some interesting suggestions about the production of these striking brooches.22 Crossbow brooches in the northern British ‘frontier zone’ broadly follow the typological patterns established by Swift23 for Roman Britain, but sites on Hadrian’s Wall display a distinctive profile, which may be due to ‘decreasing levels of contact between the frontier and central imperial authorities’.24 The Scorton crossbow brooches are broadly of Keller/Pröttel Type 3/4,25 but one (541AB from Grave 14) has elements of Keller Type 2, while another (571AV from Grave 7) may have elements of his Type 5.26 Crossbow brooches of Keller Type 3/4 are usually dated to the last two thirds of the fourth century and into the fifth century (A.D. 350–410)27. However, crossbow brooches may have had long ‘lives’ and biographies; thus we may note the broken example in a young individual’s grave at Lankhills and general evidence for r…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 66,
+        "phase_f_doc_rank": 110,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 25.04,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "76b37e3ad95f21c0",
+        "section_title": "ISOTOPE ANALYSYS OF SKELETEL REMAINS FOR DIET AND MOBILITY RECONSTRUCTION",
+        "page_start": 14,
+        "page_end": 16,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_only"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Methodological explanation of isotope analysis. Technically informative, but not useful for the target chapter beyond understanding how the study works.",
+      "section_text_excerpt": "ISOTOPE ANALYSYS OF SKELETEL REMAINS FOR DIET AND MOBILITY Isotopes are atoms of the same element but of slightly different mass. Their relative abundance in nature varies systematically and predictably between different environments, so that individual substances can be traced back to the environments they came from based on their isotopic composition. Isotope analysis of skeletal remains is based on the principle that all body tissues, including the skeleton, are formed from the basic molecular components of the food and drink ingested by the individual. They therefore contain the ‘isotopic signatures’ of the types of food consumed and also of the environments they were grown in, allowing for the reconstruction of diet and mobility of individuals.83 Carbon and nitrogen stable isotopes of skeletal collagen are well established as reflecting the main sources of dietary protein consumed by an individual.84 Measured in bone, they reflect diet over the last ten to 30+ years prior to death, while dentine preserves the dietary signal at the time of tooth formation in childhood or early adolescence.85 Meaningful differences between bone and dentine isotope values therefore indicate a significant change in diet in the life-time of an individual, which could be explained by a change in location.86 Carbon stable isotope ratios (13C/12C or δ13C) vary substantially between plants using the C3 and C4 photosynthetic pathways as well as their consumers in a food-web; most plants in temperate environments belong to the C3 group while C4 plants are mostly tropical grasses as well as the cultigens maize, millet, sorghum and sugarcane. δ13C values also distinguish between terrestrial (C3) and marine foods. Nitrogen isotope values (15N/14N or 15N) provide information about trophic level and therefore the relative importance of animal protein in a person’s diet, although this relationship can be obscured by various environmental and metabolic factors.87 Strontium and oxygen form two independent isotopic systems which vary systematically according to local geology and climate respectively.88 Both elements are incorporated in dental enamel at the time of crown formation. Enamel und…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 192,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "33d137776ab0cc8b",
+        "section_title": "MATERIALS AND METHODS",
+        "page_start": 16,
+        "page_end": 17,
+        "section_type": "methods"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_only"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Sampling and lab-protocol details only.",
+      "section_text_excerpt": "Of the 15 burials from the Scorton Roman cemetery, only nine had skeletal remains which were well enough preserved for isotope analyses and/or were available for sampling. Of each of these, a tooth (preferentially a second molar or second premolar) and a bone sample (preferentially rib or, if not available, long bone) were obtained and prepared for strontium and oxygen isotope analysis of tooth enamel for the reconstruction of mobility and carbon and nitrogen isotope analysis of root dentine and bone collagen for the reconstruction of childhood and adult diet, respectively. Samples of a tenth individual (No. 14) became available later and were processed for carbon and nitrogen isotope analysis of dentine and Sample preparation and analysis were carried out at the NERC Isotope Geoscience protocols described in Evans et al. and Müldner et al.97 Analytical errors were as follows. For oxygen, the reproducibility of the internal phosphate standard (NBS120C) during the set of analyses was ± 0.16‰ (1 s.d.). δ18Op analyses were done in triplicate and the average standard deviation of the triplicates was ± 0.09‰. For strontium, the international standard for 87Sr/86Sr, NBS987, gave a value of 0.710250 ± .000006 (n=8, 2 s.d.) during the analysis of these samples. Blank values were in the region of 100 pg. For carbon and nitrogen, repeat analysis of internal collagen standards calibrated to internationally certified reference material over the period of analysis gave an error of ±0.2‰ (1 s.d.) for both elements.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 195,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "142373f2af149a00",
+        "section_title": "RESULTS",
+        "page_start": 17,
+        "page_end": 17,
+        "section_type": "results"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "mobility_results",
+        "diet_results"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Raw isotopic summary statistics. Helpful only as supporting context for later interpretation of mobility and diet.",
+      "section_text_excerpt": "Individual data are shown in Table 1. δ18Op values range from 15.0‰ to 19.9‰ (range 4.9‰), with a mean of 16.7 ± 1.5‰ (all 1 s.d.). 87Sr/86Sr gave a narrow range between 0.7088 and 0.7104 (range 0.0016) with a mean of 0.7096 ± 0.0007. Strontium isotope analysis of one of the samples (No. 2) failed on grounds of poorly preserved enamel. Carbon isotope ratios of dentinal collagen extend from -16.9‰ to -19.5‰ (range 2.6‰), with a mean of -18.3 ± 0.9‰, while δ15N of the same samples range from 9.3‰ to 13.2‰ (range 3.9‰), with a mean of 10.9 ± 1.3‰. δ13C of bone collagen extend from -18.5‰ to -19.5‰ (range 1.0‰), with a mean of -19.0 ± 0.4‰, and nitrogen isotope ratios range from 8.4‰ to 12.3‰ (range 3.9‰), with a mean of 10.4 ± 1.0‰.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 211,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "84e02f27d2f643be",
+        "section_title": "DISCUSSION",
+        "page_start": 18,
+        "page_end": 18,
+        "section_type": "discussion"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "structural_noise"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Empty wrapper heading with no substantive extracted text.",
+      "section_text_excerpt": "",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "88a49a09b612209e",
+        "section_title": "Strontium and oxygen isotopes",
+        "page_start": 18,
+        "page_end": 19,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "mobility_isotopes",
+        "migration_evidence"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Useful for showing that several individuals were probably non-local, but still only indirectly relevant to the chapter's economic questions.",
+      "section_text_excerpt": "FIG. 10 depicts strontium and oxygen isotope data from Scorton in comparison with human isotope values from Catterick and strontium biosphere data from modern plants from the Vale of York and surrounding areas.98 Also shown is the 2 standard deviations range of phosphate oxygen isotope ratios for 615 archaeological individuals from Britain,99 which is taken as an estimate for δ18Op values consistent with British origins. This range is wider and therefore more conservative than the estimate used in Chenery et al.,100 but it can be regarded as more robust as it is based on a much larger number of samples than were previously The strontium isotope ratios for eight individuals from Scorton (87Sr/86Sr for No. 2 could not be determined) are all well within the estimated local range for the Catterick area (0.7076–0.7108).102 The strontium isotope values from Scorton are therefore all consistent with a local upbringing. It should be noted, however, that 87Sr/86Sr like those observed here are relatively generic and fit a range of mostly Mesozoic terrains which are very commonly encountered in Britain and on the European mainland.103 While a local origin of the Scorton individuals would therefore be the simplest explanation based on the strontium isotope data, they could equally have moved from areas of similar geology in Britain or abroad. The oxygen isotope values indeed indicate the latter. When the oxygen isotope data are examined, there are only three individuals (Nos 1, 12 and 13) with δ18Op within the estimated British range and for whom a local upbringing therefore seems easily possible. (Note that for at least one of these, No. 1, a British origin is nevertheless unlikely on grounds of his carbon isotope values, see below). No. 11, the only female in the group, has a significantly elevated δ18Op of 19.9‰; however, since the sample was taken from a first molar, a tooth whose crown formation is complete in the first years of life;104 this value is probably artificially elevated by the consumption of breast milk.105 A local or at least British origin, possibly in Southern or Western England, where oxygen isotope ratios of drinking water are higher than in the north…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 106,
+        "phase_f_doc_rank": 137,
+        "phase_g_doc_rank": 5,
+        "phase_g_score_0_to_100": 7.47,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a96d278d7007f66f",
+        "section_title": "Carbon and nitrogen isotopes",
+        "page_start": 19,
+        "page_end": 21,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "diet_isotopes",
+        "mobility_proxy"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Dietary isotope interpretation that helps argue for non-local origins and changing foodways, but not direct evidence for broader economic mechanisms.",
+      "section_text_excerpt": "FIG. 11 shows carbon and nitrogen isotope values for the Scorton humans (dentinal and bone collagen, reflecting childhood diet and long-term dietary average, respectively) compared to human and faunal data from nearby Catterick. It is easily evident that there is very little overlap between the two sites and the Scorton humans display significantly higher carbon isotope ratios than those from Catterick in both their bone and dentine110 These differences demonstrate that the Scorton individuals, as a group, consumed diets which were isotopically Further detail is gleaned when dentine and bone isotope ratios from the same individuals are compared: at Catterick where most individuals are thought to have been local, differences between the two tissues are typically small and in any case no greater than 0.5‰ for δ13C and 1.0‰ for δ15N.111 If these values are taken as indicative of the variation expected between bone and dentine of individuals on homogenous diets, then more than half of the Scorton males (Nos 1, 2, 5, 7, 12, 14) appear to have undergone measurable dietary change between the time when their tooth roots formed in their early teens and their time of death (FIG. 11).112 In each case the shift (0.8–1.8‰ for carbon and 1.2–2.3‰ for nitrogen) is towards more negative δ13C in later life, and therefore towards the C3-ecosystem dominated isotope values observed for the Catterick humans. These results suggest that the isotopic composition of the bone collagen, which is replaced only slowly after the end of adolescence was,113 at the time of death, still in transition between their variably 13C-enriched childhood While the early diets of the Scorton males indicated by these data are also primarily based on C3-plant derived protein, they contain varying but sufficiently large contributions from high δ13C- (C4-plant or marine) foods to make them stand out in the Catterick context. Compared to isotope data from some larger Romano-British towns, e.g. the provincial capital of York, where diets were predictably more diverse and included a greater proportion of aquatic and marine protein (FIG. 12), they are less unusual. Nevertheless, a number of the Scorton individua…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 189,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7212cd8431ab8b6c",
+        "section_title": "Isotopes and archaeology",
+        "page_start": 21,
+        "page_end": 28,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "mobility_interpretation",
+        "identity_archaeology",
+        "military_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Most conceptually useful section in the paper because it interprets mobility, artefacts, and identity in the Roman world, but it remains peripheral to the benchmark's economic focus.",
+      "section_text_excerpt": "It is now widely accepted that the relationship between socially and culturally constructed identities as expressed through artefacts and burial rite on the one hand and biological identities such as sex and geographic origin on the other is highly complex.123 A detailed discussion is beyond the scope of this paper, but it is clear that while ethnicity was initially seen as biologically determined and fixed, it is now usually viewed as dynamic and historically contingent.124 Increasingly, ethnicity is seen as an ideological construct, often negotiated through strategies of distinction such as the wearing of particular kinds of objects that can be created, reinforced and challenged by groups and individuals.125 How diverse populations were and whether or how differences were experienced and expressed is a question of particular importance to the Roman world, a society probably characterised by unprecedented levels of mobility.126 While initially lagging behind, for example, early medieval archaeology, these issues are now being addressed for the Roman period, not just through the exceptionally rich epigraphic material127 but also through careful analysis of later Roman material culture.128 Recent isotope work on several Romano-British sites has now highlighted that burials identified on archaeological grounds as intrusive sometimes indeed appear to be the graves of people who spent their childhoods in significantly warmer or colder, continental climates, or who consumed unusual diets that suggest origins outside of Britain.129 Equally, there are individuals whose burial rites appear to follow local traditions and whose isotope signatures match the local ones. On the other hand, we are also confronted with individuals who appear local archaeologically but are clearly intrusive isotopically, while others look ‘foreign’ archaeologically but appear to be local isotopically. We have argued previously that these complexities should be expected as identities involve multiple aspects of a person and evolve over time, while burial goods were, of course, chosen by the mourners, adding another layer of mediacy.130 In some cases we may also see the effect of intermarriage o…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 4,
+        "phase_f_doc_rank": 15,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 58.92,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "775e5ee895c27e8b",
+        "section_title": "ACKNOWLEDGEMENTS",
+        "page_start": 28,
+        "page_end": 29,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "metadata_noise"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Acknowledgements only.",
+      "section_text_excerpt": "Greg Speed would like to thank Richard Fraser of Northern Archaeological Associates Ltd both for access to the Scorton archive in advance of full publication and also for material assistance in the preparation of this paper. The site plans were prepared at NAA by Damien Ronan and Andrew Durkin, while the finds drawings are by Roger Simpson. X-radiography Louise Cooke at The Landscape Research Centre. Thanks are due to Richard Bradley for thoughts on Anglian battles and long lunches and to Ellen Swift for information on crossbow brooches and consultation of her PhD card index. The research was funded by a grant from the Roman Research Trust and samples were Tina Moriarty for their help. We would also like to thank Rob Collins, Nina Crummy, Mike Fulford, Vince Van Thienen and Pete Wilson for commenting on an early draft of the paper. Sarah Lucas helped with the final formatting of the images and Zoe Knapp with the",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "43a912e480fdf367",
+        "section_title": "CONCLUSION",
+        "page_start": 28,
+        "page_end": 28,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "mobility_interpretation",
+        "burial_identity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Clear summary of the paper's mobility and identity findings. Useful as a near-miss contextual section, but still not direct economic evidence.",
+      "section_text_excerpt": "Multi-isotope analysis at Scorton suggests that at least six of the nine individuals tested were indeed immigrants, probably from the European continent. As in other recent studies which have compared artefactual evidence to isotopic signatures, the relationship between geographical origin and burial rite is not straightforward; several individuals that look archaeologically foreign display non-local isotope signatures, yet there is also an individual buried in what may be described as an intrusive style who may have spent his childhood in Britain, if not in Catterick itself. Other factors such as age, gender and status clearly played an important part, as did the cultural identity of the partners, parents, children and friends who were presumably responsible for the burials. The study demonstrates that it is crucial for all aspects of identity to be examined in a contextual, multi-proxy analysis as only critical comparison of a combination of factors can begin to disentangle the relationships between personal identity and archaeological remains in what was clearly a complex and highly",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 210,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "aa922ddeeff97a6f",
+        "section_title": "BIBLIOGRAPHY",
+        "page_start": 29,
+        "page_end": 41,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "references"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Reference list only.",
+      "section_text_excerpt": "Adler, H. (ed.) 1989: ‘Römische Kaiserzeit’, Fundberichte aus Österreich 28, 203–57 Atanasov, G. 2007: ‘Late antique tomb in Durostorum-Silistra and its master’, Revista Barber, B., and Bowsher, D. 2000: The Eastern Cemetery of Roman London. Excavations Bayley, J., and Butcher, S. 2004: Roman Brooches in Britain: a Technological and Typological Study based on the Richborough Collection, London Bentley, R.A. 2006: ‘Strontium isotopes from the earth to the archaeological skeleton: a review’, Journal of Archaeological Method and Theory 13, 135–87 Birley, A. 1979: The People of Roman Britain, London Booth, P. 2014: ‘A late Roman military burial from the Dyke Hills, Dorchester on Thames, Booth, P., Simmonds, A., Clough, S., Cool, H., and Poore, D. 2010: The Late Roman Bradford, J.S.P., and Goodchild, R.G. 1939: ‘Excavations at Frilford, Berks’, Oxoniensia 4, Easterners’: can oxygen and strontium isotopes serve as indicators of provenance in Early Brettell, R., Montgomery, J., and Evans, J. 2012b: ‘Brewing and stewing: the effect of culturally mediated behaviour on the oxygen isotope composition of ingested fluids and the implications for human provenance studies’, Journal of Analytical Atomic Brickstock, R.J. 2002: ‘Coins in the Roman burials’, in Speed 2002, 3747 Evolution of the Swale-Ure Washlands, North Yorkshire, Oxford for population mobility on Rome’s Northern frontier’, Journal of Archaeological Science Chenery, C., Müldner, G., Evans, J., Eckardt, H., and Lewis, M. 2010: ‘Strontium and stable isotope evidence for diet and mobility in Roman Gloucester, UK’, Journal of Clarke, G. 1979: Pre-Roman and Roman Winchester. Part 2: The Roman Cemetery at Collins, R. 2010: ‘Brooch use in the fourth to fifth century frontier’, in Collins and Allason- Collins, R. 2012: Hadrian’s Wall and the End of Empire. The Roman Frontier in the Fourth Collins, R., and Allason-Jones, L. (eds) 2010: Finds from the Frontier: Material Culture in Cool, H.E.M. 1983: A Study of the Roman Personal Ornaments made of Metal, excluding Cool, H.E.M. 2002: ‘An overview of the small finds from Catterick’, in Wilson 2002, 24–43 Cool, H.E.M. 2010a: ‘Objects of glass, shale, bone and metal’, in Booth…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.66295487,
+        "doc_abstention_reason": null
+      }
+    }
+  ]
+}

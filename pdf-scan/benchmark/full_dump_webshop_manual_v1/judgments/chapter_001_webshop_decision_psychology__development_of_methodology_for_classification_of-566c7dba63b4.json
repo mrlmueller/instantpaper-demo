@@ -1,0 +1,44 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "development_of_methodology_for_classification_of-566c7dba63b4",
+  "has_useful_information": true,
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_title": "1. Introduction",
+        "page_start": 1,
+        "page_end": 2
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 8/10. Reviews as a channel through which customers acquire product information and reduce uncertainty."
+    },
+    {
+      "section_ref": {
+        "section_title": "2.2. Online customer review",
+        "page_start": 2,
+        "page_end": 2
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 9/10. e-WOM and peer-generated information are framed as more trusted than seller information."
+    },
+    {
+      "section_ref": {
+        "section_title": "5. Discussion",
+        "page_start": 4,
+        "page_end": 4
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 9/10. Strong for product reliability/connectivity risk as a must-be quality in electronics."
+    }
+  ],
+  "document_notes": "User-marked positive. Useful for online review information, trust in peer-generated content, and risk/uncertainty around product quality in consumer electronics."
+}

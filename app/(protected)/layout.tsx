@@ -13,8 +13,8 @@ export default async function ProtectedLayout({
   await requireFullAccess();
 
   return (
-    <div className="min-h-screen">
-      <main className="h-screen">{children}</main>
+    <div className="h-screen overflow-hidden">
+      <main className="h-full overflow-hidden">{children}</main>
     </div>
   );
 }

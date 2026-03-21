@@ -1,0 +1,8 @@
+{
+  "doc_id": "opinion_mining_and_sentiment_analysis-d837b2bce0b4",
+  "label": "Opinion Mining and Sentiment Analysis",
+  "path": "../../paper-dump/Opinion Mining and Sentiment Analysis.pdf",
+  "role_in_suite": "manual_positive_anchor",
+  "expected_difficulty": "manual_anchor",
+  "notes": "User-marked positive. Strong for uncertainty in online information, concrete product-evaluation examples, feature-level explanations, helpfulness signals, and manipulation/trust issues."
+}

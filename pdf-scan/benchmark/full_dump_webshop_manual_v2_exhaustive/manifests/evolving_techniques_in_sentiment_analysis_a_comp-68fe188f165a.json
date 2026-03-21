@@ -1,0 +1,8 @@
+{
+  "doc_id": "evolving_techniques_in_sentiment_analysis_a_comp-68fe188f165a",
+  "label": "Evolving techniques in sentiment analysis a comprehensive review",
+  "path": "../../paper-dump/Evolving techniques in sentiment analysis a comprehensive review.pdf",
+  "role_in_suite": "manual_exhaustive_positive",
+  "expected_difficulty": "manual_exhaustive",
+  "notes": "Weak-but-positive source. Mostly technical, but includes useful material around review analysis, manipulated reviews, helpfulness, and feature-level review information. Existing benchmark note: User-marked weak-but-positive. Not a strong overall fit, but it contains one useful region around review manipulation, helpfulness, and information quality."
+}

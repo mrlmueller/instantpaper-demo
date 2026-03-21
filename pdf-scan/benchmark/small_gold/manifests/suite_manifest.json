@@ -1,0 +1,16 @@
+{
+  "suite_id": "small_gold_webshop_decision_psychology_v1",
+  "suite_type": "small_gold",
+  "chapter_specs": [
+    "chapters/chapter_001_webshop_decision_psychology.json"
+  ],
+  "documents": [
+    "manifests/doc_001_short_document_candidate.json",
+    "manifests/doc_002_very_long_document_candidate.json",
+    "manifests/doc_003_medium_document_candidate_a.json",
+    "manifests/doc_004_medium_document_candidate_b.json",
+    "manifests/doc_005_long_document_candidate.json"
+  ],
+  "judgments": [],
+  "notes": "Concrete small-gold suite for early iterative development using 5 real PDFs with neutral structural/document-profile assignments only. Relevance is intentionally left undecided until section-level annotation."
+}

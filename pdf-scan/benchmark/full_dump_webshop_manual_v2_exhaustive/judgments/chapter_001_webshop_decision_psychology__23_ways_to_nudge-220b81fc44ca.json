@@ -1,0 +1,1127 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "23_ways_to_nudge-220b81fc44ca",
+  "doc_title": "23 Ways to Nudge",
+  "has_useful_information": true,
+  "document_label_0_to_3": 3,
+  "document_label_band": "core_or_strong_support",
+  "document_notes": "Rich source for digital nudging mechanisms, dual-process framing, ethical boundaries, and examples of manipulative vs. legitimate interface steering. Existing benchmark note: Broad positive recall judgment. The user stated that nearly all dump PDFs contain useful material for the webshop chapter. This paper is kept as a positive doc-level target even though section anchors are not annotated yet.",
+  "manual_review_basis": [
+    "full extracted section inventory",
+    "run 386e04657c41c805f8c1b974 section inspection packets",
+    "benchmark target direct excerpt review where available"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "Abstract",
+      "page_start": 2,
+      "page_end": 2,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Abstract summarizes a taxonomy mapping nudges to cognitive biases, mechanisms, effectiveness factors and ethics — highly relevant as a compact framework for choice architecture and its psychological grounding."
+    },
+    {
+      "section_title": "1 Introduction",
+      "page_start": 2,
+      "page_end": 3,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Introduction situates technology-mediated nudging, links to behavioral economics and reflection vs. automatic processes—useful framing for nudging mechanisms, ethical concerns, and relevance of heuristics to online decision confidence."
+    },
+    {
+      "section_title": "2 BACKGROUND Dual process theories of decision-making",
+      "page_start": 3,
+      "page_end": 3,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "nudging_choice_architecture",
+        "supporting_background_context"
+      ],
+      "notes": "Detailed summary of Dual Process theory, heuristics and biases, prevalence of automatic processes—core theoretical material for explaining decision confidence, heuristic-driven errors, and the rationale for digital nudges."
+    },
+    {
+      "section_title": "Nudging",
+      "page_start": 3,
+      "page_end": 4,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Kerntext zur Definition von Nudging (Thaler & Sunstein), Beispiele aus HCI und Verknüpfung mit kognitiven Biases — sehr relevant für Choice Architecture, Wirkmechanismen und Abgrenzung zu manipulativen Mustern."
+    },
+    {
+      "section_title": "4 RESULTS - NUDGING MECHANISMS",
+      "page_start": 5,
+      "page_end": 5,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Framework mit 23 Nudging‑Mechanismen und Kategorien (z.B. facilitate, social influence) ist sehr relevant für Gestaltungprinzipien, Wirkmechanismen und Abgrenzungen im digitalen Kontext."
+    },
+    {
+      "section_title": "Facilitate",
+      "page_start": 5,
+      "page_end": 6,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Clear exposition of 'facilitate' nudges (defaults, opt-outs, reducing effort) with examples and underlying biases (status-quo). Directly relevant to design principles, mechanisms for increasing decision confidence and lowering cognitive/eff"
+    },
+    {
+      "section_title": "Confront",
+      "page_start": 6,
+      "page_end": 7,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Describes 'confront' nudges that induce reflection and pause (regret aversion, availability heuristic) with concrete digital examples—highly relevant for reducing impulsive online purchases and managing perceived risk."
+    },
+    {
+      "section_title": "Deceive",
+      "page_start": 7,
+      "page_end": 8,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Covers deceptive/biased nudges (decoy effect, peak-end rule) and memory bias manipulation—critically important for distinguishing persuasive vs. manipulative patterns and for ethical discussion in the chapter."
+    },
+    {
+      "section_title": "Social Influence",
+      "page_start": 8,
+      "page_end": 9,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "notes": "Detailed account of social-influence nudges (reciprocity, commitment) with digital examples—valuable for explaining social proof effects on decision confidence and choice architecture in webshops."
+    },
+    {
+      "section_title": "Fear",
+      "page_start": 9,
+      "page_end": 9,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Discusses 'fear' nudges (scarcity, loss aversion, psychological distance) and examples—useful for sections on perceived risk, urgency cues in e-commerce and their limits/ethical concerns."
+    },
+    {
+      "section_title": "Reinforce",
+      "page_start": 9,
+      "page_end": 10,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Describes reinforcement nudges (just-in-time, ambient feedback, affect nudges) with applied examples—relevant for designing ongoing signals that affect confidence and behavior in online shopping contexts."
+    },
+    {
+      "section_title": "5 DISCUSSION",
+      "page_start": 10,
+      "page_end": 11,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Detailed taxonomy of 23 nudging mechanisms, maps them to automatic vs. reflective thinking and transparency—directly relevant for choice architecture, ethical distinctions (manipulative vs. transparent) and dual-process considerations for '"
+    },
+    {
+      "section_title": "When do nudges fail?",
+      "page_start": 11,
+      "page_end": 12,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Analyzes when nudges fail and why (sustainability, lack of educational effects, trust erosion, context dependence). Very useful for limits of nudging, long-term decision confidence and ethical design trade-offs."
+    },
+    {
+      "section_title": "Nudges as facilitators, sparks or signals",
+      "page_start": 12,
+      "page_end": 12,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Maps nudges to Fogg's facilitators/sparks/signals—useful for choosing appropriate interventions given user motivation/ability. Helps link behavioral theory to practical UI patterns for assisting uncertain purchases."
+    },
+    {
+      "section_title": "Design considerations",
+      "page_start": 12,
+      "page_end": 13,
+      "usefulness_0_to_10": 10,
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Concrete design considerations (defaults, suggesting alternatives, signals) and specific questions for implementation and ethics. Highly actionable for chapter sections on design patterns, autonomy, transparency and reducing uncertainty via"
+    }
+  ],
+  "near_miss_sections": [
+    {
+      "section_title": "2 BACKGROUND",
+      "page_start": 3,
+      "page_end": 3,
+      "usefulness_0_to_10": 3,
+      "notes": "Single-line background header pointing to Dual Process theories—signals relevance but contains almost no detail."
+    },
+    {
+      "section_title": "Identification of potentially relevant entries",
+      "page_start": 4,
+      "page_end": 4,
+      "usefulness_0_to_10": 3,
+      "notes": "Eligibility‑ und Suchkriterien des Reviews sind nützlich zur Beurteilung der Quellenqualität, liefern aber wenig direkte inhaltliche Einsichten für Kapitelthemen."
+    }
+  ],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "eaf2b95770d342c4",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 2,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Pure front matter (title/metadata) with no substantive content for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "81b33bd710503523",
+        "section_title": "Abstract",
+        "page_start": 2,
+        "page_end": 2,
+        "section_type": "abstract"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Abstract summarizes a taxonomy mapping nudges to cognitive biases, mechanisms, effectiveness factors and ethics — highly relevant as a compact framework for choice architecture and its psychological grounding.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 53,
+        "phase_f_doc_rank": 101,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "9685bb70657fc10a",
+        "section_title": "CCS CONCEPTS",
+        "page_start": 2,
+        "page_end": 2,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "CCS concepts / copyright boilerplate only; no substantive content for chapter topics.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 82,
+        "phase_f_doc_rank": 63,
+        "phase_g_doc_rank": 5,
+        "phase_g_score_0_to_100": 38.31,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e815dd51415a8c30",
+        "section_title": "1 Introduction",
+        "page_start": 2,
+        "page_end": 3,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Introduction situates technology-mediated nudging, links to behavioral economics and reflection vs. automatic processes—useful framing for nudging mechanisms, ethical concerns, and relevance of heuristics to online decision confidence.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 50,
+        "phase_f_doc_rank": 123,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "79ba450c0566af60",
+        "section_title": "2 BACKGROUND",
+        "page_start": 3,
+        "page_end": 3,
+        "section_type": "background"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Single-line background header pointing to Dual Process theories—signals relevance but contains almost no detail.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "2f4493a848ffc32d",
+        "section_title": "2 BACKGROUND Dual process theories of decision-making",
+        "page_start": 3,
+        "page_end": 3,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "nudging_choice_architecture",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed summary of Dual Process theory, heuristics and biases, prevalence of automatic processes—core theoretical material for explaining decision confidence, heuristic-driven errors, and the rationale for digital nudges.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 35,
+        "phase_f_doc_rank": 12,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 50.48,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "1fa81ebf431fe231",
+        "section_title": "Dual process theories of decision-making",
+        "page_start": 3,
+        "page_end": 3,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "decision_psychology_theory",
+        "nudging_choice_architecture",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Dual‑Process-Theorien sind zentrale Theoriegrundlage für Erklärung von Heuristiken und Entscheidungs­prozessen (System 1/2) — wichtig für Kapitelabschnitte zu Biases und Entscheidungssicherheit, obwohl hier nur der Titel vorliegt.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "2375ddfdb8b28001",
+        "section_title": "Nudging",
+        "page_start": 3,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Kerntext zur Definition von Nudging (Thaler & Sunstein), Beispiele aus HCI und Verknüpfung mit kognitiven Biases — sehr relevant für Choice Architecture, Wirkmechanismen und Abgrenzung zu manipulativen Mustern.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 30,
+        "phase_f_doc_rank": 36,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 47.17,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a1e352d6968c4f2a",
+        "section_title": "3 Method",
+        "page_start": 4,
+        "page_end": 4,
+        "section_type": "methods"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Beschreibt die angewandte Review‑Methode (PRISMA). Nützlich für Methodenbewertung der Quelle, aber inhaltlich wenig für Kapitelthemen.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a07f414f90043295",
+        "section_title": "Identification of potentially relevant entries",
+        "page_start": 4,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [],
+      "notes": "Eligibility‑ und Suchkriterien des Reviews sind nützlich zur Beurteilung der Quellenqualität, liefern aber wenig direkte inhaltliche Einsichten für Kapitelthemen.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 52,
+        "phase_f_doc_rank": 45,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e6d444d523985ec3",
+        "section_title": "Analysis procedure and dataset description",
+        "page_start": 4,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "nudging_choice_architecture",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Lieferte empirische Informationen zu Anwendungsdomänen, Stichproben und Studiendesign — hilfreich zur Einordnung der Evidenzlage zu technologischen Nudges und Wirksamkeit.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 126,
+        "phase_f_doc_rank": 112,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "75a9c0317ba89736",
+        "section_title": "4 RESULTS - NUDGING MECHANISMS",
+        "page_start": 5,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Framework mit 23 Nudging‑Mechanismen und Kategorien (z.B. facilitate, social influence) ist sehr relevant für Gestaltungprinzipien, Wirkmechanismen und Abgrenzungen im digitalen Kontext.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 62,
+        "phase_f_doc_rank": 75,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "cc904a3589877bed",
+        "section_title": "Facilitate",
+        "page_start": 5,
+        "page_end": 6,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Clear exposition of 'facilitate' nudges (defaults, opt-outs, reducing effort) with examples and underlying biases (status-quo). Directly relevant to design principles, mechanisms for increasing decision confidence and lowering cognitive/eff",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 56,
+        "phase_f_doc_rank": 66,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "353bc772cb3b5bc1",
+        "section_title": "Confront",
+        "page_start": 6,
+        "page_end": 7,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes 'confront' nudges that induce reflection and pause (regret aversion, availability heuristic) with concrete digital examples—highly relevant for reducing impulsive online purchases and managing perceived risk.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 57,
+        "phase_f_doc_rank": 86,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e5e4d3a650b33387",
+        "section_title": "Deceive",
+        "page_start": 7,
+        "page_end": 8,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Covers deceptive/biased nudges (decoy effect, peak-end rule) and memory bias manipulation—critically important for distinguishing persuasive vs. manipulative patterns and for ethical discussion in the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 80,
+        "phase_f_doc_rank": 49,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 41.71,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4119b0b20779118d",
+        "section_title": "Social Influence",
+        "page_start": 8,
+        "page_end": 9,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed account of social-influence nudges (reciprocity, commitment) with digital examples—valuable for explaining social proof effects on decision confidence and choice architecture in webshops.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 60,
+        "phase_f_doc_rank": 92,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "62926b281bb1afc9",
+        "section_title": "Fear",
+        "page_start": 9,
+        "page_end": 9,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses 'fear' nudges (scarcity, loss aversion, psychological distance) and examples—useful for sections on perceived risk, urgency cues in e-commerce and their limits/ethical concerns.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 58,
+        "phase_f_doc_rank": 94,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a033370e85405a43",
+        "section_title": "Reinforce",
+        "page_start": 9,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes reinforcement nudges (just-in-time, ambient feedback, affect nudges) with applied examples—relevant for designing ongoing signals that affect confidence and behavior in online shopping contexts.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 78,
+        "phase_f_doc_rank": 114,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3c08c4df11496fd6",
+        "section_title": "5 DISCUSSION",
+        "page_start": 10,
+        "page_end": 11,
+        "section_type": "discussion"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed taxonomy of 23 nudging mechanisms, maps them to automatic vs. reflective thinking and transparency—directly relevant for choice architecture, ethical distinctions (manipulative vs. transparent) and dual-process considerations for '",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 40,
+        "phase_f_doc_rank": 37,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 39.14,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "8f16f04681f17621",
+        "section_title": "When do nudges fail?",
+        "page_start": 11,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Analyzes when nudges fail and why (sustainability, lack of educational effects, trust erosion, context dependence). Very useful for limits of nudging, long-term decision confidence and ethical design trade-offs.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 92,
+        "phase_f_doc_rank": 96,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d1114231729deb61",
+        "section_title": "Nudges as facilitators, sparks or signals",
+        "page_start": 12,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Maps nudges to Fogg's facilitators/sparks/signals—useful for choosing appropriate interventions given user motivation/ability. Helps link behavioral theory to practical UI patterns for assisting uncertain purchases.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 76,
+        "phase_f_doc_rank": 137,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f0963a90940c6d29",
+        "section_title": "Design considerations",
+        "page_start": 12,
+        "page_end": 13,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 10,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "decision_psychology_theory",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Concrete design considerations (defaults, suggesting alternatives, signals) and specific questions for implementation and ethics. Highly actionable for chapter sections on design patterns, autonomy, transparency and reducing uncertainty via",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 48,
+        "phase_f_doc_rank": 53,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a2431b15eecef773",
+        "section_title": "6 CONCLUSION",
+        "page_start": 13,
+        "page_end": 13,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "nudging_choice_architecture"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Concise summary linking cognitive biases to mechanisms and stating research contributions. Useful as a high-level framing and to cite the study's scope, but less detailed than other sections for implementation or evidence.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 54,
+        "phase_f_doc_rank": 87,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6e83c31967cc2677",
+        "section_title": "Acknowledgments",
+        "page_start": 13,
+        "page_end": 13,
+        "section_type": "acknowledgements"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Acknowledgements only; no substantive content relevant to chapter topics.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "660711e69cea6ff6",
+        "section_title": "References",
+        "page_start": 13,
+        "page_end": 16,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "This is a references fragment and scattered citation text. References can point to useful sources but the section content itself provides little extractable conceptual material for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true
+      }
+    }
+  ]
+}

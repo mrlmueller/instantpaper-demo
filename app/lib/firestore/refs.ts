@@ -10,6 +10,11 @@ import type {
   ArtifactDoc,
   KapitelDoc,
   ProjectDoc,
+  ProjectPdfDoc,
+  PdfScanDocSummaryDoc,
+  PdfScanResultDoc,
+  QuellenFinderRunDoc,
+  TwoLaneResultDoc,
   QuelleContentDoc,
   QuelleDoc,
   ResultDoc,
@@ -144,5 +149,113 @@ export function summariesCol(
   return collection(db, 'users', uid, 'kapitels', kapitelId, 'runs', runId, 'summaries').withConverter(
     identityConverter<SummaryDoc>()
   );
+}
+
+export function projectPdfsCol(db: Firestore, uid: string, projektId: string): CollectionReference<ProjectPdfDoc> {
+  return collection(db, 'users', uid, 'projects', projektId, 'pdfs').withConverter(identityConverter<ProjectPdfDoc>());
+}
+
+export function projectPdfDoc(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  pdfId: string
+): DocumentReference<ProjectPdfDoc> {
+  return doc(db, 'users', uid, 'projects', projektId, 'pdfs', pdfId).withConverter(identityConverter<ProjectPdfDoc>());
+}
+
+export function projectResearchRunsCol(
+  db: Firestore,
+  uid: string,
+  projektId: string
+): CollectionReference<QuellenFinderRunDoc> {
+  return collection(db, 'users', uid, 'projects', projektId, 'researchRuns').withConverter(
+    identityConverter<QuellenFinderRunDoc>()
+  );
+}
+
+export function projectResearchRunDoc(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  runId: string
+): DocumentReference<QuellenFinderRunDoc> {
+  return doc(db, 'users', uid, 'projects', projektId, 'researchRuns', runId).withConverter(
+    identityConverter<QuellenFinderRunDoc>()
+  );
+}
+
+export function quellenFinderTwoLaneResultsCol(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  runId: string
+): CollectionReference<TwoLaneResultDoc> {
+  return collection(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'twoLaneResults').withConverter(
+    identityConverter<TwoLaneResultDoc>()
+  );
+}
+
+export function quellenFinderTwoLaneTelemetryCol(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  runId: string
+): CollectionReference<Record<string, unknown>> {
+  return collection(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'twoLaneTelemetry').withConverter(
+    identityConverter<Record<string, unknown>>()
+  );
+}
+
+export function quellenFinderTwoLaneTelemetryDoc(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  runId: string,
+  docId: string
+): DocumentReference<Record<string, unknown>> {
+  return doc(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'twoLaneTelemetry', docId).withConverter(
+    identityConverter<Record<string, unknown>>()
+  );
+}
+
+export function quellenFinderPdfScanDocsCol(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  runId: string
+): CollectionReference<PdfScanDocSummaryDoc> {
+  return collection(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'pdfScanDocs').withConverter(
+    identityConverter<PdfScanDocSummaryDoc>()
+  );
+}
+
+export function quellenFinderPdfScanSectionsCol(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  runId: string
+): CollectionReference<PdfScanResultDoc> {
+  return collection(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'pdfScanSections').withConverter(
+    identityConverter<PdfScanResultDoc>()
+  );
+}
+
+export function quellenFinderPdfStage2Col(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  runId: string
+): CollectionReference<PdfScanDocSummaryDoc> {
+  return quellenFinderPdfScanDocsCol(db, uid, projektId, runId);
+}
+
+export function quellenFinderPdfStage3Col(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  runId: string
+): CollectionReference<PdfScanResultDoc> {
+  return quellenFinderPdfScanSectionsCol(db, uid, projektId, runId);
 }
 

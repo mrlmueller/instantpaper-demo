@@ -1,8 +1,9 @@
-from fastapi import FastAPI, Depends, BackgroundTasks, status, HTTPException, Request
+from fastapi import FastAPI, Depends, BackgroundTasks, status, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
+from io import BytesIO
 from utils.config import config
 from middleware.auth import (
     verify_firebase_token,
@@ -19,6 +20,9 @@ from models.request import (
     LeseflussKapitelRequest,
     GenerateGliederungRequest,
     RefineGliederungRequest,
+    QuellenFinderPdfScanRequest,
+    QuellenFinderPdfScanCancelRequest,
+    QuellenFinderPdfExtractRequest,
     ExportDocxRequest,
     RefineCombinedInitRequest,
     RefineCombinedRequest,
@@ -28,6 +32,10 @@ from models.request import (
     RefineLeseflussRequest,
     RefineResultInitRequest,
     RefineResultRequest,
+    QuellenFinderTwoLaneStartRequest,
+    QuellenFinderTwoLaneCancelRequest,
+    QuellenFinderProjectPdfDuplicateCheckRequest,
+    QuellenFinderProjectPdfColorUpdateRequest,
 )
 from models.response import ProcessQuelleResponse
 from services.quelle_service import quelle_service
@@ -37,25 +45,40 @@ from services.gliederung_service import gliederung_service
 from services.refinement_service import refinement_service
 from services.firebase_service import firebase_service
 from services.credits_service import get_credits_service
+from services.openai_budget_service import get_openai_budget_service
 from services.prompt_service import prompt_service
 from services.export_service import export_service
+from services.cloud_run_job_launcher import cloud_run_job_launcher
+from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
+from services.quellen_finder_sources_two_lane_job import run_quellen_finder_sources_two_lane_job_from_run_doc
+from services.quellen_finder_pdf_scan_job import (
+    run_quellen_finder_pdf_scan_job_from_run_doc,
+    _download_pdf_from_firebase_storage,
+    _candidate_bucket_names,
+)
+from services.quellen_finder_pdf_extract_service import extract_quellen_finder_pdf_section
 from firebase_admin import auth, storage
 from google.api_core.exceptions import NotFound, FailedPrecondition
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 from google.cloud import firestore
+from pypdf import PdfReader
 from pydantic import BaseModel
 import logging
+import asyncio
 import base64
 import json
 import secrets
 import hashlib
+import shutil
 import os
 import re
+import tempfile
 import unicodedata
 from pathlib import Path
 import html as html_lib
 from urllib.parse import parse_qs
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from starlette.background import BackgroundTask
 
 from utils.logging_config import configure_logging
 
@@ -158,6 +181,16 @@ class AdminSetSystemPromptExportRequest(BaseModel):
 class AdminSetUsageInsightsRequest(BaseModel):
     email: str
     canViewUsageInsights: bool
+
+
+class AdminSetQuellenFinderRequest(BaseModel):
+    email: str
+    canUseQuellenFinder: bool
+
+
+class AdminSetPdfScanRequest(BaseModel):
+    email: str
+    canUsePdfScan: bool
 
 
 class AdminUpsertSystemPromptTemplateRequest(BaseModel):
@@ -447,7 +480,7 @@ async def _is_user_blocked(uid: str) -> bool:
     return str(doc.get("accountStatus") or "").strip().lower() == "blocked"
 
 
-async def _can_user_view_usage_insights(uid: str) -> bool:
+async def _user_bool_flag_enabled(uid: str, field_name: str) -> bool:
     uid_norm = (uid or "").strip()
     if not uid_norm:
         return False
@@ -455,7 +488,97 @@ async def _can_user_view_usage_insights(uid: str) -> bool:
         doc = await firebase_service.get_user_doc(uid_norm)
     except Exception:
         return False
-    return bool((doc or {}).get("canViewUsageInsights") is True)
+    return bool((doc or {}).get(field_name) is True)
+
+
+async def _can_user_view_usage_insights(uid: str) -> bool:
+    return await _user_bool_flag_enabled(uid, "canViewUsageInsights")
+
+
+async def _can_user_use_quellen_finder(uid: str) -> bool:
+    return await _user_bool_flag_enabled(uid, "canUseQuellenFinder")
+
+
+async def _can_user_use_pdf_scan(uid: str) -> bool:
+    return await _user_bool_flag_enabled(uid, "canUsePdfScan")
+
+
+async def _require_quellen_finder_enabled(uid: str) -> None:
+    if not await _can_user_use_quellen_finder(uid):
+        raise HTTPException(status_code=404, detail="Not found.")
+
+
+async def _require_pdf_scan_enabled(uid: str) -> None:
+    if not await _can_user_use_pdf_scan(uid):
+        raise HTTPException(status_code=404, detail="Not found.")
+
+
+def _pdf_scan_run_pdf_ids(run_data: dict) -> set[str]:
+    pdf_ids: set[str] = set()
+
+    raw_pdf_ids = run_data.get("pdfIds")
+    if isinstance(raw_pdf_ids, list):
+        for raw_pdf_id in raw_pdf_ids:
+            pdf_id = str(raw_pdf_id or "").strip()
+            if pdf_id:
+                pdf_ids.add(pdf_id)
+
+    raw_pdf_snapshots = run_data.get("pdfSnapshots")
+    if isinstance(raw_pdf_snapshots, list):
+        for raw_snapshot in raw_pdf_snapshots:
+            if not isinstance(raw_snapshot, dict):
+                continue
+            pdf_id = str(raw_snapshot.get("id") or "").strip()
+            if pdf_id:
+                pdf_ids.add(pdf_id)
+
+    return pdf_ids
+
+
+def _find_pdf_scan_run(
+    *,
+    fs: QuellenFinderFirestoreService,
+    user_id: str,
+    projekt_id: str,
+    statuses: set[str] | None = None,
+    kapitel_id: str | None = None,
+    pdf_id: str | None = None,
+) -> tuple[str, dict] | None:
+    allowed_statuses = {
+        str(status or "").strip()
+        for status in (statuses or set())
+        if str(status or "").strip()
+    } or None
+    kapitel_id_norm = str(kapitel_id or "").strip()
+    pdf_id_norm = str(pdf_id or "").strip()
+
+    for snap in fs.runs_col(user_id, projekt_id).where(filter=firestore.FieldFilter("kind", "==", "pdf_scan")).stream():
+        if snap is None or not getattr(snap, "exists", False):
+            continue
+        data = snap.to_dict() if snap is not None else {}
+        if not isinstance(data, dict):
+            continue
+
+        status_now = str((data or {}).get("status") or "").strip()
+        if allowed_statuses is not None and status_now not in allowed_statuses:
+            continue
+        if kapitel_id_norm:
+            run_kapitel_ids = data.get("kapitelIds")
+            if not isinstance(run_kapitel_ids, list):
+                continue
+            run_kapitel_id_set = {
+                str(raw_kapitel_id or "").strip()
+                for raw_kapitel_id in run_kapitel_ids
+                if str(raw_kapitel_id or "").strip()
+            }
+            if kapitel_id_norm not in run_kapitel_id_set:
+                continue
+        if pdf_id_norm and pdf_id_norm not in _pdf_scan_run_pdf_ids(data):
+            continue
+
+        return str(snap.id), data
+
+    return None
 
 
 @app.get("/api/me")
@@ -487,6 +610,8 @@ async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any
         status = "active" if full_access else "pending"
 
     can_view_usage_insights = bool((user_doc or {}).get("canViewUsageInsights") is True)
+    can_use_quellen_finder = bool((user_doc or {}).get("canUseQuellenFinder") is True)
+    can_use_pdf_scan = bool((user_doc or {}).get("canUsePdfScan") is True)
 
     return {
         "uid": uid,
@@ -496,7 +621,102 @@ async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any
         "fullAccess": full_access,
         "legacyApproved": legacy_approved,
         "canViewUsageInsights": can_view_usage_insights,
+        "canUseQuellenFinder": can_use_quellen_finder,
+        "canUsePdfScan": can_use_pdf_scan,
     }
+
+
+def _normalize_project_pdf_filename(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+PDF_UPLOAD_MAX_BYTES = max(1, int(getattr(config, "PDF_SCAN_MAX_PDF_BYTES", 50 * 1024 * 1024) or 50 * 1024 * 1024))
+PDF_UPLOAD_MAX_MB = max(1, (PDF_UPLOAD_MAX_BYTES + (1024 * 1024) - 1) // (1024 * 1024))
+PDF_UPLOAD_MAX_PAGES = 2000
+PDF_UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
+PDF_UPLOAD_TEXT_SAMPLE_PAGES = 12
+PDF_UPLOAD_MIN_EXTRACTABLE_TEXT_CHARS = 24
+PDF_SCAN_MAX_PDFS_PER_RUN = 30
+
+
+def _sample_pdf_page_indices(page_count: int, sample_count: int) -> list[int]:
+    if page_count <= 0:
+        return []
+    if page_count <= sample_count:
+        return list(range(page_count))
+    if sample_count <= 1:
+        return [0]
+    return sorted({round(i * (page_count - 1) / (sample_count - 1)) for i in range(sample_count)})
+
+
+def _looks_like_pdf_bytes(file_bytes: bytes) -> bool:
+    return b"%PDF-" in file_bytes[:1024]
+
+
+async def _read_upload_file_with_limit(
+    file: UploadFile,
+    *,
+    max_bytes: int = PDF_UPLOAD_MAX_BYTES,
+    chunk_bytes: int = PDF_UPLOAD_READ_CHUNK_BYTES,
+) -> bytes:
+    buf = bytearray()
+    while True:
+        chunk = await file.read(chunk_bytes)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > max_bytes:
+            raise HTTPException(status_code=400, detail=f"PDF exceeds the {PDF_UPLOAD_MAX_MB} MB limit.")
+    return bytes(buf)
+
+
+def _validate_uploaded_pdf_bytes(file_bytes: bytes) -> dict[str, int]:
+    size = len(file_bytes)
+    if size <= 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if size > PDF_UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=400, detail=f"PDF exceeds the {PDF_UPLOAD_MAX_MB} MB limit.")
+    if not _looks_like_pdf_bytes(file_bytes):
+        raise HTTPException(status_code=400, detail="Uploaded file does not look like a valid PDF.")
+
+    try:
+        reader = PdfReader(BytesIO(file_bytes), strict=False)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Uploaded PDF is corrupted or unreadable.") from exc
+
+    if bool(getattr(reader, "is_encrypted", False)):
+        raise HTTPException(status_code=400, detail="Encrypted or password-protected PDFs are not supported.")
+
+    try:
+        page_count = len(reader.pages)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Uploaded PDF page structure could not be read.") from exc
+
+    if page_count <= 0:
+        raise HTTPException(status_code=400, detail="Uploaded PDF has no pages.")
+    if page_count > PDF_UPLOAD_MAX_PAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"PDF exceeds the {PDF_UPLOAD_MAX_PAGES}-page limit.",
+        )
+
+    extracted_chars = 0
+    for page_index in _sample_pdf_page_indices(page_count, PDF_UPLOAD_TEXT_SAMPLE_PAGES):
+        try:
+            text = reader.pages[page_index].extract_text() or ""
+        except Exception:
+            continue
+        extracted_chars += len(re.sub(r"\s+", "", text))
+        if extracted_chars >= PDF_UPLOAD_MIN_EXTRACTABLE_TEXT_CHARS:
+            break
+
+    if extracted_chars < PDF_UPLOAD_MIN_EXTRACTABLE_TEXT_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail="PDF contains no extractable text. Please upload a text-based PDF, not an image-only scan.",
+        )
+
+    return {"page_count": int(page_count)}
 
 
 def _as_float(value, default: float = 0.0) -> float:
@@ -1264,6 +1484,8 @@ async def admin_list_users(
 
             can_duplicate_system_prompts = False
             can_view_usage_insights = False
+            can_use_quellen_finder = False
+            can_use_pdf_scan = False
             blocked = False
             account_status = None
             billing_balance = None
@@ -1276,6 +1498,12 @@ async def admin_list_users(
                 can_view_usage_insights = bool(
                     (user_doc or {}).get("canViewUsageInsights") is True
                 )
+                can_use_quellen_finder = bool(
+                    (user_doc or {}).get("canUseQuellenFinder") is True
+                )
+                can_use_pdf_scan = bool(
+                    (user_doc or {}).get("canUsePdfScan") is True
+                )
                 account_status = (
                     str((user_doc or {}).get("accountStatus") or "").strip().lower()
                     or None
@@ -1284,6 +1512,8 @@ async def admin_list_users(
             except Exception:
                 can_duplicate_system_prompts = False
                 can_view_usage_insights = False
+                can_use_quellen_finder = False
+                can_use_pdf_scan = False
                 blocked = False
                 account_status = None
 
@@ -1323,6 +1553,8 @@ async def admin_list_users(
                     "approved": has_access,
                     "canDuplicateSystemPrompts": can_duplicate_system_prompts,
                     "canViewUsageInsights": can_view_usage_insights,
+                    "canUseQuellenFinder": can_use_quellen_finder,
+                    "canUsePdfScan": can_use_pdf_scan,
                     "disabled": bool(user.disabled),
                     "billingBalance": billing_balance,
                     "billingSubscription": billing_subscription,
@@ -2523,6 +2755,64 @@ async def admin_set_usage_insights(
         ) from None
 
 
+@app.post("/api/admin/users/quellen-finder")
+async def admin_set_quellen_finder(
+    payload: AdminSetQuellenFinderRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Allow or block a user from using Quellen-Finder and reading its stored runs/results."""
+    email = (payload.email or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required.")
+
+    try:
+        result = await firebase_service.set_user_can_use_quellen_finder_by_email(
+            email=email,
+            allowed=bool(payload.canUseQuellenFinder),
+        )
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "canUseQuellenFinder": result.get("canUseQuellenFinder"),
+            "note": "Firestore/backend access changes immediately; the client may refresh its token in the background.",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(
+            status_code=500, detail="Failed to update Quellen-Finder permission."
+        ) from None
+
+
+@app.post("/api/admin/users/pdf-scan")
+async def admin_set_pdf_scan(
+    payload: AdminSetPdfScanRequest,
+    _: str = Depends(verify_admin_user),
+):
+    """Allow or block a user from using PDF-Scan and the project PDF library."""
+    email = (payload.email or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required.")
+
+    try:
+        result = await firebase_service.set_user_can_use_pdf_scan_by_email(
+            email=email,
+            allowed=bool(payload.canUsePdfScan),
+        )
+        return {
+            "status": "ok",
+            "email": result.get("email"),
+            "canUsePdfScan": result.get("canUsePdfScan"),
+            "note": "Firestore/backend access changes immediately; Storage access follows the refreshed token.",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        raise HTTPException(
+            status_code=500, detail="Failed to update PDF-Scan permission."
+        ) from None
+
+
 def _validate_prompt_stage(stage: str) -> str:
     stage_norm = (stage or "").strip()
     if stage_norm not in ALLOWED_PROMPT_STAGES:
@@ -2621,6 +2911,8 @@ async def admin_get_user_detail(
 
     can_duplicate_system_prompts = False
     can_view_usage_insights = False
+    can_use_quellen_finder = False
+    can_use_pdf_scan = False
     account_status = None
     blocked = False
     activated_by_code = None
@@ -2634,6 +2926,10 @@ async def admin_get_user_detail(
         can_view_usage_insights = bool(
             (user_doc or {}).get("canViewUsageInsights") is True
         )
+        can_use_quellen_finder = bool(
+            (user_doc or {}).get("canUseQuellenFinder") is True
+        )
+        can_use_pdf_scan = bool((user_doc or {}).get("canUsePdfScan") is True)
         account_status = (
             str((user_doc or {}).get("accountStatus") or "").strip().lower() or None
         )
@@ -2646,6 +2942,8 @@ async def admin_get_user_detail(
     except Exception:
         can_duplicate_system_prompts = False
         can_view_usage_insights = False
+        can_use_quellen_finder = False
+        can_use_pdf_scan = False
         account_status = None
         blocked = False
         activated_by_code = None
@@ -2699,6 +2997,8 @@ async def admin_get_user_detail(
             "disabled": bool(user.disabled),
             "canDuplicateSystemPrompts": can_duplicate_system_prompts,
             "canViewUsageInsights": can_view_usage_insights,
+            "canUseQuellenFinder": can_use_quellen_finder,
+            "canUsePdfScan": can_use_pdf_scan,
             "spendRate": spend_rate_override,
             "effectiveSpendRate": float(effective_spend_rate),
             "activatedByCode": activated_by_code,
@@ -5030,6 +5330,1034 @@ async def refine_gliederung(
         "projekt_id": projekt_id,
         "queued_at": datetime.utcnow().isoformat() + "Z",
     }
+
+
+@app.post("/api/quellen-finder/sources-two-lane/start", status_code=status.HTTP_202_ACCEPTED)
+async def quellen_finder_sources_two_lane_start(
+    request: QuellenFinderTwoLaneStartRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Run Quellen-Finder two-lane sources pipeline for a single Kapitel (project-level run).
+
+    Creates a server-owned research run doc under:
+      users/{uid}/projects/{projektId}/researchRuns/{runId}
+    and writes results under:
+      .../twoLaneResults/*
+      .../twoLaneTelemetry/*
+    """
+
+    projekt_id = str(request.projekt_id or "").strip()
+    kapitel_id = str(request.kapitel_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not kapitel_id:
+        raise HTTPException(status_code=400, detail="kapitel_id is required")
+
+    await _require_quellen_finder_enabled(user_id)
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+    if not kapitel:
+        raise HTTPException(status_code=404, detail="Kapitel not found.")
+    if str((kapitel or {}).get("projektId") or "").strip() != projekt_id:
+        raise HTTPException(status_code=400, detail="Kapitel gehört nicht zu diesem Projekt.")
+    if bool((kapitel or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Kapitel is archived.")
+
+    chapter_title = str((kapitel or {}).get("title") or "").strip()
+    chapter_spec_text = str((kapitel or {}).get("thema") or "").strip()
+    if not chapter_title:
+        raise HTTPException(status_code=400, detail="Kapitelüberschrift fehlt (Kapitel.title).")
+    if not chapter_spec_text:
+        raise HTTPException(status_code=400, detail="Thema & Anweisungen fehlt (Kapitel.thema).")
+
+    await get_credits_service(firebase_service).assert_not_negative_balance(user_id)
+
+    fs = QuellenFinderFirestoreService()
+    active_run = fs.find_active_two_lane_run_for_kapitel(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        kapitel_id=kapitel_id,
+    )
+    if active_run is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Für dieses Kapitel läuft bereits ein Quellen-Finder-Run ({active_run['run_id']}).",
+        )
+
+    kapitel_snapshot = {
+        "id": kapitel_id,
+        "nummer": str((kapitel or {}).get("nummer") or "").strip() or None,
+        "title": str((kapitel or {}).get("title") or "").strip() or None,
+        "ueberschrift": str((kapitel or {}).get("title") or "").strip() or None,
+        "thema": str((kapitel or {}).get("thema") or "").strip() or None,
+    }
+
+    pipeline_settings = {
+        "openai_model_planner": str(request.planner_model),
+        "openai_model_openalex_query_builder": str(request.openalex_query_builder_model),
+        "openai_model_s2_query_builder": str(request.s2_query_builder_model),
+        "openai_model_rerank": str(request.rerank_model),
+        "embedding_model": str(request.embedding_model),
+        "openai_reasoning_effort": str(request.reasoning_effort),
+        "rerank_concurrency": int(request.rerank_concurrency),
+    }
+    chapter_input_snapshot = {
+        "chapterTitle": chapter_title,
+        "chapterSpecText": chapter_spec_text,
+    }
+    execution_backend = str(config.TWO_LANE_SOURCES_EXECUTION_BACKEND or "").strip().lower()
+    if execution_backend not in {"cloud_run_job", "local_background"}:
+        execution_backend = "cloud_run_job" if config.IS_CLOUD_RUN else "local_background"
+
+    run_id = fs.create_run(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        kind="sources_two_lane",
+        kapitel_ids=[kapitel_id],
+        kapitel_snapshots=[kapitel_snapshot],
+        model=str(request.planner_model or "").strip() or "gpt-5-mini",
+        extra={
+            "chapterInputSnapshot": chapter_input_snapshot,
+            "twoLaneSettingsRequested": pipeline_settings,
+            "job": {
+                "provider": "cloud_run_jobs" if execution_backend == "cloud_run_job" else "local_background_task",
+                "jobName": (
+                    str(config.TWO_LANE_CLOUD_RUN_JOB_NAME or "").strip() or None
+                    if execution_backend == "cloud_run_job"
+                    else None
+                ),
+                "region": (
+                    str(config.TWO_LANE_CLOUD_RUN_JOB_REGION or "").strip() or None
+                    if execution_backend == "cloud_run_job"
+                    else None
+                ),
+                "operationName": None,
+                "executionName": None,
+                "launchedAt": None,
+                "launchError": None,
+            },
+        },
+    )
+
+    if execution_backend == "local_background":
+        background_tasks.add_task(
+            run_quellen_finder_sources_two_lane_job_from_run_doc,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+        )
+        return {
+            "status": "queued",
+            "run_id": run_id,
+            "projekt_id": projekt_id,
+            "kapitel_id": kapitel_id,
+            "execution_backend": execution_backend,
+            "queued_at": datetime.utcnow().isoformat() + "Z",
+        }
+
+    try:
+        launch = await asyncio.to_thread(
+            cloud_run_job_launcher.execute_two_lane_sources_job,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+        )
+    except Exception as exc:
+        msg = str(exc or "Cloud Run Job launch failed.")[:1000]
+        fs.mark_launch_failed(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            error_message=msg,
+            job_name=str(config.TWO_LANE_CLOUD_RUN_JOB_NAME or "").strip() or None,
+            region=str(config.TWO_LANE_CLOUD_RUN_JOB_REGION or "").strip() or None,
+        )
+        raise HTTPException(status_code=502, detail=msg) from exc
+
+    fs.attach_job_execution(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        job_name=str((launch or {}).get("job_name") or config.TWO_LANE_CLOUD_RUN_JOB_NAME or ""),
+        region=str((launch or {}).get("region") or config.TWO_LANE_CLOUD_RUN_JOB_REGION or ""),
+        operation_name=(launch or {}).get("operation_name"),
+        execution_name=(launch or {}).get("execution_name"),
+    )
+
+    return {
+        "status": "queued",
+        "run_id": run_id,
+        "projekt_id": projekt_id,
+        "kapitel_id": kapitel_id,
+        "execution_backend": execution_backend,
+        "job_execution_name": (launch or {}).get("execution_name"),
+        "job_operation_name": (launch or {}).get("operation_name"),
+        "queued_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@app.post("/api/quellen-finder/sources-two-lane/cancel", status_code=status.HTTP_200_OK)
+async def quellen_finder_sources_two_lane_cancel(
+    request: QuellenFinderTwoLaneCancelRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    projekt_id = str(request.projekt_id or "").strip()
+    run_id = str(request.run_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not run_id:
+        raise HTTPException(status_code=400, detail="run_id is required")
+
+    await _require_quellen_finder_enabled(user_id)
+
+    fs = QuellenFinderFirestoreService()
+    snap = fs.run_ref(user_id, projekt_id, run_id).get()
+    if snap is None or not getattr(snap, "exists", False):
+        raise HTTPException(status_code=404, detail="Run not found.")
+
+    data = snap.to_dict() if snap is not None else {}
+    if str((data or {}).get("kind") or "") != "sources_two_lane":
+        raise HTTPException(status_code=400, detail="Run is not a two-lane sources run.")
+
+    status_now = str((data or {}).get("status") or "")
+    if status_now in {"success", "error", "cancelled"}:
+        return {"status": "already_finished", "run_id": run_id, "current_status": status_now}
+
+    fs.request_cancel(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+    return {"status": "cancel_requested", "run_id": run_id}
+
+
+@app.post("/api/quellen-finder/pdf-scan", status_code=status.HTTP_202_ACCEPTED)
+async def quellen_finder_pdf_scan(
+    request: QuellenFinderPdfScanRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Run Quellen-Finder PDF scan for a single Kapitel and selected project PDFs.
+
+    Creates a server-owned research run doc under:
+      users/{uid}/projects/{projektId}/researchRuns/{runId}
+    and writes results under:
+      .../pdfScanDocs/*
+      .../pdfScanSections/*
+    """
+
+    projekt_id = str(request.projekt_id or "").strip()
+    kapitel_id = str(request.kapitel_id or "").strip()
+    confirm_duplicate_kapitel_run = bool(request.confirm_duplicate_kapitel_run)
+    pdf_ids = list(dict.fromkeys(str(x or "").strip() for x in (request.pdf_ids or []) if str(x or "").strip()))
+
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not kapitel_id:
+        raise HTTPException(status_code=400, detail="kapitel_id is required")
+    if not pdf_ids:
+        raise HTTPException(status_code=400, detail="pdf_ids is required")
+    if len(pdf_ids) > PDF_SCAN_MAX_PDFS_PER_RUN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {PDF_SCAN_MAX_PDFS_PER_RUN} PDFs can be scanned in one run.",
+        )
+
+    await _require_pdf_scan_enabled(user_id)
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+    if not kapitel:
+        raise HTTPException(status_code=404, detail="Kapitel not found.")
+    if str((kapitel or {}).get("projektId") or "").strip() != projekt_id:
+        raise HTTPException(status_code=400, detail="Kapitel gehört nicht zu diesem Projekt.")
+    if bool((kapitel or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Kapitel is archived.")
+
+    credits_service = get_credits_service(firebase_service)
+    await credits_service.assert_not_negative_balance(user_id)
+
+    fs = QuellenFinderFirestoreService()
+
+    try:
+        active_kapitel_pdf_scan = _find_pdf_scan_run(
+            fs=fs,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            statuses={"queued", "running"},
+            kapitel_id=kapitel_id,
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to verify active PDF scan state before start | user_id=%s projekt_id=%s kapitel_id=%s",
+            user_id,
+            projekt_id,
+            kapitel_id,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to verify active PDF scan state. Please retry.",
+        ) from exc
+    if active_kapitel_pdf_scan and not confirm_duplicate_kapitel_run:
+        active_pdf_scan_id, _ = active_kapitel_pdf_scan
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "same_kapitel_scan_running",
+                "message": (
+                    "Für dieses Kapitel läuft bereits ein PDF-Scan. "
+                    "Set confirm_duplicate_kapitel_run=true to start another run."
+                ),
+                "run_id": active_pdf_scan_id,
+                "kapitel_id": kapitel_id,
+            },
+        )
+
+    kapitel_snapshot = {
+        "id": kapitel_id,
+        "nummer": str((kapitel or {}).get("nummer") or "").strip() or None,
+        "title": str((kapitel or {}).get("title") or "").strip() or None,
+        "ueberschrift": str((kapitel or {}).get("title") or "").strip() or None,
+        "thema": str((kapitel or {}).get("thema") or "").strip() or None,
+    }
+    pdf_snapshots = []
+    missing_pdf_ids: list[str] = []
+    for pdf_id in pdf_ids:
+        pdf_ref = (
+            firebase_service.db.collection("users")
+            .document(str(user_id))
+            .collection("projects")
+            .document(str(projekt_id))
+            .collection("pdfs")
+            .document(str(pdf_id))
+        )
+        pdf_snap = pdf_ref.get()
+        pdf_doc = pdf_snap.to_dict() if pdf_snap is not None and getattr(pdf_snap, "exists", False) else None
+        if not isinstance(pdf_doc, dict):
+            missing_pdf_ids.append(pdf_id)
+            continue
+        pdf_size = int((pdf_doc or {}).get("size") or 0)
+        if pdf_size > PDF_UPLOAD_MAX_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"PDF '{str((pdf_doc or {}).get('filename') or pdf_id).strip() or pdf_id}' "
+                    f"exceeds the {PDF_UPLOAD_MAX_MB} MB limit."
+                ),
+            )
+        pdf_snapshots.append(
+            {
+                "id": pdf_id,
+                "filename": str((pdf_doc or {}).get("filename") or "").strip() or None,
+                "storagePath": str((pdf_doc or {}).get("storagePath") or "").strip() or None,
+                "size": pdf_size or None,
+                "contentType": str((pdf_doc or {}).get("contentType") or "").strip() or None,
+            }
+        )
+    if missing_pdf_ids:
+        raise HTTPException(status_code=404, detail=f"Project PDFs not found: {', '.join(missing_pdf_ids[:10])}")
+    if any(not str((row or {}).get("storagePath") or "").strip() for row in pdf_snapshots):
+        raise HTTPException(status_code=400, detail="One or more selected PDFs are missing storagePath.")
+
+    run_id = fs.runs_col(user_id, projekt_id).document().id
+    reservation_operation_id = f"{run_id}_pdf_scan_run"
+    estimate_payload = await credits_service.estimate_pdf_scan_run(
+        user_id=user_id,
+        pdf_count=len(pdf_snapshots),
+    )
+
+    budget_service = get_openai_budget_service(firebase_service)
+    reservation = await budget_service.reserve_operation(
+        user_id=user_id,
+        operation_id=reservation_operation_id,
+        operation_type="pdf_scan_run",
+        user_action_id=run_id,
+        estimate={
+            "operationType": "pdf_scan_run",
+            "pipelineVersion": "pdf_scan_v3_topic_best",
+            "pdfCount": int(len(pdf_snapshots)),
+            "costUsd": float(estimate_payload.get("total_estimate_usd") or 0.0),
+            "openaiEstimateUsd": float(estimate_payload.get("openai_estimate_usd") or 0.0),
+            "computeEstimateUsd": float(estimate_payload.get("compute_estimate_usd") or 0.0),
+            "spendRate": float(estimate_payload.get("spend_rate") or 0.0),
+            "credits": float(estimate_payload.get("credits") or 0.0),
+        },
+        projekt_id=projekt_id,
+        kapitel_id=kapitel_id,
+        run_id=run_id,
+        operation_details={
+            "pdfCount": int(len(pdf_snapshots)),
+            "pipelineVersion": "pdf_scan_v3_topic_best",
+        },
+    )
+    if reservation.result == "blocked":
+        raise HTTPException(
+            status_code=402,
+            detail="Nicht genügend Credits verfügbar. Bitte lade Credits im Profil unter Billing auf.",
+        )
+    if reservation.result in {"already_reserved", "finalized"}:
+        raise HTTPException(status_code=409, detail="PDF scan billing operation already exists. Please retry later.")
+
+    execution_backend = str(config.PDF_SCAN_EXECUTION_BACKEND or "").strip().lower()
+    if execution_backend not in {"cloud_run_job", "local_background"}:
+        execution_backend = "cloud_run_job" if config.IS_CLOUD_RUN else "local_background"
+
+    try:
+        run_id = fs.create_run(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            kind="pdf_scan",
+            kapitel_ids=[kapitel_id],
+            kapitel_snapshots=[kapitel_snapshot],
+            model="pdf_scan_v3_topic_best",
+            pdf_ids=pdf_ids,
+            extra={
+                "chapterInputSnapshot": {
+                    "chapterTitle": str((kapitel or {}).get("title") or "").strip() or None,
+                    "chapterSpecText": str((kapitel or {}).get("thema") or "").strip() or None,
+                },
+                "pdfSnapshots": pdf_snapshots,
+                "billing": {
+                    "status": "reserved",
+                    "reservationOperationId": reservation_operation_id,
+                    "estimateCredits": float(estimate_payload.get("credits") or 0.0),
+                    "estimateTotalUsd": float(estimate_payload.get("total_estimate_usd") or 0.0),
+                    "estimateOpenaiUsd": float(estimate_payload.get("openai_estimate_usd") or 0.0),
+                    "estimateComputeUsd": float(estimate_payload.get("compute_estimate_usd") or 0.0),
+                    "spendRate": float(estimate_payload.get("spend_rate") or 0.0),
+                },
+                "job": {
+                    "provider": "cloud_run_jobs" if execution_backend == "cloud_run_job" else "local_background_task",
+                    "jobName": (
+                        str(config.PDF_SCAN_CLOUD_RUN_JOB_NAME or "").strip() or None
+                        if execution_backend == "cloud_run_job"
+                        else None
+                    ),
+                    "region": (
+                        str(config.PDF_SCAN_CLOUD_RUN_JOB_REGION or "").strip() or None
+                        if execution_backend == "cloud_run_job"
+                        else None
+                    ),
+                    "operationName": None,
+                    "executionName": None,
+                    "launchedAt": None,
+                    "launchError": None,
+                },
+            },
+        )
+    except Exception:
+        await budget_service.mark_status(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            status="error",
+            error_message="Failed to create pdf scan run.",
+        )
+        await budget_service.release_reservation(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            reason="error",
+        )
+        raise
+
+    if execution_backend == "local_background":
+        background_tasks.add_task(
+            run_quellen_finder_pdf_scan_job_from_run_doc,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+        )
+        return {
+            "status": "queued",
+            "run_id": run_id,
+            "projekt_id": projekt_id,
+            "kapitel_id": kapitel_id,
+            "pdf_ids": pdf_ids,
+            "execution_backend": execution_backend,
+            "queued_at": datetime.utcnow().isoformat() + "Z",
+        }
+
+    try:
+        launch = await asyncio.to_thread(
+            cloud_run_job_launcher.execute_pdf_scan_job,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+        )
+    except Exception as exc:
+        msg = str(exc or "Cloud Run Job launch failed.")[:1000]
+        await budget_service.mark_status(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            status="error",
+            error_message=msg,
+        )
+        await budget_service.release_reservation(
+            user_id=user_id,
+            operation_id=reservation_operation_id,
+            reason="error",
+        )
+        fs.mark_launch_failed(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            error_message=msg,
+            job_name=str(config.PDF_SCAN_CLOUD_RUN_JOB_NAME or "").strip() or None,
+            region=str(config.PDF_SCAN_CLOUD_RUN_JOB_REGION or "").strip() or None,
+        )
+        fs.run_ref(user_id, projekt_id, run_id).set(
+            {"billing": {"status": "error", "reservationOperationId": reservation_operation_id}},
+            merge=True,
+        )
+        raise HTTPException(status_code=502, detail=msg) from exc
+
+    fs.attach_job_execution(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        job_name=str((launch or {}).get("job_name") or config.PDF_SCAN_CLOUD_RUN_JOB_NAME or ""),
+        region=str((launch or {}).get("region") or config.PDF_SCAN_CLOUD_RUN_JOB_REGION or ""),
+        operation_name=(launch or {}).get("operation_name"),
+        execution_name=(launch or {}).get("execution_name"),
+    )
+
+    return {
+        "status": "queued",
+        "run_id": run_id,
+        "projekt_id": projekt_id,
+        "kapitel_id": kapitel_id,
+        "pdf_ids": pdf_ids,
+        "execution_backend": execution_backend,
+        "job_execution_name": (launch or {}).get("execution_name"),
+        "job_operation_name": (launch or {}).get("operation_name"),
+        "queued_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@app.post("/api/quellen-finder/pdf-scan/cancel", status_code=status.HTTP_200_OK)
+async def quellen_finder_pdf_scan_cancel(
+    request: QuellenFinderPdfScanCancelRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    projekt_id = str(request.projekt_id or "").strip()
+    run_id = str(request.run_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not run_id:
+        raise HTTPException(status_code=400, detail="run_id is required")
+
+    await _require_pdf_scan_enabled(user_id)
+
+    fs = QuellenFinderFirestoreService()
+    snap = fs.run_ref(user_id, projekt_id, run_id).get()
+    if snap is None or not getattr(snap, "exists", False):
+        raise HTTPException(status_code=404, detail="Run not found.")
+
+    data = snap.to_dict() if snap is not None else {}
+    if str((data or {}).get("kind") or "") != "pdf_scan":
+        raise HTTPException(status_code=400, detail="Run is not a PDF scan run.")
+
+    status_now = str((data or {}).get("status") or "")
+    if status_now in {"success", "error", "cancelled"}:
+        return {"status": "already_finished", "run_id": run_id, "current_status": status_now}
+
+    fs.request_cancel(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+    return {"status": "cancel_requested", "run_id": run_id}
+
+
+@app.post("/api/quellen-finder/pdf-extract", status_code=status.HTTP_200_OK)
+async def quellen_finder_pdf_extract(
+    request: QuellenFinderPdfExtractRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Extract/highlight a final PDF section on demand.
+
+    This is computed on-demand and is not persisted.
+    """
+
+    projekt_id = str(request.projekt_id or "").strip()
+    run_id = str(request.run_id or "").strip()
+    pdf_doc_id = str(request.pdf_doc_id or "").strip()
+    section_doc_id = str(request.section_doc_id or "").strip()
+
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not run_id:
+        raise HTTPException(status_code=400, detail="run_id is required")
+    if not pdf_doc_id:
+        raise HTTPException(status_code=400, detail="pdf_doc_id is required")
+    if not section_doc_id:
+        raise HTTPException(status_code=400, detail="section_doc_id is required")
+
+    await _require_pdf_scan_enabled(user_id)
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    return extract_quellen_finder_pdf_section(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        pdf_doc_id=pdf_doc_id,
+        section_doc_id=section_doc_id,
+    )
+
+
+@app.get("/api/quellen-finder/project-pdf", status_code=status.HTTP_200_OK)
+async def quellen_finder_project_pdf(
+    projekt_id: str,
+    pdf_id: str,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """
+    Download a project PDF through the backend (avoids Firebase Storage CORS issues for in-browser PDF.js).
+
+    This endpoint validates that the PDF belongs to the authenticated user and project.
+    """
+
+    projekt_id = str(projekt_id or "").strip()
+    pdf_id = str(pdf_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not pdf_id:
+        raise HTTPException(status_code=400, detail="pdf_id is required")
+
+    await _require_pdf_scan_enabled(user_id)
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    pdf_snap = (
+        firebase_service.db.collection("users")
+        .document(str(user_id))
+        .collection("projects")
+        .document(str(projekt_id))
+        .collection("pdfs")
+        .document(str(pdf_id))
+        .get()
+    )
+    if not getattr(pdf_snap, "exists", False):
+        raise HTTPException(status_code=404, detail="PDF not found.")
+    pdf_doc = pdf_snap.to_dict() or {}
+
+    storage_path = str(pdf_doc.get("storagePath") or "").strip()
+    filename = str(pdf_doc.get("filename") or "").strip() or "document.pdf"
+    safe_filename = re.sub(r"[\r\n\"]+", "_", filename).strip() or "document.pdf"
+    safe_filename = safe_filename[:200]
+    expected_size = None
+    try:
+        size_raw = pdf_doc.get("size")
+        if isinstance(size_raw, (int, float)) and int(size_raw) > 0:
+            expected_size = int(size_raw)
+    except Exception:
+        expected_size = None
+
+    if not storage_path:
+        raise HTTPException(status_code=400, detail="PDF storagePath is missing.")
+
+    tmpdir = tempfile.mkdtemp(prefix="qf_project_pdf_")
+    dest_path = Path(tmpdir) / "document.pdf"
+
+    try:
+        _download_pdf_from_firebase_storage(
+            storage_path=storage_path,
+            dest_path=dest_path,
+            expected_size=expected_size,
+        )
+    except Exception as exc:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        logger.warning(
+            "QF project-pdf download failed | projekt_id=%s pdf_id=%s storage_path=%s err=%s",
+            projekt_id,
+            pdf_id,
+            storage_path,
+            exc,
+        )
+        raise HTTPException(status_code=502, detail="Failed to download PDF from storage.")
+
+    logger.info(
+        "QF project-pdf ready | projekt_id=%s pdf_id=%s bytes=%s storage_path=%s",
+        projekt_id,
+        pdf_id,
+        int(dest_path.stat().st_size) if dest_path.exists() else None,
+        storage_path,
+    )
+
+    def _cleanup_tmp():
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    return FileResponse(
+        path=str(dest_path),
+        media_type="application/pdf",
+        filename=safe_filename,
+        headers={"Content-Disposition": f'inline; filename=\"{safe_filename}\"'},
+        background=BackgroundTask(_cleanup_tmp),
+    )
+
+
+@app.post("/api/quellen-finder/project-pdf-upload", status_code=status.HTTP_201_CREATED)
+async def quellen_finder_project_pdf_upload(
+    projekt_id: str = Form(...),
+    page_count: int | None = Form(default=None),
+    file: UploadFile = File(...),
+    user_id: str = Depends(verify_firebase_token),
+):
+    projekt_id = str(projekt_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+
+    await _require_pdf_scan_enabled(user_id)
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    filename = str((getattr(file, "filename", None) or "")).strip() or "document.pdf"
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+
+    _ = page_count
+
+    try:
+        file_bytes = await _read_upload_file_with_limit(file)
+    finally:
+        try:
+            await file.close()
+        except Exception:
+            pass
+
+    size = len(file_bytes)
+    validation = _validate_uploaded_pdf_bytes(file_bytes)
+
+    file_hash = hashlib.sha256(file_bytes).hexdigest().lower()
+    page_count_value = int(validation["page_count"])
+    filename_norm = _normalize_project_pdf_filename(filename)
+    pdf_collection = (
+        firebase_service.db.collection("users")
+        .document(str(user_id))
+        .collection("projects")
+        .document(str(projekt_id))
+        .collection("pdfs")
+    )
+
+    for snap in pdf_collection.stream():
+        if not getattr(snap, "exists", False):
+            continue
+        row = snap.to_dict() or {}
+        existing_hash = str(row.get("fileHash") or "").strip().lower() or None
+        if existing_hash and existing_hash == file_hash:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "duplicate": True,
+                    "reason": "hash_match",
+                    "pdf_id": str(snap.id),
+                    "filename": str(row.get("filename") or "").strip() or None,
+                },
+            )
+
+        existing_name = _normalize_project_pdf_filename(str(row.get("filename") or ""))
+        existing_size = int(row.get("size") or 0)
+        existing_pages = row.get("pageCount")
+        if (
+            existing_name
+            and existing_name == filename_norm
+            and existing_size == size
+            and page_count_value is not None
+            and isinstance(existing_pages, (int, float))
+            and int(existing_pages) == page_count_value
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "duplicate": True,
+                    "reason": "name_size_page_match",
+                    "pdf_id": str(snap.id),
+                    "filename": str(row.get("filename") or "").strip() or None,
+                },
+            )
+
+    doc_id = f"pdf_{file_hash}"
+    storage_path = f"users/{user_id}/projects/{projekt_id}/pdfs/{file_hash}.pdf"
+    content_type = "application/pdf"
+    upload_exc: Exception | None = None
+    for bucket_name in _candidate_bucket_names(config.FIREBASE_PROJECT_ID, config.FIREBASE_STORAGE_BUCKET):
+        try:
+            bucket = storage.bucket(bucket_name)
+            blob = bucket.blob(storage_path)
+            blob.upload_from_string(file_bytes, content_type=content_type)
+            upload_exc = None
+            break
+        except NotFound as exc:
+            upload_exc = exc
+            continue
+        except Exception as exc:
+            upload_exc = exc
+            continue
+
+    if upload_exc is not None:
+        raise HTTPException(status_code=502, detail="Failed to upload PDF to storage.") from upload_exc
+
+    pdf_doc = {
+        "filename": filename,
+        "storagePath": storage_path,
+        "size": int(size),
+        "contentType": content_type,
+        "pageCount": page_count_value,
+        "fileHash": file_hash,
+        "createdAt": SERVER_TIMESTAMP,
+        "updatedAt": SERVER_TIMESTAMP,
+    }
+    try:
+        pdf_collection.document(doc_id).set(pdf_doc, merge=False)
+    except Exception as exc:
+        try:
+            for bucket_name in _candidate_bucket_names(config.FIREBASE_PROJECT_ID, config.FIREBASE_STORAGE_BUCKET):
+                bucket = storage.bucket(bucket_name)
+                blob = bucket.blob(storage_path)
+                if blob.exists():
+                    blob.delete()
+                    break
+        except Exception:
+            pass
+        raise HTTPException(status_code=502, detail="Failed to save PDF metadata.") from exc
+
+    return {
+        "uploaded": True,
+        "pdf_id": doc_id,
+        "pdf": {
+            "filename": filename,
+            "storage_path": storage_path,
+            "size": int(size),
+            "content_type": content_type,
+            "page_count": page_count_value,
+            "file_hash": file_hash,
+        },
+    }
+
+
+@app.delete("/api/quellen-finder/project-pdf", status_code=status.HTTP_200_OK)
+async def quellen_finder_project_pdf_delete(
+    projekt_id: str,
+    pdf_id: str,
+    user_id: str = Depends(verify_firebase_token),
+):
+    projekt_id = str(projekt_id or "").strip()
+    pdf_id = str(pdf_id or "").strip()
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not pdf_id:
+        raise HTTPException(status_code=400, detail="pdf_id is required")
+
+    await _require_pdf_scan_enabled(user_id)
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    pdf_ref = (
+        firebase_service.db.collection("users")
+        .document(str(user_id))
+        .collection("projects")
+        .document(str(projekt_id))
+        .collection("pdfs")
+        .document(str(pdf_id))
+    )
+    pdf_snap = pdf_ref.get()
+    if not getattr(pdf_snap, "exists", False):
+        raise HTTPException(status_code=404, detail="PDF not found.")
+    pdf_doc = pdf_snap.to_dict() or {}
+    storage_path = str(pdf_doc.get("storagePath") or "").strip()
+
+    fs = QuellenFinderFirestoreService()
+    try:
+        blocking_pdf_scan = _find_pdf_scan_run(
+            fs=fs,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            statuses={"queued", "running", "success"},
+            pdf_id=pdf_id,
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to verify PDF scan references before deleting project PDF | user_id=%s projekt_id=%s pdf_id=%s",
+            user_id,
+            projekt_id,
+            pdf_id,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to verify PDF scan state. Please retry.",
+        ) from exc
+    if blocking_pdf_scan:
+        blocking_run_id, blocking_run = blocking_pdf_scan
+        blocking_status = str((blocking_run or {}).get("status") or "").strip()
+        if blocking_status in {"queued", "running"}:
+            detail = f"Cannot delete PDF while PDF scan is running ({blocking_run_id})."
+        else:
+            detail = f"Cannot delete PDF because it is referenced by PDF scan run ({blocking_run_id})."
+        raise HTTPException(status_code=409, detail=detail)
+
+    if storage_path:
+        delete_exc: Exception | None = None
+        for bucket_name in _candidate_bucket_names(config.FIREBASE_PROJECT_ID, config.FIREBASE_STORAGE_BUCKET):
+            try:
+                bucket = storage.bucket(bucket_name)
+                blob = bucket.blob(storage_path)
+                if blob.exists():
+                    blob.delete()
+                delete_exc = None
+                break
+            except NotFound as exc:
+                delete_exc = exc
+                continue
+            except Exception as exc:
+                delete_exc = exc
+                continue
+        if delete_exc is not None:
+            raise HTTPException(status_code=502, detail="Failed to delete PDF from storage.") from delete_exc
+
+    pdf_ref.delete()
+    return {"deleted": True, "pdf_id": pdf_id}
+
+
+@app.patch("/api/quellen-finder/project-pdf", status_code=status.HTTP_200_OK)
+async def quellen_finder_project_pdf_update(
+    request: QuellenFinderProjectPdfColorUpdateRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    projekt_id = str(request.projekt_id or "").strip()
+    pdf_id = str(request.pdf_id or "").strip()
+    color = str(request.color or "").strip().lower() or None
+
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not pdf_id:
+        raise HTTPException(status_code=400, detail="pdf_id is required")
+
+    await _require_pdf_scan_enabled(user_id)
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    allowed_colors = {"blue", "green", "teal", "lavender", "cream", "peach", "rose"}
+    if color is not None and color not in allowed_colors:
+        raise HTTPException(status_code=400, detail="Invalid PDF color.")
+
+    pdf_ref = (
+        firebase_service.db.collection("users")
+        .document(str(user_id))
+        .collection("projects")
+        .document(str(projekt_id))
+        .collection("pdfs")
+        .document(str(pdf_id))
+    )
+    pdf_snap = pdf_ref.get()
+    if not getattr(pdf_snap, "exists", False):
+        raise HTTPException(status_code=404, detail="PDF not found.")
+
+    pdf_ref.set(
+        {
+            "color": color if color is not None else None,
+            "updatedAt": SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+    return {"updated": True, "pdf_id": pdf_id, "color": color}
+
+
+@app.post("/api/quellen-finder/project-pdf-duplicate-check", status_code=status.HTTP_200_OK)
+async def quellen_finder_project_pdf_duplicate_check(
+    request: QuellenFinderProjectPdfDuplicateCheckRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    projekt_id = str(request.projekt_id or "").strip()
+    filename = str(request.filename or "").strip()
+    size = int(request.size or 0)
+    page_count = int(request.page_count) if request.page_count is not None else None
+    file_hash = str(request.file_hash or "").strip().lower() or None
+
+    if not projekt_id:
+        raise HTTPException(status_code=400, detail="projekt_id is required")
+    if not filename:
+        raise HTTPException(status_code=400, detail="filename is required")
+
+    await _require_pdf_scan_enabled(user_id)
+
+    projekt = await firebase_service.get_project(user_id, projekt_id)
+    if not projekt:
+        raise HTTPException(status_code=404, detail="Projekt not found.")
+    if bool((projekt or {}).get("archived") is True):
+        raise HTTPException(status_code=400, detail="Projekt is archived.")
+
+    filename_norm = _normalize_project_pdf_filename(filename)
+    pdf_collection = (
+        firebase_service.db.collection("users")
+        .document(str(user_id))
+        .collection("projects")
+        .document(str(projekt_id))
+        .collection("pdfs")
+    )
+    pdf_snaps = list(pdf_collection.stream())
+
+    for snap in pdf_snaps:
+        if not getattr(snap, "exists", False):
+            continue
+        row = snap.to_dict() or {}
+        existing_hash = str(row.get("fileHash") or "").strip().lower() or None
+        if file_hash and existing_hash and existing_hash == file_hash:
+            return {
+                "duplicate": True,
+                "reason": "hash_match",
+                "pdf_id": str(snap.id),
+                "filename": str(row.get("filename") or "").strip() or None,
+            }
+
+    for snap in pdf_snaps:
+        if not getattr(snap, "exists", False):
+            continue
+        row = snap.to_dict() or {}
+        existing_name = _normalize_project_pdf_filename(str(row.get("filename") or ""))
+        existing_size = row.get("size")
+        existing_pages = row.get("pageCount")
+        if existing_name != filename_norm:
+            continue
+        if not isinstance(existing_size, (int, float)) or int(existing_size) != size:
+            continue
+        if page_count is None or not isinstance(existing_pages, (int, float)) or int(existing_pages) != page_count:
+            continue
+        return {
+            "duplicate": True,
+            "reason": "filename_size_page_count_match",
+            "pdf_id": str(snap.id),
+            "filename": str(row.get("filename") or "").strip() or None,
+        }
+
+    return {"duplicate": False}
 
 
 @app.post("/api/process", status_code=status.HTTP_202_ACCEPTED)

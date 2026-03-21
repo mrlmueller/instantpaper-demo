@@ -23,11 +23,23 @@ def _read_int_env(name: str, default: int) -> int:
         return default
 
 
+def _read_bool_env(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "yes", "on"}
+
+
 class Config:
     """Application configuration loaded from environment variables"""
 
     # Firebase Admin SDK
     FIREBASE_PROJECT_ID: str = os.getenv("FIREBASE_PROJECT_ID", "").strip()
+    GOOGLE_CLOUD_PROJECT: str = (
+        os.getenv("GOOGLE_CLOUD_PROJECT", "").strip()
+        or os.getenv("GCP_PROJECT_ID", "").strip()
+        or FIREBASE_PROJECT_ID
+    )
     FIREBASE_PRIVATE_KEY: str = os.getenv("FIREBASE_PRIVATE_KEY", "").strip()
     FIREBASE_CLIENT_EMAIL: str = os.getenv("FIREBASE_CLIENT_EMAIL", "").strip()
     FIREBASE_STORAGE_BUCKET: str = os.getenv(
@@ -61,6 +73,48 @@ class Config:
     # Development
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
     IS_CLOUD_RUN: bool = bool(os.getenv("K_SERVICE", "").strip())
+
+    # Cloud Run Job launcher
+    TWO_LANE_CLOUD_RUN_JOB_NAME: str = os.getenv(
+        "TWO_LANE_CLOUD_RUN_JOB_NAME", "instantpaper-two-lane-sources"
+    ).strip()
+    TWO_LANE_CLOUD_RUN_JOB_REGION: str = os.getenv(
+        "TWO_LANE_CLOUD_RUN_JOB_REGION", "europe-west3"
+    ).strip()
+    TWO_LANE_SOURCES_EXECUTION_BACKEND: str = os.getenv(
+        "TWO_LANE_SOURCES_EXECUTION_BACKEND",
+        "cloud_run_job" if IS_CLOUD_RUN else "local_background",
+    ).strip().lower()
+    PDF_SCAN_CLOUD_RUN_JOB_NAME: str = os.getenv(
+        "PDF_SCAN_CLOUD_RUN_JOB_NAME", "instantpaper-pdf-scan"
+    ).strip()
+    PDF_SCAN_CLOUD_RUN_JOB_REGION: str = os.getenv(
+        "PDF_SCAN_CLOUD_RUN_JOB_REGION", "europe-west3"
+    ).strip()
+    PDF_SCAN_FORCE_CLOUD_RUN_FROM_LOCAL: bool = _read_bool_env(
+        "PDF_SCAN_FORCE_CLOUD_RUN_FROM_LOCAL",
+        False,
+    )
+    PDF_SCAN_EXECUTION_BACKEND: str = os.getenv(
+        "PDF_SCAN_EXECUTION_BACKEND",
+        (
+            "cloud_run_job"
+            if IS_CLOUD_RUN
+            else ("cloud_run_job" if PDF_SCAN_FORCE_CLOUD_RUN_FROM_LOCAL else "local_background")
+        ),
+    ).strip().lower()
+    PDF_SCAN_STORAGE_RPC_TIMEOUT_SEC: int = max(
+        10,
+        _read_int_env("PDF_SCAN_STORAGE_RPC_TIMEOUT_SEC", 90),
+    )
+    PDF_SCAN_STORAGE_TOTAL_DOWNLOAD_TIMEOUT_SEC: int = max(
+        PDF_SCAN_STORAGE_RPC_TIMEOUT_SEC,
+        _read_int_env("PDF_SCAN_STORAGE_TOTAL_DOWNLOAD_TIMEOUT_SEC", 240),
+    )
+    PDF_SCAN_MAX_PDF_BYTES: int = max(
+        1,
+        _read_int_env("PDF_SCAN_MAX_PDF_BYTES", 50 * 1024 * 1024),
+    )
 
     # Admin access endpoint (Basic Auth)
     # Used to set Firebase Auth custom claims (e.g. {"fullAccess": true}) for gating user access.
@@ -99,18 +153,27 @@ class Config:
     @classmethod
     def validate(cls) -> None:
         """Validate that all required configuration is present"""
-        required_fields = [
-            "FIREBASE_PROJECT_ID",
-            "FIREBASE_PRIVATE_KEY",
-            "FIREBASE_CLIENT_EMAIL",
-            "OPENAI_API_KEY",
-        ]
+        required_fields = ["FIREBASE_PROJECT_ID", "OPENAI_API_KEY"]
 
         missing_fields = []
         for field in required_fields:
             value = getattr(cls, field)
             if not value:
                 missing_fields.append(field)
+
+        has_key_pair = bool(cls.FIREBASE_PRIVATE_KEY and cls.FIREBASE_CLIENT_EMAIL)
+        has_partial_key_pair = bool(cls.FIREBASE_PRIVATE_KEY or cls.FIREBASE_CLIENT_EMAIL)
+        has_adc_hint = bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip())
+
+        if has_partial_key_pair and not has_key_pair:
+            if not cls.FIREBASE_PRIVATE_KEY:
+                missing_fields.append("FIREBASE_PRIVATE_KEY")
+            if not cls.FIREBASE_CLIENT_EMAIL:
+                missing_fields.append("FIREBASE_CLIENT_EMAIL")
+        elif not cls.IS_CLOUD_RUN and not has_key_pair and not has_adc_hint:
+            missing_fields.append(
+                "FIREBASE_PRIVATE_KEY/FIREBASE_CLIENT_EMAIL or GOOGLE_APPLICATION_CREDENTIALS"
+            )
 
         if missing_fields:
             raise ValueError(

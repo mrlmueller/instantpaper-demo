@@ -1105,7 +1105,7 @@ export function ResultRefinementDialog(_props: ResultRefinementDialogProps) {
 
       {viewingFullText && (
         <Dialog open={true} onOpenChange={() => setViewingFullText(null)}>
-          <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col [&>button]:hidden">
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col" showCloseButton={false}>
             <DialogHeader className="flex-shrink-0 pr-0">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0 pr-2">

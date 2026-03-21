@@ -1,0 +1,20 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "sentiment_analysis_in_e_commerce_platforms_a_rev-0c59fc64f2e7",
+  "has_useful_information": true,
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_title": "1) MACHINE LEARNING BASED TECHNIQUES",
+        "page_start": 5,
+        "page_end": 9
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 7/10. Useful for trust, reliability, web design, and fake-review / spam-review discussion."
+    }
+  ],
+  "document_notes": "User-marked weak-but-positive. Useful mainly for platform quality, trust, reliability, and fake-review detection references."
+}

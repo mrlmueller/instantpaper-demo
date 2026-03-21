@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#ffffff"/>
+  <!-- plot area -->
+  <g>
+    <rect x="60" y="24" width="560" height="286" fill="#ffffff" stroke="#e5e7eb"/>
+    <!-- grid -->
+    <g stroke="#eef2f7" stroke-width="1">
+      <line x1="60" y1="81" x2="620" y2="81"/>
+      <line x1="60" y1="138" x2="620" y2="138"/>
+      <line x1="60" y1="195" x2="620" y2="195"/>
+      <line x1="60" y1="252" x2="620" y2="252"/>
+      <line x1="172" y1="24" x2="172" y2="310"/>
+      <line x1="284" y1="24" x2="284" y2="310"/>
+      <line x1="396" y1="24" x2="396" y2="310"/>
+      <line x1="508" y1="24" x2="508" y2="310"/>
+    </g>
+    <!-- axes -->
+    <g stroke="#9ca3af" stroke-width="1.5">
+      <line x1="60" y1="310" x2="620" y2="310"/>
+      <line x1="60" y1="24" x2="60" y2="310"/>
+    </g>
+  </g>
+
+  <!-- with_abstract (blue): positive trend -->
+  <g fill="#2563eb" fill-opacity="0.40">
+    <circle cx="112" cy="240" r="4"/>
+    <circle cx="126" cy="232" r="4"/>
+    <circle cx="144" cy="225" r="4"/>
+    <circle cx="158" cy="214" r="4"/>
+    <circle cx="172" cy="210" r="4"/>
+    <circle cx="188" cy="202" r="4"/>
+    <circle cx="206" cy="192" r="4"/>
+    <circle cx="218" cy="184" r="4"/>
+    <circle cx="236" cy="172" r="4"/>
+    <circle cx="254" cy="168" r="4"/>
+    <circle cx="268" cy="160" r="4"/>
+    <circle cx="286" cy="150" r="4"/>
+    <circle cx="302" cy="144" r="4"/>
+    <circle cx="322" cy="132" r="4"/>
+    <circle cx="340" cy="128" r="4"/>
+    <circle cx="358" cy="120" r="4"/>
+    <circle cx="374" cy="112" r="4"/>
+    <circle cx="392" cy="104" r="4"/>
+    <circle cx="410" cy="98" r="4"/>
+    <circle cx="428" cy="92" r="4"/>
+    <circle cx="448" cy="84" r="4"/>
+    <circle cx="468" cy="78" r="4"/>
+    <circle cx="486" cy="70" r="4"/>
+    <circle cx="506" cy="64" r="4"/>
+    <circle cx="526" cy="58" r="4"/>
+    <circle cx="544" cy="52" r="4"/>
+    <circle cx="562" cy="46" r="4"/>
+    <circle cx="582" cy="40" r="4"/>
+  </g>
+
+  <!-- without_abstract (orange): similar but noisier and slightly lower -->
+  <g fill="#f59e0b" fill-opacity="0.40">
+    <circle cx="124" cy="258" r="4"/>
+    <circle cx="146" cy="244" r="4"/>
+    <circle cx="166" cy="238" r="4"/>
+    <circle cx="188" cy="226" r="4"/>
+    <circle cx="212" cy="214" r="4"/>
+    <circle cx="234" cy="206" r="4"/>
+    <circle cx="258" cy="194" r="4"/>
+    <circle cx="284" cy="180" r="4"/>
+    <circle cx="310" cy="170" r="4"/>
+    <circle cx="336" cy="158" r="4"/>
+    <circle cx="360" cy="148" r="4"/>
+    <circle cx="388" cy="140" r="4"/>
+    <circle cx="412" cy="130" r="4"/>
+    <circle cx="438" cy="120" r="4"/>
+    <circle cx="464" cy="110" r="4"/>
+    <circle cx="490" cy="102" r="4"/>
+    <circle cx="516" cy="96" r="4"/>
+    <circle cx="542" cy="86" r="4"/>
+  </g>
+
+  <!-- legend -->
+  <g font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" font-size="12" fill="#374151">
+    <rect x="60" y="324" width="12" height="12" fill="#2563eb" fill-opacity="0.65"/>
+    <text x="78" y="334">with_abstract</text>
+    <rect x="170" y="324" width="12" height="12" fill="#f59e0b" fill-opacity="0.65"/>
+    <text x="188" y="334">without_abstract</text>
+  </g>
+</svg>

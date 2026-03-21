@@ -1,0 +1,71 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "fake_online_reviews_literature_review_synthesis_-e9bbe09bb4bf",
+  "has_useful_information": true,
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_title": "3.2.2 Effects on various stakeholders",
+        "page_start": 10,
+        "page_end": 10
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp3",
+        "sp1"
+      ],
+      "notes": "Score 9/10. Strongest section for consumer uncertainty, distrust, discomfort, and purchase-intention effects."
+    },
+    {
+      "section_ref": {
+        "section_title": "Figure 4. Influencing mechanisms of fake reviews",
+        "page_start": 9,
+        "page_end": 9
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp3",
+        "sp1"
+      ],
+      "notes": "Score 9/10. Useful structural summary of how fake reviews affect stakeholders and decision outcomes."
+    },
+    {
+      "section_ref": {
+        "section_title": "3.2.1 Effects on the development of online product reviews",
+        "page_start": 10,
+        "page_end": 10
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 9/10. Directly about information quality, credibility, informativeness, and helpfulness degradation."
+    },
+    {
+      "section_ref": {
+        "section_title": "3.3.3 Response strategies",
+        "page_start": 12,
+        "page_end": 12
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp3",
+        "sp2"
+      ],
+      "notes": "Score 8/10. Useful for platform-side design responses and information-display interventions."
+    },
+    {
+      "section_ref": {
+        "section_title": "3.3.1 Features extraction",
+        "page_start": 10,
+        "page_end": 11
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 8/10. Quality and credibility signals distinguishing truthful and fake reviews."
+    }
+  ],
+  "document_notes": "User-marked positive. Strong for fake reviews, uncertainty, distrust, information quality degradation, platform responses, and context moderators."
+}

@@ -1,0 +1,7 @@
+__pycache__/
+.ipynb_checkpoints/
+runs/
+paper-dump/
+benchmark/*/review_packets/
+pdf-scan-test.extracted.py
+text-extract-test.extracted.py

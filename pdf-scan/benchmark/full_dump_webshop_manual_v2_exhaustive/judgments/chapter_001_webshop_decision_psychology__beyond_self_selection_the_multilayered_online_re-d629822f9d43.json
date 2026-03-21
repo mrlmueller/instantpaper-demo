@@ -1,0 +1,1351 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "beyond_self_selection_the_multilayered_online_re-d629822f9d43",
+  "doc_title": "JHTI-02-2020-0012_proof 1..21",
+  "has_useful_information": true,
+  "document_label_0_to_3": 3,
+  "document_label_band": "core_or_strong_support",
+  "document_notes": "Strong source on user and platform biases in online reviews, aggregation distortions, cultural effects, and practical implications for transparency and trust. Existing benchmark note: User-marked positive. Strong for online review platform biases, cultural/platform effects, and practical implications for uncertainty and information shaping.",
+  "manual_review_basis": [
+    "full extracted section inventory",
+    "run 386e04657c41c805f8c1b974 section inspection packets",
+    "benchmark target direct excerpt review where available"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "User biases in online reviews",
+      "page_start": 4,
+      "page_end": 5,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Detailed account of user biases (self-selection, social influence, authenticity issues) with references and empirical findings. Highly relevant for discussions of perceived risk, confidence in decisions, and how biased review signals affect"
+    },
+    {
+      "section_title": "Platform biases in online reviews",
+      "page_start": 5,
+      "page_end": 5,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity"
+      ],
+      "notes": "Analyzes how platform design and aggregation practices shape review distributions and perceived credibility. Directly relevant to choice architecture/digital nudging (presentation effects) and to understanding sources of uncertainty in web購 Benchmark-reviewed note: The section is a good match for chapter material (platform-level mechanisms that shape perceived trust and review quality), but the retrieval pipeline appears to have filtered the document out at the final thresholding stage (top_section_below_threshold). Phase E/F ranks were very low, suggesting the doc was not given足"
+    },
+    {
+      "section_title": "Online review biases in Chinese users",
+      "page_start": 5,
+      "page_end": 6,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "review_quality_authenticity",
+        "consumer_electronics_or_product_examples"
+      ],
+      "notes": "Focuses on Chinese-platform-specific review distortions and manipulation practices. Valuable when discussing cultural/platform differences, authenticity risks, and implications for user trust and decision confidence. Benchmark-reviewed note: Highly relevant (platform/user manipulation, cultural differences, paid posting) for perceived risk and trust in reviews. Yet the section was excluded at the final threshold (top_section_below_threshold), likely because section-level score fell just under the cutoff."
+    },
+    {
+      "section_title": "Findings",
+      "page_start": 8,
+      "page_end": 8,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "notes": "Same findings as above: strong empirical evidence about online review polarization and biases that bear on consumer trust, uncertainty, and choice architecture design. Benchmark-reviewed note: Section is a focused empirical findings block about platform vs. average ratings (aggregation biases). Retrieval likely missed it because the query/model did not prioritize empirical, platform-specific bias language (percentages, platform names) or the section was not highly scored by the retriever for this topic."
+    },
+    {
+      "section_title": "Frequency distribution of online and offline ratings",
+      "page_start": 8,
+      "page_end": 8,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Repeated section with frequency-distribution results. Useful empirical grounding for discussions of perceived risk/uncertainty and implications for how reviews should be presented to reduce buyer uncertainty."
+    },
+    {
+      "section_title": "3.2 Findings 3.2.1 Frequency distribution of online and offline ratings",
+      "page_start": 8,
+      "page_end": 9,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Findings on the distributional differences between online and offline ratings (polar reporting, underreporting of moderate experiences). Highly relevant empirical support for chapters on decision confidence, perceived risk, and how review呈现"
+    },
+    {
+      "section_title": "Central tendencies of online and offline ratings",
+      "page_start": 9,
+      "page_end": 10,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "notes": "Analyzes differences between online and offline rating distributions (mean vs median) and reviewer perceptions — useful for discussing how aggregated review metrics can bias perceived product quality and decision confidence, and for points/ Benchmark-reviewed note: This empirical section directly addresses rating-bias effects (mean vs median, cross-channel differences), which is highly useful for discussing how review aggregates affect perceived quality and decision confidence. It was not surfaced due to the final top_section threshold excluding the section despite its relevance."
+    },
+    {
+      "section_title": "Findings",
+      "page_start": 11,
+      "page_end": 12,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "notes": "Findings on platform-specific aggregation adjustments, volume weighting, and bias-correction are highly relevant: they illustrate how choice-architecture at platform level shapes perceived quality/trust, affects decision confidence, and can Benchmark-reviewed note: Section is a focused empirical findings block about platform vs. average ratings (aggregation biases). Retrieval likely missed it because the query/model did not prioritize empirical, platform-specific bias language (percentages, platform names) or the section was not highly scored by the retriever for this topic."
+    },
+    {
+      "section_title": "Main findings",
+      "page_start": 12,
+      "page_end": 14,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "decision_psychology_theory",
+        "review_quality_authenticity",
+        "supporting_background_context"
+      ],
+      "notes": "Detailed main findings and cultural explanations for rating distributions; helps explain why aggregated ratings may mislead buyers and contributes evidence for discussion of perceived risk and information quality. Benchmark-reviewed note: This is a high-value synthesis discussing cultural differences in rating distributions and causes of positive bias. It may have been deprioritized by the retriever because phrasing is cultural/academic and does not contain explicit UI/choice-architecture keywords the pipeline favors."
+    },
+    {
+      "section_title": "5.2 Theoretical implications This paper offers several important implications for research",
+      "page_start": 14,
+      "page_end": 15,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "nudging_choice_architecture",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Theoretical implications highlight cultural/contextual drivers and the role of platform algorithms—relevant for framing ethical design, transparency, and limits of relying on aggregated ratings."
+    },
+    {
+      "section_title": "5.3 Practical implications Our findings offer several important implications for consumers, businesses and social media providers",
+      "page_start": 15,
+      "page_end": 15,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "nudging_choice_architecture",
+        "review_quality_authenticity"
+      ],
+      "notes": "Practical recommendations (don’t rely solely on numeric ratings; disclose distributions, algorithmic adjustments) are directly applicable to information presentation, digital nudging, transparency and reducing perceived risk in online 구매dec"
+    },
+    {
+      "section_title": "Practical implications",
+      "page_start": 15,
+      "page_end": 15,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "information_presentation_filtering_comparison",
+        "trust_risk_uncertainty"
+      ],
+      "notes": "Practical recommendations for consumers and platforms (showing distribution, transparency about adjustments, disclose conflicts) are highly applicable to design guidance, reducing perceived risk, building trust, and ethical choice-architect Benchmark-reviewed note: Pipeline shows the doc reached late-stage ranking (phase G) but was aborted due to a top_section threshold. The section is highly relevant (practical design recommendations) but top-section scoring or document-level threshold prevented final surfacing."
+    }
+  ],
+  "near_miss_sections": [
+    {
+      "section_title": "Data analysis",
+      "page_start": 7,
+      "page_end": 8,
+      "usefulness_0_to_10": 5,
+      "notes": "Detailed data-collection/sample information (platform, sample sizes). Good for background/evidence on scale and representativeness; limited direct theoretical contribution."
+    }
+  ],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "c8dc0922e1800636",
+        "section_title": "Abstract",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "abstract"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Abstract on online review biases directly relates to perceived risk and information quality in webshop contexts; provides empirical insight about platform-induced biases that can affect decision confidence and information presentation.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6a9dd9b17b509a8d",
+        "section_title": "Beyond self-selection: the multilayered online review biases at the intersection of users, platforms and culture",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Single-line section title signals focus on self-selection and review biases (relevant topic), but contains no substantive content to use for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "21985106e4f8ee01",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Front matter line with journal availability info; no relevance to chapter content.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "8eae2b336706ba3c",
+        "section_title": "Introduction",
+        "page_start": 2,
+        "page_end": 3,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "trust_risk_uncertainty",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "General introduction to the growth of e-commerce and e-WOM in China. Useful contextual background for a chapter on online decision-making and perceived trust, but contains little theory or actionable design insights. Benchmark-reviewed note: The intro provides useful framing (scope and relevance of online reviews and biases) for the chapter, but the document dropped in rank during reranking phases despite reasonable initial retrieval. The pipeline likely deprioritized broad contextual sections in favor of more targeted hits.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 11,
+        "phase_f_doc_rank": 78,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 23.7,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "1. Introduction",
+        "benchmark_label_0_to_3": 2,
+        "benchmark_notes": "Score 8/10. User judged the intro as relevant for the platform-bias framing of online reviews.",
+        "miss_reason": "phase_f_rerank_downranked",
+        "pipeline_reason": "surfaced_to_phase_g"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "21be6ada15507248",
+        "section_title": "Literature review",
+        "page_start": 3,
+        "page_end": 3,
+        "section_type": "background"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Literature review on the role and influence of e-WOM. Provides useful syntheses about how reviews shape consumer choices and can support sections on information sources and social influence in webshops.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "fdc9048ab5d79836",
+        "section_title": "Electronic word of mouth as a data source in hospitality and tourism research",
+        "page_start": 3,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Expanded discussion of e-WOM uses in research and industry. Good for grounding the chapter in empirical uses of reviews and expectations about their influence, but not focused on decision heuristics or design interventions.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 1,
+        "phase_f_doc_rank": 124,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6127d0940e843f8e",
+        "section_title": "User biases in online reviews",
+        "page_start": 4,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "decision_psychology_theory",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed account of user biases (self-selection, social influence, authenticity issues) with references and empirical findings. Highly relevant for discussions of perceived risk, confidence in decisions, and how biased review signals affect",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 71,
+        "phase_f_doc_rank": 117,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 28.8,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "002ad6ac5456769b",
+        "section_title": "Platform biases in online reviews",
+        "page_start": 5,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [],
+      "notes": "Analyzes how platform design and aggregation practices shape review distributions and perceived credibility. Directly relevant to choice architecture/digital nudging (presentation effects) and to understanding sources of uncertainty in web購 Benchmark-reviewed note: The section is a good match for chapter material (platform-level mechanisms that shape perceived trust and review quality), but the retrieval pipeline appears to have filtered the document out at the final thresholding stage (top_section_below_threshold). Phase E/F ranks were very low, suggesting the doc was not given足",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 140,
+        "phase_f_doc_rank": 162,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "2.3 Platform biases in online reviews",
+        "benchmark_label_0_to_3": 2,
+        "benchmark_notes": "Score 8/10. Relevant for platform-level shaping of reviews and secondarily for uncertainty/trust.",
+        "miss_reason": "phase_g_threshold_or_doc_calibration",
+        "pipeline_reason": "phase_g_final_miss::top_section_below_threshold"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3128d81c2cf33dc2",
+        "section_title": "Online review biases in Chinese users",
+        "page_start": 5,
+        "page_end": 6,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "review_quality_authenticity",
+        "consumer_electronics_or_product_examples"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Focuses on Chinese-platform-specific review distortions and manipulation practices. Valuable when discussing cultural/platform differences, authenticity risks, and implications for user trust and decision confidence. Benchmark-reviewed note: Highly relevant (platform/user manipulation, cultural differences, paid posting) for perceived risk and trust in reviews. Yet the section was excluded at the final threshold (top_section_below_threshold), likely because section-level score fell just under the cutoff.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 153,
+        "phase_f_doc_rank": 158,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "2.4 Online review biases in Chinese users",
+        "benchmark_label_0_to_3": 2,
+        "benchmark_notes": "Score 8/10. Relevant for user/platform bias mechanisms in review environments.",
+        "miss_reason": "phase_g_threshold_or_doc_calibration",
+        "pipeline_reason": "phase_g_final_miss::top_section_below_threshold"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "da91ad14e1f84821",
+        "section_title": "Methods",
+        "page_start": 6,
+        "page_end": 6,
+        "section_type": "methods"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Method description of the online–offline design. Important for reproducibility but low direct conceptual value for the chapter beyond confirming study legitimacy.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f904936a9675cc81",
+        "section_title": "Study 1",
+        "page_start": 6,
+        "page_end": 6,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes the study design contrasting online vs. offline ratings and highlights acquisition/reporting biases. Useful empirical evidence about review biases and authenticity that informs perceived trust and uncertainty in online purchases,但",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "77b84a9ad54c264a",
+        "section_title": "Data analysis",
+        "page_start": 7,
+        "page_end": 8,
+        "section_type": "results"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "fallback_anchor",
+        "metadata_stripped"
+      ],
+      "notes": "Detailed data-collection/sample information (platform, sample sizes). Good for background/evidence on scale and representativeness; limited direct theoretical contribution.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "666b7a1cf19bb487",
+        "section_title": "Findings",
+        "page_start": 8,
+        "page_end": 8,
+        "section_type": "results"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Same findings as above: strong empirical evidence about online review polarization and biases that bear on consumer trust, uncertainty, and choice architecture design. Benchmark-reviewed note: Section is a focused empirical findings block about platform vs. average ratings (aggregation biases). Retrieval likely missed it because the query/model did not prioritize empirical, platform-specific bias language (percentages, platform names) or the section was not highly scored by the retriever for this topic.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "4.2 Findings",
+        "benchmark_label_0_to_3": 3,
+        "benchmark_notes": "Score 9/10. User-marked strong findings section.",
+        "miss_reason": "phase_e_retrieval_recall_gap",
+        "pipeline_reason": "phase_e_retrieval_miss"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ee3a221ab74fb118",
+        "section_title": "Frequency distribution of online and offline ratings",
+        "page_start": 8,
+        "page_end": 8,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Repeated section with frequency-distribution results. Useful empirical grounding for discussions of perceived risk/uncertainty and implications for how reviews should be presented to reduce buyer uncertainty.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 188,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "4a960d1675a841ea",
+        "section_title": "3.2 Findings 3.2.1 Frequency distribution of online and offline ratings",
+        "page_start": 8,
+        "page_end": 9,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Findings on the distributional differences between online and offline ratings (polar reporting, underreporting of moderate experiences). Highly relevant empirical support for chapters on decision confidence, perceived risk, and how review呈现",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 183,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "6b052da6bf580573",
+        "section_title": "Central tendencies of online and offline ratings",
+        "page_start": 9,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Analyzes differences between online and offline rating distributions (mean vs median) and reviewer perceptions — useful for discussing how aggregated review metrics can bias perceived product quality and decision confidence, and for points/ Benchmark-reviewed note: This empirical section directly addresses rating-bias effects (mean vs median, cross-channel differences), which is highly useful for discussing how review aggregates affect perceived quality and decision confidence. It was not surfaced due to the final top_section threshold excluding the section despite its relevance.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 166,
+        "phase_f_doc_rank": 166,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "3.2.2 Central tendencies of online and offline ratings",
+        "benchmark_label_0_to_3": 3,
+        "benchmark_notes": "Score 9/10. Strong for rating-bias effects and implications for trust and uncertainty in review systems.",
+        "miss_reason": "phase_g_threshold_or_doc_calibration",
+        "pipeline_reason": "phase_g_final_miss::top_section_below_threshold"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "84263a95b08745a1",
+        "section_title": "4. Study 2 4.1 Methods 4.1.1 Data collection",
+        "page_start": 10,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes data sources and platform market shares in China. Provides context but is methodological/background detail with limited direct theoretical or design-relevant insight for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "597754191fe96f46",
+        "section_title": "Data collection",
+        "page_start": 10,
+        "page_end": 10,
+        "section_type": "methods"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Another duplicate of the data-collection methods paragraph; minimal added value for the chapter's theoretical or design-focused aims.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "d1ad6df43513fcba",
+        "section_title": "Methods",
+        "page_start": 10,
+        "page_end": 10,
+        "section_type": "methods"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Labeled methods and duplicates data-collection text — very low value for conceptual chapter content beyond noting study provenance.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b1a3c01b6900d6a6",
+        "section_title": "Study 2",
+        "page_start": 10,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Duplicate/data-collection description. Useful only as background on platforms studied; little direct relevance to decision psychology, nudging, or uncertainty-reduction design principles.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "aafb13af59df7387",
+        "section_title": "Data analysis",
+        "page_start": 11,
+        "page_end": 11,
+        "section_type": "results"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Pure data-analysis description of how restaurant ratings were averaged and visualized. Method detail is low value for the chapter beyond noting that multi-platform benchmarking was used.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 204,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "09dccab7a92c0f08",
+        "section_title": "Findings",
+        "page_start": 11,
+        "page_end": 12,
+        "section_type": "results"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Findings on platform-specific aggregation adjustments, volume weighting, and bias-correction are highly relevant: they illustrate how choice-architecture at platform level shapes perceived quality/trust, affects decision confidence, and can Benchmark-reviewed note: Section is a focused empirical findings block about platform vs. average ratings (aggregation biases). Retrieval likely missed it because the query/model did not prioritize empirical, platform-specific bias language (percentages, platform names) or the section was not highly scored by the retriever for this topic.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "4.2 Findings",
+        "benchmark_label_0_to_3": 3,
+        "benchmark_notes": "Score 9/10. User-marked strong findings section.",
+        "miss_reason": "phase_e_retrieval_recall_gap",
+        "pipeline_reason": "phase_e_retrieval_miss"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "0dbd3937d3696ac7",
+        "section_title": "Discussion",
+        "page_start": 12,
+        "page_end": 12,
+        "section_type": "discussion"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Summarizes bias patterns in Chinese UGC (positive bias, distributional differences). Useful background on review bias and its implications for perceived trust and uncertainty in online purchases.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "756193890a192188",
+        "section_title": "Main findings",
+        "page_start": 12,
+        "page_end": 14,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "decision_psychology_theory",
+        "review_quality_authenticity",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Detailed main findings and cultural explanations for rating distributions; helps explain why aggregated ratings may mislead buyers and contributes evidence for discussion of perceived risk and information quality. Benchmark-reviewed note: This is a high-value synthesis discussing cultural differences in rating distributions and causes of positive bias. It may have been deprioritized by the retriever because phrasing is cultural/academic and does not contain explicit UI/choice-architecture keywords the pipeline favors.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 207,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "5.1 Main findings",
+        "benchmark_label_0_to_3": 3,
+        "benchmark_notes": "Score 9/10. Strong summary section for the paper's substantive conclusions.",
+        "miss_reason": "phase_e_retrieval_recall_gap",
+        "pipeline_reason": "phase_e_retrieval_miss"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c7e65d9d2fde9d1e",
+        "section_title": "Theoretical implications",
+        "page_start": 14,
+        "page_end": 14,
+        "section_type": "discussion"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "nudging_choice_architecture",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Duplicate/overlapping theoretical implications text; useful but redundant. Reinforces points about cultural/contextual factors and platform practices affecting review quality.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "76d16a94ba1d8ed9",
+        "section_title": "5.2 Theoretical implications This paper offers several important implications for research",
+        "page_start": 14,
+        "page_end": 15,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "nudging_choice_architecture",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Theoretical implications highlight cultural/contextual drivers and the role of platform algorithms—relevant for framing ethical design, transparency, and limits of relying on aggregated ratings.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "45506c7132ba98c8",
+        "section_title": "5.3 Practical implications Our findings offer several important implications for consumers, businesses and social media providers",
+        "page_start": 15,
+        "page_end": 15,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "nudging_choice_architecture",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Practical recommendations (don’t rely solely on numeric ratings; disclose distributions, algorithmic adjustments) are directly applicable to information presentation, digital nudging, transparency and reducing perceived risk in online 구매dec",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 163,
+        "phase_f_doc_rank": 143,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "357eebe529758143",
+        "section_title": "Limitations and future research",
+        "page_start": 15,
+        "page_end": 15,
+        "section_type": "discussion"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [],
+      "notes": "Same limitations content in shorter form: highlights importance of textual reviews, cross-cultural effects and opaque algorithms — useful but largely redundant with the longer limitations section.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 101,
+        "phase_f_doc_rank": 97,
+        "phase_g_doc_rank": 5,
+        "phase_g_score_0_to_100": 21.33,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "bea397387141b41f",
+        "section_title": "Practical implications",
+        "page_start": 15,
+        "page_end": 15,
+        "section_type": "discussion"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "nudging_choice_architecture",
+        "information_presentation_filtering_comparison",
+        "trust_risk_uncertainty"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Practical recommendations for consumers and platforms (showing distribution, transparency about adjustments, disclose conflicts) are highly applicable to design guidance, reducing perceived risk, building trust, and ethical choice-architect Benchmark-reviewed note: Pipeline shows the doc reached late-stage ranking (phase G) but was aborted due to a top_section threshold. The section is highly relevant (practical design recommendations) but top-section scoring or document-level threshold prevented final surfacing.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 159,
+        "phase_f_doc_rank": 55,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 35.81,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "5.3 Practical implications",
+        "benchmark_label_0_to_3": 3,
+        "benchmark_notes": "Score 9/10. Strong practical tie-in to platform design and information environments.",
+        "miss_reason": "phase_g_threshold_or_doc_calibration",
+        "pipeline_reason": "surfaced_to_phase_g"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "9f949153a23a4c84",
+        "section_title": "5.4 Limitations and future research This research is not without limitations",
+        "page_start": 15,
+        "page_end": 16,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses how review features (text, ratings), platform aggregation and cultural factors affect perceived risk/uncertainty and introduces platform-induced biases — directly relevant for sections on perceived risk, trust, and design choices/",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 105,
+        "phase_f_doc_rank": 85,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 33.94,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "f662936575d13550",
+        "section_title": "Authors’ contributions",
+        "page_start": 16,
+        "page_end": 16,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Authors’ contributions are administrative metadata with no substantive content for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "79cdaa3cbf267fe8",
+        "section_title": "References",
+        "page_start": 16,
+        "page_end": 20,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Reference list signals relevant literature but the raw reference section offers little standalone content; useful only as pointers to sources.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "45aea86cd9264a97",
+        "section_title": "About the authors",
+        "page_start": 20,
+        "page_end": 21,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "About the authors/front matter is not useful for chapter content.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    }
+  ]
+}

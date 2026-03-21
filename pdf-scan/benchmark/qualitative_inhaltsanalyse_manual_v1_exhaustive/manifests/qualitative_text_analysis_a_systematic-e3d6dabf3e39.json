@@ -1,0 +1,8 @@
+{
+  "doc_id": "qualitative_text_analysis_a_systematic-e3d6dabf3e39",
+  "label": "Qualitative Text Analysis: A Systematic Approach",
+  "path": "<projektverzeichnis>\\pdf-scan\\paper-dump\\Qualitative Inhlaltsanalyse\\Qualitative Text Analysis A Systematic.pdf",
+  "role_in_suite": "manual_exhaustive_positive",
+  "expected_difficulty": "unknown",
+  "notes": "Strong, compact overview of qualitative content analysis / qualitative text analysis: clear definition, core characteristics, category/coding-frame primacy, and a concrete multi-step workflow example. Minor structural issue: one extracted section title (“No prior experience”) is actually an example response inside Table 8.3, not a real heading."
+}

@@ -1,0 +1,8 @@
+{
+  "doc_id": "doc_003_medium_document_candidate_a",
+  "label": "Whose online reviews to trust? Understanding reviewer trustworthiness and its impact on business",
+  "path": "documents/Whose online reviews to trust Understanding reviewer trustworthiness and its impact on business.pdf",
+  "role_in_suite": "medium_document_candidate_a",
+  "expected_difficulty": "unknown_until_annotation",
+  "notes": "Medium-length candidate document A. Included because its title suggests overlap with reviewer trustworthiness and online reviews, but final fit must be decided only after annotation."
+}

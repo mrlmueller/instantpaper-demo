@@ -1,0 +1,373 @@
+{
+  "chapter_id": "chapter_001_definition_und_grundbegriffe",
+  "doc_id": "theme_in_qualitative_content_analysis_and_themat-ca9b9633447c",
+  "doc_title": "Theme in Qualitative Content Analysis and Thematic Analysis",
+  "has_useful_information": true,
+  "document_label_0_to_3": 2,
+  "document_label_band": "useful_support",
+  "document_notes": "Discussion paper focused on the concept of “theme” and how theme development differs between Qualitative Content Analysis (QCA) and Thematic Analysis (TA). Useful for defining scope/abstraction (manifest vs latent) and distinguishing QCA from TA; less coverage of detailed category systems, coder roles, or unit-of-analysis definitions. Minor extraction issue: the dedicated Table of Contents section is empty, though ToC is visible on PDF page 1.",
+  "manual_review_basis": [
+    "direct PDF reading",
+    "run 029c67764002834a74daaa7c normalized sections",
+    "review packet with extracted section text and current pipeline trace"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "2.2 Differences of the theme between QCA and TA",
+      "page_start": 7,
+      "page_end": 9,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "method_comparison",
+        "manifest_latent",
+        "definition_scope"
+      ],
+      "notes": "Strong, concrete distinction between QCA and TA around the expected level of abstraction and interpretation (manifest vs latent) and what counts as a “theme” as an analytic product."
+    }
+  ],
+  "near_miss_sections": [],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "e750436dc25cc6e7",
+        "section_title": "1. Introduction",
+        "page_start": 1,
+        "page_end": 3,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "definition_scope",
+        "method_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Sets up QCA vs TA as descriptive approaches and motivates the need to clarify what “theme” means and how it is developed; useful framing but less specific than the dedicated comparison sections.",
+      "section_text_excerpt": "2.1 Similarities of the theme between QCA and TA 2.2 Differences of the theme between QCA and TA 3. Some Pragmatic Aspects of Theme Development in QCA and TA Qualitative research is a broad term encompassing different data collection and analytical approaches with the aim of providing cultural and contextual description and interpretation of social phenomenon. While there are variations between these research approaches in terms of data analysis and presentation of findings, they all contribute to both description and interpretation of phenomena (HOLLOWAY & GALVIN, 2017). QCA and TA are classified under the qualitative descriptive design. While description and interpretation are the main features of these two qualitative descriptive approaches, they are mainly suitable for researchers who prefer a higher level of description rather than an abstract interpretation. According to the international literature (VAISMORADI, TURUNEN & BONDAS, 2013; VAISMORADI, JONES, TURUNEN & SNELGROVE, 2016), QCA and TA are similar in terms of philosophical backgrounds, immersion in data, attention to both description and interpretation of data analysis, consideration of context during data analysis, and cutting across data for seeking This work is licensed under a Creative Commons Attribution 4.0 International License. Forum Qualitative Sozialforschung / Forum: Qualitative Social Research (ISSN 1438-5627) themes. As a point of difference, within TA, a theme is considered to be latent content, but QCA researchers are free to decide between the level of data analysis when developing the category or the theme. Nevertheless, to develop a theme in both of these approaches, iterative or forward-backward movements and comparison of code clusters in relation to the whole data are required (VAISMORADI et al., 2013, 2016). Generally, during data analysis the researcher engages in a selection of the unit of analysis, subjective observation of the realities of the phenomenon, becoming an instrument for data analysis, looking for multiple realities behind the data, categorizing and finding themes from categories and through analytical insights to present an overall story line of data (CHO & LEE…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 26,
+        "phase_f_doc_rank": 21,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 39.78,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.69220564,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7486f98a28724c63",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "method_comparison",
+        "manifest_latent",
+        "definition_scope"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Contains the abstract-level summary of the paper’s main claim: how “theme” as an analytic product differs between QCA and TA (including latent vs manifest emphasis). Some duplication with the extracted Introduction.",
+      "section_text_excerpt": "Abstract: Qualitative design consists of various approaches towards data collection, which researchers can use to help with the provision of both cultural and contextual description and interpretation of social phenomena. Qualitative content analysis (QCA) and thematic analysis (TA) as qualitative research approaches are commonly used by researchers across disciplines. There is a gap in the international literature regarding differences between QCA and TA in terms of the concept of a theme and how it is developed. Therefore, in this discussion paper we address this gap in knowledge and present differences and similarities between these qualitative research approaches in terms of the theme as the final product of data analysis. We drew on current multidisciplinary literature to support our perspectives and to develop internationally informed analytical notions of the theme in QCA and TA. We anticipate that improving knowledge and understanding of theme development in QCA and TA will support other researchers in selecting the most appropriate qualitative approach to answer their study question, provide high-quality and trustworthy findings, and remain faithful to the analytical requirements of QCA and TA.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.69220564,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "2f26f2003d95f20d",
+        "section_title": "Table of Contents",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "table_of_contents"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "structural_wrapper"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Table of contents only; not useful. Extraction returned empty text even though a ToC is visible on PDF page 1.",
+      "section_text_excerpt": "",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.69220564,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "9a08c2d34e4a010a",
+        "section_title": "2. Theme in QCA and TA",
+        "page_start": 3,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "theme_concept",
+        "method_comparison",
+        "definition_scope"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Introduces the theme as an analytic product and frames similarities/differences between QCA and TA; useful support for distinguishing approaches.",
+      "section_text_excerpt": "Similarities and differences between QCA and TA in terms of the theme and the process of theme development are rooted in commonalities and variations in their aims, focus, philosophical backgrounds and data analysis processes. In Figure 1 we show an overview of the comparison of QCA and TA, that is discussed in the following. Figure 1: A general overview of the comparison of QCA and TA. Please click here for an enlarged version of Figure 1. [6]",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 8,
+        "phase_f_doc_rank": 58,
+        "phase_g_doc_rank": 5,
+        "phase_g_score_0_to_100": 16.04,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.69220564,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "27e5352d7d8ba78d",
+        "section_title": "2.1 Similarities of the theme between QCA and TA",
+        "page_start": 4,
+        "page_end": 7,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "analysis_workflow",
+        "method_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes shared theme-development moves in QCA/TA (coding into units, repeated reading, constant comparison, attention to context); useful general workflow context.",
+      "section_text_excerpt": "2.1 Similarities of the theme between QCA and TA In both QCA and TA, during the theme development process the researcher relies on the analytic examination of narrations related to social phenomena through breaking transcriptions into small units and performing data analysis. All sorts of data materials are transferred to textual format as transcription, and are read several times to achieve the sense of whole, to explore the main meaning behind the data and trace back related ideas for understanding hidden concerns in the data. Researchers bring themselves close to the data by highlighting main ideas as codes related to the phenomenon, which may lead to the theme through a constant comparison process. [7] In the majority of qualitative descriptive approaches, the theoretical or philosophical framework and the philosophical model behind the data analysis and interpretation have not been indicated (KIM, SEFCIK & BRADWAY, 2017). The importance of sharing philosophical perspectives including \"person- centeredness\" and attention to actual behaviors and motivations in QCA and TA lies in the fact that researchers looking through a philosophical lens for theme development are influenced by their own judgment about the phenomenon and their ability to develop valuable and innovative knowledge. Researchers using QCA and TA can better ensure a reliable and rigorous line of reasoning that is consistent with the identity and construct of developed knowledge (THORNE, STEPHENS & TRUANT, 2016). Common philosophical perspectives in QCA and TA include similar flexibility or variability of theme development for achieving an understanding of the phenomenon. Therefore, users are encouraged to provide the required details of philosophical perspectives underpinning theme development, so that readers will be able to find rigor, reasonability, validity and comprehensiveness of the theme as the answer to the study question. [8] A context-based framework of analysis is another similarity between QCA and TA. In theme development researchers must adhere to a systematic framework of data analysis. This shows that the they applied a stepwise process of data collection and analysis with verif…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 27,
+        "phase_f_doc_rank": 14,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 56.1,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.69220564,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "0c92c776e92012e7",
+        "section_title": "2.2 Differences of the theme between QCA and TA",
+        "page_start": 7,
+        "page_end": 9,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "method_comparison",
+        "manifest_latent",
+        "definition_scope"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Strong, concrete distinction between QCA and TA around expected level of abstraction and interpretation (manifest vs latent) and what counts as a “theme” as the analysis product.",
+      "section_text_excerpt": "2.2 Differences of the theme between QCA and TA Researchers using QCA focus on providing a simple, but in-depth report of commonalities and differences in the data. However, in TA it is expected that the researcher will provide a rich and complex nuanced interpretation of the data as the theme. With qualitative descriptive research in general, the researcher's aim is to uncover meanings in data and reveal hidden complexities, and provide illustrations of these complexities, which is recognized as a difficult task, especially in TA (SANDELOWSKI, 2010). It is expected that the researcher takes note of ambiguities, but also acknowledges the more overt meanings; to accomplish this, researchers must bring into play their own subjectivity, but retain sensitivity to the participants' accounting of life. While both QCA and TA researchers speak on participants' behalf through uniting their voices and simultaneously taking care of differences within their perspectives, the presentation of results as the theme may be different for the two approaches, indicating the underpinning aim of theme development and level of abstraction. Researchers using QCA may prefer to work with simplicities and overt data by going through a large amount of written materials to obtain easy-achieved classifications and manifest contents to develop categories. On the other hand, those using TA require an exhaustive and non-stop process of abstraction and in- depth analysis from the beginning to reach the theme. It is believed that high- quality qualitative research is marked by a thick description, and rich complexity of findings rather than deductive precision (TRACY, 2010). With the increase of the abstraction level in any theme development, both aesthetic and creative terminology may be used in the presentation and structure of the theme. The complexity and aesthetic aspects of the theme can motivate readers to reflect on data and relate the findings to their own personal perspectives. It is expected that readers' shared and similar experiences are sufficient to relate to the meaning of the theme and even apply it in practice. Analyzing data qualitatively and also quantifying data are possible…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 10,
+        "phase_f_doc_rank": 5,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 63.1,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.69220564,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b28a395f83fa6e5b",
+        "section_title": "3. Some Pragmatic Aspects of Theme Development in QCA and TA",
+        "page_start": 9,
+        "page_end": 11,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "analysis_workflow",
+        "theme_development"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Practical considerations for developing/presenting themes; useful support but less directly about core QCA category-system concepts.",
+      "section_text_excerpt": "3. Some Pragmatic Aspects of Theme Development in QCA and TA Theme development is influenced by the presence of inconsistency between analysis methods and the study aim. QCA and TA can be used to develop the theme based on an available theory and in conjunction with more interpretive approaches to develop a theory. Nevertheless, these methods alone do not develop a theory. It has been suggested that descriptive research approaches have advantages over simple coding processes whenever the research question is embedded in prior theory and can be answered through the exploration of meaning and narration construction (GLÄSER & LAUDEL, 2013). The high level of abstraction in the theme means that several basic analytic procedures have been conducted at various levels during theme development. The theme is shaped when the researcher can find recurrent ideas based on similarities and differences in the data (CONNELLY & PELTZER, 2016; GRANEHEIM, LINDGREN & LUNDMAN, 2017). While theme development in qualitative descriptive approaches is flexible, it depends on the experience and expertise of the researcher to unveil underlying meanings (MOHAMED, RAGAB & ARISHA, 2016). [20] Theme development starts as soon as the researcher has determined the focus of the study. During coding data, interpretation and abstraction are started and progressed. Analyzing data along with data collection is an opportunity to test interconnections between codes, and to find themes that fit the data (KNUDSEN et al., 2012). In other words, similar grounds related to similar issues are found and compared until they are explained by the theme as an umbrella. Theme can further be divided into subthemes to cover the different levels of similarities and differences (INDULSKA, HOVORKA & RECKER, 2012; SNOWDEN & MARTIN, 2011; THYME, WIBERG, LUNDMAN & GRANEHEIM, 2013). [21] Theme development is the basis of qualitative research and consideration of qualitative data analysis without the development of thematic statements as synthesizing and integrating data segments is problematic (SANDELOWSKI & LEEMAN, 2012). In addition to the analytical importance of the theme, it is the translation of participants' persp…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 41,
+        "phase_f_doc_rank": 46,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 31.42,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.69220564,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "2a9b0879934acfb2",
+        "section_title": "4. Conclusion",
+        "page_start": 11,
+        "page_end": 11,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "method_comparison",
+        "definition_scope"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Recaps similarities/differences and encourages methodological alignment; useful summary but not as detailed as section 2.2.",
+      "section_text_excerpt": "We have presented similarities and differences between QCA and TA in terms of theme development. As far as possible we have supported our arguments with the international literature. We drew on relevant scholarly work from a range of disciplines including the health sciences, education, and sociology, so as to gain comprehensive insight into this topic. We consider that by taking a broad international reach, we were able to strengthen our arguments and clarify the main opinions in this area. Our discussion can add to interdisciplinary discussions required to advance ideas and agreements about theme development, and reduce noted ambiguities surrounding theme development in QCA and TA. A common understanding of theme development in QCA and TA facilitates evaluating the results of data analysis, improves rigor, and leads to deeper understandings of complex human phenomena for designing interventions for education, research and practice. Lastly, researchers are then better enabled to choose the most appropriate approach to answer their study question, provide high-quality and abstract findings, and remain faithful to the analytical requirements of QCA and TA. [25]",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 9,
+        "phase_f_doc_rank": 62,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.69220564,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7bc9aad2c46873d6",
+        "section_title": "References",
+        "page_start": 11,
+        "page_end": 14,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "references"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Bibliography only; useful as pointers but no direct definitional content.",
+      "section_text_excerpt": "Anderson, Claire (2010). Presenting and evaluating qualitative research. American Journal of Vaismoradi, Mojtaba (2018). Directed qualitative content analysis: The description and elaboration of its underpinning methods and data analysis process. Journal of Research in Nursing, 23(1), 42- Bengtsson, Mariette (2016). How to plan and perform a qualitative study using content analysis. 2019]. Boeije, Hennie R; van Wesel, Floryt & Alisic, Eva (2011). Making a difference: Towards a method for weighing the evidence in a qualitative synthesis. Journal of Evaluation in Clinical Practice, 17(4), 657-663. Research in Psychology, 3(2), 77-101. Carter, Michael J. & Fuller, Celene (2016). Symbols, meaning, and action: The past, present, and future of symbolic interactionism. Current Sociology, 64(6), 931-961. Cho, Joung Ji & Lee, Eun-Hee (2014). Reducing confusion about grounded theory and qualitative content analysis: Similarities and differences. The Qualitative Report, 19(32), 1-20, https://nsuworks.nova.edu/tqr/vol19/iss32/2 [Date of Access: August 26, 2019]. science research. HERD: Health Environments Research & Design Journal, 9(4), 16-25. with interviews and analysis. Clinical Nurse Specialist, 30(1), 52-57. Cope, Diane G. (2014). Methods and meanings: Credibility and trustworthiness of qualitative research. Oncology Nursing Forum, 41(1), 89-91. Elo, Satu; Kääriäinen, Maria; Kanste, Outi; Pölkki, Tarja; Utriainen, Kati & Kyngäs, Helvi (2014). Qualitative content analysis: A focus on trustworthiness. SAGE Open, 4(1), 1-10, to qualitative research. African Journal of Emergency Medicine, 3(2), 92-99, Evers, Jeanine C. (2016). Elaborating on thick analysis: About thoroughness and creativity in qualitative analysis. Forum Qualitative Sozialforschung / Forum: Qualitative Social Research, 17(1), Finfgeld-Connett, Deborah (2014). Use of content analysis to conduct knowledge-building and theory-generating qualitative systematic reviews. Qualitative Research, 14(3), 341-352. thematic, grounded theory and narrative analysis: A case study of adolescent psychotropic treatment. Qualitative Social Work, 9(3), 407-425. Gläser, Jochen & Laudel, Grit (2013). Life with and without codi…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.69220564,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "07ddd03011c4198c",
+        "section_title": "Authors",
+        "page_start": 14,
+        "page_end": 14,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "boilerplate"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Author bio only; not useful for chapter content.",
+      "section_text_excerpt": "Mojtaba VAISMORADI is a professor of nursing science at Nord University, Norway, and an associate researcher at Swansea University, UK. His main fields of studies are patient safety and medicines management using both quantitative and qualitative designs. Mojtaba is the editor of international journals in the area of health sciences and actively collaborates in international research projects. He is interested in methodological issues surrounding the qualitative research design, especially content analysis and thematic analysis, and has published articles in international journals to help with the clarification of these two qualitative approaches, and making it easier for researchers to choose between them and perform a high quality data analysis. Social Sciences and Dean of Academic worked as a National Health Service (NHS) nurse manager and has over twenty years' experience as a lecturer and researcher. Sherrill has conducted both qualitative and quantitative research into chronic pain of older people living in the community, medication management of older people with dementia, advanced health care practice, health care professionals' experiences of stress and pedagogical research. She is one of just a few researchers at Swansea University, proficient in interpretative phenomenological analysis (IPA). Sherrill has a track record in successful PhD supervision and is currently PhD supervisor to national and international students researching health and social care topics. A main role is leading on research integrity and ethics at Swansea University with a mandate to oversee and develop ethics, research misconduct and research governance procedures. Sherrill Snelgrove (RGN, BSc (Hons), M.Phil. Vaismoradi, Mojtaba & Snelgrove, Sherrill (2019). Theme in Qualitative Content Analysis and Thematic Analysis [25 paragraphs]. Forum Qualitative Sozialforschung / Forum: Qualitative Social",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.69220564,
+        "doc_abstention_reason": null
+      }
+    }
+  ]
+}

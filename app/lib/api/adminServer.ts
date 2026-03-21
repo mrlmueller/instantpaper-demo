@@ -41,6 +41,8 @@ export type AdminUserRow = {
   disabled: boolean;
   canDuplicateSystemPrompts: boolean;
   canViewUsageInsights: boolean;
+  canUseQuellenFinder: boolean;
+  canUsePdfScan: boolean;
   billingBalance?: {
     totalCredits: number;
     subscriptionCredits: number;
@@ -89,51 +91,64 @@ export async function listAdminUsers(params?: {
 
   const data = (await res.json()) as { users?: unknown; nextPageToken?: unknown };
   const users = Array.isArray(data.users)
-      ? (data.users as Array<Record<string, unknown>>).map((u) => ({
-          uid: typeof u.uid === 'string' ? u.uid : null,
-          email: typeof u.email === 'string' ? u.email : null,
-          displayName: typeof u.displayName === 'string' ? u.displayName : null,
-          fullAccess: u.fullAccess === true || u.approved === true,
-          legacyApproved: u.legacyApproved === true,
-          blocked: u.blocked === true,
-          isAdmin: u.isAdmin === true,
-          accountStatus: typeof u.accountStatus === 'string' ? u.accountStatus : null,
-          disabled: u.disabled === true,
-          canDuplicateSystemPrompts: u.canDuplicateSystemPrompts === true,
-          canViewUsageInsights: u.canViewUsageInsights === true,
-          billingBalance:
+      ? (data.users as Array<Record<string, unknown>>).map((u) => {
+          const billingBalanceRaw =
             u.billingBalance && typeof u.billingBalance === 'object'
-              ? {
-                  totalCredits: Number((u.billingBalance as any).totalCredits ?? 0),
-                  subscriptionCredits: Number((u.billingBalance as any).subscriptionCredits ?? 0),
-                  subscriptionExpiresAt:
-                    typeof (u.billingBalance as any).subscriptionExpiresAt === 'string'
-                      ? ((u.billingBalance as any).subscriptionExpiresAt as string)
-                      : null,
-                  topupCredits: Number((u.billingBalance as any).topupCredits ?? 0),
-                  reservedCredits: Number((u.billingBalance as any).reservedCredits ?? 0),
-                  availableCredits: Number((u.billingBalance as any).availableCredits ?? 0),
-                  isNegative: (u.billingBalance as any).isNegative === true,
-                }
-              : null,
-          billingSubscription:
+              ? (u.billingBalance as Record<string, unknown>)
+              : null;
+          const billingSubscriptionRaw =
             u.billingSubscription && typeof u.billingSubscription === 'object'
-              ? {
-                  id: typeof (u.billingSubscription as any).id === 'string' ? ((u.billingSubscription as any).id as string) : null,
-                  status:
-                    typeof (u.billingSubscription as any).status === 'string'
-                      ? ((u.billingSubscription as any).status as string)
-                      : null,
-                  cancelAtPeriodEnd: (u.billingSubscription as any).cancelAtPeriodEnd === true,
-                  currentPeriodEnd:
-                    typeof (u.billingSubscription as any).currentPeriodEnd === 'string'
-                      ? ((u.billingSubscription as any).currentPeriodEnd as string)
-                      : null,
-                }
-              : null,
-          createdAt: typeof u.createdAt === 'string' ? u.createdAt : null,
-          lastSignInAt: typeof u.lastSignInAt === 'string' ? u.lastSignInAt : null,
-        }))
+              ? (u.billingSubscription as Record<string, unknown>)
+              : null;
+
+          return {
+            uid: typeof u.uid === 'string' ? u.uid : null,
+            email: typeof u.email === 'string' ? u.email : null,
+            displayName: typeof u.displayName === 'string' ? u.displayName : null,
+            fullAccess: u.fullAccess === true || u.approved === true,
+            legacyApproved: u.legacyApproved === true,
+            blocked: u.blocked === true,
+            isAdmin: u.isAdmin === true,
+            accountStatus: typeof u.accountStatus === 'string' ? u.accountStatus : null,
+            disabled: u.disabled === true,
+            canDuplicateSystemPrompts: u.canDuplicateSystemPrompts === true,
+            canViewUsageInsights: u.canViewUsageInsights === true,
+            canUseQuellenFinder: u.canUseQuellenFinder === true,
+            canUsePdfScan: u.canUsePdfScan === true,
+            billingBalance:
+              billingBalanceRaw
+                ? {
+                    totalCredits: Number(billingBalanceRaw.totalCredits ?? 0),
+                    subscriptionCredits: Number(billingBalanceRaw.subscriptionCredits ?? 0),
+                    subscriptionExpiresAt:
+                      typeof billingBalanceRaw.subscriptionExpiresAt === 'string'
+                        ? billingBalanceRaw.subscriptionExpiresAt
+                        : null,
+                    topupCredits: Number(billingBalanceRaw.topupCredits ?? 0),
+                    reservedCredits: Number(billingBalanceRaw.reservedCredits ?? 0),
+                    availableCredits: Number(billingBalanceRaw.availableCredits ?? 0),
+                    isNegative: billingBalanceRaw.isNegative === true,
+                  }
+                : null,
+            billingSubscription:
+              billingSubscriptionRaw
+                ? {
+                    id: typeof billingSubscriptionRaw.id === 'string' ? billingSubscriptionRaw.id : null,
+                    status:
+                      typeof billingSubscriptionRaw.status === 'string'
+                        ? billingSubscriptionRaw.status
+                        : null,
+                    cancelAtPeriodEnd: billingSubscriptionRaw.cancelAtPeriodEnd === true,
+                    currentPeriodEnd:
+                      typeof billingSubscriptionRaw.currentPeriodEnd === 'string'
+                        ? billingSubscriptionRaw.currentPeriodEnd
+                        : null,
+                  }
+                : null,
+            createdAt: typeof u.createdAt === 'string' ? u.createdAt : null,
+            lastSignInAt: typeof u.lastSignInAt === 'string' ? u.lastSignInAt : null,
+          };
+        })
       : [];
   const nextPageToken = typeof data.nextPageToken === 'string' ? data.nextPageToken : null;
   return { users, nextPageToken };
@@ -222,6 +237,49 @@ export async function setUserCanViewUsageInsightsByEmail(
   if (!res.ok) {
     const detail = await readErrorDetail(res);
     throw new Error(detail || 'Failed to update usage insights permission.');
+  }
+}
+
+export async function setUserCanUseQuellenFinderByEmail(
+  email: string,
+  canUseQuellenFinder: boolean
+): Promise<void> {
+  const token = await getAuthTokenOrNullAsync();
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${API_BASE_URL}/api/admin/users/quellen-finder`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, canUseQuellenFinder }),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const detail = await readErrorDetail(res);
+    throw new Error(detail || 'Failed to update Quellen-Finder permission.');
+  }
+}
+
+export async function setUserCanUsePdfScanByEmail(email: string, canUsePdfScan: boolean): Promise<void> {
+  const token = await getAuthTokenOrNullAsync();
+  if (!token) throw new Error('Not authenticated');
+
+  const res = await fetch(`${API_BASE_URL}/api/admin/users/pdf-scan`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, canUsePdfScan }),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const detail = await readErrorDetail(res);
+    throw new Error(detail || 'Failed to update PDF-Scan permission.');
   }
 }
 

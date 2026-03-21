@@ -1,0 +1,58 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "whose_online_reviews_to_trust_understanding_revi-22354b2e8251",
+  "has_useful_information": true,
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_title": "Abstract",
+        "page_start": 2,
+        "page_end": 3
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "notes": "Score 9/10. Strong high-level framing of reviewer trustworthiness and its decision impact."
+    },
+    {
+      "section_ref": {
+        "section_title": "1. Introduction",
+        "page_start": 3,
+        "page_end": 7
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp1"
+      ],
+      "notes": "Score 9/10. Strong for source credibility and reviewer trustworthiness as a decision mechanism."
+    },
+    {
+      "section_ref": {
+        "section_title": "2. Literature review",
+        "page_start": 7,
+        "page_end": 10
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "notes": "Score 8/10. Cue-based judgments from reputation, profile picture, expertise, friends, and helpfulness votes."
+    },
+    {
+      "section_ref": {
+        "section_title": "3. Hypotheses development",
+        "page_start": 10,
+        "page_end": 18
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "notes": "Score 9/10. Strongest section for trust, information asymmetry, and reviewer characteristics reducing uncertainty."
+    }
+  ],
+  "document_notes": "User-marked positive. One of the strongest trust/uncertainty papers in the dump, especially for source credibility, cues, and purchase decisions under information asymmetry."
+}

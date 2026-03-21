@@ -19,6 +19,8 @@ export type AccessState = {
   fullAccess: boolean;
   legacyApproved: boolean;
   blocked: boolean;
+  canUseQuellenFinder: boolean;
+  canUsePdfScan: boolean;
 };
 
 function isProduction() {
@@ -85,7 +87,9 @@ export function parseAccessStateFromClaims(claims: Record<string, unknown> | nul
   const fullAccess = claims?.['fullAccess'] === true;
   const legacyApproved = claims?.['approved'] === true;
   const blocked = claims?.['blocked'] === true;
-  return { fullAccess, legacyApproved, blocked };
+  const canUseQuellenFinder = claims?.['canUseQuellenFinder'] === true;
+  const canUsePdfScan = claims?.['canUsePdfScan'] === true;
+  return { fullAccess, legacyApproved, blocked, canUseQuellenFinder, canUsePdfScan };
 }
 
 export function hasFullAccess(access: AccessState | null | undefined): boolean {

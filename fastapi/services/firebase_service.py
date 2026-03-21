@@ -31,27 +31,31 @@ class FirebaseService:
         """Lazy initialization - only initialize when actually needed"""
         if not self._initialized:
             try:
-                # Check if credentials are configured
-                if not config.FIREBASE_PRIVATE_KEY or config.FIREBASE_PRIVATE_KEY == '':
-                    raise ValueError(
-                        "Firebase credentials not configured. Please add your Firebase Admin SDK "
-                        "credentials to the .env file. Get them from: "
-                        "Firebase Console > Project Settings > Service Accounts > Generate New Private Key"
-                    )
+                options = {}
+                if config.FIREBASE_PROJECT_ID:
+                    options["projectId"] = config.FIREBASE_PROJECT_ID
+                if config.FIREBASE_STORAGE_BUCKET:
+                    options["storageBucket"] = config.FIREBASE_STORAGE_BUCKET
 
-                # Create credentials from config
-                cred_dict = {
-                    "type": "service_account",
-                    "project_id": config.FIREBASE_PROJECT_ID,
-                    "private_key": config.FIREBASE_PRIVATE_KEY.replace('\\n', '\n'),
-                    "client_email": config.FIREBASE_CLIENT_EMAIL,
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                }
+                has_key_pair = bool(config.FIREBASE_PRIVATE_KEY and config.FIREBASE_CLIENT_EMAIL)
+                if has_key_pair:
+                    cred_dict = {
+                        "type": "service_account",
+                        "project_id": config.FIREBASE_PROJECT_ID,
+                        "private_key": config.FIREBASE_PRIVATE_KEY.replace('\\n', '\n'),
+                        "client_email": config.FIREBASE_CLIENT_EMAIL,
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                    }
 
-                cred = credentials.Certificate(cred_dict)
-                firebase_admin.initialize_app(cred, {"storageBucket": config.FIREBASE_STORAGE_BUCKET})
+                    cred = credentials.Certificate(cred_dict)
+                    firebase_admin.initialize_app(cred, options or None)
+                    logger.info("Firebase Admin SDK initialized with explicit service account credentials")
+                else:
+                    cred = credentials.ApplicationDefault()
+                    firebase_admin.initialize_app(cred, options or None)
+                    logger.info("Firebase Admin SDK initialized with Application Default Credentials")
 
                 # Initialize Firestore client
                 self._db = firestore.client()
@@ -322,6 +326,60 @@ class FirebaseService:
             "customClaims": next_claims,
         }
 
+    async def _set_user_boolean_flag_by_email(
+        self,
+        *,
+        email: str,
+        field_name: str,
+        allowed: bool,
+        claim_name: Optional[str] = None,
+    ) -> dict:
+        """
+        Set a user-scoped Firestore boolean flag and optionally mirror it into a Firebase custom claim.
+
+        Firestore is the source of truth for immediate backend/rules checks.
+        Custom claims are only mirrored when storage or client token-based checks need the same flag.
+        """
+        self._ensure_initialized()
+        email_norm = (email or "").strip()
+        if not email_norm:
+            raise ValueError("email is required")
+
+        try:
+            user = auth.get_user_by_email(email_norm)
+        except auth.UserNotFoundError as exc:
+            raise ValueError("User not found. Ask the user to sign in once, then try again.") from exc
+
+        next_claims = user.custom_claims or {}
+        if claim_name:
+            next_claims = {**next_claims}
+            if bool(allowed):
+                next_claims[claim_name] = True
+            else:
+                next_claims.pop(claim_name, None)
+            auth.set_custom_user_claims(user.uid, next_claims)
+
+        user_ref = self.db.collection("users").document(user.uid)
+        existing = user_ref.get()
+
+        payload = {
+            "uid": user.uid,
+            "email": (user.email or "").strip() or email_norm,
+            field_name: bool(allowed),
+            "updatedAt": SERVER_TIMESTAMP,
+        }
+        if not existing.exists:
+            payload["createdAt"] = SERVER_TIMESTAMP
+
+        user_ref.set(payload, merge=True)
+
+        return {
+            "uid": user.uid,
+            "email": (user.email or "").strip() or email_norm,
+            field_name: bool(allowed),
+            "customClaims": next_claims,
+        }
+
     async def set_user_can_duplicate_system_prompts_by_email(self, email: str, allowed: bool) -> dict:
         """
         Allow or block a user from duplicating server-only system prompts.
@@ -358,6 +416,34 @@ class FirebaseService:
             "email": (user.email or "").strip() or email_norm,
             "canDuplicateSystemPrompts": bool(allowed),
         }
+
+    async def set_user_can_use_quellen_finder_by_email(self, email: str, allowed: bool) -> dict:
+        """
+        Allow or block a user from using Quellen-Finder.
+
+        Stored in Firestore for immediate route/backend/rules checks and mirrored to a custom claim so
+        the client can refresh into the new state quickly.
+        """
+        return await self._set_user_boolean_flag_by_email(
+            email=email,
+            field_name="canUseQuellenFinder",
+            allowed=allowed,
+            claim_name="canUseQuellenFinder",
+        )
+
+    async def set_user_can_use_pdf_scan_by_email(self, email: str, allowed: bool) -> dict:
+        """
+        Allow or block a user from using PDF-Scan and the related project PDF library.
+
+        Firestore enforces the app/backend access immediately. A mirrored custom claim is used by
+        Firebase Storage rules for the project-level PDF files.
+        """
+        return await self._set_user_boolean_flag_by_email(
+            email=email,
+            field_name="canUsePdfScan",
+            allowed=allowed,
+            claim_name="canUsePdfScan",
+        )
 
     async def set_user_can_view_usage_insights_by_email(self, email: str, allowed: bool) -> dict:
         """

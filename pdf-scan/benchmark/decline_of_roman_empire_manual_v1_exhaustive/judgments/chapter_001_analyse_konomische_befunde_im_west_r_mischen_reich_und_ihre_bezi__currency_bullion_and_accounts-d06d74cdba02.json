@@ -1,0 +1,279 @@
+{
+  "chapter_id": "chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi",
+  "doc_id": "currency_bullion_and_accounts-d06d74cdba02",
+  "doc_title": "Currency, bullion and accounts",
+  "has_useful_information": true,
+  "document_label_0_to_3": 3,
+  "document_label_band": "core_or_strong_support",
+  "document_notes": "Clear, sectioned treatment of the Roman monetary system (coinage, bullion/commodity payments, credit and account transfers) and the practical constraints/transaction costs of each. Useful for the chapter's economic mechanisms discussion and for linking monetary structure to late imperial breakdown (3rd c.).",
+  "manual_review_basis": [
+    "direct PDF reading",
+    "run cde2f3959baf36fa0d09956c normalized sections",
+    "review packet with extracted section text and current pipeline trace"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "Monetization modes : a model",
+      "page_start": 4,
+      "page_end": 6,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "monetary_system",
+        "monetization",
+        "credit_accounts"
+      ],
+      "notes": "Strong conceptual framing of intersecting monetary modes and how subsistence production still depends structurally on markets; sets up how credit/account mechanisms underpin monetized exchange."
+    },
+    {
+      "section_title": "Currency",
+      "page_start": 6,
+      "page_end": 12,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "currency_coinage",
+        "transaction_costs",
+        "monetary_system"
+      ],
+      "notes": "Explains coinage as baseline monetary instrument, denomination/supply constraints, and the practical/security costs of large payments and long-distance transfers."
+    },
+    {
+      "section_title": "Account mode",
+      "page_start": 19,
+      "page_end": 29,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "credit_accounts",
+        "banking_intermediaries",
+        "monetary_system"
+      ],
+      "notes": "Detailed discussion of debt claims, sale credit, third-party credit, and how credit increases velocity and enables monetized transactions when coin/bullion is scarce."
+    },
+    {
+      "section_title": "Conclusion",
+      "page_start": 29,
+      "page_end": 30,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "monetary_system",
+        "social_construction_of_money",
+        "3rd_century_breakdown"
+      ],
+      "notes": "Concise synthesis: money as social construct; multi-mode system (currency, bullion, credit/account) consolidated under Augustus and breaking down during the 3rd century CE."
+    }
+  ],
+  "near_miss_sections": [],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "ea0c9a4001c63b01",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 4,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "monetary_system",
+        "monetization",
+        "historiography"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Framing and literature positioning (functionalism vs alternative payment instruments) plus concrete examples of coin-supply/transport constraints; useful context but less directly evidentiary than the specific mode analyses.",
+      "section_text_excerpt": "Monetary modes in the Roman world Revue Belge de Numismatique et de Sigillographie 155 (2009) 91-121 Finley‟s assertion that “money was essentially coined metal and nothing else” still enjoys wide support from scholars1. The problems with this view have often been noted. Coins were only available in a limited supply and large payments could not be carried out with any convenience. Travelling with large sums in coins posed both practical and security problems. To quote just one often cited example, Cicero‟s purchase of his house on the Palatine Hill for 3.5 million sesterces would have required 3.4 tons of silver denarii2. Various solutions have been proposed : payments in kind or by means of bullion, bank money, transfer of debt notes or sale credit. Most of these combine a functional view of money („money is what money does‟) with the basic belief that coinage in the ancient world was the sole dominant monetary instrument, with others remaining „second-best‟ alternatives3. Starting from such premises, research has focused on identifying and assessing the possible alternative instruments to effectuate payments. Typical research questions are for instance the commonness (or not) of giro payments, the development (or underdevelopment) of financial instruments, the monetary nature (or not) of ancient debt notes, the commonness (or not) of payments in kind, and so forth. Despite 1 M. I. FINLEY, The ancient economy (updated with a new foreword by Ian Morris), Berkeley, 1999, p. 196. See recently D. M. SCHAPS, What was money in ancient Greece ?, in W. V. HARRIS (ed.), The monetary systems of the Greeks and Romans, Oxford, 2008, p. 43. For further (older) references see D. B. HOLLANDER, Money in the late Roman Republic (Columbia Studies in the Classical Tradition 29), 2 Cicero, Fam. V, 6, 2; cf. W.V. HARRIS, The nature of Roman money, in W. V. HARRIS (ed.), The monetary systems of the Greeks and Romans, Oxford, 2008, p. 175-176. 3 For a survey of recent research von S. VON REDEN, Money in the ancient economy : a survey of recent research in Klio 84, 2007, p. 141-174. For new views on the nature of ancient money see W. V. HARRIS, op. cit. [n. 2] ; D. B. HOLLANDER, op. …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52164568,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "534498f61792e794",
+        "section_title": "Monetization modes : a model",
+        "page_start": 4,
+        "page_end": 6,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "monetary_system",
+        "monetization",
+        "credit_accounts"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Core conceptual and economic framing of intersecting monetary modes (subsistence plus market dependence, integration of peasant households) and why a multi-mode model is needed; directly supports the chapter's economic mechanisms analysis.",
+      "section_text_excerpt": "Hopkins saw the Roman economy functioning on five intersecting planes : natural economy (moneyless), bronze, silver, gold and credit. In his view the monetary economy was a „thin veneer of sophistication spread over and tied to the subsistence economy‟. The mass of the population were peasants who „produced most of what they consumed and consumed most of what they produced‟14. Quantitatively Hopkins is probably right, even though his estimate of 80-90% may be too high. The „veneer- model‟ has nevertheless been criticised because it ignores the structural and technological dependence of subsistence production on markets. Peasants working on 10 Tacitus, Ger. 5,3-5; Strabo III,3,7; VII,5,5. 11 Chr. HOWGEGO, op. cit. [n. 5], p. 19-20. 12 Chr. HOWGEGO, op. cit. [n. 5], p. 16, 19-22, see here also for more references ; for the old idea see M. H. CRAWFORD, Money and exchange in the Roman World, in JRS 60, 1970, p. 40-48. De Ligt downplays Howgego‟s „optimistic‟ view (L. DE LIGT, Demand, supply, distribution : I) The Roman PEASANTRY between town and countryside. Rural monetization and peasant demand. II) Supply, distribution and coutryside, in MBAHG 9 & 10, 1990 & 1991, p. 111) and is followed in this by D.B. HOLLANDER, op. cit. [n. 1], p. 131. Both, however, emphasize the integration of peasant villages and households into the larger monetized economy. 13 Gaius, III, 124 ; Dig. L, 16, 178 ; 222. See also D.B. HOLLANDER, op. cit. [n. 1], p. 5-7. 14 K. HOPKINS, op. cit. [n. 5], p. 104 ; K. HOPKINS., Rome, taxes, rents and trade, in : W. SCHEIDEL & S. VON REDEN (edd.), The ancient economy, Edinburgh, 2002, p. 225-228. leased plots of land had to pay rents, tools had to be bought on markets, and so forth. Hopkins acknowledges this, but downplays its importance to the point of declaring it irrelevant. De Ligt‟s study of peasant markets, clearly showed how these were structurally integrated into the money economy15. More important for our purposes is that Hopkins‟s „planes‟ view of the Roman money economy, ignores essential aspects of how the Roman monetary system worked. We need a model that expresses the interlocking of institutionalised transaction modes. The model I pro…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 25,
+        "phase_f_doc_rank": 20,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 49.25,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52164568,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e1f7f6a85f629d0d",
+        "section_title": "Currency",
+        "page_start": 6,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "currency_coinage",
+        "transaction_costs",
+        "monetary_system"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Directly useful discussion of coinage as the Roman baseline monetary instrument plus constraints (small change supply) and the practical/security costs of large payments and transport.",
+      "section_text_excerpt": "The currency mode was the most „basic‟ mode to conduct monetized payments in the ancient world. It was based on a purely monetary instrument the acceptance of which was very wide-spread and was legally enforced : coins. The range of available denominations (in the Augustan system from quadrans to aureus) was sufficiently wide to cover any transaction necessary. Local coinages and imitations provided for regional variations. Despite some broad definitions of pecunia by Roman jurists, there can be little doubt that coinage was to a Roman mind the only form of „real‟ money. In a very direct way coins were pretium, not merx17.Until late Antiquity, when ghost currency denarii communes became the standard for expressing monetary transactions, coinage provided the standard for handling monetary transactions. The difficulties involved in using the currency mode were mostly of a material nature. In some parts of the empire, particularly in the first century AD, the supply of small(er) denominations was insufficient. This may be surmised from the massive presence in the western provinces of coins that were cut in half and the large numbers of imitations. To what extent these local strategies solved the problem is impossible to know. By and large, however, local emissions (in the east) and government controlled shipments (in the west) seem to have alleviated the problem. The main problem that may have posed itself has already been noted at the outset of this paper : the clumsiness of coins to make large payments and to transport over longer distances. I will return to the safety aspects later. The clumsiness was real, but should 17 Dig. XVIII, 1, 1, pr. See also Plinius, N.H. XXXIII, 46 : is, qui nunc victoriatus appellatur, lege Clodia percussus est; antea enim hic nummus ex Illyrico advectus mercis loco habebatur. not be exaggerated. The transport and security costs involved in making large payments, were marginal to the sums in question. A supplementary cost of 1,000 sesterces on a payment of 1 million sesterces (more than enough to hire a pack of mules and a well armed escort for several weeks) would have represented an additional costof only a mere 0.001%. After the …",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 27,
+        "phase_f_doc_rank": 88,
+        "phase_g_doc_rank": 2,
+        "phase_g_score_0_to_100": 29.15,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52164568,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "5acd4f848df37d54",
+        "section_title": "Commodity mode",
+        "page_start": 12,
+        "page_end": 19,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "commodity_payments",
+        "bullion_goods",
+        "monetary_system"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Useful background on commodity money/in-kind payments and how monetization can extend beyond coinage; less directly tied to late imperial political/military linkages than currency and credit/account mechanisms.",
+      "section_text_excerpt": "The instruments used in commodity mode payments are (obviously) commodities; objects for which there exists an independent demand not derived from their potential use as media of exchange, such as raw materials (iron, bullion, hides, ...), articles of consumption (grain, wine, ...), ostentatious display (jewellery, precious metal objects, ...), utensils and tools (spits, cauldrons, knives, spades, arrow heads ...), and so forth. Although commodities never originate as monetary instruments, they can acquire monetary features if their acceptability in handling monetized transactions46 becomes common and socially prescribed. When this happens „commodity money‟ comes into existence. Historically this may be observed in a wide variety of cultures and epoch, among which most notably the ancient Near East and Egypt, and the dark age Greek world. In some cases the monetary nature of commodity money ultimately prevailed upon its commodity nature. This is clearly visible for instance in Chinese „spade‟ and „knife‟ money from the Warring States Period (5th c. – 221 BC) which is shaped like knives and spades, but cannot be used as such47. Similarly, iron spits (obeloi) from dark age and archaic Greece, seem to have been produced from deliberately inferior iron48. For our purposes, it should be noted that in this view (my view) „monetization‟ first occurs in the emergence of new social relations when transactions become institutionally monetized. The monetization of commodities is a response to these changes in the structure of social relations. How routinely were commodities used to handle monetized transactions in the Roman world ? Before answering this question we should realise that „deep 46 That is transactions in which values and obligations are expressed in quantities of reference commodities or (in some cases) money stricto sensu, cf. infra for the use of bullion. 47 Cf. W. SCHEIDEL, The divergent evolution of coinage in eastern and western Eurasia, in W. V. HARRIS (ed.), The monetary systems of the Greeks and Romans, Oxford, 2008, p. 267-285. 48 Cf. D. M. SCHAPS, The invention of coinage and the monetization of Ancient Greece. Ann Arbor, 2004, p. 63-92 monetization…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 135,
+        "phase_f_doc_rank": 136,
+        "phase_g_doc_rank": 4,
+        "phase_g_score_0_to_100": 18.47,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52164568,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "af08146f23ed2f2c",
+        "section_title": "Account mode",
+        "page_start": 19,
+        "page_end": 29,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "credit_accounts",
+        "banking_intermediaries",
+        "monetization"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Core material for how late Roman monetized exchange functioned beyond cash: debt claims, sale and third-party credit, intermediaries, and the concept of increasing money velocity via credit/account transfers.",
+      "section_text_excerpt": "The account mode of handling monetized transactions is based on the transfer of debt claims to extinguish obligations expressed in monetary terms. The practice is much older than coinage and may lie at the origin of money itself. It is clearly attested already in the old Babylonian period in the 20th c. BC85. The instruments used in the account mode are registrations of debts. Underlying the account mode (but not synonymous with it), therefore, are credit arrangements. Credit is extremely important for a monetized economy to work smoothly. It allows the handling of monetized transactions in the absence of currency or bullion by introducing a time lag between the receipt and the final settlement. This can take on two forms : The supplying party may accept a delay of payment by the receiving party („sale credit‟) or the receiving party may turn to a third party (person or institution) to borrow the money. The supplying party is then paid immediately, but the receiving party will have to pay back the third party creditor at a later date. In both cases (sale credit and third party credit) an interest fee may be charged, but this is not always the case. Monetization and increased debt rates tend to go hand in hand. Thus, for instance, Hollander recently argued that the Catilarian crisis was caused in part by increased monetization of the Italian countryside 86. The reason for this is not just that new consumption patterns emerge (they do), but mainly that exchanges which had until then been conducted on the basis of gift-exchange or share-cropping, are restructured into monetized transaction. Social actors involved in these transactions must get the where- with-all to pay, in which they are not always successful. Debit/credit notes in themselves are not money, they attest procedures to conduct monetized transactions when money (coinage, bullion) is temporarily absent or insufficient. By doing so credit allows an optimal use of an existing stock of money (currency and/or commodity money). In terms of monetary theory it increases the „velocity of circulation of money‟, by reducing the amount of money lying idle87. Debt claims resemble money in the sense that they sign…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 26,
+        "phase_f_doc_rank": 99,
+        "phase_g_doc_rank": 3,
+        "phase_g_score_0_to_100": 26.83,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52164568,
+        "doc_abstention_reason": null
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "430ca2b7991cda64",
+        "section_title": "Conclusion",
+        "page_start": 29,
+        "page_end": 30,
+        "section_type": "conclusion"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "monetary_system",
+        "social_construction_of_money",
+        "3rd_century_breakdown"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "High-signal synthesis tying the multi-mode monetary system to institutional features (Augustan consolidation) and its eventual 3rd-century breakdown; useful for chapter-level conclusions.",
+      "section_text_excerpt": "I have argued here that in order to understand the Roman monetary system, we need to abandon the functionalist approach that has prevailed until now. In stead we need to think of money as a social construct that structures exchanges and relations between social actors. Money in the conventional sense of the word is merely an instrument used to handle monetised transactions. It is the embodiment of generalised rights. Its acceptance is socially prescribed and „taught‟ in socialisation. Instead of focusing on 129 Dig. XIV, 3, 19, 3. See K. VERBOVEN, op. cit. [n. 40], p. 227-228 and here for other examples. 130 See J. ANDREAU, op. cit. [n. 19], p. 643 ; J. ANDREAU, Modernité économique et statut des manieurs d‟argent, in Patrimoines, échanges et prêts d‟argent : L‟économie romaine, Rome, 1997, p. 3- 45 (= in MEFRA 97, 1985, p. 373-410). 131 K. VERBOVEN, op. cit. [n. 40], p. 229. „money‟, I have proposed an approach based on the concept of „monetary modes‟, i.e. sets of instruments (monetary, financial and other) and procedures to handle monetized transactions. By the late Republic the Roman monetary system had developed into a complex, extensive and flexible system integrating various modes of handling monetised transactions, ranging from currency, over bullion to debt and account management. The Imperial monetary system ultimately rested on a large stock of gold currency, which replaced the Republican stock of gold bullion. Metallic currency was the yard stick for monetized transactions. It was the only form of money stricto sensu, that enjoyed a general and socially prescribed acceptability. Nevertheless, this does not imply that monetized transactions were mostly cash transactions. Sale credit and private debt and account transfers, aided by financial intermediaries and deposit bankers, allowed to overcome the practical disadvantages of metallic currency. An essential aspect of this system was that it was fairly easy to change from one monetary (sub)mode to another. Transaction costs in the form of exchange premiums, interest charges and commission rates were relatively low, while the volume of exchanges was sufficiently large to allow specialised middlemen (ba…",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 141,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": true,
+        "doc_match_probability": 0.52164568,
+        "doc_abstention_reason": null
+      }
+    }
+  ]
+}

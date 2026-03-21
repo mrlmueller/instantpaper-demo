@@ -39,7 +39,7 @@ export function DeleteConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md [&>button]:hidden">
+      <DialogContent className="sm:max-w-md" showCloseButton={false}>
         <DialogHeader className="pb-4 border-b">
           <DialogTitle className="flex items-center gap-2 text-lg">
             <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center">

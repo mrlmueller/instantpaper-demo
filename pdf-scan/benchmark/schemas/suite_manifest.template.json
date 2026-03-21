@@ -1,0 +1,14 @@
+{
+  "suite_id": "small_gold_v1",
+  "suite_type": "small_gold",
+  "chapter_specs": [
+    "chapters/chapter_001.json"
+  ],
+  "documents": [
+    "manifests/doc_001.json"
+  ],
+  "judgments": [
+    "judgments/chapter_001__doc_001.json"
+  ],
+  "notes": "Replace with suite notes."
+}

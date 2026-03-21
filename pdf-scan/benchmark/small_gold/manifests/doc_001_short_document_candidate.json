@@ -1,0 +1,8 @@
+{
+  "doc_id": "doc_001_short_document_candidate",
+  "label": "Consumers' Decision-Making Process on Social Commerce Platforms",
+  "path": "documents/Consumers’ Decision-Making Process on Social Commerce Platforms Online Trust, Perceived Risk, and Purchase Intentions.pdf",
+  "role_in_suite": "short_document_candidate",
+  "expected_difficulty": "unknown_until_annotation",
+  "notes": "Short candidate document. Included to ensure the small-gold suite contains a very compact PDF with surface overlap to the chapter topic. This is not a relevance judgment."
+}

@@ -200,3 +200,198 @@ export type SummaryDoc = {
   costUsd: number;
   createdAt: Timestamp;
 };
+
+export type ProjectPdfDoc = {
+  filename: string;
+  storagePath: string;
+  size: number;
+  contentType: string;
+  color?: 'blue' | 'green' | 'teal' | 'lavender' | 'cream' | 'peach' | 'rose' | null;
+  pageCount?: number | null;
+  fileHash?: string | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
+export type QuellenFinderRunKind = 'sources_two_lane' | 'pdf_scan';
+export type QuellenFinderRunStatus = 'queued' | 'running' | 'success' | 'error' | 'cancelled';
+
+export type QuellenFinderProgress = {
+  stage: string;
+  message?: string;
+  current?: number;
+  total?: number;
+  stageStartedAt?: Timestamp | null;
+};
+
+export type QuellenFinderPipelineStage = {
+  status?: 'pending' | 'running' | 'completed' | 'error' | 'cancelled' | null;
+  current?: number | null;
+  total?: number | null;
+  startedAtMs?: number | null;
+  completedAtMs?: number | null;
+  elapsedMs?: number | null;
+};
+
+export type KapitelSnapshot = {
+  id: string;
+  nummer?: string;
+  title?: string;
+  ueberschrift?: string;
+  thema?: string;
+};
+
+export type QuellenFinderRunDoc = ArchiveFields & {
+  kind: QuellenFinderRunKind;
+  status: QuellenFinderRunStatus;
+  projektId: string;
+  kapitelIds: string[];
+  pdfIds?: string[];
+  kapitelSnapshots?: KapitelSnapshot[];
+  model?: string;
+  resultCount?: number;
+  stage2Count?: number;
+  stage3Count?: number;
+  pdfScanDocCount?: number;
+  pdfScanSectionCount?: number;
+  usefulPdfCount?: number;
+  finalScoreCol?: string;
+  hadPartialFailures?: boolean;
+  errorMessage?: string | null;
+  progress?: QuellenFinderProgress;
+  pipelineStages?: Record<string, QuellenFinderPipelineStage> | null;
+  cancelRequestedAt?: Timestamp | null;
+  cancelledAt?: Timestamp | null;
+  twoLaneSettings?: Record<string, unknown>;
+  summary?: Record<string, unknown>;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  startedAt?: Timestamp | null;
+  finishedAt?: Timestamp | null;
+};
+
+export type TwoLaneLane = 'match' | 'authority';
+export type TwoLanePool = 'with_abstract' | 'without_abstract';
+
+export type TwoLaneCoverageTag = {
+  facet_id: string;
+  score: number;
+  excerpt: string;
+};
+
+export type TwoLaneRerank = {
+  llm_score_0_100: number | null;
+  covered_facets: string[];
+  rationale: string | null;
+  insufficient_info: boolean | null;
+};
+
+export type TwoLaneScores = {
+  match: number | null;
+  authority: number | null;
+  match_lane: number | null;
+  authority_lane: number | null;
+  best?: number | null;
+  top_m?: number | null;
+  cov?: number | null;
+};
+
+export type TwoLaneResultDoc = {
+  lane: TwoLaneLane;
+  pool: TwoLanePool;
+  rank: number;
+  id: string;
+  doi?: string | null;
+  title: string | null;
+  authors: string[];
+  year: number | null;
+  venue: string | null;
+  url: string | null;
+  language?: string | null;
+  abstract: string | null;
+  citations?: number | null;
+  influential_citations?: number | null;
+  provider?: string | null;
+  provider_ids?: Record<string, unknown> | null;
+  external_ids?: Record<string, unknown> | null;
+  sources?: Record<string, unknown>[] | null;
+  scores: TwoLaneScores;
+  coverage_tags?: TwoLaneCoverageTag[] | null;
+  rerank?: TwoLaneRerank | null;
+  createdAt: Timestamp;
+};
+
+export type PdfScanPreviewSection = {
+  sectionId?: string | null;
+  title?: string | null;
+  pageStart?: number | null;
+  pageEnd?: number | null;
+  score0To100?: number | null;
+  scoreBand?: string | null;
+};
+
+export type PdfScanDocSummaryDoc = {
+  pdfId: string;
+  docId: string;
+  pdfFilename?: string | null;
+  pdfLabel: string;
+  docTitle: string;
+  pageCount?: number | null;
+  sectionCount?: number | null;
+  acceptedHeadingCount?: number | null;
+  strategy?: string | null;
+  doclingStatus?: string | null;
+  hasOutline?: boolean | null;
+  outlineCount?: number | null;
+  qualityFlags?: string[] | null;
+  hasUsefulInformation?: boolean | null;
+  docMatchProbability?: number | null;
+  topSectionScore?: number | null;
+  topSectionTitle?: string | null;
+  visibleSectionCount?: number | null;
+  previewSections?: PdfScanPreviewSection[] | null;
+  createdAt: Timestamp;
+};
+
+export type PdfScanResultDoc = {
+  pdfId: string;
+  docId: string;
+  pdfFilename?: string | null;
+  pdfLabel: string;
+  docTitle: string;
+  sectionId: string;
+  title: string | null;
+  sectionPath?: string[] | null;
+  sectionPathText?: string | null;
+  sectionType?: string | null;
+  pageStart?: number | null;
+  pageEnd?: number | null;
+  score0To100?: number | null;
+  scoreBand?: string | null;
+  supportStrength?: number | null;
+  supportingPassageCount?: number | null;
+  subpointCoverageIds?: string[] | null;
+  qualityFlags?: string[] | null;
+  globalRank?: number | null;
+  docRank?: number | null;
+  anchorPage?: number | null;
+  headingAnchor?: {
+    page?: number | null;
+    blockIndex?: number | null;
+    absBlockIndex?: number | null;
+    method?: string | null;
+    confidence?: number | null;
+  } | null;
+  span?: {
+    startAbsBlockIndex?: number | null;
+    endAbsBlockIndex?: number | null;
+    blockCount?: number | null;
+  } | null;
+  evidencePreview?: Array<{
+    pageStart?: number | null;
+    pageEnd?: number | null;
+    lanes?: string[] | null;
+    text?: string | null;
+  }> | null;
+  createdAt: Timestamp;
+};

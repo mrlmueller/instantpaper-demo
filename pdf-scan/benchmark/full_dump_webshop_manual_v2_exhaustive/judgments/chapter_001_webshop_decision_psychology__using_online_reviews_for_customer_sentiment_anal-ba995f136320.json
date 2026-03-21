@@ -1,0 +1,276 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "using_online_reviews_for_customer_sentiment_anal-ba995f136320",
+  "doc_title": "Using Online Reviews for Customer Sentiment Analysis",
+  "has_useful_information": true,
+  "document_label_0_to_3": 2,
+  "document_label_band": "useful_support",
+  "document_notes": "Useful applied source for unfamiliar/complex products, smartphone reviews, helpfulness filtering, and fake/ingenuine review concerns. Existing benchmark note: User-marked positive. Strong for unfamiliar/innovation products, helpfulness votes, fake or ingenuine reviews, and review-based uncertainty reduction.",
+  "manual_review_basis": [
+    "full extracted section inventory",
+    "run 386e04657c41c805f8c1b974 section inspection packets",
+    "benchmark target direct excerpt review where available"
+  ],
+  "gold_section_refs": [
+    {
+      "section_title": "INTRODUCTION",
+      "page_start": 1,
+      "page_end": 2,
+      "usefulness_0_to_10": 9,
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "consumer_electronics_or_product_examples",
+        "supporting_background_context"
+      ],
+      "notes": "Introduction links online reviews to decision-making for unfamiliar/complex products (innovation/smartphones), mentions fake reviews and how reviews shape perceived product uncertainty—directly useful for decision confidence and trust-risk议 Benchmark-reviewed note: This intro links online reviews to uncertain product evaluation and highlights greater importance for unfamiliar/complex products — highly pertinent to perceived risk and decision confidence for complex consumer electronics. It was likely suppressed because the pipeline ignored top sections due to a 'top_section_below_"
+    },
+    {
+      "section_title": "HOW ONLINE REVIEWS CAN BE USED FOR OPINION MINING",
+      "page_start": 2,
+      "page_end": 2,
+      "usefulness_0_to_10": 8,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "consumer_electronics_or_product_examples",
+        "review_quality_authenticity"
+      ],
+      "notes": "Describes concrete methods for mining review text, dataset of smartphone reviews, and filtering heuristics (helpfulness votes) — practical material for info presentation, quality signals and reducing perceived uncertainty in online purchase"
+    }
+  ],
+  "near_miss_sections": [
+    {
+      "section_title": "CONCLUSION AND RECOMMENDATIONS",
+      "page_start": 5,
+      "page_end": 6,
+      "usefulness_0_to_10": 5,
+      "notes": "Summarises practical recommendations on using lexicons/text‑mining and cautions about rating distributions — relevant for assessing review quality as an uncertainty signal, but mainly practitioner-focused and repetitive."
+    }
+  ],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "94be0de7acef1dd6",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison",
+        "consumer_electronics_or_product_examples"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Abstract highlights limits of ratings/volume and proposes text-based metrics—relevant for evaluating review quality, signals and how presentation of reviews affects perceived risk in online buying.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "fd0e00d983484c16",
+        "section_title": "INTRODUCTION",
+        "page_start": 1,
+        "page_end": 2,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 9,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "core_evidence",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "trust_risk_uncertainty",
+        "consumer_electronics_or_product_examples",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Introduction links online reviews to decision-making for unfamiliar/complex products (innovation/smartphones), mentions fake reviews and how reviews shape perceived product uncertainty—directly useful for decision confidence and trust-risk议 Benchmark-reviewed note: This intro links online reviews to uncertain product evaluation and highlights greater importance for unfamiliar/complex products — highly pertinent to perceived risk and decision confidence for complex consumer electronics. It was likely suppressed because the pipeline ignored top sections due to a 'top_section_below_",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "INTRODUCTION",
+        "benchmark_label_0_to_3": 3,
+        "benchmark_notes": "Score 9/10. Online reviews become more important for unfamiliar and harder-to-evaluate products.",
+        "miss_reason": "phase_g_threshold_or_doc_calibration",
+        "pipeline_reason": "phase_e_retrieval_miss"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7aa308c6a2624318",
+        "section_title": "HOW ONLINE REVIEWS CAN BE USED FOR OPINION MINING",
+        "page_start": 2,
+        "page_end": 2,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 8,
+      "label_0_to_3": 3,
+      "label_band": "core_or_strong_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "consumer_electronics_or_product_examples",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes concrete methods for mining review text, dataset of smartphone reviews, and filtering heuristics (helpfulness votes) — practical material for info presentation, quality signals and reducing perceived uncertainty in online purchase",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 181,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "118e3f2220e3cb94",
+        "section_title": "SENTIMENT ANALYSIS ON ONLINE REVIEWS",
+        "page_start": 2,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp1",
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "consumer_electronics_or_product_examples"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses lexicon-based sentiment analysis, limits of star ratings, and practical metrics derived from review text — useful for how information presentation and alternative signals can reduce uncertainty and influence decision confidence; a Benchmark-reviewed note: Pipeline shows the doc was retrieved late (high phase E/F ranks) but finally surfaced in phase G and then aborted due to top_section_below_threshold. The section text is relevant for reducing perceived uncertainty (sentiment metrics, limits of star averages, fake reviews, helpful‑vote filtering) and for practical info‑",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 143,
+        "phase_f_doc_rank": 148,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 12.04,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "SENTIMENT ANALYSIS ON ONLINE REVIEWS",
+        "benchmark_label_0_to_3": 2,
+        "benchmark_notes": "Score 8/10. Helpful-vote filtering and fake/ingenuine review concerns as quality-signaling mechanisms.",
+        "miss_reason": "phase_g_threshold_or_doc_calibration",
+        "pipeline_reason": "surfaced_to_phase_g"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "b14af2b483a597d5",
+        "section_title": "CONCLUSION AND RECOMMENDATIONS",
+        "page_start": 5,
+        "page_end": 6,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison",
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Summarises practical recommendations on using lexicons/text‑mining and cautions about rating distributions — relevant for assessing review quality as an uncertainty signal, but mainly practitioner-focused and repetitive.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "13c0caedcd317700",
+        "section_title": "REFERENCES",
+        "page_start": 6,
+        "page_end": 7,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Reference list only — can point to useful sources but contains no substantive content for the chapter itself.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    }
+  ]
+}

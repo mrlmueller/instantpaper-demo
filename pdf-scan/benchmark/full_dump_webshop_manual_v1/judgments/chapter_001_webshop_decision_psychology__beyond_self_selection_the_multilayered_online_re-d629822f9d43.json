@@ -1,0 +1,97 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "beyond_self_selection_the_multilayered_online_re-d629822f9d43",
+  "has_useful_information": true,
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_title": "2.3 Platform biases in online reviews",
+        "page_start": 5,
+        "page_end": 5
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "notes": "Score 8/10. Relevant for platform-level shaping of reviews and secondarily for uncertainty/trust."
+    },
+    {
+      "section_ref": {
+        "section_title": "1. Introduction",
+        "page_start": 2,
+        "page_end": 3
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp2"
+      ],
+      "notes": "Score 8/10. User judged the intro as relevant for the platform-bias framing of online reviews."
+    },
+    {
+      "section_ref": {
+        "section_title": "2.4 Online review biases in Chinese users",
+        "page_start": 5,
+        "page_end": 5
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp2"
+      ],
+      "notes": "Score 8/10. Relevant for user/platform bias mechanisms in review environments."
+    },
+    {
+      "section_ref": {
+        "section_title": "3.2.2 Central tendencies of online and offline ratings",
+        "page_start": 9,
+        "page_end": 9
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "notes": "Score 9/10. Strong for rating-bias effects and implications for trust and uncertainty in review systems."
+    },
+    {
+      "section_ref": {
+        "section_title": "4.2 Findings",
+        "page_start": 11,
+        "page_end": 11
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "notes": "Score 9/10. User-marked strong findings section."
+    },
+    {
+      "section_ref": {
+        "section_title": "5.1 Main findings",
+        "page_start": 12,
+        "page_end": 12
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "notes": "Score 9/10. Strong summary section for the paper's substantive conclusions."
+    },
+    {
+      "section_ref": {
+        "section_title": "5.3 Practical implications",
+        "page_start": 15,
+        "page_end": 15
+      },
+      "label_0_to_3": 3,
+      "supported_subpoints": [
+        "sp2",
+        "sp3"
+      ],
+      "notes": "Score 9/10. Strong practical tie-in to platform design and information environments."
+    }
+  ],
+  "document_notes": "User-marked positive. Strong for online review platform biases, cultural/platform effects, and practical implications for uncertainty and information shaping."
+}

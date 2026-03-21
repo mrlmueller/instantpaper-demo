@@ -1,0 +1,17 @@
+{
+  "source_run": "386e04657c41c805f8c1b974",
+  "source_suite": "full_dump_webshop_manual_v1",
+  "suite_id": "full_dump_webshop_manual_v2_exhaustive",
+  "document_count": 22,
+  "positive_doc_count": 21,
+  "negative_doc_count": 1,
+  "exhaustive_section_count": 574,
+  "gold_section_count": 166,
+  "structural_miss_count": 2,
+  "judgment_label_distribution": {
+    "0": 198,
+    "1": 101,
+    "2": 109,
+    "3": 166
+  }
+}

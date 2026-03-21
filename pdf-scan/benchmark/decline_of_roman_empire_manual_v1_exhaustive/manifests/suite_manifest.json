@@ -1,0 +1,32 @@
+{
+  "suite_id": "decline_of_roman_empire_manual_v1_exhaustive",
+  "suite_type": "manual_exhaustive_scaffold",
+  "chapter_specs": [
+    "chapters/chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi.json"
+  ],
+  "documents": [
+    "manifests/crises_and_the_roman_empire_proceedings_of_the_s-371b1bc6c960.json",
+    "manifests/currency_bullion_and_accounts-d06d74cdba02.json",
+    "manifests/droughts_and_conflicts_during_the_late_roman_per-d39d1ab76561.json",
+    "manifests/romans_barbarians_and_the_transformation_of_the_-9014cb21e3d3.json",
+    "manifests/the_climate_and_environment_of_byzantine_anatoli-573854c4b7bc.json",
+    "manifests/the_growth_and_decline_of_the_western_roman_empi-82aa7f6ad2c8.json",
+    "manifests/the_late_roman_field_army_in_northern-6602b86edf55.json",
+    "manifests/the_roman_dominate_from_the_perspective_of_demog-2cf58c8c2002.json",
+    "manifests/the_social_significance_of_monetization_in_the_e-4749a8c3934b.json",
+    "manifests/vice_versa_the_iron_trade_in_the_western_roman_e-74b228effa94.json"
+  ],
+  "judgments": [
+    "judgments/chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi__crises_and_the_roman_empire_proceedings_of_the_s-371b1bc6c960.json",
+    "judgments/chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi__currency_bullion_and_accounts-d06d74cdba02.json",
+    "judgments/chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi__droughts_and_conflicts_during_the_late_roman_per-d39d1ab76561.json",
+    "judgments/chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi__romans_barbarians_and_the_transformation_of_the_-9014cb21e3d3.json",
+    "judgments/chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi__the_climate_and_environment_of_byzantine_anatoli-573854c4b7bc.json",
+    "judgments/chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi__the_growth_and_decline_of_the_western_roman_empi-82aa7f6ad2c8.json",
+    "judgments/chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi__the_late_roman_field_army_in_northern-6602b86edf55.json",
+    "judgments/chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi__the_roman_dominate_from_the_perspective_of_demog-2cf58c8c2002.json",
+    "judgments/chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi__the_social_significance_of_monetization_in_the_e-4749a8c3934b.json",
+    "judgments/chapter_001_analyse_konomische_befunde_im_west_r_mischen_reich_und_ihre_bezi__vice_versa_the_iron_trade_in_the_western_roman_e-74b228effa94.json"
+  ],
+  "notes": "Initial scaffold for manual exhaustive labeling. Each judgment file contains every extracted section plus pipeline trace data. Fill document-level labels, section usefulness, gold sections, near misses, and structural misses after direct PDF review."
+}

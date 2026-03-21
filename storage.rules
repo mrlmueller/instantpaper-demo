@@ -13,6 +13,10 @@ service firebase.storage {
       return request.auth != null && request.auth.token.get('blocked', false) != true;
     }
 
+    function canUsePdfScan() {
+      return request.auth != null && request.auth.token.get('canUsePdfScan', false) == true;
+    }
+
     // User-scoped image access for Quellen
     match /users/{userId}/quellen/{quelleId}/{imageName} {
       // Allow authenticated users to read their own images
@@ -36,6 +40,22 @@ service firebase.storage {
     match /users/{userId}/exports/{exportId}/{fileName} {
       allow read: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked();
       allow delete: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked();
+    }
+
+    // Project-level PDF library uploads
+    match /users/{userId}/projects/{projectId}/pdfs/{pdfName} {
+      allow read: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked() && canUsePdfScan();
+
+      // NOTE: `request.resource.contentType` can be unreliable; enforce extension here and verify server-side.
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && hasFullAccess()
+                   && isNotBlocked()
+                   && canUsePdfScan()
+                   && request.resource.size < 60 * 1024 * 1024  // 60MB limit
+                   && pdfName.matches('.*\\.pdf$');
+
+      allow delete: if request.auth != null && request.auth.uid == userId && hasFullAccess() && isNotBlocked() && canUsePdfScan();
     }
   }
 }

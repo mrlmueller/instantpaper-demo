@@ -1,0 +1,24 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "title": "Entscheidungspsychologie im Kontext unsicherer Kaufentscheidungen im Webshop-Kontext",
+  "description": "Entscheidungspsychologie im Kontext unsicherer Kaufentscheidungen (Heuristiken, Biases, Dual-Process-Ansätze) und deren Rolle bei \"decision confidence\" bzw. Entscheidungssicherheit; (2) Choice Architecture / Digital Nudging im digitalen Kontext, also Gestaltungsprinzipien, Wirkmechanismen, Grenzen sowie Abgrenzung zu manipulativen Mustern (Transparenz, Nutzerautonomie, ethische Leitplanken); (3) wahrgenommenes Risiko/Unsicherheit im Online-Kauf (perceived risk, uncertainty, trust) speziell bei komplexen Produkten wie Consumer Electronics sowie Faktoren, die Unsicherheit reduzieren (Informationsdarstellung, Vergleichbarkeit, Erklärbarkeit, Qualitätssignale).",
+  "language_hints": [
+    "de",
+    "en"
+  ],
+  "subpoints": [
+    {
+      "id": "sp1",
+      "label": "Entscheidungspsychologie bei unsicheren Kaufentscheidungen: Heuristiken, Biases, Dual-Process-Ansätze und decision confidence"
+    },
+    {
+      "id": "sp2",
+      "label": "Choice Architecture / Digital Nudging im digitalen Kontext: Gestaltungsprinzipien, Wirkmechanismen, Grenzen und Abgrenzung zu manipulativen Mustern"
+    },
+    {
+      "id": "sp3",
+      "label": "Wahrgenommenes Risiko, Unsicherheit und Trust im Online-Kauf komplexer Produkte sowie Faktoren zur Reduktion von Unsicherheit"
+    }
+  ],
+  "notes": "Small-gold benchmark query for the section-ranking pipeline. Mixed DE/EN terminology is intentional because the target literature can be bilingual."
+}

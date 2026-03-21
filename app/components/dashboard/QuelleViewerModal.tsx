@@ -66,7 +66,7 @@ export function QuelleViewerModal({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col [&>button]:hidden">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col" showCloseButton={false}>
           <DialogHeader className="flex-shrink-0 pr-0">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0 pr-2">
@@ -155,7 +155,7 @@ export function QuelleViewerModal({
 
       {/* Image Zoom Dialog */}
       <Dialog open={viewingImage !== null} onOpenChange={handleCloseZoom}>
-        <DialogContent className="sm:max-w-5xl p-0 [&>button]:hidden bg-background border-0 shadow-2xl">
+        <DialogContent className="sm:max-w-5xl p-0 bg-background border-0 shadow-2xl" showCloseButton={false}>
           <DialogHeader className="sr-only">
             <DialogTitle>Bildansicht</DialogTitle>
           </DialogHeader>

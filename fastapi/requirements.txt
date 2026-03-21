@@ -3,6 +3,7 @@ uvicorn[standard]==0.38.0
 python-dotenv==1.0.1
 pydantic==2.12.5
 firebase-admin==6.6.0
+google-auth<3.0.0
 openai==2.9.0
 google-cloud-firestore==2.19.0
 httpx<0.28
@@ -10,3 +11,14 @@ cryptography==46.0.3
 google-cloud-storage==2.19.0
 python-docx-2023==0.2.17
 tiktoken==0.12.0
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.4.2
+requests==2.32.3
+python-multipart==0.0.22
+PyMuPDF==1.24.14
+pypdf==6.8.0
+beautifulsoup4==4.14.3
+docling==2.79.0
+transformers==4.57.6
+torch==2.10.0

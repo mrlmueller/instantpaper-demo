@@ -1,0 +1,20 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "evolving_techniques_in_sentiment_analysis_a_comp-68fe188f165a",
+  "has_useful_information": true,
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_title": "Corpus based approach",
+        "page_start": 17,
+        "page_end": 18
+      },
+      "label_0_to_3": 2,
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "notes": "Score 8/10. Best matching area in the paper. User specifically called out the statistical approach content within the corpus-based section as relevant to manipulated reviews and helpful voting."
+    }
+  ],
+  "document_notes": "User-marked weak-but-positive. Not a strong overall fit, but it contains one useful region around review manipulation, helpfulness, and information quality."
+}

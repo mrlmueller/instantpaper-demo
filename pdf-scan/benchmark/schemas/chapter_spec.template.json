@@ -1,0 +1,15 @@
+{
+  "chapter_id": "chapter_001",
+  "title": "Replace with the chapter title",
+  "description": "Replace with the full chapter description.",
+  "language_hints": [
+    "en"
+  ],
+  "subpoints": [
+    {
+      "id": "sp1",
+      "label": "Replace with a subpoint label"
+    }
+  ],
+  "notes": "Optional free-form notes."
+}

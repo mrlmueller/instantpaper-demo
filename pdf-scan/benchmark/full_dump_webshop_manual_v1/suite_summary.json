@@ -1,0 +1,186 @@
+{
+  "source_run": "386e04657c41c805f8c1b974",
+  "suite_id": "full_dump_webshop_manual_v1",
+  "document_count": 22,
+  "positive_doc_count": 21,
+  "negative_doc_count": 1,
+  "section_anchor_count": 33,
+  "rows": [
+    {
+      "source_pdf_name": "23 Ways to Nudge.pdf",
+      "doc_id": "23_ways_to_nudge-220b81fc44ca",
+      "doc_title": "23 Ways to Nudge",
+      "has_useful_information": true,
+      "section_anchor_count": 0,
+      "role_in_suite": "broad_positive_candidate"
+    },
+    {
+      "source_pdf_name": "A review of nudges.pdf",
+      "doc_id": "a_review_of_nudges-8a314b3ef5a0",
+      "doc_title": "A review of nudges: Definitions, justifications, effectiveness",
+      "has_useful_information": true,
+      "section_anchor_count": 0,
+      "role_in_suite": "broad_positive_candidate"
+    },
+    {
+      "source_pdf_name": "Beyond self-selection the multilayered online review biases at the intersection of users, platforms and culture.pdf",
+      "doc_id": "beyond_self_selection_the_multilayered_online_re-d629822f9d43",
+      "doc_title": "JHTI-02-2020-0012_proof 1..21",
+      "has_useful_information": true,
+      "section_anchor_count": 7,
+      "role_in_suite": "manual_positive_anchor"
+    },
+    {
+      "source_pdf_name": "Consumers’ Decision-Making Process on Social Commerce Platforms Online Trust, Perceived Risk, and Purchase Intentions.pdf",
+      "doc_id": "consumers_decision_making_process_on_social_comm-7a6fd346a557",
+      "doc_title": "Consumers' Decision-Making Process on Social Commerce Platforms: Online Trust, Perceived Risk, and Purchase Intentions",
+      "has_useful_information": true,
+      "section_anchor_count": 0,
+      "role_in_suite": "broad_positive_candidate"
+    },
+    {
+      "source_pdf_name": "Development of methodology for classification of user experience (UX) in online customer review.pdf",
+      "doc_id": "development_of_methodology_for_classification_of-566c7dba63b4",
+      "doc_title": "Development of methodology for classification of user experience (UX) in online customer review",
+      "has_useful_information": true,
+      "section_anchor_count": 3,
+      "role_in_suite": "manual_positive_anchor"
+    },
+    {
+      "source_pdf_name": "Digital Nudging Altering User Behavior in Digital Environments.pdf",
+      "doc_id": "digital_nudging_altering_user_behavior_in_digita-790f8fc6abef",
+      "doc_title": "Digital Nudging: Altering User Behavior in Digital Environments",
+      "has_useful_information": true,
+      "section_anchor_count": 0,
+      "role_in_suite": "broad_positive_candidate"
+    },
+    {
+      "source_pdf_name": "Digital Nudging.pdf",
+      "doc_id": "digital_nudging-c70013fb5862",
+      "doc_title": "Digital Nudging",
+      "has_useful_information": true,
+      "section_anchor_count": 0,
+      "role_in_suite": "broad_positive_candidate"
+    },
+    {
+      "source_pdf_name": "Digital nudging with recommender systems.pdf",
+      "doc_id": "digital_nudging_with_recommender_systems-b0730604bb9e",
+      "doc_title": "Digital nudging with recommender systems: Survey and future directions",
+      "has_useful_information": true,
+      "section_anchor_count": 0,
+      "role_in_suite": "broad_positive_candidate"
+    },
+    {
+      "source_pdf_name": "Evolving techniques in sentiment analysis a comprehensive review.pdf",
+      "doc_id": "evolving_techniques_in_sentiment_analysis_a_comp-68fe188f165a",
+      "doc_title": "Evolving techniques in sentiment analysis a comprehensive review",
+      "has_useful_information": true,
+      "section_anchor_count": 1,
+      "role_in_suite": "manual_positive_anchor"
+    },
+    {
+      "source_pdf_name": "Fake online reviews Literature review, synthesis, and directions for future research.pdf",
+      "doc_id": "fake_online_reviews_literature_review_synthesis_-e9bbe09bb4bf",
+      "doc_title": "Fake online reviews Literature review, synthesis, and directions for future research",
+      "has_useful_information": true,
+      "section_anchor_count": 5,
+      "role_in_suite": "manual_positive_anchor"
+    },
+    {
+      "source_pdf_name": "Improving  decisions about health wealth and happiness.pdf",
+      "doc_id": "improving_decisions_about_health_wealth_and_happ-7cd933237011",
+      "doc_title": "Improving decisions about health wealth and happiness",
+      "has_useful_information": true,
+      "section_anchor_count": 0,
+      "role_in_suite": "broad_positive_candidate"
+    },
+    {
+      "source_pdf_name": "Judgment Under Uncertainty Heuristics and Biases.pdf",
+      "doc_id": "judgment_under_uncertainty_heuristics_and_biases-5d61ba1a71f6",
+      "doc_title": "Judgment under Uncertainty: Heuristics and Biases",
+      "has_useful_information": true,
+      "section_anchor_count": 0,
+      "role_in_suite": "broad_positive_candidate"
+    },
+    {
+      "source_pdf_name": "Natural language processing for analyzing online customer reviews a survey, taxonomy, and open research challenges.pdf",
+      "doc_id": "natural_language_processing_for_analyzing_online-152aaa107e77",
+      "doc_title": "Natural Language Processing for Analyzing Online Customer Reviews: A Survey, Taxonomy, and Open Research Challenges",
+      "has_useful_information": true,
+      "section_anchor_count": 4,
+      "role_in_suite": "manual_positive_anchor"
+    },
+    {
+      "source_pdf_name": "Online Reviews and Information Overload The Role of Selective, Parsimonious, and Concordant Top Reviews.pdf",
+      "doc_id": "online_reviews_and_information_overload_the_role-42fa5aa25910",
+      "doc_title": "Online Reviews and Information Overload The Role of Selective, Parsimonious, and Concordant Top Reviews",
+      "has_useful_information": true,
+      "section_anchor_count": 0,
+      "role_in_suite": "broad_positive_candidate"
+    },
+    {
+      "source_pdf_name": "Opinion Mining and Sentiment Analysis.pdf",
+      "doc_id": "opinion_mining_and_sentiment_analysis-d837b2bce0b4",
+      "doc_title": "Opinion Mining and Sentiment Analysis",
+      "has_useful_information": true,
+      "section_anchor_count": 6,
+      "role_in_suite": "manual_positive_anchor"
+    },
+    {
+      "source_pdf_name": "Sentiment Analysis in E-Commerce Platforms A Review of Current Techniques and Future Directions.pdf",
+      "doc_id": "sentiment_analysis_in_e_commerce_platforms_a_rev-0c59fc64f2e7",
+      "doc_title": "Sentiment Analysis in E-Commerce Platforms: A Review of Current Techniques and Future Directions",
+      "has_useful_information": true,
+      "section_anchor_count": 1,
+      "role_in_suite": "manual_positive_anchor"
+    },
+    {
+      "source_pdf_name": "Sentiment Analysis of Product Reviews Using Machine Learning and Pre-Trained LLM.pdf",
+      "doc_id": "sentiment_analysis_of_product_reviews_using_mach-1897724bd012",
+      "doc_title": "Sentiment Analysis of Product Reviews Using Machine Learning and Pre-Trained LLM",
+      "has_useful_information": false,
+      "section_anchor_count": 0,
+      "role_in_suite": "manual_negative_anchor"
+    },
+    {
+      "source_pdf_name": "Shining a Light on Dark Patterns.pdf",
+      "doc_id": "shining_a_light_on_dark_patterns-8d4057c0e9fb",
+      "doc_title": "OP-JLAJ200006 43..109",
+      "has_useful_information": true,
+      "section_anchor_count": 0,
+      "role_in_suite": "broad_positive_candidate"
+    },
+    {
+      "source_pdf_name": "TO NUDGE, OR NOT TO NUDGE.pdf",
+      "doc_id": "to_nudge_or_not_to_nudge-16624afd839e",
+      "doc_title": "EuroHealth_v20n2",
+      "has_useful_information": true,
+      "section_anchor_count": 0,
+      "role_in_suite": "broad_positive_candidate"
+    },
+    {
+      "source_pdf_name": "The effectiveness of nudging.pdf",
+      "doc_id": "the_effectiveness_of_nudging-76e15b34d02c",
+      "doc_title": "The effectiveness of nudging: A meta-analysis of choice architecture interventions across behavioral domains",
+      "has_useful_information": true,
+      "section_anchor_count": 0,
+      "role_in_suite": "broad_positive_candidate"
+    },
+    {
+      "source_pdf_name": "Using Online Reviews for Customer Sentiment Analysis.pdf",
+      "doc_id": "using_online_reviews_for_customer_sentiment_anal-ba995f136320",
+      "doc_title": "Using Online Reviews for Customer Sentiment Analysis",
+      "has_useful_information": true,
+      "section_anchor_count": 2,
+      "role_in_suite": "manual_positive_anchor"
+    },
+    {
+      "source_pdf_name": "Whose online reviews to trust Understanding reviewer trustworthiness and its impact on business.pdf",
+      "doc_id": "whose_online_reviews_to_trust_understanding_revi-22354b2e8251",
+      "doc_title": "Whose online reviews to trust? Understanding reviewer trustworthiness and its impact on business",
+      "has_useful_information": true,
+      "section_anchor_count": 4,
+      "role_in_suite": "manual_positive_anchor"
+    }
+  ]
+}

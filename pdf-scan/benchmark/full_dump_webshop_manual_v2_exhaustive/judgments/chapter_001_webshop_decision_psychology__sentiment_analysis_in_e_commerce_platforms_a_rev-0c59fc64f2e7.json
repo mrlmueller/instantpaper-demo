@@ -1,0 +1,801 @@
+{
+  "chapter_id": "chapter_001_webshop_decision_psychology",
+  "doc_id": "sentiment_analysis_in_e_commerce_platforms_a_rev-0c59fc64f2e7",
+  "doc_title": "Sentiment Analysis in E-Commerce Platforms: A Review of Current Techniques and Future Directions",
+  "has_useful_information": true,
+  "document_label_0_to_3": 1,
+  "document_label_band": "weak_or_marginal",
+  "document_notes": "Modest but positive source. Mostly overview material, with some relevant passages on e-commerce review data, fake/spam review issues, and trust-related platform signals. Existing benchmark note: User-marked weak-but-positive. Useful mainly for platform quality, trust, reliability, and fake-review detection references.",
+  "manual_review_basis": [
+    "full extracted section inventory",
+    "run 386e04657c41c805f8c1b974 section inspection packets",
+    "benchmark target direct excerpt review where available"
+  ],
+  "gold_section_refs": [],
+  "near_miss_sections": [
+    {
+      "section_title": "Front Matter",
+      "page_start": 1,
+      "page_end": 1,
+      "usefulness_0_to_10": 5,
+      "notes": "Front matter of an e‑commerce SA review summarizes scope, datasets and technique proportions — useful background on how review data and sentiment signals are produced and their relevance to online purchase decisions."
+    },
+    {
+      "section_title": "A. EXISTING REVIEWS STUDIES ON SA IN E-COMMERCE",
+      "page_start": 2,
+      "page_end": 2,
+      "usefulness_0_to_10": 4,
+      "notes": "Survey of existing SA review studies and identified gaps — moderately useful to justify research needs and to link sentiment-analysis limitations to weaknesses in online decision support."
+    },
+    {
+      "section_title": "B. IMPORTANCE OF THIS REVIEW STUDY",
+      "page_start": 3,
+      "page_end": 3,
+      "usefulness_0_to_10": 4,
+      "notes": "Discusses commercial value of sentiment analysis and role of customer comments as information sources — somewhat useful for sections on information presentation, quality signals, and reducing perceived uncertainty, but not specific to heur/"
+    },
+    {
+      "section_title": "C. SEARCH RESULTS AND ANALYSIS",
+      "page_start": 4,
+      "page_end": 4,
+      "usefulness_0_to_10": 3,
+      "notes": "Describes search/selection counts and database breakdown—mostly meta-methods and low conceptual content for the chapter. Minor value as supporting background on evidence coverage and as context for review-based claims."
+    },
+    {
+      "section_title": "1) MORE UNIVERSAL MODELS IN NEW DOMAINS AND LANGUAGES",
+      "page_start": 11,
+      "page_end": 11,
+      "usefulness_0_to_10": 5,
+      "notes": "Discusses language/domain limitations and cross-cultural considerations for sentiment models—relevant as background when considering international shoppers, product-category differences (e.g., consumer electronics), and limits of automated信"
+    },
+    {
+      "section_title": "3) IMPLICIT ASPECT RECOGNITION AND EXTRACTION IN ASPECT-BASED SENTIMENT ANALYSIS",
+      "page_start": 12,
+      "page_end": 13,
+      "usefulness_0_to_10": 4,
+      "notes": "Discussion of implicit aspect extraction is relevant for understanding how reviewers convey product attributes indirectly. This matters for perceived information completeness/clarity and automated summarization that can reduce consumer_unc-"
+    },
+    {
+      "section_title": "4) SARCASM DETECTION",
+      "page_start": 13,
+      "page_end": 13,
+      "usefulness_0_to_10": 5,
+      "notes": "Sarcasm detection directly affects the reliability of user-generated reviews. Important for assessing review trustworthiness and how misinterpreted sentiment can increase perceived risk or reduce decision confidence."
+    },
+    {
+      "section_title": "5) FINE-GRAINED SENTIMENT ANALYSIS",
+      "page_start": 13,
+      "page_end": 13,
+      "usefulness_0_to_10": 4,
+      "notes": "Argument for finer-grained sentiment categories is relevant to conveying nuance in reviews (strong/weak valence) which can influence consumers' confidence and perceived uncertainty in complex product purchases."
+    },
+    {
+      "section_title": "V. CONCLUSION This paper concluded that recent papers applied SA in e- commerce",
+      "page_start": 13,
+      "page_end": 14,
+      "usefulness_0_to_10": 4,
+      "notes": "Conclusion summarizes applicability of SA in e-commerce, data sources (Amazon, Twitter) and future foci (aspect-level, implicit aspects, sarcasm, fine-grained). Useful background for how automated review analysis can feed choice-architectu"
+    }
+  ],
+  "structural_miss_sections": [],
+  "section_judgments": [
+    {
+      "section_ref": {
+        "section_id": "1eefb90a0f9c82ce",
+        "section_title": "Front Matter",
+        "page_start": 1,
+        "page_end": 1,
+        "section_type": "front_matter"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "synthetic",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Front matter of an e‑commerce SA review summarizes scope, datasets and technique proportions — useful background on how review data and sentiment signals are produced and their relevance to online purchase decisions.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ab8d14b0d22dd16c",
+        "section_title": "I. INTRODUCTION",
+        "page_start": 1,
+        "page_end": 2,
+        "section_type": "introduction"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Introduction lays out SA techniques, data sources, and roles in decision-making and brand management — useful grounding for sections on perceived risk, information quality, and how reviews influence decision confidence.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "694cb44ec6330602",
+        "section_title": "A. EXISTING REVIEWS STUDIES ON SA IN E-COMMERCE",
+        "page_start": 2,
+        "page_end": 2,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Survey of existing SA review studies and identified gaps — moderately useful to justify research needs and to link sentiment-analysis limitations to weaknesses in online decision support.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 220,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "3292b75233064f21",
+        "section_title": "II. RESEARCH BACKGROUND",
+        "page_start": 2,
+        "page_end": 3,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Technical review of sentiment-analysis literature; only tangentially relevant as background on extracting customer opinions (which can inform perceived-risk signals), but lacks decision-psychology, nudging, or product-specific insights.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c059c481d09c0b0b",
+        "section_title": "B. IMPORTANCE OF THIS REVIEW STUDY",
+        "page_start": 3,
+        "page_end": 3,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses commercial value of sentiment analysis and role of customer comments as information sources — somewhat useful for sections on information presentation, quality signals, and reducing perceived uncertainty, but not specific to heur/",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "52f9924aa7ab7c07",
+        "section_title": "III. REVIEW METHOD",
+        "page_start": 3,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes the review's aims and procedural stages; methodological meta-content with no substantive content on decision psychology, nudging, trust, or product examples.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "9e50d4a4ce7adf49",
+        "section_title": "A. RESEARCH QUESTION: WHAT ARE THE CURRENT TECHNIQUES USED FOR SENTIMENT ANALYSIS IN E-COMMERCE?",
+        "page_start": 4,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Lists research questions for the SA review — procedural and not directly relevant to the chapter topics.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "754e7a4f08699af6",
+        "section_title": "A. RESEARCH QUESTIONS RAISED IN THIS REVIEW STUDY",
+        "page_start": 4,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Duplicate/short restatement of research questions; no content useful for decision psychology, nudging, or perceived-risk discussions.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "37425ccc6da3b9fc",
+        "section_title": "B. SEARCH METHODOLOGY",
+        "page_start": 4,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 1,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes search methodology and keywords for the SA review. Procedural detail only; minimal relevance to chapter themes beyond indicating sources of user-generated content.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "10f389ff4fa162a4",
+        "section_title": "C. SEARCH RESULTS AND ANALYSIS",
+        "page_start": 4,
+        "page_end": 4,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 3,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "supporting_background_context",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Describes search/selection counts and database breakdown—mostly meta-methods and low conceptual content for the chapter. Minor value as supporting background on evidence coverage and as context for review-based claims.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "fa85df49af0cec31",
+        "section_title": "IV. RESULTS AND DISCUSSION A. RESEARCH QUESTION",
+        "page_start": 4,
+        "page_end": 5,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Explains what sentiment analysis is and distinctions between ML and deep learning—useful background for discussing how online opinions are extracted and classified, which relates to decision confidence and information quality in webshops.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "954b33bb1c9e17a1",
+        "section_title": "1) MACHINE LEARNING BASED TECHNIQUES Machine Learning techniques need human intervention to improve the model performance",
+        "page_start": 5,
+        "page_end": 9,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Details common machine learning algorithms, performance examples, and evaluation—relevant for understanding how review classification (and detection of unfair/fake reviews) can affect perceived risk and buyer confidence. Benchmark-reviewed note: The section is a methods-oriented review of ML algorithms for sentiment analysis — useful background for detecting fake/unhelpful reviews and improving signals, but less directly about decision psychology, nudging, or perceived risk. Pipeline likely filtered it out by section-thresholding or deprioritized methods-heavy",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      },
+      "benchmark_override": {
+        "expected_section_title": "1) MACHINE LEARNING BASED TECHNIQUES",
+        "benchmark_label_0_to_3": 2,
+        "benchmark_notes": "Score 7/10. Useful for trust, reliability, web design, and fake-review / spam-review discussion.",
+        "miss_reason": "phase_g_threshold_or_doc_calibration",
+        "pipeline_reason": "phase_e_retrieval_miss"
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "ae4128933ea6b615",
+        "section_title": "2) DEEP LEARNING BASED TECHNIQUES In addition to machine learning techniques, deep learning are extensively employed in SA",
+        "page_start": 9,
+        "page_end": 10,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 6,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "supporting_background_context",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Summarizes deep learning approaches (BERT, CNN, LSTM, hybrids) for sentiment analysis—important for assessing automated extraction of quality signals and explanationability issues impacting trust and uncertainty.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 205,
+        "phase_f_doc_rank": 165,
+        "phase_g_doc_rank": 1,
+        "phase_g_score_0_to_100": 8.93,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e29701e1f8a01b93",
+        "section_title": "B. RESEARCH QUESTION: WHAT ARE THE CURRENT E-COMMERCE PLATFORMS THAT APPLY SENTIMENT ANALYSIS?",
+        "page_start": 10,
+        "page_end": 11,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 7,
+      "label_0_to_3": 2,
+      "label_band": "useful_support",
+      "judgment_role": "strong_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Identifies primary data sources (Amazon, social media) and their role as abundant feedback repositories—very useful for discussing where perceived-risk-reducing signals come from, comparability of sources, and representativeness of review-s",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "5359b925d59b68fb",
+        "section_title": "1) MORE UNIVERSAL MODELS IN NEW DOMAINS AND LANGUAGES",
+        "page_start": 11,
+        "page_end": 11,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity",
+        "consumer_electronics_or_product_examples"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discusses language/domain limitations and cross-cultural considerations for sentiment models—relevant as background when considering international shoppers, product-category differences (e.g., consumer electronics), and limits of automated信",
+      "pipeline_trace": {
+        "phase_e_doc_rank": 210,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "5484a830e72c61ec",
+        "section_title": "C. RESEARCH QUESTION: WHAT ARE THE FUTURE DIRECTIONS FOR SENTIMENT ANALYSIS IN E-COMMERCE?",
+        "page_start": 11,
+        "page_end": 11,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "tiny_section",
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Single placeholder sentence about future directions; contains no substantive content usable for the chapter.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "e89a784d502aca70",
+        "section_title": "2) ASPECT-LEVEL SENTIMENT ANALYSIS TECHNIQUES",
+        "page_start": 11,
+        "page_end": 12,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 2,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "low_value",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "methods_or_low_value",
+        "information_presentation_filtering_comparison",
+        "review_quality_authenticity"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Technical overview of aspect-level SA models (neural/attention architectures). Interesting for implementation detail but low direct relevance to decision psychology, nudging, or risk; may inform automated extraction of product signals butr\n",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "5ec199181c427a8a",
+        "section_title": "3) IMPLICIT ASPECT RECOGNITION AND EXTRACTION IN ASPECT-BASED SENTIMENT ANALYSIS",
+        "page_start": 12,
+        "page_end": 13,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison",
+        "supporting_background_context"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Discussion of implicit aspect extraction is relevant for understanding how reviewers convey product attributes indirectly. This matters for perceived information completeness/clarity and automated summarization that can reduce consumer_unc-",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "c7f22ee4a1ac8ce9",
+        "section_title": "4) SARCASM DETECTION",
+        "page_start": 13,
+        "page_end": 13,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 5,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "optional_support",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "trust_risk_uncertainty",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Sarcasm detection directly affects the reliability of user-generated reviews. Important for assessing review trustworthiness and how misinterpreted sentiment can increase perceived risk or reduce decision confidence.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "27afc1935e8d9801",
+        "section_title": "5) FINE-GRAINED SENTIMENT ANALYSIS",
+        "page_start": 13,
+        "page_end": 13,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "review_quality_authenticity",
+        "information_presentation_filtering_comparison"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Argument for finer-grained sentiment categories is relevant to conveying nuance in reviews (strong/weak valence) which can influence consumers' confidence and perceived uncertainty in complex product purchases.",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "a8d95d701598c855",
+        "section_title": "V. CONCLUSION This paper concluded that recent papers applied SA in e- commerce",
+        "page_start": 13,
+        "page_end": 14,
+        "section_type": "body_other"
+      },
+      "usefulness_0_to_10": 4,
+      "label_0_to_3": 1,
+      "label_band": "weak_or_marginal",
+      "judgment_role": "weak_context",
+      "supported_subpoints": [
+        "sp3"
+      ],
+      "benchmark_categories": [
+        "supporting_background_context",
+        "review_quality_authenticity",
+        "consumer_electronics_or_product_examples"
+      ],
+      "retrieval_eligible": true,
+      "quality_flags": [
+        "metadata_stripped"
+      ],
+      "notes": "Conclusion summarizes applicability of SA in e-commerce, data sources (Amazon, Twitter) and future foci (aspect-level, implicit aspects, sarcasm, fine-grained). Useful background for how automated review analysis can feed choice-architectu",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    },
+    {
+      "section_ref": {
+        "section_id": "7b96939d67084ff6",
+        "section_title": "REFERENCES",
+        "page_start": 14,
+        "page_end": 16,
+        "section_type": "references"
+      },
+      "usefulness_0_to_10": 0,
+      "label_0_to_3": 0,
+      "label_band": "not_useful",
+      "judgment_role": "not_useful",
+      "supported_subpoints": [],
+      "benchmark_categories": [
+        "methods_or_low_value"
+      ],
+      "retrieval_eligible": false,
+      "quality_flags": [
+        "metadata_stripped",
+        "structural_wrapper",
+        "retrieval_suppressed"
+      ],
+      "notes": "Reference list only — bibliographic data without substantive content. Not directly useful for chapter writing beyond potentially tracing sources (low extraction value).",
+      "pipeline_trace": {
+        "phase_e_doc_rank": null,
+        "phase_f_doc_rank": null,
+        "phase_g_doc_rank": null,
+        "phase_g_score_0_to_100": null,
+        "doc_has_useful_information": false
+      }
+    }
+  ]
+}
