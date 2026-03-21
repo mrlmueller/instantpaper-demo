@@ -116,6 +116,8 @@ const PDF_SCAN_PIPELINE_STEPS: Array<{ key: string; label: string; title: string
 ];
 
 const PDF_LIBRARY_COLOR_PICKER_ORDER: Array<QuelleColor | null> = [null, "rose", "peach", "cream", "green", "teal", "blue", "lavender"];
+const PDF_SCAN_MAX_PDFS_PER_RUN = 30;
+const PDF_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
 function hasToDate(value: unknown): value is ToDateLike {
   if (typeof value !== "object" || value === null) return false;
@@ -855,24 +857,49 @@ export function PdfScanWorkspace({
     if (kapitelId) setSelectedKapitelId(kapitelId);
   };
 
-  const togglePdfSelection = (pdfId: string, nextChecked: boolean) => {
-    setSelectedPdfIds((prev) => {
-      const next = new Set(prev);
-      if (nextChecked) next.add(pdfId);
-      else next.delete(pdfId);
-      return Array.from(next);
+  const showPdfSelectionLimitToast = () => {
+    toast.error(`Maximal ${PDF_SCAN_MAX_PDFS_PER_RUN} PDFs pro Scan`, {
+      description: "Reduziere die Auswahl oder starte mehrere Läufe.",
     });
   };
 
-  const setVisibleSelection = (checked: boolean) => {
+  const togglePdfSelection = (pdfId: string, nextChecked: boolean) => {
+    let blockedByLimit = false;
     setSelectedPdfIds((prev) => {
       const next = new Set(prev);
-      for (const pdf of filteredPdfs) {
-        if (checked) next.add(pdf.id);
-        else next.delete(pdf.id);
+      if (nextChecked) {
+        if (!next.has(pdfId) && next.size >= PDF_SCAN_MAX_PDFS_PER_RUN) {
+          blockedByLimit = true;
+          return prev;
+        }
+        next.add(pdfId);
+      } else {
+        next.delete(pdfId);
       }
       return Array.from(next);
     });
+    if (blockedByLimit) showPdfSelectionLimitToast();
+  };
+
+  const setVisibleSelection = (checked: boolean) => {
+    let blockedByLimit = false;
+    setSelectedPdfIds((prev) => {
+      const next = new Set(prev);
+      for (const pdf of filteredPdfs) {
+        if (checked) {
+          if (next.has(pdf.id)) continue;
+          if (next.size >= PDF_SCAN_MAX_PDFS_PER_RUN) {
+            blockedByLimit = true;
+            continue;
+          }
+          next.add(pdf.id);
+        } else {
+          next.delete(pdf.id);
+        }
+      }
+      return Array.from(next);
+    });
+    if (blockedByLimit) showPdfSelectionLimitToast();
   };
 
   const uploadProjectPdfs = async (files: FileList | File[] | null) => {
@@ -891,21 +918,48 @@ export function PdfScanWorkspace({
           .slice(0, 3)
           .join(", "),
       });
+    }
+    const oversized = fileList.filter((file) => file.size > PDF_UPLOAD_MAX_BYTES);
+    if (oversized.length) {
+      toast.error("PDF zu groß", {
+        description: `${oversized
+          .map((file) => file.name)
+          .slice(0, 3)
+          .join(", ")} überschreitet das 100-MB-Limit.`,
+      });
+    }
+    const emptyFiles = fileList.filter((file) => file.size <= 0);
+    if (emptyFiles.length) {
+      toast.error("Leere PDF-Datei", {
+        description: emptyFiles
+          .map((file) => file.name)
+          .slice(0, 3)
+          .join(", "),
+      });
+    }
+
+    const acceptedFiles = fileList.filter(
+      (file) =>
+        String(file.name || "").toLowerCase().endsWith(".pdf") &&
+        file.size > 0 &&
+        file.size <= PDF_UPLOAD_MAX_BYTES
+    );
+    if (acceptedFiles.length === 0) {
       return;
     }
 
     setUploading(true);
-    setUploadProgress({ done: 0, total: fileList.length });
+    setUploadProgress({ done: 0, total: acceptedFiles.length });
 
     try {
       const knownPdfs = [...pdfs];
       const skippedDuplicates: string[] = [];
       let uploadedCount = 0;
 
-      for (let index = 0; index < fileList.length; index += 1) {
-        const file = fileList[index]!;
+      for (let index = 0; index < acceptedFiles.length; index += 1) {
+        const file = acceptedFiles[index]!;
         const originalName = String(file.name || "document.pdf").trim() || "document.pdf";
-        setUploadProgress({ done: index, total: fileList.length });
+        setUploadProgress({ done: index, total: acceptedFiles.length });
         const { fileHash, pageCount } = await readPdfUploadMetadata(file);
 
         const duplicate = knownPdfs.find((existing) => {
@@ -920,7 +974,7 @@ export function PdfScanWorkspace({
 
         if (duplicate) {
           skippedDuplicates.push(originalName);
-          setUploadProgress({ done: index + 1, total: fileList.length });
+          setUploadProgress({ done: index + 1, total: acceptedFiles.length });
           continue;
         }
 
@@ -933,7 +987,7 @@ export function PdfScanWorkspace({
         });
         if (duplicateCheck.duplicate) {
           skippedDuplicates.push(duplicateCheck.filename || originalName);
-          setUploadProgress({ done: index + 1, total: fileList.length });
+          setUploadProgress({ done: index + 1, total: acceptedFiles.length });
           continue;
         }
 
@@ -957,7 +1011,7 @@ export function PdfScanWorkspace({
               ? duplicatePayload.detail
               : null;
           skippedDuplicates.push(String(detailObj?.filename || originalName));
-          setUploadProgress({ done: index + 1, total: fileList.length });
+          setUploadProgress({ done: index + 1, total: acceptedFiles.length });
           continue;
         }
 
@@ -991,7 +1045,7 @@ export function PdfScanWorkspace({
         };
         knownPdfs.push({ id: String(uploadPayload.pdf_id || `pdf_${fileHash}`), ...nextDoc });
         uploadedCount += 1;
-        setUploadProgress({ done: index + 1, total: fileList.length });
+        setUploadProgress({ done: index + 1, total: acceptedFiles.length });
       }
 
       if (uploadedCount > 0) {
@@ -1135,6 +1189,10 @@ export function PdfScanWorkspace({
       toast.error("Bitte mindestens ein PDF auswählen.");
       return;
     }
+    if (selectedPdfIds.length > PDF_SCAN_MAX_PDFS_PER_RUN) {
+      showPdfSelectionLimitToast();
+      return;
+    }
     if (projectRunningRun) {
       setActiveRunId(projectRunningRun.id);
       toast.error("Es läuft bereits ein PDF-Scan", { description: `Run: ${projectRunningRun.id}` });
@@ -1154,6 +1212,10 @@ export function PdfScanWorkspace({
 
   const confirmStartPdfScan = async () => {
     if (!selectedKapitelId || selectedPdfIds.length === 0) return;
+    if (selectedPdfIds.length > PDF_SCAN_MAX_PDFS_PER_RUN) {
+      showPdfSelectionLimitToast();
+      return;
+    }
     setStartConfirmOpen(false);
     const token = Cookies.get("__session");
     if (!token) {
@@ -1302,6 +1364,9 @@ export function PdfScanWorkspace({
   if (previewMode) startDisabledReasons.push("Der Scan ist in dieser Vorschau deaktiviert.");
   if (!selectedKapitelId) startDisabledReasons.push("Wähle zuerst ein Kapitel aus.");
   if (selectedPdfIds.length === 0) startDisabledReasons.push("Wähle mindestens eine PDF aus der Bibliothek aus.");
+  if (selectedPdfIds.length > PDF_SCAN_MAX_PDFS_PER_RUN) {
+    startDisabledReasons.push(`Maximal ${PDF_SCAN_MAX_PDFS_PER_RUN} PDFs pro Scan sind erlaubt.`);
+  }
   if (uploading) startDisabledReasons.push("Warte, bis der aktuelle PDF-Upload abgeschlossen ist.");
   if (projectRunningRun) startDisabledReasons.push("In diesem Projekt läuft bereits ein anderer PDF-Scan.");
   const canStart = startDisabledReasons.length === 0;

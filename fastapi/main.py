@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
+from io import BytesIO
 from utils.config import config
 from middleware.auth import (
     verify_firebase_token,
@@ -60,6 +61,7 @@ from firebase_admin import auth, storage
 from google.api_core.exceptions import NotFound, FailedPrecondition
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 from google.cloud import firestore
+from pypdf import PdfReader
 from pydantic import BaseModel
 import logging
 import asyncio
@@ -558,6 +560,94 @@ async def get_me(decoded_token: dict = Depends(verify_firebase_token_decoded_any
 
 def _normalize_project_pdf_filename(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+PDF_UPLOAD_MAX_BYTES = 100 * 1024 * 1024
+PDF_UPLOAD_MAX_PAGES = 2000
+PDF_UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
+PDF_UPLOAD_TEXT_SAMPLE_PAGES = 12
+PDF_UPLOAD_MIN_EXTRACTABLE_TEXT_CHARS = 24
+PDF_SCAN_MAX_PDFS_PER_RUN = 30
+
+
+def _sample_pdf_page_indices(page_count: int, sample_count: int) -> list[int]:
+    if page_count <= 0:
+        return []
+    if page_count <= sample_count:
+        return list(range(page_count))
+    if sample_count <= 1:
+        return [0]
+    return sorted({round(i * (page_count - 1) / (sample_count - 1)) for i in range(sample_count)})
+
+
+def _looks_like_pdf_bytes(file_bytes: bytes) -> bool:
+    return b"%PDF-" in file_bytes[:1024]
+
+
+async def _read_upload_file_with_limit(
+    file: UploadFile,
+    *,
+    max_bytes: int = PDF_UPLOAD_MAX_BYTES,
+    chunk_bytes: int = PDF_UPLOAD_READ_CHUNK_BYTES,
+) -> bytes:
+    buf = bytearray()
+    while True:
+        chunk = await file.read(chunk_bytes)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > max_bytes:
+            raise HTTPException(status_code=400, detail="PDF exceeds the 100 MB limit.")
+    return bytes(buf)
+
+
+def _validate_uploaded_pdf_bytes(file_bytes: bytes) -> dict[str, int]:
+    size = len(file_bytes)
+    if size <= 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if size > PDF_UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="PDF exceeds the 100 MB limit.")
+    if not _looks_like_pdf_bytes(file_bytes):
+        raise HTTPException(status_code=400, detail="Uploaded file does not look like a valid PDF.")
+
+    try:
+        reader = PdfReader(BytesIO(file_bytes), strict=False)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Uploaded PDF is corrupted or unreadable.") from exc
+
+    if bool(getattr(reader, "is_encrypted", False)):
+        raise HTTPException(status_code=400, detail="Encrypted or password-protected PDFs are not supported.")
+
+    try:
+        page_count = len(reader.pages)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Uploaded PDF page structure could not be read.") from exc
+
+    if page_count <= 0:
+        raise HTTPException(status_code=400, detail="Uploaded PDF has no pages.")
+    if page_count > PDF_UPLOAD_MAX_PAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"PDF exceeds the {PDF_UPLOAD_MAX_PAGES}-page limit.",
+        )
+
+    extracted_chars = 0
+    for page_index in _sample_pdf_page_indices(page_count, PDF_UPLOAD_TEXT_SAMPLE_PAGES):
+        try:
+            text = reader.pages[page_index].extract_text() or ""
+        except Exception:
+            continue
+        extracted_chars += len(re.sub(r"\s+", "", text))
+        if extracted_chars >= PDF_UPLOAD_MIN_EXTRACTABLE_TEXT_CHARS:
+            break
+
+    if extracted_chars < PDF_UPLOAD_MIN_EXTRACTABLE_TEXT_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail="PDF contains no extractable text. Please upload a text-based PDF, not an image-only scan.",
+        )
+
+    return {"page_count": int(page_count)}
 
 
 def _as_float(value, default: float = 0.0) -> float:
@@ -5394,7 +5484,7 @@ async def quellen_finder_pdf_scan(
 
     projekt_id = str(request.projekt_id or "").strip()
     kapitel_id = str(request.kapitel_id or "").strip()
-    pdf_ids = [str(x or "").strip() for x in (request.pdf_ids or []) if str(x or "").strip()]
+    pdf_ids = list(dict.fromkeys(str(x or "").strip() for x in (request.pdf_ids or []) if str(x or "").strip()))
 
     if not projekt_id:
         raise HTTPException(status_code=400, detail="projekt_id is required")
@@ -5402,6 +5492,11 @@ async def quellen_finder_pdf_scan(
         raise HTTPException(status_code=400, detail="kapitel_id is required")
     if not pdf_ids:
         raise HTTPException(status_code=400, detail="pdf_ids is required")
+    if len(pdf_ids) > PDF_SCAN_MAX_PDFS_PER_RUN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {PDF_SCAN_MAX_PDFS_PER_RUN} PDFs can be scanned in one run.",
+        )
 
     await _require_pdf_scan_enabled(user_id)
 
@@ -5844,8 +5939,10 @@ async def quellen_finder_project_pdf_upload(
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
 
+    _ = page_count
+
     try:
-        file_bytes = await file.read()
+        file_bytes = await _read_upload_file_with_limit(file)
     finally:
         try:
             await file.close()
@@ -5853,15 +5950,10 @@ async def quellen_finder_project_pdf_upload(
             pass
 
     size = len(file_bytes)
-    if size <= 0:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-    if size >= 60 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="PDF exceeds the 60 MB limit.")
-    if not file_bytes.startswith(b"%PDF"):
-        raise HTTPException(status_code=400, detail="Uploaded file does not look like a valid PDF.")
+    validation = _validate_uploaded_pdf_bytes(file_bytes)
 
     file_hash = hashlib.sha256(file_bytes).hexdigest().lower()
-    page_count_value = int(page_count) if page_count is not None and int(page_count) > 0 else None
+    page_count_value = int(validation["page_count"])
     filename_norm = _normalize_project_pdf_filename(filename)
     pdf_collection = (
         firebase_service.db.collection("users")

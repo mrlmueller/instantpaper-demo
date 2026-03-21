@@ -299,7 +299,11 @@ class QuellenFinderPdfScanRequest(BaseModel):
 
     projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
     kapitel_id: str = Field(..., description="Kapitel ID to run PDF scan for")
-    pdf_ids: List[str] = Field(..., description="Project PDF document IDs to scan", min_length=1)
+    pdf_ids: List[str] = Field(
+        ...,
+        description="Project PDF document IDs to scan (max 30 per run)",
+        min_length=1,
+    )
 
     class Config:
         json_schema_extra = {
