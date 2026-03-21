@@ -1569,6 +1569,7 @@ async def admin_list_users(
 
         return {"users": users_out, "nextPageToken": page.next_page_token}
     except Exception:
+        logger.exception("Failed to list admin users")
         raise HTTPException(status_code=500, detail="Failed to list users.") from None
 
 

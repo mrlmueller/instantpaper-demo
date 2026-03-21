@@ -454,6 +454,39 @@ function ResultSkeleton() {
   );
 }
 
+function PdfScanAccessGate({
+  previewMode,
+  children,
+}: {
+  previewMode: boolean;
+  children: React.ReactNode;
+}) {
+  const { user, canUsePdfScan, loading } = useAuth();
+
+  if (!previewMode && !loading && user && !canUsePdfScan) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] px-6">
+        <div className="max-w-[560px] rounded-[18px] border border-slate-200 bg-white px-8 py-10 text-center shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+            <Ban className="h-5 w-5" />
+          </div>
+          <div className="mt-5 text-[24px] font-semibold tracking-[-0.02em] text-slate-950">Kein Zugriff auf PDF-Scan</div>
+          <p className="mt-3 text-sm leading-7 text-slate-500">
+            Dein Account ist angemeldet, aber PDF-Scan ist für diesen Nutzer noch nicht freigeschaltet.
+          </p>
+          <div className="mt-6">
+            <Button asChild className="bg-[#1680cd] shadow-none hover:bg-[#0f76c2]">
+              <Link href="/dashboard">Zurück zum Dashboard</Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
 export function PdfScanWorkspace({
   initialKapitels,
   projektId,
@@ -1469,7 +1502,8 @@ export function PdfScanWorkspace({
   const startButtonEnabled = canStart || canOpenLibraryFromStart;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#f7f8fb] text-slate-900">
+    <PdfScanAccessGate previewMode={previewMode}>
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#f7f8fb] text-slate-900">
       <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
         <div className="flex items-center gap-4">
           <Button asChild variant="ghost" size="icon">
@@ -2385,5 +2419,6 @@ export function PdfScanWorkspace({
 
         <PdfExtractDialog open={extractOpen} onOpenChange={setExtractOpen} request={extractRequest} />
       </div>
+    </PdfScanAccessGate>
   );
 }

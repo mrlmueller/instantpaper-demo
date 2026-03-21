@@ -468,7 +468,28 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     return <AdminCostsDashboard />;
   }
 
-  const { users } = await listAdminUsers({ maxResults: 1000 });
+  let users: AdminUserRow[] = [];
+  let usersError: string | null = null;
+  try {
+    const result = await listAdminUsers({ maxResults: 1000 });
+    users = result.users;
+  } catch (error) {
+    usersError = error instanceof Error && error.message.trim() ? error.message : 'Admin-Nutzerliste konnte nicht geladen werden.';
+  }
+
+  if (usersError) {
+    return (
+      <div className="space-y-4">
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-foreground">Admin</h2>
+          <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5 text-sm text-foreground">
+            <p className="font-medium">Die Nutzerliste konnte nicht geladen werden.</p>
+            <p className="mt-2 text-muted-foreground">{usersError}</p>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   const pending = users.filter((u) => u.blocked !== true && u.fullAccess !== true);
   const active = users.filter((u) => u.blocked !== true && u.fullAccess === true);

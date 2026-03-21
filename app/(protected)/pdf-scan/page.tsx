@@ -1,10 +1,9 @@
-import { notFound, redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { requireAuth } from '@/app/lib/auth/server-auth';
 import { getFirestoreForUser } from '@/app/lib/firebase/serverApp';
 import { getUserKapitels } from '@/app/actions/kapitels';
 import { getOrCreateDefaultProject, getProjects } from '@/app/actions/projects';
-import { getUserFeaturePermissions } from '@/app/actions/user';
 import { getActiveProjektCookieName } from '@/app/lib/ui/projektSelection';
 import { PdfScanWorkspace } from '@/app/components/pdf-scan/PdfScanWorkspace';
 
@@ -18,10 +17,6 @@ export default async function PdfScanPage() {
   }
 
   const db = await getFirestoreForUser();
-  const permissions = await getUserFeaturePermissions({ user, db });
-  if (!permissions.canUsePdfScan) {
-    notFound();
-  }
   const cookieStore = await cookies();
 
   const defaultProjekt = await getOrCreateDefaultProject({ user, db });
