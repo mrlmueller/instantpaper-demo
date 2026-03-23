@@ -789,8 +789,21 @@ async def _read_subscription_summary_for_user(user_id: str) -> dict | None:
             .document(user_id)
             .collection("subscriptions")
         )
-        subs = list(subs_ref.stream())
-    except Exception:
+        # Use async_stream for async operations, but fall back to sync if needed
+        try:
+            # Try to use async stream if available
+            subs = []
+            async for doc in subs_ref.stream():
+                subs.append(doc)
+        except (AttributeError, TypeError):
+            # Fall back to sync stream (wrapped in try-except)
+            try:
+                subs = list(subs_ref.stream())
+            except Exception as e:
+                logger.warning(f"Failed to stream subscriptions for {user_id}: {str(e)}")
+                subs = []
+    except Exception as e:
+        logger.warning(f"Failed to read subscriptions for {user_id}: {str(e)}")
         subs = []
 
     best = None
@@ -1460,13 +1473,21 @@ async def admin_list_users(
     """
     try:
         # Ensure Firebase Admin SDK is initialized.
-        _ = firebase_service.db
+        try:
+            _ = firebase_service.db
+        except Exception as e:
+            logger.error(f"Failed to initialize Firebase: {str(e)}")
+            raise HTTPException(status_code=500, detail="Firebase initialization failed.") from e
 
         max_results = max(1, min(int(max_results or 200), 1000))
         q = (query or "").strip().lower()
         filter_access = fullAccess if fullAccess is not None else approved
 
-        page = auth.list_users(page_token=page_token, max_results=max_results)
+        try:
+            page = auth.list_users(page_token=page_token, max_results=max_results)
+        except Exception as e:
+            logger.error(f"Failed to list Firebase Auth users: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to fetch users from Firebase Auth.") from e
         users_out = []
         for user in page.users:
             email = (user.email or "").strip()
@@ -1509,7 +1530,8 @@ async def admin_list_users(
                     or None
                 )
                 blocked = account_status == "blocked"
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to fetch user doc for {user.uid} in list: {str(e)}")
                 can_duplicate_system_prompts = False
                 can_view_usage_insights = False
                 can_use_quellen_finder = False
@@ -1527,13 +1549,15 @@ async def admin_list_users(
                 bal_snap = bal_ref.get()
                 balance_data = bal_snap.to_dict() if bal_snap.exists else {}
                 billing_balance = _compute_balance_summary(balance_data)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to fetch billing balance for {user.uid} in list: {str(e)}")
                 billing_balance = None
 
             if has_access or blocked:
                 try:
                     billing_subscription = await _read_subscription_summary_for_user(user.uid)
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"Failed to fetch subscription for {user.uid} in list: {str(e)}")
                     billing_subscription = None
 
             users_out.append(
@@ -1568,9 +1592,12 @@ async def admin_list_users(
             )
 
         return {"users": users_out, "nextPageToken": page.next_page_token}
-    except Exception:
-        logger.exception("Failed to list admin users")
-        raise HTTPException(status_code=500, detail="Failed to list users.") from None
+    except HTTPException:
+        # Re-raise HTTP exceptions (from auth failures, Firebase errors, etc.)
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to list admin users: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list users.") from e
 
 
 def _parse_month_key_or_400(value: str | None, field_name: str) -> str:
@@ -2900,8 +2927,9 @@ async def admin_get_user_detail(
         user = auth.get_user(uid_norm)
     except auth.UserNotFoundError as exc:
         raise HTTPException(status_code=404, detail="User not found.") from exc
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to load user.") from None
+    except Exception as e:
+        logger.error(f"Failed to fetch user {uid_norm} from Firebase Auth: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to load user.") from e
 
     claims = user.custom_claims or {}
     full_access = bool(
@@ -2940,7 +2968,8 @@ async def admin_get_user_detail(
         spend_rate_raw = _as_float((user_doc or {}).get("spendRate"), 0.0)
         if spend_rate_raw and spend_rate_raw > 0:
             spend_rate_override = float(spend_rate_raw)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to fetch Firestore user doc for {user.uid}: {str(e)}")
         can_duplicate_system_prompts = False
         can_view_usage_insights = False
         can_use_quellen_finder = False
@@ -2961,7 +2990,8 @@ async def admin_get_user_detail(
             if spend_rate_override is not None
             else float(default_rate)
         )
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to fetch credits config for user {user.uid}: {str(e)}")
         effective_spend_rate = (
             float(spend_rate_override) if spend_rate_override is not None else 6.0
         )
@@ -2975,14 +3005,16 @@ async def admin_get_user_detail(
         )
         bal_snap = bal_ref.get()
         balance_data = bal_snap.to_dict() if bal_snap.exists else {}
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to fetch billing balance for user {user.uid}: {str(e)}")
         balance_data = {}
 
     billing_balance = _compute_balance_summary(balance_data)
 
     try:
         billing_subscription = await _read_subscription_summary_for_user(user.uid)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to fetch subscription for user {user.uid}: {str(e)}")
         billing_subscription = None
 
     return {
