@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from google.api_core.exceptions import Forbidden, NotFound
 from google.cloud import storage
 
 logger = logging.getLogger(__name__)
@@ -93,14 +94,36 @@ class PdfScanArtifactStore:
         if self._bucket is not None:
             return self._bucket
         last_error: Exception | None = None
-        for candidate in _candidate_bucket_names(self._configured_bucket_name, self._project_id):
+        candidates = _candidate_bucket_names(self._configured_bucket_name, self._project_id)
+        for candidate in candidates:
             try:
                 bucket = self._client.bucket(candidate)
                 if bucket.exists():
                     self._bucket = bucket
                     return bucket
+            except Forbidden as exc:
+                # Object-level access is sufficient for upload/download, but `bucket.exists()`
+                # additionally requires bucket metadata permissions. Accept the configured
+                # bucket in that case and let the subsequent object operation be authoritative.
+                logger.warning(
+                    "Bucket metadata probe forbidden; using configured GCS bucket without existence check | bucket=%s",
+                    candidate,
+                )
+                self._bucket = self._client.bucket(candidate)
+                return self._bucket
+            except NotFound as exc:
+                last_error = exc
             except Exception as exc:
                 last_error = exc
+        if candidates:
+            fallback = candidates[0]
+            logger.warning(
+                "Falling back to configured GCS bucket without metadata confirmation | bucket=%s | last_error=%s",
+                fallback,
+                str(last_error or ""),
+            )
+            self._bucket = self._client.bucket(fallback)
+            return self._bucket
         detail = f" for {self._configured_bucket_name!r}" if self._configured_bucket_name else ""
         raise RuntimeError(f"Could not resolve a GCS artifact bucket{detail}.") from last_error
 
@@ -197,4 +220,3 @@ class PdfScanArtifactStore:
             uploaded.append(self.upload_file(local_path=file_path, path_or_uri=object_name, content_type=content_type))
         logger.info("Uploaded %s PDF scan artifact file(s) to gs://%s/%s", len(uploaded), self.bucket_name, str(prefix or "").strip("/"))
         return uploaded
-
