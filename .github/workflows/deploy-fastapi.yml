@@ -45,6 +45,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
+          version: ">= 557.0.0"
 
       - name: Configure Docker auth for Artifact Registry
         run: |
@@ -77,10 +78,10 @@ jobs:
           file: fastapi/Dockerfile.gpu
           push: true
           tags: ${{ env.GPU_IMAGE }}
+          provenance: false
+          sbom: false
           build-args: |
-            PRELOAD_PDF_SCAN_RERANKER=1
-          cache-from: type=gha,scope=pdf-scan-gpu
-          cache-to: type=gha,mode=max,scope=pdf-scan-gpu
+            PRELOAD_PDF_SCAN_RERANKER=0
 
       - name: Migrate Firebase runtime vars off secrets
         run: |
