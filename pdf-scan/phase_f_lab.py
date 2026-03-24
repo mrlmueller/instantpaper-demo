@@ -216,11 +216,13 @@ def load_cross_encoder_bundle(model_name: str):
         if torch is None:
             missing.append("torch")
         raise RuntimeError(f"Cross-encoder reranker dependencies missing: {', '.join(missing)}")
+    print(f"  [cross-encoder] Loading model {model_name}...")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSequenceClassification.from_pretrained(model_name)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
     model.eval()
+    print(f"  [cross-encoder] Model loaded on {device}")
     max_pos = getattr(getattr(model, "config", None), "max_position_embeddings", None)
     tokenizer_limit = getattr(tokenizer, "model_max_length", None)
     return {
@@ -250,9 +252,15 @@ def score_cross_encoder_pairs(pairs: List[Dict[str, str]], options: PhaseFOption
     batch_size = max(1, int(options.cross_encoder_batch_size))
     max_length = effective_max_length(bundle, int(options.cross_encoder_max_length))
     rows = []
+    total_batches = (len(pairs) + batch_size - 1) // batch_size
+    print(f"  [cross-encoder] {len(pairs)} pairs, batch_size={batch_size}, device={device}, {total_batches} batches")
     started = time.perf_counter()
     with torch.inference_mode():
         for start in range(0, len(pairs), batch_size):
+            batch_idx = start // batch_size + 1
+            if batch_idx == 1 or batch_idx % 10 == 0 or batch_idx == total_batches:
+                elapsed_so_far = time.perf_counter() - started
+                print(f"  [cross-encoder] batch {batch_idx}/{total_batches} ({elapsed_so_far:.1f}s)")
             batch = pairs[start : start + batch_size]
             enc = tokenizer(
                 [str(item.get("query") or "") for item in batch],
@@ -689,16 +697,9 @@ def maybe_existing(path: Path) -> bool:
 def resolve_phase_f_judge_concurrency(*, candidate_count: int) -> int:
     if int(candidate_count) <= 1:
         return 1
-    cpu_count = available_cpu_count()
-    if cpu_count <= 2:
-        auto = 1
-    elif cpu_count <= 4:
-        auto = 2
-    elif cpu_count <= 8:
-        auto = 3
-    else:
-        auto = 4
-    return max(1, min(int(candidate_count), auto))
+    # The judge is I/O-bound (HTTP API calls), not CPU-bound.
+    # Use 8 concurrent workers (OpenAI rate limits are the real cap).
+    return max(1, min(int(candidate_count), 8))
 
 
 def judge_payload_is_inconsistent(payload: Dict[str, Any]) -> bool:
@@ -1038,17 +1039,25 @@ def run_phase_f(run_ctx: Any, *, options: PhaseFOptions, stable_hash_fn=None, lo
             except Exception as e:
                 return index, row, None, e
 
+        total_judge = len(judge_candidates)
+        print(f"  [llm-judge] {total_judge} candidates, concurrency={resolved_judge_concurrency}")
         if resolved_judge_concurrency <= 1:
             for index, row in enumerate(judge_candidates):
                 judge_results.append(run_judge_candidate(index, row))
+                print(f"  [llm-judge] {index + 1}/{total_judge} done")
         else:
             with ThreadPoolExecutor(max_workers=resolved_judge_concurrency) as executor:
                 futures = [
                     executor.submit(run_judge_candidate, index, row)
                     for index, row in enumerate(judge_candidates)
                 ]
+                done_count = 0
                 for future in as_completed(futures):
                     judge_results.append(future.result())
+                    done_count += 1
+                    if done_count == 1 or done_count % 4 == 0 or done_count == total_judge:
+                        elapsed_j = time.perf_counter() - judge_started
+                        print(f"  [llm-judge] {done_count}/{total_judge} done ({elapsed_j:.1f}s)")
 
         for _, row, judge_payload, error in sorted(judge_results, key=lambda item: item[0]):
             if error is None and judge_payload is not None:

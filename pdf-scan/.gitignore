@@ -5,3 +5,11 @@ paper-dump/
 benchmark/*/review_packets/
 pdf-scan-test.extracted.py
 text-extract-test.extracted.py
+
+# ONNX model artifacts (large, regeneratable)
+tools/onnx_reranker/
+tools/onnx_reranker_optimum/
+tools/onnx_reranker_int8/
+
+# Benchmark result caches
+tools/*.json
