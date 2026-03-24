@@ -91,6 +91,31 @@ class Config:
     PDF_SCAN_CLOUD_RUN_JOB_REGION: str = os.getenv(
         "PDF_SCAN_CLOUD_RUN_JOB_REGION", "europe-west3"
     ).strip()
+    PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME: str = os.getenv(
+        "PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME",
+        os.getenv("PDF_SCAN_CLOUD_RUN_JOB_NAME", "instantpaper-pdf-scan"),
+    ).strip()
+    PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION: str = os.getenv(
+        "PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION",
+        os.getenv("PDF_SCAN_CLOUD_RUN_JOB_REGION", "europe-west3"),
+    ).strip()
+    PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME: str = os.getenv(
+        "PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME", "instantpaper-pdf-scan-gpu"
+    ).strip()
+    PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION: str = os.getenv(
+        "PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION", "europe-west1"
+    ).strip()
+    PDF_SCAN_ARTIFACT_BUCKET: str = os.getenv(
+        "PDF_SCAN_ARTIFACT_BUCKET",
+        os.getenv(
+            "FIREBASE_STORAGE_BUCKET",
+            f"{os.getenv('FIREBASE_PROJECT_ID', '').strip()}.firebasestorage.app",
+        ),
+    ).strip()
+    PDF_SCAN_ARTIFACT_PREFIX: str = os.getenv(
+        "PDF_SCAN_ARTIFACT_PREFIX",
+        "pdf-scan-runs",
+    ).strip().strip("/")
     PDF_SCAN_FORCE_CLOUD_RUN_FROM_LOCAL: bool = _read_bool_env(
         "PDF_SCAN_FORCE_CLOUD_RUN_FROM_LOCAL",
         False,

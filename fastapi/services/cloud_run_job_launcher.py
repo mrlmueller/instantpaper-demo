@@ -336,5 +336,51 @@ class CloudRunJobLauncher:
         ]
         return self._execute_job(job_name=job_name, region=region, args=args)
 
+    def execute_pdf_scan_cpu_job(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+    ) -> dict[str, str | None]:
+        region = self._job_region(
+            str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip(),
+            "PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION",
+        )
+        job_name = self._job_name(
+            str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip(),
+            "PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME",
+        )
+        args = [
+            "run_pdf_scan_cpu_job.py",
+            f"--user-id={str(user_id).strip()}",
+            f"--project-id={str(projekt_id).strip()}",
+            f"--run-id={str(run_id).strip()}",
+        ]
+        return self._execute_job(job_name=job_name, region=region, args=args)
+
+    def execute_pdf_scan_gpu_job(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+    ) -> dict[str, str | None]:
+        region = self._job_region(
+            str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip(),
+            "PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION",
+        )
+        job_name = self._job_name(
+            str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip(),
+            "PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME",
+        )
+        args = [
+            "run_pdf_scan_gpu_job.py",
+            f"--user-id={str(user_id).strip()}",
+            f"--project-id={str(projekt_id).strip()}",
+            f"--run-id={str(run_id).strip()}",
+        ]
+        return self._execute_job(job_name=job_name, region=region, args=args)
+
 
 cloud_run_job_launcher = CloudRunJobLauncher()

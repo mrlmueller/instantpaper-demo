@@ -39,6 +39,7 @@ PHASE_LABELS = {
     "phase_f": "Phase F",
     "phase_g": "Phase G",
 }
+PHASE_ORDER = ["phase_a", "phase_b", "phase_c", "phase_d", "phase_e", "phase_f", "phase_g"]
 
 
 def emit(event: str, **payload: Any) -> None:
@@ -81,6 +82,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-openai-planner", action="store_true")
     parser.add_argument("--no-openai-dense", action="store_true")
     parser.add_argument("--no-openai-judge", action="store_true")
+    parser.add_argument("--end-phase", choices=PHASE_ORDER, default="phase_g")
     parser.add_argument("--force-rebuild-phase-a", action="store_true")
     parser.add_argument("--force-rebuild-phase-b", action="store_true")
     parser.add_argument("--force-rebuild-phase-c", action="store_true")
@@ -89,6 +91,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--force-rebuild-phase-f", action="store_true")
     parser.add_argument("--force-rebuild-phase-g", action="store_true")
     return parser
+
+
+def _phase_enabled(phase_name: str, *, end_phase: str) -> bool:
+    try:
+        return PHASE_ORDER.index(str(phase_name)) <= PHASE_ORDER.index(str(end_phase))
+    except ValueError:
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -162,7 +171,9 @@ def main(argv: list[str] | None = None) -> int:
             document_count=len(pdf_manifest),
         )
 
-        if bool(args.force_rebuild_phase_b) or not (run_ctx.run_dir / "parser" / "phase_b_summary.json").exists():
+        if _phase_enabled("phase_b", end_phase=args.end_phase) and (
+            bool(args.force_rebuild_phase_b) or not (run_ctx.run_dir / "parser" / "phase_b_summary.json").exists()
+        ):
             emit("stage_start", stage="phase_b", label=PHASE_LABELS["phase_b"], total=phase_doc_totals["phase_b"])
             phase_b_logger = setup_run_logger(run_ctx)
             phase_b_options = PhaseBOptions(
@@ -210,7 +221,9 @@ def main(argv: list[str] | None = None) -> int:
                 total=phase_doc_totals["phase_b"],
             )
 
-        if bool(args.force_rebuild_phase_c) or not (run_ctx.run_dir / "normalized" / "phase_c_summary.json").exists():
+        if _phase_enabled("phase_c", end_phase=args.end_phase) and (
+            bool(args.force_rebuild_phase_c) or not (run_ctx.run_dir / "normalized" / "phase_c_summary.json").exists()
+        ):
             emit("stage_start", stage="phase_c", label=PHASE_LABELS["phase_c"], total=phase_doc_totals["phase_c"])
             phase_c_logger = setup_run_logger(run_ctx)
             phase_c_options = PhaseCOptions(
@@ -245,7 +258,9 @@ def main(argv: list[str] | None = None) -> int:
                 total=phase_doc_totals["phase_c"],
             )
 
-        if bool(args.force_rebuild_phase_d) or not (run_ctx.run_dir / "retrieval" / "phase_d_summary.json").exists():
+        if _phase_enabled("phase_d", end_phase=args.end_phase) and (
+            bool(args.force_rebuild_phase_d) or not (run_ctx.run_dir / "retrieval" / "phase_d_summary.json").exists()
+        ):
             emit("stage_start", stage="phase_d", label=PHASE_LABELS["phase_d"])
             phase_d_logger = setup_run_logger(run_ctx)
             phase_d_options = PhaseDOptions(
@@ -286,7 +301,9 @@ def main(argv: list[str] | None = None) -> int:
                 update_stage_metrics(run_ctx, "phase_d", phase_d_result["metrics_update"])
             emit("stage_complete", stage="phase_d", label=PHASE_LABELS["phase_d"])
 
-        if bool(args.force_rebuild_phase_e) or not (run_ctx.run_dir / "retrieval" / "phase_e_summary.json").exists():
+        if _phase_enabled("phase_e", end_phase=args.end_phase) and (
+            bool(args.force_rebuild_phase_e) or not (run_ctx.run_dir / "retrieval" / "phase_e_summary.json").exists()
+        ):
             emit("stage_start", stage="phase_e", label=PHASE_LABELS["phase_e"])
             phase_e_logger = setup_run_logger(run_ctx)
             phase_e_options = PhaseEOptions(
@@ -335,7 +352,11 @@ def main(argv: list[str] | None = None) -> int:
                 update_stage_metrics(run_ctx, "phase_e", phase_e_result["metrics_update"])
             emit("stage_complete", stage="phase_e", label=PHASE_LABELS["phase_e"])
 
-        if bool(args.force_rebuild_phase_f) or not (run_ctx.run_dir / "rerank" / "phase_f_summary.json").exists():
+        phase_g_result = None
+
+        if _phase_enabled("phase_f", end_phase=args.end_phase) and (
+            bool(args.force_rebuild_phase_f) or not (run_ctx.run_dir / "rerank" / "phase_f_summary.json").exists()
+        ):
             emit("stage_start", stage="phase_f", label=PHASE_LABELS["phase_f"])
             phase_f_logger = setup_run_logger(run_ctx)
             phase_f_options = PhaseFOptions(
@@ -375,41 +396,42 @@ def main(argv: list[str] | None = None) -> int:
                 update_stage_metrics(run_ctx, "phase_f", phase_f_result["metrics_update"])
             emit("stage_complete", stage="phase_f", label=PHASE_LABELS["phase_f"])
 
-        emit("stage_start", stage="phase_g", label=PHASE_LABELS["phase_g"])
-        phase_g_logger = setup_run_logger(run_ctx)
-        phase_g_options = PhaseGOptions(
-            force_rebuild=bool(args.force_rebuild_phase_g),
-            top_sections_per_doc=5,
-            top_global_sections=25,
-            section_useful_threshold=34,
-            section_partial_threshold=22,
-            doc_probability_threshold=0.16,
-            top_section_floor=18,
-            strong_top_section_floor=38,
-            min_doc_sections_for_useful=1,
-            min_doc_partial_sections=1,
-            min_top_supporting_passages=1,
-            top_k_for_doc_features=5,
-            support_preview_count=2,
-            support_preview_max_chars=260,
-            generic_only_penalty=0.07,
-            generic_high_penalty=0.02,
-            penalized_type_penalty=0.08,
-            calibration_mode="auto",
-            broad_support_min_sections=1,
-            broad_support_top1_floor=18,
-            broad_support_probability_bonus=0.18,
-        )
-        with stage_timer(run_ctx, "phase_g"):
-            phase_g_result = run_phase_g(
-                run_ctx,
-                options=phase_g_options,
-                stable_hash_fn=stable_hash,
-                log_event_fn=bridged_log_event,
-                run_logger=phase_g_logger,
+        if _phase_enabled("phase_g", end_phase=args.end_phase):
+            emit("stage_start", stage="phase_g", label=PHASE_LABELS["phase_g"])
+            phase_g_logger = setup_run_logger(run_ctx)
+            phase_g_options = PhaseGOptions(
+                force_rebuild=bool(args.force_rebuild_phase_g),
+                top_sections_per_doc=5,
+                top_global_sections=25,
+                section_useful_threshold=34,
+                section_partial_threshold=22,
+                doc_probability_threshold=0.16,
+                top_section_floor=18,
+                strong_top_section_floor=38,
+                min_doc_sections_for_useful=1,
+                min_doc_partial_sections=1,
+                min_top_supporting_passages=1,
+                top_k_for_doc_features=5,
+                support_preview_count=2,
+                support_preview_max_chars=260,
+                generic_only_penalty=0.07,
+                generic_high_penalty=0.02,
+                penalized_type_penalty=0.08,
+                calibration_mode="auto",
+                broad_support_min_sections=1,
+                broad_support_top1_floor=18,
+                broad_support_probability_bonus=0.18,
             )
-            update_stage_metrics(run_ctx, "phase_g", phase_g_result["metrics_update"])
-        emit("stage_complete", stage="phase_g", label=PHASE_LABELS["phase_g"])
+            with stage_timer(run_ctx, "phase_g"):
+                phase_g_result = run_phase_g(
+                    run_ctx,
+                    options=phase_g_options,
+                    stable_hash_fn=stable_hash,
+                    log_event_fn=bridged_log_event,
+                    run_logger=phase_g_logger,
+                )
+                update_stage_metrics(run_ctx, "phase_g", phase_g_result["metrics_update"])
+            emit("stage_complete", stage="phase_g", label=PHASE_LABELS["phase_g"])
 
         payload = {
             "pipeline_run_id": str(run_ctx.run_id),
@@ -418,9 +440,22 @@ def main(argv: list[str] | None = None) -> int:
             "pdf_dir": str(pdf_dir),
             "chapter_title": chapter_title,
             "chapter_description": chapter_description,
-            "useful_pdfs": len([row for row in phase_g_result["doc_feature_rows"] if row.get("has_useful_information")]),
-            "document_count": len(phase_g_result["doc_feature_rows"]),
-            "output_json": str(run_ctx.artifacts.final_dir / "output.json"),
+            "last_completed_phase": str(args.end_phase),
+            "useful_pdfs": (
+                len([row for row in phase_g_result["doc_feature_rows"] if row.get("has_useful_information")])
+                if isinstance(phase_g_result, dict)
+                else None
+            ),
+            "document_count": (
+                len(phase_g_result["doc_feature_rows"])
+                if isinstance(phase_g_result, dict)
+                else len(pdf_manifest)
+            ),
+            "output_json": (
+                str(run_ctx.artifacts.final_dir / "output.json")
+                if _phase_enabled("phase_g", end_phase=args.end_phase)
+                else None
+            ),
         }
         emit("run_complete", **payload)
         print(json.dumps(payload, ensure_ascii=False, indent=2), flush=True)

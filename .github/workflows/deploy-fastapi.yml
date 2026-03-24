@@ -14,9 +14,17 @@ env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
   GCP_REGION: europe-west3
+  PDF_SCAN_GPU_REGION: europe-west1
   CLOUD_RUN_SERVICE: instantpaper-api
   CLOUD_RUN_JOB: instantpaper-two-lane-sources
   PDF_SCAN_CLOUD_RUN_JOB: instantpaper-pdf-scan
+  PDF_SCAN_CPU_CLOUD_RUN_JOB: instantpaper-pdf-scan-cpu
+  PDF_SCAN_GPU_CLOUD_RUN_JOB: instantpaper-pdf-scan-gpu
+  PDF_SCAN_ARTIFACT_PREFIX: pdf-scan-runs
+  PDF_SCAN_CPU_JOB_CPU: "4"
+  PDF_SCAN_CPU_JOB_MEMORY: 16Gi
+  PDF_SCAN_GPU_JOB_CPU: "4"
+  PDF_SCAN_GPU_JOB_MEMORY: 16Gi
   IMAGE_REPOSITORY: cloud-run-source-deploy
 
 jobs:
@@ -45,7 +53,9 @@ jobs:
       - name: Set image tag
         run: |
           IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${IMAGE_REPOSITORY}/${CLOUD_RUN_SERVICE}:${GITHUB_SHA}"
+          GPU_IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${IMAGE_REPOSITORY}/${PDF_SCAN_GPU_CLOUD_RUN_JOB}:${GITHUB_SHA}"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          echo "GPU_IMAGE=$GPU_IMAGE" >> $GITHUB_ENV
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -60,6 +70,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build and push GPU Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: fastapi/Dockerfile.gpu
+          push: true
+          tags: ${{ env.GPU_IMAGE }}
+          build-args: |
+            PRELOAD_PDF_SCAN_RERANKER=1
+          cache-from: type=gha,scope=pdf-scan-gpu
+          cache-to: type=gha,mode=max,scope=pdf-scan-gpu
+
       - name: Migrate Firebase runtime vars off secrets
         run: |
           gcloud run services update "$CLOUD_RUN_SERVICE" \
@@ -73,7 +95,7 @@ jobs:
             --image "$IMAGE" \
             --allow-unauthenticated \
             --service-account "instantpaper-api-runtime@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
-            --update-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,TWO_LANE_CLOUD_RUN_JOB_NAME=${CLOUD_RUN_JOB},TWO_LANE_CLOUD_RUN_JOB_REGION=${GCP_REGION},TWO_LANE_SOURCES_EXECUTION_BACKEND=cloud_run_job,PDF_SCAN_CLOUD_RUN_JOB_NAME=${PDF_SCAN_CLOUD_RUN_JOB},PDF_SCAN_CLOUD_RUN_JOB_REGION=${GCP_REGION},PDF_SCAN_EXECUTION_BACKEND=cloud_run_job" \
+            --update-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,TWO_LANE_CLOUD_RUN_JOB_NAME=${CLOUD_RUN_JOB},TWO_LANE_CLOUD_RUN_JOB_REGION=${GCP_REGION},TWO_LANE_SOURCES_EXECUTION_BACKEND=cloud_run_job,PDF_SCAN_CLOUD_RUN_JOB_NAME=${PDF_SCAN_CLOUD_RUN_JOB},PDF_SCAN_CLOUD_RUN_JOB_REGION=${GCP_REGION},PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME=${PDF_SCAN_CPU_CLOUD_RUN_JOB},PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION=${GCP_REGION},PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME=${PDF_SCAN_GPU_CLOUD_RUN_JOB},PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION=${PDF_SCAN_GPU_REGION},PDF_SCAN_ARTIFACT_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,PDF_SCAN_ARTIFACT_PREFIX=${PDF_SCAN_ARTIFACT_PREFIX},PDF_SCAN_EXECUTION_BACKEND=cloud_run_split_jobs" \
             --update-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest,USER_KEY_ENCRYPTION_KEY=USER_KEY_ENCRYPTION_KEY:latest,ADMIN_UIDS=ADMIN_UIDS:latest"
 
       - name: Deploy two-lane Cloud Run Job
@@ -120,4 +142,53 @@ jobs:
             gcloud run jobs update "$PDF_SCAN_CLOUD_RUN_JOB" "${COMMON_FLAGS[@]}"
           else
             gcloud run jobs create "$PDF_SCAN_CLOUD_RUN_JOB" "${COMMON_FLAGS[@]}"
+          fi
+
+      - name: Deploy PDF scan CPU Cloud Run Job
+        run: |
+          COMMON_FLAGS=(
+            --region "$GCP_REGION"
+            --image "$IMAGE"
+            --service-account "instantpaper-two-lane-job@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
+            --cpu "${PDF_SCAN_CPU_JOB_CPU}"
+            --memory "${PDF_SCAN_CPU_JOB_MEMORY}"
+            --tasks 1
+            --parallelism 1
+            --max-retries 0
+            --task-timeout 4h
+            --command python
+            --set-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,PDF_SCAN_ARTIFACT_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,PDF_SCAN_ARTIFACT_PREFIX=${PDF_SCAN_ARTIFACT_PREFIX},PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME=${PDF_SCAN_GPU_CLOUD_RUN_JOB},PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION=${PDF_SCAN_GPU_REGION}"
+            --set-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest"
+          )
+
+          if gcloud run jobs describe "$PDF_SCAN_CPU_CLOUD_RUN_JOB" --region "$GCP_REGION" >/dev/null 2>&1; then
+            gcloud run jobs update "$PDF_SCAN_CPU_CLOUD_RUN_JOB" "${COMMON_FLAGS[@]}"
+          else
+            gcloud run jobs create "$PDF_SCAN_CPU_CLOUD_RUN_JOB" "${COMMON_FLAGS[@]}"
+          fi
+
+      - name: Deploy PDF scan GPU Cloud Run Job
+        run: |
+          COMMON_FLAGS=(
+            --region "$PDF_SCAN_GPU_REGION"
+            --image "$GPU_IMAGE"
+            --service-account "instantpaper-two-lane-job@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
+            --cpu "${PDF_SCAN_GPU_JOB_CPU}"
+            --memory "${PDF_SCAN_GPU_JOB_MEMORY}"
+            --gpu 1
+            --gpu-type nvidia-l4
+            --no-gpu-zonal-redundancy
+            --tasks 1
+            --parallelism 1
+            --max-retries 0
+            --task-timeout 1h
+            --command python
+            --set-env-vars "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID},FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FIREBASE_STORAGE_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,PDF_SCAN_ARTIFACT_BUCKET=${FIREBASE_PROJECT_ID}.firebasestorage.app,PDF_SCAN_ARTIFACT_PREFIX=${PDF_SCAN_ARTIFACT_PREFIX}"
+            --set-secrets "OPENAI_API_KEY=OPENAI_API_KEY:latest"
+          )
+
+          if gcloud run jobs describe "$PDF_SCAN_GPU_CLOUD_RUN_JOB" --region "$PDF_SCAN_GPU_REGION" >/dev/null 2>&1; then
+            gcloud run jobs update "$PDF_SCAN_GPU_CLOUD_RUN_JOB" "${COMMON_FLAGS[@]}"
+          else
+            gcloud run jobs create "$PDF_SCAN_GPU_CLOUD_RUN_JOB" "${COMMON_FLAGS[@]}"
           fi
