@@ -1245,6 +1245,15 @@ def build_index_html(index_payload: Dict[str, Any]) -> str:
 
 
 def update_run_pdf_reports(run_ctx: Any, *, phase_name: str = "") -> Dict[str, Any]:
+    if bool(getattr(getattr(run_ctx, "artifacts", None), "active_chapter_id", "")):
+        return {
+            "generated_at_utc": utc_now_iso(),
+            "run_id": str(getattr(run_ctx, "run_id", "")),
+            "status": "skipped",
+            "reason": "chapter_child_context_not_supported_yet",
+            "phase_name": phase_name or "",
+        }
+
     state = load_global_state(run_ctx)
     run_dir = state["run_dir"]
     report_root = ensure_dir(run_dir / PDF_REPORTS_DIRNAME)

@@ -83,10 +83,44 @@ class PhaseEOptions:
     doc_rescue_sections_per_doc: int = 4
     doc_rescue_score_scale: float = 0.08
     use_shared_dense_cache: bool = True
+
     def normalized(self) -> "PhaseEOptions":
         return PhaseEOptions(
-            force_rebuild=bool(self.force_rebuild), candidate_limit_per_lane=max(10,int(self.candidate_limit_per_lane)), fused_candidate_limit=max(20,int(self.fused_candidate_limit)), per_view_limit_multiplier=max(1,int(self.per_view_limit_multiplier)), rrf_k=max(1,int(self.rrf_k)), lexical_k1=max(0.1,float(self.lexical_k1)), lexical_b=min(1.0,max(0.0,float(self.lexical_b))), use_openai_dense=bool(self.use_openai_dense), allow_lexical_only_fallback=bool(self.allow_lexical_only_fallback), openai_embedding_model=str(self.openai_embedding_model or "text-embedding-3-small").strip() or "text-embedding-3-small", openai_timeout_sec=max(30,int(self.openai_timeout_sec)), dense_batch_size=max(1,int(self.dense_batch_size)), dense_section_max_chars=max(400,int(self.dense_section_max_chars)), dense_passage_max_chars=max(300,int(self.dense_passage_max_chars)), dense_query_max_chars=max(120,int(self.dense_query_max_chars)), dense_dimensions=None if self.dense_dimensions in {None,0,"",False} else int(self.dense_dimensions), dense_min_similarity=float(self.dense_min_similarity), top_candidate_preview_count=max(5,int(self.top_candidate_preview_count)), selection_strategy=(str(self.selection_strategy or "xquad").strip().lower() or "xquad"), use_supported_subpoint_selection=bool(self.use_supported_subpoint_selection), abstain_when_no_supported_subpoints=bool(self.abstain_when_no_supported_subpoints), generic_evidence_bonus=max(0.0,float(self.generic_evidence_bonus)), generic_anchor_score_threshold=max(0.0,float(self.generic_anchor_score_threshold)), single_support_penalty=max(0.0,float(self.single_support_penalty)), zero_support_penalty=max(0.0,float(self.zero_support_penalty)), generic_low_support_penalty=max(0.0,float(self.generic_low_support_penalty)), subpoint_min_supported_candidates=max(1,int(self.subpoint_min_supported_candidates)), subpoint_max_preview_rows=max(3,int(self.subpoint_max_preview_rows)), diversity_lambda=max(0.0,float(self.diversity_lambda)), enable_doc_title_rescue=bool(self.enable_doc_title_rescue), doc_rescue_doc_limit=max(1,int(self.doc_rescue_doc_limit)), doc_rescue_sections_per_doc=max(1,int(self.doc_rescue_sections_per_doc)), doc_rescue_score_scale=max(0.0,float(self.doc_rescue_score_scale))
-            , use_shared_dense_cache=bool(self.use_shared_dense_cache)
+            force_rebuild=bool(self.force_rebuild),
+            candidate_limit_per_lane=max(10, int(self.candidate_limit_per_lane)),
+            fused_candidate_limit=max(20, int(self.fused_candidate_limit)),
+            per_view_limit_multiplier=max(1, int(self.per_view_limit_multiplier)),
+            rrf_k=max(1, int(self.rrf_k)),
+            lexical_k1=max(0.1, float(self.lexical_k1)),
+            lexical_b=min(1.0, max(0.0, float(self.lexical_b))),
+            use_openai_dense=bool(self.use_openai_dense),
+            allow_lexical_only_fallback=bool(self.allow_lexical_only_fallback),
+            openai_embedding_model=str(self.openai_embedding_model or "text-embedding-3-small").strip()
+            or "text-embedding-3-small",
+            openai_timeout_sec=max(30, int(self.openai_timeout_sec)),
+            dense_batch_size=max(1, int(self.dense_batch_size)),
+            dense_section_max_chars=max(400, int(self.dense_section_max_chars)),
+            dense_passage_max_chars=max(300, int(self.dense_passage_max_chars)),
+            dense_query_max_chars=max(120, int(self.dense_query_max_chars)),
+            dense_dimensions=None if self.dense_dimensions in {None, 0, "", False} else int(self.dense_dimensions),
+            dense_min_similarity=float(self.dense_min_similarity),
+            top_candidate_preview_count=max(5, int(self.top_candidate_preview_count)),
+            selection_strategy=(str(self.selection_strategy or "xquad").strip().lower() or "xquad"),
+            use_supported_subpoint_selection=bool(self.use_supported_subpoint_selection),
+            abstain_when_no_supported_subpoints=bool(self.abstain_when_no_supported_subpoints),
+            generic_evidence_bonus=max(0.0, float(self.generic_evidence_bonus)),
+            generic_anchor_score_threshold=max(0.0, float(self.generic_anchor_score_threshold)),
+            single_support_penalty=max(0.0, float(self.single_support_penalty)),
+            zero_support_penalty=max(0.0, float(self.zero_support_penalty)),
+            generic_low_support_penalty=max(0.0, float(self.generic_low_support_penalty)),
+            subpoint_min_supported_candidates=max(1, int(self.subpoint_min_supported_candidates)),
+            subpoint_max_preview_rows=max(3, int(self.subpoint_max_preview_rows)),
+            diversity_lambda=max(0.0, float(self.diversity_lambda)),
+            enable_doc_title_rescue=bool(self.enable_doc_title_rescue),
+            doc_rescue_doc_limit=max(1, int(self.doc_rescue_doc_limit)),
+            doc_rescue_sections_per_doc=max(1, int(self.doc_rescue_sections_per_doc)),
+            doc_rescue_score_scale=max(0.0, float(self.doc_rescue_score_scale)),
+            use_shared_dense_cache=bool(self.use_shared_dense_cache),
         )
 
 def phase_e_capabilities() -> Dict[str, Any]:
