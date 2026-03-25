@@ -15,8 +15,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from services.firebase_service import firebase_service
+from services.pdf_scan.cpu_job import run_pdf_scan_cpu_job_from_run_doc
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
-from services.quellen_finder_pdf_scan_job import run_quellen_finder_pdf_scan_job_from_run_doc
 
 
 def _load_project_pdf(user_id: str, project_id: str, pdf_id: str) -> dict:
@@ -83,13 +83,21 @@ async def _build_run_payload(user_id: str, project_id: str, kapitel_id: str, pdf
             },
             "pdfSnapshots": pdf_snapshots,
             "job": {
-                "provider": "local_background_task",
+                "provider": "cloud_run_split_jobs",
                 "jobName": None,
                 "region": None,
                 "operationName": None,
                 "executionName": None,
                 "launchedAt": None,
                 "launchError": None,
+                "cpu": {
+                    "jobName": None,
+                    "region": None,
+                },
+                "gpu": {
+                    "jobName": None,
+                    "region": None,
+                },
             },
         },
     )
@@ -119,7 +127,7 @@ async def _main_async(args: argparse.Namespace) -> int:
         ),
         flush=True,
     )
-    await run_quellen_finder_pdf_scan_job_from_run_doc(user_id=user_id, projekt_id=project_id, run_id=run_id)
+    await run_pdf_scan_cpu_job_from_run_doc(user_id=user_id, projekt_id=project_id, run_id=run_id)
     data = QuellenFinderFirestoreService().get_run(user_id=user_id, projekt_id=project_id, run_id=run_id)
     print(
         json.dumps(

@@ -85,19 +85,13 @@ class Config:
         "TWO_LANE_SOURCES_EXECUTION_BACKEND",
         "cloud_run_job" if IS_CLOUD_RUN else "local_background",
     ).strip().lower()
-    PDF_SCAN_CLOUD_RUN_JOB_NAME: str = os.getenv(
-        "PDF_SCAN_CLOUD_RUN_JOB_NAME", "instantpaper-pdf-scan"
-    ).strip()
-    PDF_SCAN_CLOUD_RUN_JOB_REGION: str = os.getenv(
-        "PDF_SCAN_CLOUD_RUN_JOB_REGION", "europe-west3"
-    ).strip()
     PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME: str = os.getenv(
         "PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME",
-        os.getenv("PDF_SCAN_CLOUD_RUN_JOB_NAME", "instantpaper-pdf-scan"),
+        "instantpaper-pdf-scan-cpu",
     ).strip()
     PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION: str = os.getenv(
         "PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION",
-        os.getenv("PDF_SCAN_CLOUD_RUN_JOB_REGION", "europe-west3"),
+        "europe-west3",
     ).strip()
     PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME: str = os.getenv(
         "PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME", "instantpaper-pdf-scan-gpu"
@@ -116,17 +110,9 @@ class Config:
         "PDF_SCAN_ARTIFACT_PREFIX",
         "pdf-scan-runs",
     ).strip().strip("/")
-    PDF_SCAN_FORCE_CLOUD_RUN_FROM_LOCAL: bool = _read_bool_env(
-        "PDF_SCAN_FORCE_CLOUD_RUN_FROM_LOCAL",
-        False,
-    )
     PDF_SCAN_EXECUTION_BACKEND: str = os.getenv(
         "PDF_SCAN_EXECUTION_BACKEND",
-        (
-            "cloud_run_job"
-            if IS_CLOUD_RUN
-            else ("cloud_run_job" if PDF_SCAN_FORCE_CLOUD_RUN_FROM_LOCAL else "local_background")
-        ),
+        "cloud_run_split_jobs",
     ).strip().lower()
     PDF_SCAN_STORAGE_RPC_TIMEOUT_SEC: int = max(
         10,

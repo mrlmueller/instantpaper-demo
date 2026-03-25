@@ -221,13 +221,36 @@ class PdfSource(BaseModel):
         return resolve_path(text, expect_dir=False)
 
 
+class ChapterSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    chapter_id: str
+    chapter_title: str
+    chapter_spec_text: str
+    source_path: Optional[Path] = None
+
+    @field_validator("chapter_id", "chapter_title", "chapter_spec_text", mode="before")
+    @classmethod
+    def _normalize_non_empty(cls, value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            raise ValueError("Required chapter field must not be empty.")
+        return text
+
+    @field_validator("source_path", mode="before")
+    @classmethod
+    def _normalize_source_path(cls, value: Any) -> Optional[Path]:
+        if value in {None, ""}:
+            return None
+        return resolve_path(str(value), expect_dir=False)
+
+
 class PhaseAConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     pipeline_version: str
     input_mode: Literal["small_gold", "manual"]
-    chapter_title: str
-    chapter_spec_text: str
+    chapters: List[ChapterSpec]
     runs_root: Path
     openai_api_key_present: bool
     force_rebuild_phase_a: bool
@@ -243,7 +266,15 @@ class PhaseAConfig(BaseModel):
     source_discovery_total_count: int = 0
     chapter_spec_sha256: str = ""
 
-    @field_validator("pipeline_version", "chapter_title", "chapter_spec_text", mode="before")
+    @property
+    def chapter_title(self) -> str:
+        return self.chapters[0].chapter_title if self.chapters else ""
+
+    @property
+    def chapter_spec_text(self) -> str:
+        return self.chapters[0].chapter_spec_text if self.chapters else ""
+
+    @field_validator("pipeline_version", mode="before")
     @classmethod
     def _normalize_non_empty(cls, value: Any) -> str:
         text = str(value or "").strip()
@@ -260,16 +291,34 @@ class PhaseAConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_pdf_sources(self) -> "PhaseAConfig":
+        if not self.chapters:
+            raise ValueError("Phase A requires at least one chapter.")
+        chapter_ids = [chapter.chapter_id for chapter in self.chapters]
+        if len(chapter_ids) != len(set(chapter_ids)):
+            raise ValueError("Chapter IDs must be unique.")
         if not self.pdf_sources:
             raise ValueError("Phase A requires at least one resolved PDF source.")
         self.resolved_source_count = len(self.pdf_sources)
-        self.chapter_spec_sha256 = sha256_text(self.chapter_spec_text)
+        combined_spec = "\n---\n".join(chapter.chapter_spec_text for chapter in self.chapters)
+        self.chapter_spec_sha256 = sha256_text(combined_spec)
         return self
 
     def to_snapshot(self) -> Dict[str, Any]:
         return {
             "pipeline_version": self.pipeline_version,
             "input_mode": self.input_mode,
+            "chapter_count": len(self.chapters),
+            "chapters": [
+                {
+                    "chapter_id": chapter.chapter_id,
+                    "chapter_title": chapter.chapter_title,
+                    "chapter_spec_text": chapter.chapter_spec_text,
+                    "chapter_spec_text_chars": len(chapter.chapter_spec_text),
+                    "chapter_spec_text_words": len(chapter.chapter_spec_text.split()),
+                    "source_path": str(chapter.source_path) if chapter.source_path else None,
+                }
+                for chapter in self.chapters
+            ],
             "chapter_title": self.chapter_title,
             "chapter_spec_text": self.chapter_spec_text,
             "chapter_spec_text_chars": len(self.chapter_spec_text),
@@ -291,11 +340,40 @@ class PhaseAConfig(BaseModel):
         }
 
 
+class ChapterArtifacts(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    chapter_id: str
+    chapter_dir: Path
+    chapter_config_json: Path
+    query_plan_json: Path
+    retrieval_dir: Path
+    rerank_dir: Path
+    final_dir: Path
+
+    @classmethod
+    def from_chapter_dir(cls, chapter_id: str, chapter_dir: Path) -> "ChapterArtifacts":
+        retrieval_dir = chapter_dir / "retrieval"
+        return cls(
+            chapter_id=str(chapter_id),
+            chapter_dir=chapter_dir,
+            chapter_config_json=chapter_dir / "chapter_config.json",
+            query_plan_json=retrieval_dir / "query_plan.json",
+            retrieval_dir=retrieval_dir,
+            rerank_dir=chapter_dir / "rerank",
+            final_dir=chapter_dir / "final",
+        )
+
+
 class RunArtifacts(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     config_json: Path
     pdf_manifest_json: Path
+    chapters_dir: Path
+    aggregate_dir: Path
+    shared_dir: Path
+    retrieval_cache_dir: Path
     query_plan_json: Path
     parser_dir: Path
     normalized_dir: Path
@@ -312,19 +390,53 @@ class RunArtifacts(BaseModel):
     phase_a_summary_json: Path
     phase_a_assessment_json: Path
     phase_a_review_dir: Path
+    chapter_artifacts: Dict[str, ChapterArtifacts] = Field(default_factory=dict)
+    active_chapter_id: Optional[str] = None
 
     @classmethod
-    def from_run_dir(cls, run_dir: Path) -> "RunArtifacts":
+    def from_run_dir(cls, run_dir: Path, *, chapters: Optional[List[ChapterSpec]] = None) -> "RunArtifacts":
         phase_a_dir = run_dir / "phase_a"
+        chapters_dir = run_dir / "chapters"
+        aggregate_dir = run_dir / "aggregate"
+        shared_dir = run_dir / "shared"
+        retrieval_cache_dir = shared_dir / "retrieval_cache"
+        chapter_specs = list(chapters or [])
+        if not chapter_specs:
+            config_path = run_dir / "config.json"
+            if config_path.exists():
+                try:
+                    config_payload = read_json(config_path)
+                    raw_chapters = list((config_payload or {}).get("chapters") or [])
+                    chapter_specs = [
+                        ChapterSpec(
+                            chapter_id=str(item.get("chapter_id") or "").strip(),
+                            chapter_title=str(item.get("chapter_title") or "").strip(),
+                            chapter_spec_text=str(item.get("chapter_spec_text") or "").strip(),
+                            source_path=item.get("source_path"),
+                        )
+                        for item in raw_chapters
+                        if isinstance(item, dict)
+                    ]
+                except Exception:
+                    chapter_specs = []
+        chapter_artifacts = {
+            chapter.chapter_id: ChapterArtifacts.from_chapter_dir(chapter.chapter_id, chapters_dir / chapter.chapter_id)
+            for chapter in chapter_specs
+        }
+        default_chapter = next(iter(chapter_artifacts.values()), None)
         return cls(
             config_json=run_dir / "config.json",
             pdf_manifest_json=run_dir / "pdf_manifest.json",
-            query_plan_json=run_dir / "query_plan.json",
+            chapters_dir=chapters_dir,
+            aggregate_dir=aggregate_dir,
+            shared_dir=shared_dir,
+            retrieval_cache_dir=retrieval_cache_dir,
+            query_plan_json=default_chapter.query_plan_json if default_chapter is not None else run_dir / "query_plan.json",
             parser_dir=run_dir / "parser",
             normalized_dir=run_dir / "normalized",
-            retrieval_dir=run_dir / "retrieval",
-            rerank_dir=run_dir / "rerank",
-            final_dir=run_dir / "final",
+            retrieval_dir=default_chapter.retrieval_dir if default_chapter is not None else run_dir / "retrieval",
+            rerank_dir=default_chapter.rerank_dir if default_chapter is not None else run_dir / "rerank",
+            final_dir=default_chapter.final_dir if default_chapter is not None else run_dir / "final",
             logs_jsonl=run_dir / "logs.jsonl",
             run_log=run_dir / "run.log",
             metrics_json=run_dir / "metrics.json",
@@ -335,6 +447,22 @@ class RunArtifacts(BaseModel):
             phase_a_summary_json=phase_a_dir / "phase_a_summary.json",
             phase_a_assessment_json=phase_a_dir / "phase_a_assessment.json",
             phase_a_review_dir=run_dir / "phase_a_review",
+            chapter_artifacts=chapter_artifacts,
+            active_chapter_id=default_chapter.chapter_id if default_chapter is not None else None,
+        )
+
+    def for_chapter(self, chapter_id: str) -> "RunArtifacts":
+        chapter = self.chapter_artifacts.get(str(chapter_id))
+        if chapter is None:
+            raise KeyError(f"Unknown chapter_id: {chapter_id}")
+        return self.model_copy(
+            update={
+                "active_chapter_id": chapter.chapter_id,
+                "query_plan_json": chapter.query_plan_json,
+                "retrieval_dir": chapter.retrieval_dir,
+                "rerank_dir": chapter.rerank_dir,
+                "final_dir": chapter.final_dir,
+            }
         )
 
 
@@ -347,18 +475,35 @@ class RunContext(BaseModel):
     run_dir: Path
     artifacts: RunArtifacts
 
+    def chapter_ids(self) -> List[str]:
+        return list(self.artifacts.chapter_artifacts.keys())
+
+    def for_chapter(self, chapter_id: str) -> "RunContext":
+        return RunContext(
+            repo_root=self.repo_root,
+            pdf_scan_dir=self.pdf_scan_dir,
+            run_id=self.run_id,
+            run_dir=self.run_dir,
+            artifacts=self.artifacts.for_chapter(chapter_id),
+        )
+
     def create_artifact_skeleton(self, overwrite: bool = False) -> None:
         ensure_dir(self.run_dir)
         ensure_dir(self.artifacts.parser_dir)
         ensure_dir(self.artifacts.normalized_dir)
-        ensure_dir(self.artifacts.retrieval_dir)
-        ensure_dir(self.artifacts.rerank_dir)
-        ensure_dir(self.artifacts.final_dir)
+        ensure_dir(self.artifacts.shared_dir)
+        ensure_dir(self.artifacts.retrieval_cache_dir)
+        ensure_dir(self.artifacts.chapters_dir)
+        ensure_dir(self.artifacts.aggregate_dir)
         ensure_dir(self.artifacts.phase_a_dir)
         ensure_dir(self.artifacts.phase_a_review_dir)
+        for chapter in self.artifacts.chapter_artifacts.values():
+            ensure_dir(chapter.chapter_dir)
+            ensure_dir(chapter.retrieval_dir)
+            ensure_dir(chapter.rerank_dir)
+            ensure_dir(chapter.final_dir)
 
         placeholders: Dict[Path, Any] = {
-            self.artifacts.query_plan_json: {"status": "not_run", "phase": "query_planner"},
             self.artifacts.metrics_json: {
                 "run_id": self.run_id,
                 "stages": {},
@@ -371,8 +516,12 @@ class RunContext(BaseModel):
                     "cost_usd": 0.0,
                 },
             },
-            self.artifacts.final_dir / "output.json": {"status": "not_run"},
+            self.artifacts.aggregate_dir / "output.json": {"status": "not_run"},
         }
+        for chapter in self.artifacts.chapter_artifacts.values():
+            placeholders[chapter.chapter_config_json] = {"status": "not_run", "chapter_id": chapter.chapter_id}
+            placeholders[chapter.query_plan_json] = {"status": "not_run", "phase": "query_planner", "chapter_id": chapter.chapter_id}
+            placeholders[chapter.final_dir / "output.json"] = {"status": "not_run", "chapter_id": chapter.chapter_id}
         for path, payload in placeholders.items():
             if overwrite or (not path.exists()):
                 write_json(path, payload)
@@ -386,12 +535,18 @@ class RunContext(BaseModel):
             self.artifacts.normalized_dir / "documents.jsonl",
             self.artifacts.normalized_dir / "sections.jsonl",
             self.artifacts.normalized_dir / "passages.jsonl",
-            self.artifacts.retrieval_dir / "fused_candidates.jsonl",
-            self.artifacts.rerank_dir / "cross_encoder.jsonl",
         ]:
             if overwrite or (not path.exists()):
                 ensure_dir(path.parent)
                 path.write_text("", encoding="utf-8")
+        for chapter in self.artifacts.chapter_artifacts.values():
+            for path in [
+                chapter.retrieval_dir / "fused_candidates.jsonl",
+                chapter.rerank_dir / "cross_encoder.jsonl",
+            ]:
+                if overwrite or (not path.exists()):
+                    ensure_dir(path.parent)
+                    path.write_text("", encoding="utf-8")
 
 
 def load_metrics(run_ctx: RunContext) -> Dict[str, Any]:
@@ -603,6 +758,45 @@ def normalize_pdf_sources(raw_sources: List[Dict[str, Any]]) -> List[PdfSource]:
     return out
 
 
+def parse_theme_markdown(path: Path) -> tuple[str, str]:
+    raw = path.read_text(encoding="utf-8")
+    lines = [line.strip() for line in raw.splitlines()]
+    non_empty = [line for line in lines if line]
+    if not non_empty:
+        raise ValueError(f"Theme file is empty: {path}")
+    title = non_empty[0]
+    description = "\n\n".join(part.strip() for part in raw.split("\n\n") if part.strip())
+    if description.startswith(title):
+        description = description[len(title) :].strip()
+    description = description or title
+    return title, description
+
+
+def load_chapter_specs_from_dir(raw_dir: str) -> List[ChapterSpec]:
+    chapter_dir = resolve_path(raw_dir, expect_dir=True)
+    files = sorted(
+        [
+            path.resolve()
+            for path in chapter_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in {".md", ".markdown", ".txt"}
+        ]
+    )
+    if not files:
+        raise ValueError(f"No chapter markdown files found in {chapter_dir}")
+    chapters: List[ChapterSpec] = []
+    for index, path in enumerate(files, 1):
+        title, description = parse_theme_markdown(path)
+        chapters.append(
+            ChapterSpec(
+                chapter_id=f"chapter_{index:02d}",
+                chapter_title=title,
+                chapter_spec_text=description,
+                source_path=path,
+            )
+        )
+    return chapters
+
+
 def resolve_small_gold_inputs(
     suite_manifest: str,
     chapter_index: int,
@@ -645,8 +839,14 @@ def resolve_small_gold_inputs(
 
     return {
         "input_mode": "small_gold",
-        "chapter_title": str(chapter_spec.get("title") or "").strip(),
-        "chapter_spec_text": str(chapter_spec.get("description") or "").strip(),
+        "chapters": [
+            ChapterSpec(
+                chapter_id=str(chapter_spec.get("chapter_id") or "").strip() or "chapter_01",
+                chapter_title=str(chapter_spec.get("title") or "").strip(),
+                chapter_spec_text=str(chapter_spec.get("description") or "").strip(),
+                source_path=chapter_path,
+            )
+        ],
         "pdf_sources": normalize_pdf_sources(resolved_sources),
         "pdf_dir_raw": "",
         "pdf_glob": "*.pdf",
@@ -661,6 +861,7 @@ def resolve_small_gold_inputs(
 
 def resolve_manual_inputs(args: argparse.Namespace) -> Dict[str, Any]:
     pdf_sources: List[PdfSource] = []
+    chapters: List[ChapterSpec] = []
     raw_sources = [{"label": "", "path": path} for path in list(args.pdf or [])]
     if raw_sources:
         pdf_sources = normalize_pdf_sources(raw_sources)
@@ -676,10 +877,21 @@ def resolve_manual_inputs(args: argparse.Namespace) -> Dict[str, Any]:
         discovery_total_count = len(paths)
         pdf_sources = normalize_pdf_sources([{"label": path.stem, "path": str(path)} for path in paths[: int(args.max_pdfs)]])
 
+    chapters_dir = str(getattr(args, "chapters_dir", "") or "").strip()
+    if chapters_dir:
+        chapters = load_chapter_specs_from_dir(chapters_dir)
+    else:
+        chapters = [
+            ChapterSpec(
+                chapter_id="chapter_01",
+                chapter_title=str(args.chapter_title or "").strip(),
+                chapter_spec_text=str(args.chapter_description or "").strip(),
+            )
+        ]
+
     return {
         "input_mode": "manual",
-        "chapter_title": str(args.chapter_title or "").strip(),
-        "chapter_spec_text": str(args.chapter_description or "").strip(),
+        "chapters": chapters,
         "pdf_sources": pdf_sources,
         "pdf_dir_raw": str(args.pdf_dir or "").strip(),
         "pdf_glob": str(args.pdf_glob or "*.pdf"),
@@ -693,13 +905,16 @@ def resolve_manual_inputs(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def compute_run_id(
-    chapter_title: str,
-    chapter_spec_text: str,
+    chapters: List[ChapterSpec],
     pipeline_version: str,
     manifest_rows: List[Dict[str, Any]],
 ) -> str:
+    chapter_parts = [
+        f"{chapter.chapter_id}::{chapter.chapter_title}::{chapter.chapter_spec_text}"
+        for chapter in sorted(list(chapters or []), key=lambda item: item.chapter_id)
+    ]
     doc_parts = [f"{row.get('label')}::{row.get('sha256')}" for row in manifest_rows]
-    return stable_hash(pipeline_version, chapter_title, chapter_spec_text, "\n".join(doc_parts), length=24)
+    return stable_hash(pipeline_version, "\n".join(chapter_parts), "\n".join(doc_parts), length=24)
 
 
 def build_phase_a_assessment(cfg: PhaseAConfig, manifest_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -802,8 +1017,7 @@ def run_phase_a(args: argparse.Namespace) -> Dict[str, Any]:
     config = PhaseAConfig(
         pipeline_version=str(args.pipeline_version or "").strip(),
         input_mode=resolved["input_mode"],
-        chapter_title=resolved["chapter_title"],
-        chapter_spec_text=resolved["chapter_spec_text"],
+        chapters=resolved["chapters"],
         runs_root=runs_root,
         openai_api_key_present=bool((os.getenv("OPENAI_API_KEY") or "").strip()),
         force_rebuild_phase_a=bool(args.force_rebuild),
@@ -839,9 +1053,9 @@ def run_phase_a(args: argparse.Namespace) -> Dict[str, Any]:
             }
         )
 
-    run_id = compute_run_id(config.chapter_title, config.chapter_spec_text, config.pipeline_version, pdf_manifest_rows)
+    run_id = compute_run_id(config.chapters, config.pipeline_version, pdf_manifest_rows)
     run_dir = runs_root / run_id
-    artifacts = RunArtifacts.from_run_dir(run_dir)
+    artifacts = RunArtifacts.from_run_dir(run_dir, chapters=config.chapters)
     run_ctx = RunContext(repo_root=REPO_ROOT, pdf_scan_dir=PDF_SCAN_DIR, run_id=run_id, run_dir=run_dir, artifacts=artifacts)
 
     run_ctx.create_artifact_skeleton(overwrite=bool(args.force_rebuild))
@@ -852,12 +1066,12 @@ def run_phase_a(args: argparse.Namespace) -> Dict[str, Any]:
     expected_paths = [
         artifacts.config_json,
         artifacts.pdf_manifest_json,
-        artifacts.query_plan_json,
         artifacts.parser_dir,
         artifacts.normalized_dir,
-        artifacts.retrieval_dir,
-        artifacts.rerank_dir,
-        artifacts.final_dir,
+        artifacts.chapters_dir,
+        artifacts.aggregate_dir,
+        artifacts.shared_dir,
+        artifacts.retrieval_cache_dir,
         artifacts.logs_jsonl,
         artifacts.run_log,
         artifacts.metrics_json,
@@ -891,8 +1105,7 @@ def run_phase_a(args: argparse.Namespace) -> Dict[str, Any]:
             "run_id": run_ctx.run_id,
             "contract": {
                 "inputs": [
-                    "chapter_title",
-                    "chapter_spec_text",
+                    "chapters[]",
                     "pipeline_version",
                     "pdf_sources or pdf_dir",
                     "environment variables",
@@ -910,6 +1123,15 @@ def run_phase_a(args: argparse.Namespace) -> Dict[str, Any]:
                     "phase_a/phase_a_assessment.json",
                 ],
             },
+            "chapter_count": len(config.chapters),
+            "chapters": [
+                {
+                    "chapter_id": chapter.chapter_id,
+                    "chapter_title": chapter.chapter_title,
+                    "source_path": str(chapter.source_path) if chapter.source_path else None,
+                }
+                for chapter in config.chapters
+            ],
             "config_snapshot_path": str(artifacts.phase_a_config_json.relative_to(run_ctx.run_dir)),
             "runtime_snapshot_path": str(artifacts.phase_a_runtime_json.relative_to(run_ctx.run_dir)),
             "assessment_path": str(artifacts.phase_a_assessment_json.relative_to(run_ctx.run_dir)),
@@ -1002,12 +1224,10 @@ def run_phase_a(args: argparse.Namespace) -> Dict[str, Any]:
             run_dir=str(run_ctx.run_dir),
             input_mode=config.input_mode,
             pdf_count=len(pdf_manifest_rows),
+            chapter_count=len(config.chapters),
             benchmark_suite_id=config.benchmark_suite_id,
             benchmark_chapter_id=config.benchmark_chapter_id,
         )
-        from pdf_reporting import update_run_pdf_reports
-
-        update_run_pdf_reports(run_ctx, phase_name="phase_a")
 
     return {
         "run_ctx": run_ctx,
@@ -1033,6 +1253,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--chapter-title", default="")
     parser.add_argument("--chapter-description", default="")
+    parser.add_argument("--chapters-dir", default="")
     parser.add_argument("--pdf", action="append", default=[])
     parser.add_argument("--pdf-dir", default="")
     parser.add_argument("--pdf-glob", default="*.pdf")

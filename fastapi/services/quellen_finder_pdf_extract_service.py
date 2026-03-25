@@ -10,12 +10,14 @@ import fitz  # PyMuPDF
 from fastapi import HTTPException
 
 from services.firebase_service import firebase_service
+from services.pdf_scan.common import (
+    download_pdf_from_firebase_storage as _download_pdf_from_firebase_storage,
+)
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
 from services.quellen_finder_pdf_extract_pipeline import (
     extract_section_by_locator,
     rebuild_phase_c_block_index,
 )
-from services.quellen_finder_pdf_scan_job import _download_pdf_from_firebase_storage
 
 logger = logging.getLogger(__name__)
 

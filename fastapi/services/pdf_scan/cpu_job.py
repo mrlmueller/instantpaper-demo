@@ -305,8 +305,8 @@ async def run_pdf_scan_cpu_job(
                         "launchedAt": SERVER_TIMESTAMP,
                         "launchError": None,
                         "cpu": {
-                            "jobName": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or config.PDF_SCAN_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                            "region": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or config.PDF_SCAN_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                            "jobName": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
+                            "region": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
                         },
                         "gpu": {
                             "jobName": str((gpu_launch or {}).get("job_name") or config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None,

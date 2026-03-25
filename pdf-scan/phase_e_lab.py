@@ -82,9 +82,11 @@ class PhaseEOptions:
     doc_rescue_doc_limit: int = 8
     doc_rescue_sections_per_doc: int = 4
     doc_rescue_score_scale: float = 0.08
+    use_shared_dense_cache: bool = True
     def normalized(self) -> "PhaseEOptions":
         return PhaseEOptions(
             force_rebuild=bool(self.force_rebuild), candidate_limit_per_lane=max(10,int(self.candidate_limit_per_lane)), fused_candidate_limit=max(20,int(self.fused_candidate_limit)), per_view_limit_multiplier=max(1,int(self.per_view_limit_multiplier)), rrf_k=max(1,int(self.rrf_k)), lexical_k1=max(0.1,float(self.lexical_k1)), lexical_b=min(1.0,max(0.0,float(self.lexical_b))), use_openai_dense=bool(self.use_openai_dense), allow_lexical_only_fallback=bool(self.allow_lexical_only_fallback), openai_embedding_model=str(self.openai_embedding_model or "text-embedding-3-small").strip() or "text-embedding-3-small", openai_timeout_sec=max(30,int(self.openai_timeout_sec)), dense_batch_size=max(1,int(self.dense_batch_size)), dense_section_max_chars=max(400,int(self.dense_section_max_chars)), dense_passage_max_chars=max(300,int(self.dense_passage_max_chars)), dense_query_max_chars=max(120,int(self.dense_query_max_chars)), dense_dimensions=None if self.dense_dimensions in {None,0,"",False} else int(self.dense_dimensions), dense_min_similarity=float(self.dense_min_similarity), top_candidate_preview_count=max(5,int(self.top_candidate_preview_count)), selection_strategy=(str(self.selection_strategy or "xquad").strip().lower() or "xquad"), use_supported_subpoint_selection=bool(self.use_supported_subpoint_selection), abstain_when_no_supported_subpoints=bool(self.abstain_when_no_supported_subpoints), generic_evidence_bonus=max(0.0,float(self.generic_evidence_bonus)), generic_anchor_score_threshold=max(0.0,float(self.generic_anchor_score_threshold)), single_support_penalty=max(0.0,float(self.single_support_penalty)), zero_support_penalty=max(0.0,float(self.zero_support_penalty)), generic_low_support_penalty=max(0.0,float(self.generic_low_support_penalty)), subpoint_min_supported_candidates=max(1,int(self.subpoint_min_supported_candidates)), subpoint_max_preview_rows=max(3,int(self.subpoint_max_preview_rows)), diversity_lambda=max(0.0,float(self.diversity_lambda)), enable_doc_title_rescue=bool(self.enable_doc_title_rescue), doc_rescue_doc_limit=max(1,int(self.doc_rescue_doc_limit)), doc_rescue_sections_per_doc=max(1,int(self.doc_rescue_sections_per_doc)), doc_rescue_score_scale=max(0.0,float(self.doc_rescue_score_scale))
+            , use_shared_dense_cache=bool(self.use_shared_dense_cache)
         )
 
 def phase_e_capabilities() -> Dict[str, Any]:
@@ -204,6 +206,153 @@ def resolve_phase_e_dense_task_concurrency(*, task_count: int) -> int:
     else:
         auto = 3
     return max(1, min(int(task_count), auto))
+
+
+def phase_e_shared_cache_paths(run_ctx: Any) -> Dict[str, Path]:
+    cache_dir = ensure_dir(Path(getattr(run_ctx.artifacts, "retrieval_cache_dir", Path(run_ctx.run_dir) / "shared" / "retrieval_cache")))
+    return {
+        "cache_dir": cache_dir,
+        "config_path": cache_dir / "phase_c5_config.json",
+        "runtime_path": cache_dir / "phase_c5_runtime.json",
+        "summary_path": cache_dir / "phase_c5_summary.json",
+        "section_embeddings_path": cache_dir / "section_embeddings.npy",
+        "section_ids_path": cache_dir / "section_ids.json",
+        "passage_embeddings_path": cache_dir / "passage_embeddings.npy",
+        "passage_ids_path": cache_dir / "passage_ids.json",
+        "metadata_path": cache_dir / "embedding_metadata.json",
+    }
+
+
+def _cache_id_rows(items: List[Dict[str, Any]]) -> List[str]:
+    return [str((item or {}).get("item_id") or "") for item in list(items or [])]
+
+
+def prepare_phase_e_shared_dense_cache(
+    run_ctx: Any,
+    *,
+    options: PhaseEOptions,
+    force_rebuild: bool = False,
+) -> Dict[str, Any]:
+    opt = options.normalized()
+    paths = phase_e_shared_cache_paths(run_ctx)
+    write_json(paths["runtime_path"], {"generated_at_utc": utc_now_iso(), "phase": "phase_c5", "options": json_safe(asdict(opt)), "capabilities": phase_e_capabilities()})
+    write_json(paths["config_path"], {"generated_at_utc": utc_now_iso(), "phase": "phase_c5", "options": json_safe(asdict(opt))})
+
+    if not bool(opt.use_openai_dense):
+        summary = {"generated_at_utc": utc_now_iso(), "phase": "phase_c5", "status": "skipped_dense_disabled", "use_shared_dense_cache": False}
+        write_json(paths["summary_path"], summary)
+        return summary
+    if PhaseEOpenAI is None or not PHASE_E_API_KEY or np is None:
+        summary = {"generated_at_utc": utc_now_iso(), "phase": "phase_c5", "status": "skipped_missing_openai", "use_shared_dense_cache": False}
+        write_json(paths["summary_path"], summary)
+        return summary
+
+    required = [paths["section_embeddings_path"], paths["section_ids_path"], paths["passage_embeddings_path"], paths["passage_ids_path"], paths["metadata_path"], paths["summary_path"]]
+    if (not force_rebuild) and all(path.exists() for path in required):
+        return read_json(paths["summary_path"])
+
+    sections = read_jsonl_rows(Path(run_ctx.artifacts.normalized_dir) / "sections.jsonl")
+    passages = read_jsonl_rows(Path(run_ctx.artifacts.normalized_dir) / "passages.jsonl")
+    _, _, lane_inputs = build_inputs(sections, passages, opt)
+    section_items = list(lane_inputs["section_dense"]["items"])
+    section_texts = list(lane_inputs["section_dense"]["texts"])
+    passage_items = list(lane_inputs["passage_dense"]["items"])
+    passage_texts = list(lane_inputs["passage_dense"]["texts"])
+
+    dense_jobs = []
+    if section_texts:
+        dense_jobs.append(("sections", section_texts))
+    if passage_texts:
+        dense_jobs.append(("passages", passage_texts))
+
+    dense_results: Dict[str, Any] = {}
+    resolved_dense_task_concurrency = resolve_phase_e_dense_task_concurrency(task_count=len(dense_jobs))
+
+    def run_dense_job(job_name: str, texts: List[str]):
+        mat, usage, cost = embed_texts(texts, opt.openai_embedding_model, opt.dense_batch_size, opt.openai_timeout_sec, opt.dense_dimensions)
+        return job_name, mat, usage, cost
+
+    if resolved_dense_task_concurrency <= 1:
+        for job_name, texts in dense_jobs:
+            _, mat, usage, cost = run_dense_job(job_name, texts)
+            dense_results[job_name] = (mat, usage, cost)
+    else:
+        with ThreadPoolExecutor(max_workers=resolved_dense_task_concurrency) as executor:
+            future_map = {executor.submit(run_dense_job, job_name, texts): job_name for job_name, texts in dense_jobs}
+            for future in as_completed(future_map):
+                job_name, mat, usage, cost = future.result()
+                dense_results[job_name] = (mat, usage, cost)
+
+    smat, susage, scost = dense_results.get("sections", (np.zeros((0, 0), dtype=np.float32), {"input_tokens": None, "total_tokens": None, "output_tokens": 0}, {}))
+    pmat, pusage, pcost = dense_results.get("passages", (np.zeros((0, 0), dtype=np.float32), {"input_tokens": None, "total_tokens": None, "output_tokens": 0}, {}))
+    np.save(paths["section_embeddings_path"], smat)
+    np.save(paths["passage_embeddings_path"], pmat)
+    write_json(paths["section_ids_path"], {"generated_at_utc": utc_now_iso(), "ids": _cache_id_rows(section_items)})
+    write_json(paths["passage_ids_path"], {"generated_at_utc": utc_now_iso(), "ids": _cache_id_rows(passage_items)})
+
+    input_tokens = sum(v for v in [susage.get("input_tokens"), pusage.get("input_tokens")] if isinstance(v, int)) or None
+    total_tokens = sum(v for v in [susage.get("total_tokens"), pusage.get("total_tokens")] if isinstance(v, int)) or None
+    used_model = scost.get("model_name") or pcost.get("model_name") or opt.openai_embedding_model
+    cost_payload = {**embed_price(used_model, input_tokens), "usage": {"input_tokens": input_tokens, "total_tokens": total_tokens, "output_tokens": 0}}
+    metadata = {
+        "generated_at_utc": utc_now_iso(),
+        "model_used": used_model,
+        "dense_dimensions": opt.dense_dimensions,
+        "section_count": len(section_items),
+        "passage_count": len(passage_items),
+        "resolved_task_concurrency": resolved_dense_task_concurrency,
+        "usage": {"input_tokens": input_tokens, "total_tokens": total_tokens, "output_tokens": 0},
+        "cost": cost_payload,
+    }
+    write_json(paths["metadata_path"], metadata)
+    summary = {"generated_at_utc": utc_now_iso(), "phase": "phase_c5", "status": "success", "use_shared_dense_cache": True, **metadata}
+    write_json(paths["summary_path"], summary)
+
+    if (input_tokens or total_tokens or float(cost_payload.get("estimated_cost_usd") or 0.0) > 0.0):
+        record_api_call(
+            run_ctx,
+            stage="phase_c5",
+            provider="openai",
+            model=str(used_model),
+            input_tokens=int(input_tokens or 0),
+            cached_input_tokens=0,
+            output_tokens=0,
+            cost_usd=float(cost_payload.get("estimated_cost_usd") or 0.0),
+            meta={
+                "api_mode": "embeddings.create",
+                "section_count": len(section_items),
+                "passage_count": len(passage_items),
+                "dense_dimensions": opt.dense_dimensions,
+                "pricing_model": cost_payload.get("pricing_model"),
+                "pricing_source_url": cost_payload.get("pricing_source_url"),
+                "pricing_verified_date": cost_payload.get("pricing_verified_date"),
+            },
+        )
+    return summary
+
+
+def load_phase_e_shared_dense_cache(run_ctx: Any, *, options: PhaseEOptions, lane_inputs: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    opt = options.normalized()
+    paths = phase_e_shared_cache_paths(run_ctx)
+    if not all(paths[key].exists() for key in ["section_embeddings_path", "section_ids_path", "passage_embeddings_path", "passage_ids_path", "metadata_path"]):
+        return {"available": False}
+
+    section_ids = list((read_json(paths["section_ids_path"]).get("ids") or []))
+    passage_ids = list((read_json(paths["passage_ids_path"]).get("ids") or []))
+    if section_ids != _cache_id_rows(lane_inputs["section_dense"]["items"]):
+        return {"available": False, "reason": "section_id_mismatch"}
+    if passage_ids != _cache_id_rows(lane_inputs["passage_dense"]["items"]):
+        return {"available": False, "reason": "passage_id_mismatch"}
+
+    smat = np.load(paths["section_embeddings_path"]) if lane_inputs["section_dense"]["items"] else np.zeros((0, 0), dtype=np.float32)
+    pmat = np.load(paths["passage_embeddings_path"]) if lane_inputs["passage_dense"]["items"] else np.zeros((0, 0), dtype=np.float32)
+    metadata = read_json(paths["metadata_path"])
+    return {
+        "available": True,
+        "section_mat": smat,
+        "passage_mat": pmat,
+        "metadata": metadata,
+    }
 
 def build_inputs(sections: List[Dict[str, Any]], passages: List[Dict[str, Any]], opt: PhaseEOptions):
     sec_lookup = {str(r.get("section_id")): r for r in sections if str(r.get("section_id") or "")}
@@ -1005,13 +1154,22 @@ def run_phase_e(run_ctx: Any, *, options: PhaseEOptions, stable_hash_fn=None, lo
     lane_rows["section_body_lexical"] = score_text_lane("section_body_lexical", lane_inputs["section_body_lexical"]["items"], lane_inputs["section_body_lexical"]["texts"], views, query_plan, opt)
     lane_rows["passage_lexical"] = score_text_lane("passage_lexical", lane_inputs["passage_lexical"]["items"], lane_inputs["passage_lexical"]["texts"], views, query_plan, opt)
 
+    shared_dense_cache = {"available": False}
+    if bool(opt.use_openai_dense) and bool(opt.use_shared_dense_cache):
+        shared_dense_cache = load_phase_e_shared_dense_cache(run_ctx, options=opt, lane_inputs=lane_inputs)
+        if not bool(shared_dense_cache.get("available")) and PhaseEOpenAI is not None and PHASE_E_API_KEY and np is not None:
+            prepare_phase_e_shared_dense_cache(run_ctx, options=opt, force_rebuild=bool(opt.force_rebuild))
+            shared_dense_cache = load_phase_e_shared_dense_cache(run_ctx, options=opt, lane_inputs=lane_inputs)
+
     if bool(opt.use_openai_dense) and PhaseEOpenAI is not None and PHASE_E_API_KEY and np is not None:
         q_texts = [trunc(v.get("query_text"), opt.dense_query_max_chars) for v in views]
+        use_shared_dense_cache = bool(shared_dense_cache.get("available"))
         dense_jobs = [("queries", q_texts)]
-        if lane_inputs["section_dense"]["texts"]:
-            dense_jobs.append(("sections", list(lane_inputs["section_dense"]["texts"])))
-        if lane_inputs["passage_dense"]["texts"]:
-            dense_jobs.append(("passages", list(lane_inputs["passage_dense"]["texts"])))
+        if not use_shared_dense_cache:
+            if lane_inputs["section_dense"]["texts"]:
+                dense_jobs.append(("sections", list(lane_inputs["section_dense"]["texts"])))
+            if lane_inputs["passage_dense"]["texts"]:
+                dense_jobs.append(("passages", list(lane_inputs["passage_dense"]["texts"])))
         resolved_dense_task_concurrency = resolve_phase_e_dense_task_concurrency(task_count=len(dense_jobs))
         dense_results: Dict[str, Any] = {}
 
@@ -1035,11 +1193,18 @@ def run_phase_e(run_ctx: Any, *, options: PhaseEOptions, stable_hash_fn=None, lo
 
         qmat, qusage, qcost = dense_results["queries"]
         query_mats = {str(v.get("view_id")): qmat[i : i + 1] for i, v in enumerate(views)}
-        if "sections" in dense_results:
+        if use_shared_dense_cache:
+            smat = shared_dense_cache.get("section_mat")
+            pmat = shared_dense_cache.get("passage_mat")
+            susage = {"input_tokens": 0, "total_tokens": 0, "output_tokens": 0}
+            pusage = {"input_tokens": 0, "total_tokens": 0, "output_tokens": 0}
+        elif "sections" in dense_results:
             smat, susage, _ = dense_results["sections"]
         else:
             smat, susage = np.zeros((0, 0), dtype=np.float32), {"input_tokens": None, "total_tokens": None, "output_tokens": 0}
-        if "passages" in dense_results:
+        if use_shared_dense_cache:
+            pass
+        elif "passages" in dense_results:
             pmat, pusage, _ = dense_results["passages"]
         else:
             pmat, pusage = np.zeros((0, 0), dtype=np.float32), {"input_tokens": None, "total_tokens": None, "output_tokens": 0}
@@ -1055,6 +1220,8 @@ def run_phase_e(run_ctx: Any, *, options: PhaseEOptions, stable_hash_fn=None, lo
             "passage_count": len(lane_inputs["passage_dense"]["items"]),
             "resolved_task_concurrency": resolved_dense_task_concurrency,
             "cpu_count": available_cpu_count(),
+            "shared_dense_cache_used": use_shared_dense_cache,
+            "shared_dense_cache_metadata": shared_dense_cache.get("metadata") if use_shared_dense_cache else None,
         }
         lane_rows["section_dense"] = score_dense_lane("section_dense", lane_inputs["section_dense"]["items"], smat, query_mats, views, query_plan, opt)
         lane_rows["passage_dense"] = score_dense_lane("passage_dense", lane_inputs["passage_dense"]["items"], pmat, query_mats, views, query_plan, opt)

@@ -119,7 +119,7 @@ def configure_logging() -> None:
                 "level": qf_level,
                 "propagate": False,
             },
-            "services.quellen_finder_pdf_scan_job": {
+            "services.pdf_scan": {
                 "handlers": ["quellen_finder_console"],
                 "level": qf_level,
                 "propagate": False,

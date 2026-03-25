@@ -51,9 +51,8 @@ from services.export_service import export_service
 from services.cloud_run_job_launcher import cloud_run_job_launcher
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
 from services.quellen_finder_sources_two_lane_job import run_quellen_finder_sources_two_lane_job_from_run_doc
-from services.quellen_finder_pdf_scan_job import (
-    run_quellen_finder_pdf_scan_job_from_run_doc,
-    _download_pdf_from_firebase_storage,
+from services.pdf_scan.common import (
+    download_pdf_from_firebase_storage as _download_pdf_from_firebase_storage,
     _candidate_bucket_names,
 )
 from services.quellen_finder_pdf_extract_service import extract_quellen_finder_pdf_section
@@ -5571,7 +5570,6 @@ async def quellen_finder_sources_two_lane_cancel(
 @app.post("/api/quellen-finder/pdf-scan", status_code=status.HTTP_202_ACCEPTED)
 async def quellen_finder_pdf_scan(
     request: QuellenFinderPdfScanRequest,
-    background_tasks: BackgroundTasks,
     user_id: str = Depends(verify_firebase_token),
 ):
     """
@@ -5741,9 +5739,14 @@ async def quellen_finder_pdf_scan(
     if reservation.result in {"already_reserved", "finalized"}:
         raise HTTPException(status_code=409, detail="PDF scan billing operation already exists. Please retry later.")
 
-    execution_backend = str(config.PDF_SCAN_EXECUTION_BACKEND or "").strip().lower()
-    if execution_backend not in {"cloud_run_job", "cloud_run_split_jobs", "local_background"}:
-        execution_backend = "cloud_run_job" if config.IS_CLOUD_RUN else "local_background"
+    execution_backend = "cloud_run_split_jobs"
+    configured_execution_backend = str(config.PDF_SCAN_EXECUTION_BACKEND or "").strip().lower()
+    if configured_execution_backend and configured_execution_backend != execution_backend:
+        logger.warning(
+            "Ignoring unsupported PDF scan execution backend %r; using %s.",
+            configured_execution_backend,
+            execution_backend,
+        )
 
     try:
         run_id = fs.create_run(
@@ -5771,49 +5774,21 @@ async def quellen_finder_pdf_scan(
                     "spendRate": float(estimate_payload.get("spend_rate") or 0.0),
                 },
                 "job": {
-                    "provider": (
-                        "cloud_run_split_jobs"
-                        if execution_backend == "cloud_run_split_jobs"
-                        else ("cloud_run_jobs" if execution_backend == "cloud_run_job" else "local_background_task")
-                    ),
-                    "jobName": (
-                        (
-                            str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or config.PDF_SCAN_CLOUD_RUN_JOB_NAME or "").strip() or None
-                            if execution_backend == "cloud_run_split_jobs"
-                            else str(config.PDF_SCAN_CLOUD_RUN_JOB_NAME or "").strip() or None
-                        )
-                        if execution_backend in {"cloud_run_job", "cloud_run_split_jobs"}
-                        else None
-                    ),
-                    "region": (
-                        (
-                            str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or config.PDF_SCAN_CLOUD_RUN_JOB_REGION or "").strip() or None
-                            if execution_backend == "cloud_run_split_jobs"
-                            else str(config.PDF_SCAN_CLOUD_RUN_JOB_REGION or "").strip() or None
-                        )
-                        if execution_backend in {"cloud_run_job", "cloud_run_split_jobs"}
-                        else None
-                    ),
+                    "provider": "cloud_run_split_jobs",
+                    "jobName": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
+                    "region": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
                     "operationName": None,
                     "executionName": None,
                     "launchedAt": None,
                     "launchError": None,
-                    "cpu": (
-                        {
-                            "jobName": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or config.PDF_SCAN_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                            "region": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or config.PDF_SCAN_CLOUD_RUN_JOB_REGION or "").strip() or None,
-                        }
-                        if execution_backend == "cloud_run_split_jobs"
-                        else None
-                    ),
-                    "gpu": (
-                        {
-                            "jobName": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                            "region": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
-                        }
-                        if execution_backend == "cloud_run_split_jobs"
-                        else None
-                    ),
+                    "cpu": {
+                        "jobName": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
+                        "region": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                    },
+                    "gpu": {
+                        "jobName": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
+                        "region": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                    },
                 },
             },
         )
@@ -5831,38 +5806,13 @@ async def quellen_finder_pdf_scan(
         )
         raise
 
-    if execution_backend == "local_background":
-        background_tasks.add_task(
-            run_quellen_finder_pdf_scan_job_from_run_doc,
+    try:
+        launch = await asyncio.to_thread(
+            cloud_run_job_launcher.execute_pdf_scan_cpu_job,
             user_id=user_id,
             projekt_id=projekt_id,
             run_id=run_id,
         )
-        return {
-            "status": "queued",
-            "run_id": run_id,
-            "projekt_id": projekt_id,
-            "kapitel_id": kapitel_id,
-            "pdf_ids": pdf_ids,
-            "execution_backend": execution_backend,
-            "queued_at": datetime.utcnow().isoformat() + "Z",
-        }
-
-    try:
-        if execution_backend == "cloud_run_split_jobs":
-            launch = await asyncio.to_thread(
-                cloud_run_job_launcher.execute_pdf_scan_cpu_job,
-                user_id=user_id,
-                projekt_id=projekt_id,
-                run_id=run_id,
-            )
-        else:
-            launch = await asyncio.to_thread(
-                cloud_run_job_launcher.execute_pdf_scan_job,
-                user_id=user_id,
-                projekt_id=projekt_id,
-                run_id=run_id,
-            )
     except Exception as exc:
         msg = str(exc or "Cloud Run Job launch failed.")[:1000]
         await budget_service.mark_status(
@@ -5876,47 +5826,24 @@ async def quellen_finder_pdf_scan(
             operation_id=reservation_operation_id,
             reason="error",
         )
-        fs.mark_launch_failed(
-            user_id=user_id,
-            projekt_id=projekt_id,
-            run_id=run_id,
-            error_message=msg,
-            job_name=(
-                str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or config.PDF_SCAN_CLOUD_RUN_JOB_NAME or "").strip() or None
-                if execution_backend == "cloud_run_split_jobs"
-                else str(config.PDF_SCAN_CLOUD_RUN_JOB_NAME or "").strip() or None
-            ),
-            region=(
-                str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or config.PDF_SCAN_CLOUD_RUN_JOB_REGION or "").strip() or None
-                if execution_backend == "cloud_run_split_jobs"
-                else str(config.PDF_SCAN_CLOUD_RUN_JOB_REGION or "").strip() or None
-            ),
-        )
-        fs.run_ref(user_id, projekt_id, run_id).set(
-            {"billing": {"status": "error", "reservationOperationId": reservation_operation_id}},
-            merge=True,
-        )
-        raise HTTPException(status_code=502, detail=msg) from exc
-
-    if execution_backend == "cloud_run_split_jobs":
         fs.run_ref(user_id, projekt_id, run_id).set(
             {
+                "status": "error",
+                "errorMessage": msg,
+                "hadPartialFailures": False,
+                "finishedAt": SERVER_TIMESTAMP,
                 "updatedAt": SERVER_TIMESTAMP,
+                "progress": {"stage": "error", "message": "Error"},
+                "billing": {"status": "error", "reservationOperationId": reservation_operation_id},
                 "job": {
                     "provider": "cloud_run_split_jobs",
-                    "jobName": str((launch or {}).get("job_name") or config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or ""),
-                    "region": str((launch or {}).get("region") or config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or ""),
-                    "operationName": (launch or {}).get("operation_name"),
-                    "executionName": (launch or {}).get("execution_name"),
-                    "launchedAt": SERVER_TIMESTAMP,
-                    "launchError": None,
+                    "jobName": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
+                    "region": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                    "launchError": msg,
                     "cpu": {
-                        "jobName": str((launch or {}).get("job_name") or config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or ""),
-                        "region": str((launch or {}).get("region") or config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or ""),
-                        "operationName": (launch or {}).get("operation_name"),
-                        "executionName": (launch or {}).get("execution_name"),
-                        "launchedAt": SERVER_TIMESTAMP,
-                        "launchError": None,
+                        "jobName": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
+                        "region": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                        "launchError": msg,
                     },
                     "gpu": {
                         "jobName": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
@@ -5926,16 +5853,35 @@ async def quellen_finder_pdf_scan(
             },
             merge=True,
         )
-    else:
-        fs.attach_job_execution(
-            user_id=user_id,
-            projekt_id=projekt_id,
-            run_id=run_id,
-            job_name=str((launch or {}).get("job_name") or config.PDF_SCAN_CLOUD_RUN_JOB_NAME or ""),
-            region=str((launch or {}).get("region") or config.PDF_SCAN_CLOUD_RUN_JOB_REGION or ""),
-            operation_name=(launch or {}).get("operation_name"),
-            execution_name=(launch or {}).get("execution_name"),
-        )
+        raise HTTPException(status_code=502, detail=msg) from exc
+
+    fs.run_ref(user_id, projekt_id, run_id).set(
+        {
+            "updatedAt": SERVER_TIMESTAMP,
+            "job": {
+                "provider": "cloud_run_split_jobs",
+                "jobName": str((launch or {}).get("job_name") or config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or ""),
+                "region": str((launch or {}).get("region") or config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or ""),
+                "operationName": (launch or {}).get("operation_name"),
+                "executionName": (launch or {}).get("execution_name"),
+                "launchedAt": SERVER_TIMESTAMP,
+                "launchError": None,
+                "cpu": {
+                    "jobName": str((launch or {}).get("job_name") or config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or ""),
+                    "region": str((launch or {}).get("region") or config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or ""),
+                    "operationName": (launch or {}).get("operation_name"),
+                    "executionName": (launch or {}).get("execution_name"),
+                    "launchedAt": SERVER_TIMESTAMP,
+                    "launchError": None,
+                },
+                "gpu": {
+                    "jobName": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
+                    "region": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                },
+            },
+        },
+        merge=True,
+    )
 
     return {
         "status": "queued",
