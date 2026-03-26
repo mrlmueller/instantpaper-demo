@@ -159,39 +159,21 @@ def append_jsonl(path: Path, payload: Any) -> None:
         handle.write(json.dumps(payload, ensure_ascii=False, default=_json_default) + "\n")
 
 
-def _find_repo_root_and_pdf_scan_dir() -> tuple[Path, Path]:
-    cwd = Path.cwd().resolve()
-    here = Path(__file__).resolve()
+def _resolve_runtime_roots() -> tuple[Path, Path]:
+    pdf_scan_dir = Path(__file__).resolve().parent
+    if not (pdf_scan_dir / "phase_a_lab.py").is_file():
+        raise RuntimeError(f"Could not resolve pdf_scan_runtime root from {pdf_scan_dir}")
 
-    seen: set[Path] = set()
-    candidates = [cwd, cwd.parent, here.parent, *here.parents]
+    fastapi_root = pdf_scan_dir.parent
+    if (fastapi_root / "main.py").is_file() and (fastapi_root / "services").is_dir():
+        return fastapi_root, pdf_scan_dir
 
-    for base in candidates:
-        if base in seen:
-            continue
-        seen.add(base)
-
-        pdf_scan_dir = base / "pdf-scan"
-        if pdf_scan_dir.exists() and pdf_scan_dir.is_dir():
-            return base, pdf_scan_dir
-
-        if base.name == "pdf-scan":
-            return base.parent, base
-
-        # In the packaged FastAPI/Cloud Run image the pipeline is vendored into
-        # /app/pdf_scan_runtime rather than living next to a repo-level
-        # "pdf-scan" directory.
-        if base.name == "pdf_scan_runtime" and (base / "phase_a_lab.py").is_file():
-            fastapi_root = base.parent
-            repo_root = fastapi_root.parent if (fastapi_root / "main.py").is_file() else fastapi_root
-            return repo_root, base
-
-    raise RuntimeError(
-        "Could not resolve repo root / pdf-scan directory from current working directory or packaged runtime path."
-    )
+    # Fallback for standalone copies: keep all relative resolution self-contained
+    # inside the runtime directory instead of depending on a repo-level `pdf-scan/`.
+    return pdf_scan_dir, pdf_scan_dir
 
 
-REPO_ROOT, PDF_SCAN_DIR = _find_repo_root_and_pdf_scan_dir()
+REPO_ROOT, PDF_SCAN_DIR = _resolve_runtime_roots()
 load_dotenv(REPO_ROOT / ".env", override=False)
 load_dotenv(PDF_SCAN_DIR / ".env", override=False)
 
