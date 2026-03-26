@@ -125,6 +125,7 @@ Completed commits so far:
 - `6af05c9` `feat(frontend): route app traffic through next bff`
 - `cbcdd9e` `chore(frontend): remove stale auth shell and ui primitives`
 - `a371ba6` `chore(frontend): remove unused kapitel skeleton`
+- `1cc55ae` `fix(backend): isolate vendored pdf scan runtime`
 
 What is now already true in the repo:
 
@@ -138,7 +139,7 @@ Important remaining work after these commits:
 
 - `Dashboard.tsx` still reads the session cookie client-side for some local gating logic
 - README/env documentation still reflects the older direct-browser-to-FastAPI model
-- backend runtime still needs full isolation from repo-level `pdf-scan/` fallbacks
+- backend runtime still contains lab-oriented CLI defaults inside vendored PDF-scan phase files, even though the main repo-level `pdf-scan/` fallback has now been removed
 - `functions/` still needs a deliberate keep/retire decision with live verification
 
 ## Target Repo Layout
@@ -932,6 +933,13 @@ Tasks:
 - stop vendored runtime from loading research env files
 - remove notebook/benchmark defaults from product entrypoints
 - confirm sources runtime uses only backend ported package
+
+Status update:
+
+- the highest-priority blocker in vendored PDF-scan runtime has already been fixed in commit `1cc55ae`
+- `fastapi/pdf_scan_runtime/phase_a_lab.py` no longer searches for a repo-level `pdf-scan/` directory and now resolves its runtime roots from the vendored backend package itself
+- `sources-v2/` appears technically isolated from the production backend already; remaining references are provenance comments, not runtime imports
+- remaining work in this phase is mostly tightening lab/benchmark CLI defaults so the shipped backend runtime no longer suggests test-tree paths by default
 
 Exit criteria:
 
