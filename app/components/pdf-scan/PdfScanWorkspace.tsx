@@ -306,6 +306,44 @@ function buildPdfScanRunLabel(run: RunRow): string {
   return "PDF-Scan";
 }
 
+function buildKapitelNumber(snapshot: { nummer?: string | null } | Kapitel | null | undefined): string {
+  return String(snapshot?.nummer || "").trim();
+}
+
+function buildKapitelTitle(
+  snapshot:
+    | ({
+        title?: string | null;
+        ueberschrift?: string | null;
+      } & { nummer?: string | null })
+    | Kapitel
+    | null
+    | undefined
+): string {
+  if (!snapshot) return "";
+  const record = snapshot as { title?: string | null; ueberschrift?: string | null };
+  return String(record.title || record.ueberschrift || "").trim();
+}
+
+function buildKapitelLabel(
+  snapshot:
+    | ({
+        title?: string | null;
+        ueberschrift?: string | null;
+      } & { nummer?: string | null })
+    | Kapitel
+    | null
+    | undefined
+): string {
+  const nummer = buildKapitelNumber(snapshot);
+  const title = buildKapitelTitle(snapshot);
+  return `${nummer ? `${nummer} ` : ""}${title || "Kapitel"}`.trim();
+}
+
+function buildChapterDocKey(chapterId: string, docId: string): string {
+  return `${chapterId}::${docId}`;
+}
+
 let pdfjsUploadPromise: Promise<PdfJsModule> | null = null;
 
 async function loadPdfJsForUpload(): Promise<PdfJsModule> {
@@ -530,6 +568,8 @@ export function PdfScanWorkspace({
     const fallback = String(preview?.initialSelectedKapitelId || "").trim();
     return fallback ? [fallback] : [];
   });
+  const [kapitelPickerOpen, setKapitelPickerOpen] = useState(false);
+  const [kapitelFilter, setKapitelFilter] = useState("");
 
   const [pdfs, setPdfs] = useState<PdfRow[]>(() => preview?.pdfs ?? []);
   const [selectedPdfIds, setSelectedPdfIds] = useState<string[]>(() => preview?.initialSelectedPdfIds ?? (preview?.pdfs ?? []).map((pdf) => pdf.id));
@@ -544,21 +584,40 @@ export function PdfScanWorkspace({
   const [runs, setRuns] = useState<RunRow[]>(() => preview?.runs ?? []);
   const [runsLoaded, setRunsLoaded] = useState(() => previewMode);
   const [activeRunId, setActiveRunId] = useState<string | null>(() => preview?.initialActiveRunId ?? null);
-  const [activeResultChapterId, setActiveResultChapterId] = useState<string | null>(() => preview?.initialActiveChapterId ?? preview?.initialSelectedKapitelId ?? null);
   const [activeRunCookieRestored, setActiveRunCookieRestored] = useState(() => previewMode);
 
   const [chapterRows, setChapterRows] = useState<ChapterRow[]>(() => preview?.chapterRows ?? []);
-  const [chapterRowsLoaded, setChapterRowsLoaded] = useState(() => previewMode);
-  const [docRows, setDocRows] = useState<PdfDocRow[]>(() => preview?.docRows ?? []);
-  const [docRowsLoaded, setDocRowsLoaded] = useState(() => previewMode);
-  const [openDocIds, setOpenDocIds] = useState<string[]>(() => (preview?.docRows ?? []).map((row) => row.id));
+  const [, setChapterRowsLoaded] = useState(() => previewMode);
+  const [chapterDocRowsByChapterId, setChapterDocRowsByChapterId] = useState<Record<string, PdfDocRow[]>>(() => {
+    const initialChapterId = String(preview?.initialActiveChapterId || preview?.initialSelectedKapitelId || "").trim();
+    if (!initialChapterId || !(preview?.docRows?.length)) return {};
+    return { [initialChapterId]: preview.docRows };
+  });
+  const [chapterDocRowsLoadedByChapterId, setChapterDocRowsLoadedByChapterId] = useState<Record<string, boolean>>(() => {
+    const initialChapterId = String(preview?.initialActiveChapterId || preview?.initialSelectedKapitelId || "").trim();
+    if (!initialChapterId || !previewMode) return {};
+    return { [initialChapterId]: true };
+  });
+  const [openDocIds, setOpenDocIds] = useState<string[]>(() => {
+    const initialChapterId = String(preview?.initialActiveChapterId || preview?.initialSelectedKapitelId || "").trim();
+    if (!initialChapterId) return [];
+    return (preview?.docRows ?? []).map((row) => buildChapterDocKey(initialChapterId, row.id));
+  });
   const [startConfirmOpen, setStartConfirmOpen] = useState(false);
   const [duplicateKapitelConfirmOpen, setDuplicateKapitelConfirmOpen] = useState(false);
   const [duplicateKapitelConflictRunId, setDuplicateKapitelConflictRunId] = useState<string | null>(null);
   const [deleteConfirmPdf, setDeleteConfirmPdf] = useState<PdfRow | null>(null);
 
-  const [sectionRowsByDocId, setSectionRowsByDocId] = useState<Record<string, PdfSectionRow[]>>(() => preview?.sectionsByDocId ?? {});
-  const [sectionRowsLoaded, setSectionRowsLoaded] = useState(() => previewMode);
+  const [chapterSectionRowsByChapterId, setChapterSectionRowsByChapterId] = useState<Record<string, Record<string, PdfSectionRow[]>>>(() => {
+    const initialChapterId = String(preview?.initialActiveChapterId || preview?.initialSelectedKapitelId || "").trim();
+    if (!initialChapterId || !preview?.sectionsByDocId) return {};
+    return { [initialChapterId]: preview.sectionsByDocId };
+  });
+  const [chapterSectionRowsLoadedByChapterId, setChapterSectionRowsLoadedByChapterId] = useState<Record<string, boolean>>(() => {
+    const initialChapterId = String(preview?.initialActiveChapterId || preview?.initialSelectedKapitelId || "").trim();
+    if (!initialChapterId || !previewMode) return {};
+    return { [initialChapterId]: true };
+  });
 
   const [extractOpen, setExtractOpen] = useState(false);
   const [extractRequest, setExtractRequest] = useState<PdfExtractRequest | null>(null);
@@ -570,7 +629,13 @@ export function PdfScanWorkspace({
   const pdfColorRequestSeqRef = useRef<Map<string, number>>(new Map());
   const lastRunStatus = useRef<{ runId: string; status: string } | null>(null);
   const previousActiveRunIdRef = useRef<string | null>(null);
-  const knownDocIdsForRunRef = useRef<Set<string>>(new Set((preview?.docRows ?? []).map((row) => row.id)));
+  const knownDocIdsForRunRef = useRef<Set<string>>(
+    new Set(
+      (preview?.docRows ?? []).map((row) =>
+        buildChapterDocKey(String(preview?.initialActiveChapterId || preview?.initialSelectedKapitelId || "").trim(), row.id)
+      )
+    )
+  );
   const activeRunCookieKey = useMemo(() => `pdf_scan_active_run_${projektId}`, [projektId]);
 
   const kapitelById = useMemo(() => {
@@ -585,6 +650,17 @@ export function PdfScanWorkspace({
     () => kapitels.filter((item) => selectedKapitelIdSet.has(item.id)),
     [kapitels, selectedKapitelIdSet]
   );
+  const selectedKapitelPreviewRows = useMemo(() => selectedKapitelRows.slice(0, 3), [selectedKapitelRows]);
+  const hiddenSelectedKapitelCount = Math.max(0, selectedKapitelRows.length - selectedKapitelPreviewRows.length);
+  const filteredKapitelRows = useMemo(() => {
+    const q = kapitelFilter.trim().toLowerCase();
+    if (!q) return kapitels;
+    return kapitels.filter((kapitel) => {
+      const nummer = String(kapitel.nummer || "").toLowerCase();
+      const title = String(kapitel.title || "").toLowerCase();
+      return nummer.includes(q) || title.includes(q);
+    });
+  }, [kapitelFilter, kapitels]);
 
   const primarySelectedKapitel = selectedKapitelRows[0] ?? null;
 
@@ -691,13 +767,12 @@ export function PdfScanWorkspace({
         topSectionCount: 0,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
-      } as ChapterRow;
+        } as ChapterRow;
     });
   }, [activeRun?.kapitelIds, chapterRows, kapitelById]);
-
-  const activeChapterRow = useMemo(
-    () => activeRunChapterRows.find((row) => row.chapterId === activeResultChapterId) ?? null,
-    [activeResultChapterId, activeRunChapterRows]
+  const activeRunChapterIds = useMemo(
+    () => activeRunChapterRows.map((row) => String(row.chapterId || "").trim()).filter(Boolean),
+    [activeRunChapterRows]
   );
 
   const selectedPdfIdSet = useMemo(() => new Set(selectedPdfIds), [selectedPdfIds]);
@@ -749,13 +824,11 @@ export function PdfScanWorkspace({
     if (activeRun?.kapitelIds?.length) {
       const nextKapitelIds = activeRun.kapitelIds.filter((value): value is string => Boolean(String(value || "").trim()));
       setSelectedKapitelIds(nextKapitelIds);
-      setActiveResultChapterId((prev) => (prev && nextKapitelIds.includes(prev) ? prev : nextKapitelIds[0] ?? null));
       return;
     }
     if (kapitels.length) {
       const firstKapitelId = kapitels[0]?.id ?? null;
       setSelectedKapitelIds(firstKapitelId ? [firstKapitelId] : []);
-      setActiveResultChapterId((prev) => prev ?? firstKapitelId);
     }
   }, [activeRun?.kapitelIds, activeRunCookieRestored, kapitels, previewMode, selectedKapitelIds]);
 
@@ -787,21 +860,14 @@ export function PdfScanWorkspace({
     setOpenDocIds([]);
     setChapterRows([]);
     setChapterRowsLoaded(previewMode);
-    setSectionRowsByDocId({});
-    setSectionRowsLoaded(previewMode);
+    setChapterDocRowsByChapterId({});
+    setChapterDocRowsLoadedByChapterId({});
+    setChapterSectionRowsByChapterId({});
+    setChapterSectionRowsLoadedByChapterId({});
     knownDocIdsForRunRef.current = new Set();
     setExtractOpen(false);
     setExtractRequest(null);
   }, [activeRun?.id, previewMode]);
-
-  useEffect(() => {
-    setOpenDocIds([]);
-    setSectionRowsByDocId({});
-    setSectionRowsLoaded(previewMode);
-    knownDocIdsForRunRef.current = new Set();
-    setExtractOpen(false);
-    setExtractRequest(null);
-  }, [activeResultChapterId, previewMode]);
 
   useEffect(() => {
     if (previewMode) return;
@@ -888,7 +954,6 @@ export function PdfScanWorkspace({
       : [];
     if (nextKapitelIds.length > 0) {
       setSelectedKapitelIds(nextKapitelIds);
-      setActiveResultChapterId((prev) => (prev && nextKapitelIds.includes(prev) ? prev : nextKapitelIds[0] ?? null));
     }
     setActiveRunCookieRestored(true);
   }, [activeRunCookieKey, activeRunCookieRestored, activeRunId, pdfScanRuns, previewMode, runsLoaded]);
@@ -902,15 +967,6 @@ export function PdfScanWorkspace({
     }
     Cookies.remove(activeRunCookieKey);
   }, [activeRun?.id, activeRunCookieKey, activeRunCookieRestored, previewMode]);
-
-  useEffect(() => {
-    if (!activeRun?.kapitelIds?.length) {
-      setActiveResultChapterId(null);
-      return;
-    }
-    const validChapterIds = activeRun.kapitelIds.map((value) => String(value || "").trim()).filter(Boolean);
-    setActiveResultChapterId((prev) => (prev && validChapterIds.includes(prev) ? prev : validChapterIds[0] ?? null));
-  }, [activeRun?.kapitelIds]);
 
   useEffect(() => {
     if (previewMode) return;
@@ -939,107 +995,110 @@ export function PdfScanWorkspace({
   }, [activeRun?.id, previewMode, projektId, user?.uid]);
 
   useEffect(() => {
-    if (previewMode) return;
-    if (!user?.uid || !projektId || !activeRun?.id || !activeResultChapterId) {
-      setDocRows([]);
-      setDocRowsLoaded(false);
-      return;
-    }
-    setDocRowsLoaded(false);
-    const q = query(
-      quellenFinderPdfScanChapterDocsCol(firestoreClient, user.uid, projektId, activeRun.id, activeResultChapterId),
-      limit(200)
-    );
-    return onSnapshot(
-      q,
-      (snap) => {
-        const next = snap.docs
-          .map((entry) => ({ id: entry.id, ...(entry.data() as PdfScanChapterDocSummaryDoc) }))
-          .sort((a, b) => {
-            const scoreDiff = readTopScore(b) - readTopScore(a);
-            if (scoreDiff !== 0) return scoreDiff;
-            const countDiff = Number(b.visibleSectionCount || 0) - Number(a.visibleSectionCount || 0);
-            if (countDiff !== 0) return countDiff;
-            return String(a.docTitle || a.pdfLabel || "").localeCompare(String(b.docTitle || b.pdfLabel || ""), "de");
-          });
-        setDocRows(next);
-        setDocRowsLoaded(true);
-      },
-      (err) => {
-        console.error("Failed to load pdfScanChapter docs:", err);
-        setDocRows([]);
-        setDocRowsLoaded(true);
-      }
-    );
-  }, [activeResultChapterId, activeRun?.id, previewMode, projektId, user?.uid]);
-
-  useEffect(() => {
-    if (previewMode) return;
-    if (!user?.uid || !projektId || !activeRun?.id || !activeResultChapterId) {
-      setSectionRowsByDocId({});
-      setSectionRowsLoaded(false);
-      return;
-    }
-    setSectionRowsLoaded(false);
-    const q = query(
-      quellenFinderPdfScanChapterSectionsCol(firestoreClient, user.uid, projektId, activeRun.id, activeResultChapterId),
-      limit(5000)
-    );
-    return onSnapshot(
-      q,
-      (snap) => {
-        const rows = snap.docs
-          .map((entry) => ({ id: entry.id, ...(entry.data() as PdfScanChapterSectionDoc) }))
-          .sort((a, b) => {
-            const scoreDiff = Number(b.score0To100 || 0) - Number(a.score0To100 || 0);
-            if (scoreDiff !== 0) return scoreDiff;
-            const rankDiff = Number(a.docRank || 9999) - Number(b.docRank || 9999);
-            if (rankDiff !== 0) return rankDiff;
-            return Number(a.pageStart || 9999) - Number(b.pageStart || 9999);
-          });
-        const grouped: Record<string, PdfSectionRow[]> = {};
-        for (const row of rows) {
-          const docId = String(row.docId || "").trim();
-          if (!docId) continue;
-          if (!grouped[docId]) grouped[docId] = [];
-          grouped[docId]!.push(row);
-        }
-        setSectionRowsByDocId(grouped);
-        setSectionRowsLoaded(true);
-      },
-      (err) => {
-        console.error("Failed to load pdfScanChapter sections:", err);
-        setSectionRowsByDocId({});
-        setSectionRowsLoaded(true);
-      }
-    );
-  }, [activeResultChapterId, activeRun?.id, previewMode, projektId, user?.uid]);
-
-  useEffect(() => {
     if (!previewMode) return;
     setChapterRows(preview?.chapterRows ?? []);
     setChapterRowsLoaded(true);
-    setSectionRowsByDocId(preview?.sectionsByDocId ?? {});
-    setSectionRowsLoaded(true);
+    const initialChapterId = String(preview?.initialActiveChapterId || preview?.initialSelectedKapitelId || "").trim();
+    setChapterDocRowsByChapterId(initialChapterId && preview?.docRows ? { [initialChapterId]: preview.docRows } : {});
+    setChapterDocRowsLoadedByChapterId(initialChapterId ? { [initialChapterId]: true } : {});
+    setChapterSectionRowsByChapterId(initialChapterId && preview?.sectionsByDocId ? { [initialChapterId]: preview.sectionsByDocId } : {});
+    setChapterSectionRowsLoadedByChapterId(initialChapterId ? { [initialChapterId]: true } : {});
   }, [previewMode, preview]);
+ 
+  useEffect(() => {
+    if (previewMode) return;
+    if (!user?.uid || !projektId || !activeRun?.id || activeRunChapterIds.length === 0) {
+      setChapterDocRowsByChapterId({});
+      setChapterDocRowsLoadedByChapterId({});
+      setChapterSectionRowsByChapterId({});
+      setChapterSectionRowsLoadedByChapterId({});
+      return;
+    }
+
+    setChapterDocRowsLoadedByChapterId({});
+    setChapterSectionRowsLoadedByChapterId({});
+
+    const unsubscribes: Array<() => void> = [];
+
+    for (const chapterId of activeRunChapterIds) {
+      const docsQuery = query(quellenFinderPdfScanChapterDocsCol(firestoreClient, user.uid, projektId, activeRun.id, chapterId), limit(200));
+      unsubscribes.push(
+        onSnapshot(
+          docsQuery,
+          (snap) => {
+            const next = snap.docs
+              .map((entry) => ({ id: entry.id, ...(entry.data() as PdfScanChapterDocSummaryDoc) }))
+              .sort((a, b) => {
+                const scoreDiff = readTopScore(b) - readTopScore(a);
+                if (scoreDiff !== 0) return scoreDiff;
+                const countDiff = Number(b.visibleSectionCount || 0) - Number(a.visibleSectionCount || 0);
+                if (countDiff !== 0) return countDiff;
+                return String(a.docTitle || a.pdfLabel || "").localeCompare(String(b.docTitle || b.pdfLabel || ""), "de");
+              });
+            setChapterDocRowsByChapterId((prev) => ({ ...prev, [chapterId]: next }));
+            setChapterDocRowsLoadedByChapterId((prev) => ({ ...prev, [chapterId]: true }));
+          },
+          (err) => {
+            console.error(`Failed to load pdfScanChapter docs for ${chapterId}:`, err);
+            setChapterDocRowsByChapterId((prev) => ({ ...prev, [chapterId]: [] }));
+            setChapterDocRowsLoadedByChapterId((prev) => ({ ...prev, [chapterId]: true }));
+          }
+        )
+      );
+
+      const sectionsQuery = query(
+        quellenFinderPdfScanChapterSectionsCol(firestoreClient, user.uid, projektId, activeRun.id, chapterId),
+        limit(5000)
+      );
+      unsubscribes.push(
+        onSnapshot(
+          sectionsQuery,
+          (snap) => {
+            const rows = snap.docs
+              .map((entry) => ({ id: entry.id, ...(entry.data() as PdfScanChapterSectionDoc) }))
+              .sort((a, b) => {
+                const scoreDiff = Number(b.score0To100 || 0) - Number(a.score0To100 || 0);
+                if (scoreDiff !== 0) return scoreDiff;
+                const rankDiff = Number(a.docRank || 9999) - Number(b.docRank || 9999);
+                if (rankDiff !== 0) return rankDiff;
+                return Number(a.pageStart || 9999) - Number(b.pageStart || 9999);
+              });
+            const grouped: Record<string, PdfSectionRow[]> = {};
+            for (const row of rows) {
+              const docId = String(row.docId || "").trim();
+              if (!docId) continue;
+              if (!grouped[docId]) grouped[docId] = [];
+              grouped[docId]!.push(row);
+            }
+            setChapterSectionRowsByChapterId((prev) => ({ ...prev, [chapterId]: grouped }));
+            setChapterSectionRowsLoadedByChapterId((prev) => ({ ...prev, [chapterId]: true }));
+          },
+          (err) => {
+            console.error(`Failed to load pdfScanChapter sections for ${chapterId}:`, err);
+            setChapterSectionRowsByChapterId((prev) => ({ ...prev, [chapterId]: {} }));
+            setChapterSectionRowsLoadedByChapterId((prev) => ({ ...prev, [chapterId]: true }));
+          }
+        )
+      );
+    }
+
+    return () => {
+      unsubscribes.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [activeRun?.id, activeRunChapterIds, previewMode, projektId, user?.uid]);
 
   useEffect(() => {
-    const docIds = docRows.map((row) => row.id);
-    const docIdSet = new Set(docIds);
-    const knownDocIds = knownDocIdsForRunRef.current;
-    const newDocIds = docIds.filter((docId) => !knownDocIds.has(docId));
-    for (const docId of docIds) knownDocIds.add(docId);
-
+    const nextDocKeys = activeRunChapterIds.flatMap((chapterId) =>
+      (chapterDocRowsByChapterId[chapterId] ?? []).map((row) => buildChapterDocKey(chapterId, row.id))
+    );
+    const docKeySet = new Set(nextDocKeys);
     setOpenDocIds((prev) => {
-      const kept = prev.filter((docId) => docIdSet.has(docId));
-      if (newDocIds.length === 0) return kept;
-      const next = [...kept];
-      for (const docId of newDocIds) {
-        if (!next.includes(docId)) next.push(docId);
-      }
-      return next;
+      const kept = prev.filter((docKey) => docKeySet.has(docKey));
+      if (kept.length > 0) return kept;
+      return nextDocKeys.length > 0 ? [nextDocKeys[0]!] : [];
     });
-  }, [docRows]);
+    knownDocIdsForRunRef.current = new Set(nextDocKeys);
+  }, [activeRunChapterIds, chapterDocRowsByChapterId]);
 
   useEffect(() => {
     const running = activeRun?.status === "queued" || activeRun?.status === "running";
@@ -1101,7 +1160,6 @@ export function PdfScanWorkspace({
       : [];
     if (runKapitelIds.length > 0) {
       setSelectedKapitelIds(runKapitelIds);
-      setActiveResultChapterId(runKapitelIds[0] ?? null);
     }
   };
 
@@ -1596,8 +1654,6 @@ export function PdfScanWorkspace({
     if (dropped.length > 0) void uploadProjectPdfs(dropped);
   };
 
-  const filteredDocRows = docRows;
-
   const running = activeRun?.status === "queued" || activeRun?.status === "running";
   const isDone = activeRun?.status === "success" || String(activeRun?.progress?.stage || "") === "done";
   const isError = activeRun?.status === "error" || String(activeRun?.progress?.stage || "") === "error";
@@ -1620,44 +1676,70 @@ export function PdfScanWorkspace({
 
   const stageKey = String(activeRun?.progress?.stage || "");
   const activeStepIndex = PDF_SCAN_PIPELINE_STEPS.findIndex((step) => step.key === stageKey);
-  const visibleDocCount =
-    typeof activeChapterRow?.documentCount === "number"
-      ? activeChapterRow.documentCount
-      : typeof activeRun?.pdfScanCounts?.aggregateDocCount === "number"
-        ? activeRun.pdfScanCounts.aggregateDocCount
-        : docRows.length;
+  const chapterResultGroups = useMemo(
+    () =>
+      activeRunChapterRows.map((row) => {
+        const chapterId = String(row.chapterId || "").trim();
+        const docRows = chapterDocRowsByChapterId[chapterId] ?? [];
+        const sectionRowsByDocId = chapterSectionRowsByChapterId[chapterId] ?? {};
+        const loadedDocs = Boolean(chapterDocRowsLoadedByChapterId[chapterId]);
+        const loadedSections = Boolean(chapterSectionRowsLoadedByChapterId[chapterId]);
+        const sectionCount =
+          typeof row.visibleSectionCount === "number"
+            ? row.visibleSectionCount
+            : docRows.reduce((sum, docRow) => sum + ((sectionRowsByDocId[docRow.id] ?? []).length || 0), 0);
+        return {
+          chapterId,
+          chapterRow: row,
+          heading: buildKapitelLabel(row.kapitelSnapshot),
+          numberLabel: buildKapitelNumber(row.kapitelSnapshot),
+          docRows,
+          sectionRowsByDocId,
+          loadedDocs,
+          loadedSections,
+          visibleSectionCount: sectionCount,
+          usefulPdfCount: typeof row.usefulPdfCount === "number" ? row.usefulPdfCount : docRows.filter((docRow) => docRow.hasUsefulInformation).length,
+        };
+      }),
+    [
+      activeRunChapterRows,
+      chapterDocRowsByChapterId,
+      chapterDocRowsLoadedByChapterId,
+      chapterSectionRowsByChapterId,
+      chapterSectionRowsLoadedByChapterId,
+    ]
+  );
+  const chapterCount =
+    typeof activeRun?.pdfScanSummary?.chapterCount === "number" ? activeRun.pdfScanSummary.chapterCount : activeRunChapterRows.length;
   const visibleSectionCount =
-    typeof activeChapterRow?.visibleSectionCount === "number"
-      ? activeChapterRow.visibleSectionCount
-      : typeof activeRun?.pdfScanSummary?.totalVisibleSectionCount === "number"
-        ? activeRun.pdfScanSummary.totalVisibleSectionCount
-        : docRows.reduce((sum, row) => sum + (typeof row.visibleSectionCount === "number" ? row.visibleSectionCount : 0), 0);
+    typeof activeRun?.pdfScanSummary?.totalVisibleSectionCount === "number"
+      ? activeRun.pdfScanSummary.totalVisibleSectionCount
+      : chapterResultGroups.reduce((sum, group) => sum + group.visibleSectionCount, 0);
   const usefulPdfCount =
-    typeof activeChapterRow?.usefulPdfCount === "number"
-      ? activeChapterRow.usefulPdfCount
-      : typeof activeRun?.pdfScanSummary?.usefulPdfCountAnyChapter === "number"
-        ? activeRun.pdfScanSummary.usefulPdfCountAnyChapter
-        : docRows.filter((row) => row.hasUsefulInformation === true).length;
-  const usefulPdfCountAnyChapter =
     typeof activeRun?.pdfScanSummary?.usefulPdfCountAnyChapter === "number"
       ? activeRun.pdfScanSummary.usefulPdfCountAnyChapter
-      : usefulPdfCount;
-
-  const activeKapitelSnapshot =
-    activeChapterRow?.kapitelSnapshot ??
-    activeRun?.kapitelSnapshots?.find((snapshot) => String(snapshot?.id || "") === activeResultChapterId) ??
-    primarySelectedKapitel ??
-    null;
-  const chapterNummer = String(activeKapitelSnapshot?.nummer ?? "").trim();
-  const chapterTitle = String(
-    ((activeKapitelSnapshot as { title?: string | null; ueberschrift?: string | null } | null)?.title ??
-      (activeKapitelSnapshot as { title?: string | null; ueberschrift?: string | null } | null)?.ueberschrift ??
-      "")
-  ).trim();
-  const chapterHeading = `${chapterNummer ? `${chapterNummer} ` : ""}${chapterTitle || "Kapitel"}`.trim();
+      : new Set(
+          chapterResultGroups.flatMap((group) =>
+            group.docRows.filter((row) => row.hasUsefulInformation).map((row) => String(row.docId || row.id || "").trim()).filter(Boolean)
+          )
+        ).size;
+  const runChapterNumberPills = activeRunChapterRows
+    .map((row) => buildKapitelNumber(row.kapitelSnapshot))
+    .filter((value, index, values) => Boolean(value) && values.indexOf(value) === index);
+  const chapterGroupsWithResults = chapterResultGroups.filter((group) => group.docRows.length > 0);
+  const allChapterResultsLoaded =
+    chapterResultGroups.length > 0 &&
+    chapterResultGroups.every((group) => group.loadedDocs && group.loadedSections);
+  const activeRunTitle = activeRun
+    ? buildKapitelLabel(activeRunChapterRows[0]?.kapitelSnapshot ?? primarySelectedKapitel)
+    : "PDF-Scan";
   const runCostUsd = readRunCostUsd(activeRun);
   const selectedPdfPreviewRows = selectedPdfRows.slice(0, 3);
   const hiddenSelectedPdfCount = Math.max(0, selectedPdfRows.length - selectedPdfPreviewRows.length);
+  const startButtonLabel =
+    selectedKapitelIds.length > 0 || selectedPdfIds.length > 0
+      ? `Scan starten (${formatIntDe(selectedKapitelIds.length)} Kap. / ${formatIntDe(selectedPdfIds.length)} PDFs)`
+      : "Scan starten";
   const currentStepNumber = isDone
     ? PDF_SCAN_PIPELINE_STEPS.length
     : activeStepIndex >= 0
@@ -1697,42 +1779,60 @@ export function PdfScanWorkspace({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        <aside className="flex min-h-0 w-[360px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white">
+        <div className="flex min-h-0 flex-1">
+        <aside className="flex min-h-0 w-[320px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white">
           <div className="shrink-0 space-y-4 border-b border-slate-200 px-5 py-5">
             <div className="space-y-2">
-              <div className="text-xs font-medium text-slate-600">Kapitel auswählen</div>
-              <div className="overflow-hidden rounded-[10px] border border-slate-200 bg-white">
-                <div className="border-b border-slate-100 px-3 py-2.5 text-[13px] text-slate-500">
-                  {selectedKapitelRows.length > 0
-                    ? `${formatIntDe(selectedKapitelRows.length)} Kapitel ausgewählt`
-                    : "Noch kein Kapitel ausgewählt"}
-                </div>
-                <div className="max-h-[180px] overflow-y-auto overscroll-contain">
-                  <div className="divide-y divide-slate-100">
-                    {kapitels.map((kapitel) => {
-                      const depth = kapitelDepth(kapitel.nummer);
-                      const checked = selectedKapitelIdSet.has(kapitel.id);
-                      return (
-                        <label
-                          key={kapitel.id}
-                          className="flex cursor-pointer items-start gap-3 px-3 py-2.5 text-sm hover:bg-slate-50"
-                          style={{ paddingLeft: 12 + depth * 12 }}
-                        >
-                          <Checkbox
-                            checked={checked}
-                            onCheckedChange={(value) => toggleSelectedKapitel(kapitel.id, Boolean(value))}
-                            aria-label={`${kapitel.nummer || ""} ${kapitel.title}`.trim()}
-                          />
-                          <span className="min-w-0 flex-1 leading-5">
-                            <span className="mr-2 text-slate-400 tabular-nums">{kapitel.nummer}</span>
-                            <span className="block line-clamp-2 text-slate-900">{kapitel.title}</span>
-                          </span>
-                        </label>
-                      );
-                    })}
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs font-medium text-slate-600">Kapitel auswählen</div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-9 rounded-[6px] border-slate-200 bg-white px-4 text-sm shadow-none"
+                  onClick={() => setKapitelPickerOpen(true)}
+                >
+                  Auswählen{selectedKapitelIds.length > 0 ? ` (${formatIntDe(selectedKapitelIds.length)})` : ""}
+                </Button>
+              </div>
+
+              <div className="space-y-1.5">
+                {selectedKapitelPreviewRows.length > 0 ? (
+                  selectedKapitelPreviewRows.map((kapitel) => (
+                    <div
+                      key={kapitel.id}
+                      className="flex items-start gap-2.5 rounded-[8px] bg-slate-50 px-3 py-2"
+                    >
+                      <div className="shrink-0 pt-0.5 text-[13px] font-semibold tabular-nums text-sky-700">
+                        {kapitel.nummer || "–"}
+                      </div>
+                      <div className="min-w-0 flex-1 text-[14px] leading-5 text-slate-800 line-clamp-2">
+                        {kapitel.title}
+                      </div>
+                      <button
+                        type="button"
+                        className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center text-slate-400 transition-colors hover:text-slate-700"
+                        onClick={() => toggleSelectedKapitel(kapitel.id, false)}
+                        title="Aus Auswahl entfernen"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[8px] border border-dashed border-slate-200 px-3 py-3 text-sm text-slate-500">
+                    Noch kein Kapitel ausgewählt.
                   </div>
-                </div>
+                )}
+                {hiddenSelectedKapitelCount > 0 ? (
+                  <button
+                    type="button"
+                    className="text-sm text-sky-700 transition-colors hover:text-sky-800"
+                    onClick={() => setKapitelPickerOpen(true)}
+                  >
+                    +{formatIntDe(hiddenSelectedKapitelCount)} weitere...
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -1753,30 +1853,32 @@ export function PdfScanWorkspace({
               </button>
 
               {libraryExpanded ? (
-                <div className="mt-3 rounded-[14px] border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="text-[18px] font-semibold leading-none tracking-[-0.03em] text-slate-950">{formatIntDe(pdfs.length)}</div>
-                      <div className="mt-2 text-[14px] font-medium text-slate-900">PDFs verfügbar</div>
-                      <div className="mt-1 text-[14px] leading-6 text-slate-500">{formatIntDe(selectedPdfIds.length)} für Scan ausgewählt</div>
+                <div className="mt-3 rounded-[14px] border border-slate-200 bg-white p-3.5 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-baseline gap-1.5">
+                        <div className="text-[18px] font-semibold leading-none tracking-[-0.03em] text-slate-950">{formatIntDe(pdfs.length)}</div>
+                        <div className="truncate text-[14px] font-medium leading-5 text-slate-900">PDFs verfügbar</div>
+                      </div>
+                      <div className="mt-1 text-[14px] leading-6 text-slate-500 whitespace-nowrap">{formatIntDe(selectedPdfIds.length)} für Scan ausgewählt</div>
                     </div>
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-10 rounded-[4px] border-slate-200 bg-white px-4 text-sm shadow-none"
+                      className="h-9 shrink-0 rounded-[4px] border-slate-200 bg-white px-3 text-[13px] shadow-none"
                       onClick={() => setLibraryManagerOpen(true)}
                     >
                       Verwalten
                     </Button>
                   </div>
 
-                  <div className="mt-5 border-t border-slate-200 pt-5">
+                  <div className="mt-4 border-t border-slate-200 pt-4">
                     <div className="text-[13px] font-medium text-slate-500">Ausgewählte PDFs:</div>
                     {selectedPdfPreviewRows.length === 0 ? (
                       <div className="mt-3 text-sm leading-6 text-slate-500">Noch keine PDFs ausgewählt.</div>
                     ) : (
                       <TooltipProvider delayDuration={120}>
-                        <div className="mt-3 space-y-2.5">
+                        <div className="mt-3 space-y-2">
                         {selectedPdfPreviewRows.map((pdf) => (
                           <div key={pdf.id} className="flex items-start gap-2.5">
                             <FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
@@ -1825,7 +1927,7 @@ export function PdfScanWorkspace({
                   className="h-10 w-full rounded-[4px] bg-[#1680cd] px-4 text-[15px] font-medium shadow-none hover:bg-[#0f76c2]"
                 >
                   {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                  Scan starten{selectedPdfIds.length > 0 ? ` (${formatIntDe(selectedPdfIds.length)} PDFs)` : ""}
+                  {startButtonLabel}
                 </Button>
               ) : (
                 <TooltipProvider delayDuration={120}>
@@ -1838,7 +1940,7 @@ export function PdfScanWorkspace({
                           className="h-10 w-full rounded-[4px] bg-[#1680cd] px-4 text-[15px] font-medium shadow-none hover:bg-[#0f76c2]"
                         >
                           {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                          Scan starten{selectedPdfIds.length > 0 ? ` (${formatIntDe(selectedPdfIds.length)} PDFs)` : ""}
+                          {startButtonLabel}
                         </Button>
                       </span>
                     </TooltipTrigger>
@@ -1868,7 +1970,20 @@ export function PdfScanWorkspace({
                 </div>
               ) : (
                 pdfScanRuns.map((run) => {
-                  const label = buildPdfScanRunLabel(run);
+                  const runChapterCount =
+                    Array.isArray(run.kapitelIds) && run.kapitelIds.length > 0
+                      ? run.kapitelIds.length
+                      : typeof run.pdfScanSummary?.chapterCount === "number"
+                        ? run.pdfScanSummary.chapterCount
+                        : 0;
+                  const primaryRunSnapshot =
+                    Array.isArray(run.kapitelSnapshots) && run.kapitelSnapshots.length > 0 ? run.kapitelSnapshots[0] : null;
+                  const label =
+                    runChapterCount > 1
+                      ? `${formatIntDe(runChapterCount)} Kapitel`
+                      : primaryRunSnapshot
+                        ? buildKapitelLabel(primaryRunSnapshot)
+                        : buildPdfScanRunLabel(run);
                   const subtitle =
                     run.status === "queued" || run.status === "running"
                       ? `${formatTimeHm(run.startedAt ?? run.createdAt)}  Läuft...`
@@ -1919,228 +2034,202 @@ export function PdfScanWorkspace({
               {activeRun ? (
                 <>
                   <div className="shrink-0 space-y-4">
-                  <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                    <div className="min-w-0">
-                      <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-                        {buildPdfScanRunLabel(activeRun)}
-                      </div>
-                      <div className="mt-1 text-[18px] font-semibold tracking-[-0.02em] text-slate-950">{chapterHeading}</div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        Gestartet: {formatDateTimeWithSeconds(runStartedAt)}
-                        {runFinishedAt ? <> · Abgeschlossen: {formatDateTimeWithSeconds(runFinishedAt)}</> : null}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 xl:justify-end">
-                      {running ? (
-                        <>
-                          <div className="inline-flex items-center gap-1.5">
-                            <Clock3 className="h-3.5 w-3.5" />
-                            <span className="tabular-nums">{formatElapsedShort(elapsedMs)}</span>
-                          </div>
-                          <span className="text-slate-300">|</span>
-                          <div className="inline-flex items-center gap-1.5">
-                            <span>Phase:</span>
-                            <span className="tabular-nums">{formatElapsedShort(stageElapsedMs)}</span>
-                          </div>
-                        </>
-                      ) : null}
-                      {runCostUsd !== null ? (
-                        <>
-                          {running ? <span className="text-slate-300">|</span> : null}
-                          <div className="inline-flex items-center gap-1.5">
-                            <DollarSign className="h-3.5 w-3.5" />
-                            <span className="tabular-nums">{formatUsd(runCostUsd)}</span>
-                          </div>
-                        </>
-                      ) : null}
-                      {running ? (
-                        <Button size="sm" variant="outline" className="h-8 rounded-[4px] border-slate-200 bg-white px-3 text-xs shadow-none" onClick={cancelPdfScan} disabled={isCancelRequested}>
-                          {isCancelRequested ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <X className="mr-2 h-3.5 w-3.5" />}
-                          {isCancelRequested ? "Wird abgebrochen..." : "Abbrechen"}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <Card className="rounded-[14px] border border-slate-200 bg-white shadow-sm">
-                    <div className="p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-950">Pipeline-Status</div>
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-[18px] font-semibold tracking-[-0.02em] text-slate-950">{activeRunTitle}</div>
+                        <div className="mt-1 text-sm text-slate-500">
+                          Gestartet: {formatDateTimeWithSeconds(runStartedAt)}
+                          {runFinishedAt ? <> · Abgeschlossen: {formatDateTimeWithSeconds(runFinishedAt)}</> : null}
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          <span className="tabular-nums">
-                            {formatIntDe(currentStepNumber)} / {formatIntDe(PDF_SCAN_PIPELINE_STEPS.length)} Schritte
-                          </span>
-                        </div>
+                        {runChapterNumberPills.length > 0 ? (
+                          <div className="mt-3 flex flex-wrap gap-1.5">
+                            {runChapterNumberPills.map((nummer) => (
+                              <span
+                                key={nummer}
+                                className="inline-flex items-center rounded-[6px] bg-slate-100 px-2.5 py-0.5 text-[13px] font-medium text-slate-900"
+                              >
+                                {nummer}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
 
-                      <div className="mt-4">
-                        <div className="overflow-hidden rounded-full bg-slate-100">
-                          <TooltipProvider delayDuration={120}>
-                            <div className="flex">
-                              {PDF_SCAN_PIPELINE_STEPS.map((step, index) => {
-                                const stageSnapshot = readPipelineStage(activeRun, step.key);
-                                const snapshotStatus = String(stageSnapshot?.status || "").trim();
-                                const isStageCompleted =
-                                  snapshotStatus === "completed" || (!snapshotStatus && (isDone || index < activeStepIndex));
-                                const isStageActive =
-                                  snapshotStatus === "running" || (!snapshotStatus && running && activeStepIndex === index);
-                                const isStageError = snapshotStatus === "error";
-                                const isStageCancelled = snapshotStatus === "cancelled";
-                                const fillWidth = isStageCompleted || isStageError || isStageCancelled || isStageActive ? 100 : 0;
-                                const fillClass = isStageCancelled
-                                  ? "bg-slate-400"
-                                  : isStageError
-                                    ? "bg-rose-500"
-                                    : isStageCompleted
-                                      ? "bg-[#1680cd]"
-                                      : isStageActive
-                                        ? "bg-[#f59e0b] animate-[pulse_1.25s_ease-in-out_infinite]"
-                                        : "bg-transparent";
-                                const durationMs =
-                                  typeof stageSnapshot?.elapsedMs === "number"
-                                    ? stageSnapshot.elapsedMs
-                                    : isStageActive && stageKey === step.key
-                                      ? stageElapsedMs
-                                      : null;
-                                const stageCurrent =
-                                  typeof stageSnapshot?.current === "number"
-                                    ? stageSnapshot.current
-                                    : isStageActive && typeof activeRun?.progress?.current === "number"
-                                      ? activeRun.progress.current
-                                      : null;
-                                const stageTotal =
-                                  typeof stageSnapshot?.total === "number"
-                                    ? stageSnapshot.total
-                                    : isStageActive && typeof activeRun?.progress?.total === "number"
-                                      ? activeRun.progress.total
-                                      : null;
-
-                                return (
-                                  <Tooltip key={step.key}>
-                                    <TooltipTrigger asChild>
-                                      <div
-                                        className={cn(
-                                          "relative h-[7px] flex-1 cursor-default overflow-hidden bg-slate-100",
-                                          index < PDF_SCAN_PIPELINE_STEPS.length - 1 ? "border-r border-white/80" : ""
-                                        )}
-                                        aria-label={`${step.title}: ${step.description}`}
-                                      >
-                                        <div className={cn("absolute inset-y-0 left-0", fillClass)} style={{ width: `${Math.max(0, Math.min(100, fillWidth))}%` }} />
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="top" className="max-w-[240px] rounded-[8px] px-3 py-2 text-left">
-                                      <div className="text-[12px] font-semibold text-white">{step.title}</div>
-                                      <div className="mt-0.5 text-[11px] leading-5 text-slate-200">{step.description}</div>
-                                      {durationMs !== null ? (
-                                        <div className="mt-2 text-[11px] tabular-nums text-slate-300">
-                                          {isStageCompleted || isStageError || isStageCancelled ? `Dauer: ${formatElapsedShort(durationMs)}` : `Läuft seit: ${formatElapsedShort(durationMs)}`}
-                                        </div>
-                                      ) : null}
-                                      {typeof stageCurrent === "number" && typeof stageTotal === "number" && stageTotal > 0 ? (
-                                        <div className="mt-1 text-[11px] tabular-nums text-slate-300">
-                                          {formatIntDe(stageCurrent)}/{formatIntDe(stageTotal)}
-                                        </div>
-                                      ) : null}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                );
-                              })}
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 xl:justify-end">
+                        {running ? (
+                          <>
+                            <div className="inline-flex items-center gap-1.5">
+                              <Clock3 className="h-3.5 w-3.5" />
+                              <span className="tabular-nums">{formatElapsedShort(elapsedMs)}</span>
                             </div>
-                          </TooltipProvider>
+                            <span className="text-slate-300">|</span>
+                            <div className="inline-flex items-center gap-1.5">
+                              <span>Phase:</span>
+                              <span className="tabular-nums">{formatElapsedShort(stageElapsedMs)}</span>
+                            </div>
+                          </>
+                        ) : null}
+                        {runCostUsd !== null ? (
+                          <>
+                            {running ? <span className="text-slate-300">|</span> : null}
+                            <div className="inline-flex items-center gap-1.5">
+                              <DollarSign className="h-3.5 w-3.5" />
+                              <span className="tabular-nums">{formatUsd(runCostUsd)}</span>
+                            </div>
+                          </>
+                        ) : null}
+                        {running ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 rounded-[4px] border-slate-200 bg-white px-3 text-xs shadow-none"
+                            onClick={cancelPdfScan}
+                            disabled={isCancelRequested}
+                          >
+                            {isCancelRequested ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <X className="mr-2 h-3.5 w-3.5" />}
+                            {isCancelRequested ? "Wird abgebrochen..." : "Abbrechen"}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <Card className="rounded-[14px] border border-slate-200 bg-white shadow-sm">
+                      <div className="px-4 py-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2.5">
+                          <div className="min-w-0">
+                            <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-950">Pipeline-Status</div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            <span className="tabular-nums">
+                              {formatIntDe(currentStepNumber)} / {formatIntDe(PDF_SCAN_PIPELINE_STEPS.length)} Schritte
+                            </span>
+                          </div>
                         </div>
+
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
                           <div className="flex items-center gap-2 text-slate-600">
                             {running ? <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" /> : isDone ? <Check className="h-3.5 w-3.5 text-sky-600" /> : null}
                             <span>
-                              {isDone ? "Abgeschlossen" : isCancelled ? "Abgebrochen" : isError ? "Fehlgeschlagen" : `${currentStepLabel}: ${stageLabel(activeRun)}`}
+                              {isDone ? "Erfolgreich abgeschlossen" : isCancelled ? "Abgebrochen" : isError ? "Fehlgeschlagen" : `${currentStepLabel}: ${stageLabel(activeRun)}`}
                             </span>
                           </div>
                           <div className="tabular-nums text-slate-500">
-                            {formatIntDe(currentStepNumber)}/{formatIntDe(PDF_SCAN_PIPELINE_STEPS.length)}
+                            {formatIntDe(currentStepNumber)}/{formatIntDe(PDF_SCAN_PIPELINE_STEPS.length)} abgeschlossen
                           </div>
                         </div>
-                      </div>
 
-                      {isError ? (
-                        <div className="mt-4 rounded-[12px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                          {String(activeRun.errorMessage || "").trim() || "Unbekannter Fehler"}
-                        </div>
-                      ) : null}
-                    </div>
-                  </Card>
+                        <div className="mt-2.5">
+                          <div className="overflow-hidden rounded-full bg-slate-100">
+                            <TooltipProvider delayDuration={120}>
+                              <div className="flex">
+                                {PDF_SCAN_PIPELINE_STEPS.map((step, index) => {
+                                  const stageSnapshot = readPipelineStage(activeRun, step.key);
+                                  const snapshotStatus = String(stageSnapshot?.status || "").trim();
+                                  const isStageCompleted =
+                                    snapshotStatus === "completed" || (!snapshotStatus && (isDone || index < activeStepIndex));
+                                  const isStageActive =
+                                    snapshotStatus === "running" || (!snapshotStatus && running && activeStepIndex === index);
+                                  const isStageError = snapshotStatus === "error";
+                                  const isStageCancelled = snapshotStatus === "cancelled";
+                                  const fillWidth = isStageCompleted || isStageError || isStageCancelled || isStageActive ? 100 : 0;
+                                  const fillClass = isStageCancelled
+                                    ? "bg-slate-400"
+                                    : isStageError
+                                      ? "bg-rose-500"
+                                      : isStageCompleted
+                                        ? "bg-[#1680cd]"
+                                        : isStageActive
+                                          ? "bg-[#f59e0b] animate-[pulse_1.25s_ease-in-out_infinite]"
+                                          : "bg-transparent";
+                                  const durationMs =
+                                    typeof stageSnapshot?.elapsedMs === "number"
+                                      ? stageSnapshot.elapsedMs
+                                      : isStageActive && stageKey === step.key
+                                        ? stageElapsedMs
+                                        : null;
+                                  const stageCurrent =
+                                    typeof stageSnapshot?.current === "number"
+                                      ? stageSnapshot.current
+                                      : isStageActive && typeof activeRun?.progress?.current === "number"
+                                        ? activeRun.progress.current
+                                        : null;
+                                  const stageTotal =
+                                    typeof stageSnapshot?.total === "number"
+                                      ? stageSnapshot.total
+                                      : isStageActive && typeof activeRun?.progress?.total === "number"
+                                        ? activeRun.progress.total
+                                        : null;
 
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
-                      <div className="text-[13px] text-slate-500">Status</div>
-                      <div
-                        className={cn(
-                          "mt-4.5 text-[16px] font-semibold tracking-[-0.02em]",
-                          isError ? "text-rose-600" : isCancelled ? "text-slate-500" : running ? "text-amber-600" : "text-sky-700"
-                        )}
-                      >
-                        {runOutcomeLabel}
+                                  return (
+                                    <Tooltip key={step.key}>
+                                      <TooltipTrigger asChild>
+                                        <div
+                                          className={cn(
+                                            "relative h-[7px] flex-1 cursor-default overflow-hidden bg-slate-100",
+                                            index < PDF_SCAN_PIPELINE_STEPS.length - 1 ? "border-r border-white/80" : ""
+                                          )}
+                                          aria-label={`${step.title}: ${step.description}`}
+                                        >
+                                          <div className={cn("absolute inset-y-0 left-0", fillClass)} style={{ width: `${Math.max(0, Math.min(100, fillWidth))}%` }} />
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="max-w-[240px] rounded-[8px] px-3 py-2 text-left">
+                                        <div className="text-[12px] font-semibold text-white">{step.title}</div>
+                                        <div className="mt-0.5 text-[11px] leading-5 text-slate-200">{step.description}</div>
+                                        {durationMs !== null ? (
+                                          <div className="mt-2 text-[11px] tabular-nums text-slate-300">
+                                            {isStageCompleted || isStageError || isStageCancelled ? `Dauer: ${formatElapsedShort(durationMs)}` : `Läuft seit: ${formatElapsedShort(durationMs)}`}
+                                          </div>
+                                        ) : null}
+                                        {typeof stageCurrent === "number" && typeof stageTotal === "number" && stageTotal > 0 ? (
+                                          <div className="mt-1 text-[11px] tabular-nums text-slate-300">
+                                            {formatIntDe(stageCurrent)}/{formatIntDe(stageTotal)}
+                                          </div>
+                                        ) : null}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  );
+                                })}
+                              </div>
+                            </TooltipProvider>
+                          </div>
+                        </div>
+
+                        {isError ? (
+                          <div className="mt-4 rounded-[12px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                            {String(activeRun.errorMessage || "").trim() || "Unbekannter Fehler"}
+                          </div>
+                        ) : null}
                       </div>
                     </Card>
-                    <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
-                      <div className="text-[13px] text-slate-500">PDFs</div>
-                      <div className="mt-4.5 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{formatIntDe(visibleDocCount)}</div>
-                    </Card>
-                    <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
-                      <div className="text-[13px] text-slate-500">Abschnitte</div>
-                      <div className="mt-4.5 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{formatIntDe(visibleSectionCount)}</div>
-                    </Card>
-                    <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
-                      <div className="text-[13px] text-slate-500">Nützlich im Kapitel</div>
-                      <div className="mt-4.5 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{formatIntDe(usefulPdfCount)}</div>
-                    </Card>
-                  </div>
-                  <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-950">Kapitelansicht</div>
-                        <div className="mt-1 text-xs text-slate-500">
-                          {formatIntDe(activeRun.pdfScanSummary?.chapterCount ?? activeRunChapterRows.length)} Kapitel im Run ·{" "}
-                          {formatIntDe(usefulPdfCountAnyChapter)} PDFs in mindestens einem Kapitel nützlich
-                        </div>
+
+                    {!running ? (
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+                          <div className="text-[13px] text-slate-500">Status</div>
+                          <div
+                            className={cn(
+                              "mt-4.5 text-[16px] font-semibold tracking-[-0.02em]",
+                              isError ? "text-rose-600" : isCancelled ? "text-slate-500" : "text-sky-700"
+                            )}
+                          >
+                            {runOutcomeLabel}
+                          </div>
+                        </Card>
+                        <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+                          <div className="text-[13px] text-slate-500">Kapitel</div>
+                          <div className="mt-4.5 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{formatIntDe(chapterCount)}</div>
+                        </Card>
+                        <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+                          <div className="text-[13px] text-slate-500">Abschnitte</div>
+                          <div className="mt-4.5 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{formatIntDe(visibleSectionCount)}</div>
+                        </Card>
+                        <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+                          <div className="text-[13px] text-slate-500">Nützlich</div>
+                          <div className="mt-4.5 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{formatIntDe(usefulPdfCount)}</div>
+                        </Card>
                       </div>
-                      {chapterRowsLoaded ? (
-                        <div className="flex flex-wrap gap-2">
-                          {activeRunChapterRows.map((row) => {
-                            const isActive = row.chapterId === activeResultChapterId;
-                            const status = String(row.status || "").trim();
-                            const label = `${row.kapitelSnapshot?.nummer ? `${row.kapitelSnapshot.nummer} ` : ""}${row.kapitelSnapshot?.title || row.chapterId}`.trim();
-                            return (
-                              <button
-                                key={row.chapterId}
-                                type="button"
-                                onClick={() => setActiveResultChapterId(row.chapterId)}
-                                className={cn(
-                                  "w-[320px] max-w-full rounded-[6px] border px-3 py-1.5 text-left text-xs transition-colors",
-                                  isActive
-                                    ? "border-sky-300 bg-sky-50 text-sky-800"
-                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                                )}
-                                title={label}
-                              >
-                                <div className="line-clamp-2 font-medium">{label}</div>
-                                <div className="mt-0.5 text-[11px] text-slate-500">
-                                  {status === "success" ? `${formatIntDe(row.usefulPdfCount)} nützlich` : status || "queued"}
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <Skeleton className="h-10 w-40" />
-                          <Skeleton className="h-10 w-40" />
-                        </div>
-                      )}
-                    </div>
-                  </Card>
+                    ) : null}
                   </div>
                 </>
               ) : null}
@@ -2148,174 +2237,272 @@ export function PdfScanWorkspace({
               {!activeRun ? (
                 <MainEmptyState selectedKapitel={primarySelectedKapitel} />
               ) : (
-                <div className="space-y-5 pb-4 pt-2">
-                  <div className="min-w-0">
-                    <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-950">
-                      Ergebnisse{chapterHeading ? ` · ${chapterHeading}` : ""}
-                    </div>
-                  </div>
-
-                  <div className="pt-0">
-                  {!docRowsLoaded ? (
+                <div className="space-y-8 pb-6 pt-2">
+                  {running && chapterGroupsWithResults.length === 0 ? null : !running && !allChapterResultsLoaded ? (
                     <ResultSkeleton />
-                  ) : filteredDocRows.length === 0 ? (
+                  ) : chapterGroupsWithResults.length === 0 ? (
                     <Card className="rounded-[14px] border border-dashed border-slate-200 bg-white px-5 py-14 text-center shadow-none">
                       <div className="text-base font-medium text-slate-900">
-                        {running ? "Noch keine finalen Ergebnisse" : `Keine sichtbaren Sections${chapterHeading ? ` für ${chapterHeading}` : ""}`}
+                        {running ? "Noch keine finalen Ergebnisse" : "Keine sichtbaren Sections"}
                       </div>
                       <div className="mt-2 text-sm leading-7 text-slate-500">
                         {running
                           ? "Die Ergebnisse erscheinen nach Phase G und dem Persistieren der finalen Section-Scores."
-                          : "Für die aktuelle Kapitelansicht wurden keine finalen Sections gespeichert."}
+                          : "Für diesen Run wurden keine finalen Sections gespeichert."}
                       </div>
                     </Card>
                   ) : (
-                    <Accordion
-                      type="multiple"
-                      value={openDocIds}
-                      onValueChange={(value) => setOpenDocIds(value)}
-                      className="space-y-4"
-                    >
-                      {filteredDocRows.map((pdfDoc) => {
-                        const pdfMeta = pdfsById.get(String(pdfDoc.pdfId || ""));
-                        const topScore = typeof pdfDoc.topSectionScore === "number" ? pdfDoc.topSectionScore : null;
-                        const isOpen = openDocIds.includes(pdfDoc.id);
-                        const sectionRows = sectionRowsByDocId[pdfDoc.id] ?? [];
+                    chapterGroupsWithResults.map((group) => {
+                      const groupOpenValues = openDocIds.filter((value) => value.startsWith(`${group.chapterId}::`));
+                      return (
+                        <section key={group.chapterId} className="space-y-3">
+                          <div className="min-w-0">
+                            <div className="text-[18px] font-semibold tracking-[-0.02em] text-slate-950">{group.heading}</div>
+                            <div className="mt-1 text-sm text-slate-500">
+                              {formatIntDe(group.docRows.length)} PDFs · {formatIntDe(group.visibleSectionCount)} relevante Abschnitte
+                            </div>
+                          </div>
 
-                        return (
-                          <AccordionItem
-                            key={pdfDoc.id}
-                            value={pdfDoc.id}
-                            className="overflow-hidden rounded-[14px] border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)]"
-                          >
-                            <AccordionTrigger className="items-center px-6 py-8 hover:no-underline [&>svg]:hidden">
-                              <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_72px] items-center gap-5 text-left">
-                                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-4.5">
-                                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-400">
-                                    <FileText className="h-4 w-4" />
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <div
-                                      className="block w-full truncate pr-4 text-[14px] font-medium leading-6 text-slate-950"
-                                      title={pdfDoc.docTitle || pdfDoc.pdfLabel || "Unbenanntes PDF"}
-                                    >
-                                      {pdfDoc.docTitle || pdfDoc.pdfLabel || "Unbenanntes PDF"}
-                                    </div>
-                                    <div className="mt-1.5 text-[13px] leading-5 text-slate-500">
-                                      {typeof pdfDoc.pageCount === "number" ? `${formatIntDe(pdfDoc.pageCount)} Seiten` : "PDF"}
-                                      {typeof pdfDoc.visibleSectionCount === "number" ? ` · ${formatIntDe(pdfDoc.visibleSectionCount)} Abschnitte` : ""}
-                                    </div>
-                                  </div>
-                                </div>
+                          <div className="border-t border-slate-200 pt-3">
+                          <div className="border-l-2 border-[#a9c4dd] pl-4">
+                            <Accordion
+                              type="multiple"
+                              value={groupOpenValues}
+                              onValueChange={(value) =>
+                                setOpenDocIds((prev) => [...prev.filter((entry) => !entry.startsWith(`${group.chapterId}::`)), ...value])
+                              }
+                              className="space-y-3"
+                            >
+                              {group.docRows.map((pdfDoc) => {
+                                const pdfMeta = pdfsById.get(String(pdfDoc.pdfId || ""));
+                                const topScore = typeof pdfDoc.topSectionScore === "number" ? pdfDoc.topSectionScore : null;
+                                const docKey = buildChapterDocKey(group.chapterId, pdfDoc.id);
+                                const isOpen = openDocIds.includes(docKey);
+                                const sectionRows = group.sectionRowsByDocId[pdfDoc.id] ?? [];
+                                const topScoreClass =
+                                  topScore !== null && topScore >= 60
+                                    ? "bg-sky-50 text-sky-700"
+                                    : topScore !== null && topScore >= 40
+                                      ? "bg-amber-50 text-amber-700"
+                                      : "bg-slate-100 text-slate-600";
 
-                                <div className="flex h-full w-[72px] shrink-0 items-center justify-end gap-2 text-right">
-                                  <div className="text-[15px] font-semibold leading-none tabular-nums text-sky-700">
-                                    {topScore !== null ? formatScore(topScore, 1) : "—"}
-                                  </div>
-                                  <ChevronDown
-                                    className={cn(
-                                      "h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200",
-                                      isOpen ? "rotate-180" : ""
-                                    )}
-                                  />
-                                </div>
-                              </div>
-                            </AccordionTrigger>
-
-                            <AccordionContent className="bg-white pb-0">
-                              {!isOpen || !sectionRowsLoaded ? (
-                                <div className="space-y-3 border-t border-slate-100 px-5 pb-6 pt-4">
-                                  {isOpen
-                                    ? Array.from({ length: 2 }).map((_, idx) => (
-                                        <Card key={idx} className="rounded-[14px] border border-slate-200 bg-white p-4 shadow-none">
-                                          <Skeleton className="h-5 w-2/3" />
-                                          <Skeleton className="mt-3 h-4 w-1/2" />
-                                        </Card>
-                                      ))
-                                    : null}
-                                </div>
-                              ) : sectionRows.length === 0 ? (
-                                <div className="border-t border-slate-100 px-5 pb-6 pt-4">
-                                  <div className="rounded-[14px] border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
-                                    Für dieses PDF wurden keine finalen Sections geladen.
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="border-t border-slate-100 bg-white pb-5">
-                                  <div className="divide-y divide-slate-100">
-                                  {sectionRows.map((section) => {
-                                    const sectionScore = typeof section.score0To100 === "number" ? section.score0To100 : null;
-                                    return (
-                                      <div key={section.id} className="px-5 py-[15px]">
-                                        <div className="flex items-center justify-between gap-4">
-                                          <div className="flex min-w-0 items-center gap-4">
-                                            <div className="shrink-0">
-                                              <div className="inline-flex min-w-[40px] items-center justify-center rounded-[4px] border border-sky-400 bg-white px-2.5 py-0.5 text-[12px] font-semibold leading-none tabular-nums text-sky-700">
-                                                {sectionScore !== null ? formatScore(sectionScore, 1) : "—"}
-                                              </div>
-                                            </div>
-                                            <div className="min-w-0">
-                                              <div
-                                                className="truncate text-[14px] font-medium leading-6 text-slate-950"
-                                                title={section.title || section.sectionPathText || "Untitled section"}
-                                              >
-                                                {section.title || section.sectionPathText || "Untitled section"}
-                                              </div>
-                                              <div className="mt-1.5 flex flex-wrap items-center gap-2.5 text-[13px] leading-5 text-slate-500">
-                                                <span>{formatPageRange(section.pageStart, section.pageEnd)}</span>
-                                                {(section.subpointCoverageIds || []).slice(0, 6).map((subpointId) => (
-                                                  <Badge key={`${section.id}_${subpointId}`} variant="outline" className="rounded-[4px] border-slate-200 bg-slate-50 px-1.5 py-0 text-[11px] text-slate-600">
-                                                    {subpointId}
-                                                  </Badge>
-                                                ))}
-                                              </div>
-                                            </div>
+                                return (
+                                  <AccordionItem
+                                    key={docKey}
+                                    value={docKey}
+                                    className="overflow-hidden rounded-[14px] border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)]"
+                                  >
+                                    <AccordionTrigger className="items-center px-6 py-8 hover:no-underline [&>svg]:hidden">
+                                      <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_120px] items-center gap-5 text-left">
+                                        <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-4.5">
+                                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-400">
+                                            <FileText className="h-4 w-4" />
                                           </div>
-
-                                          <div className="shrink-0">
-                                            <Button
-                                              size="icon"
-                                              variant="ghost"
-                                              className="h-8 w-8 rounded-[6px] text-slate-500 shadow-none hover:bg-slate-50 hover:text-slate-900"
-                                              onClick={() => {
-                                                setExtractRequest({
-                                                  projektId,
-                                                  runId: String(activeRun?.id || ""),
-                                                  pdfDocId: String(pdfDoc.id),
-                                                  sectionDocId: String(section.id),
-                                                  chapterId: activeResultChapterId || undefined,
-                                                  pdfId: String(section.pdfId || "") || undefined,
-                                                  pdfFilename: section.pdfFilename || pdfDoc.pdfFilename || pdfDoc.pdfLabel,
-                                                  storagePath: pdfMeta?.storagePath,
-                                                  anchorPage:
-                                                    typeof section.anchorPage === "number" ? section.anchorPage : undefined,
-                                                });
-                                                setExtractOpen(true);
-                                              }}
-                                              title="Preview"
+                                          <div className="min-w-0 flex-1">
+                                            <div
+                                              className="block w-full truncate pr-4 text-[14px] font-medium leading-6 text-slate-950"
+                                              title={pdfDoc.docTitle || pdfDoc.pdfLabel || "Unbenanntes PDF"}
                                             >
-                                              <Eye className="h-4 w-4" />
-                                            </Button>
+                                              {pdfDoc.docTitle || pdfDoc.pdfLabel || "Unbenanntes PDF"}
+                                            </div>
+                                            <div className="mt-1.5 text-[13px] leading-5 text-slate-500">
+                                              {typeof pdfDoc.pageCount === "number" ? `${formatIntDe(pdfDoc.pageCount)} Seiten` : "PDF"}
+                                              {typeof pdfDoc.visibleSectionCount === "number" ? ` · ${formatIntDe(pdfDoc.visibleSectionCount)} Abschnitte` : ""}
+                                              {sectionRows.length > 0 ? ` · ${formatIntDe(sectionRows.length)} relevant` : ""}
+                                            </div>
                                           </div>
                                         </div>
+
+                                        <div className="flex h-full items-center justify-end gap-3 text-right">
+                                          <div className={cn("inline-flex rounded-[6px] px-3 py-1 text-[13px] font-semibold tabular-nums", topScoreClass)}>
+                                            Score: {topScore !== null ? formatScore(topScore, 0) : "—"}
+                                          </div>
+                                          <ChevronDown
+                                            className={cn(
+                                              "h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200",
+                                              isOpen ? "rotate-180" : ""
+                                            )}
+                                          />
+                                        </div>
                                       </div>
-                                    );
-                                  })}
-                                  </div>
-                                </div>
-                              )}
-                            </AccordionContent>
-                          </AccordionItem>
-                        );
-                      })}
-                    </Accordion>
+                                    </AccordionTrigger>
+
+                                    <AccordionContent className="border-t border-slate-200 bg-white pb-0">
+                                      {!isOpen || !group.loadedSections ? (
+                                        <div className="space-y-3 px-5 pb-6 pt-4">
+                                          {isOpen
+                                            ? Array.from({ length: 2 }).map((_, idx) => (
+                                                <Card key={idx} className="rounded-[14px] border border-slate-200 bg-white p-4 shadow-none">
+                                                  <Skeleton className="h-5 w-2/3" />
+                                                  <Skeleton className="mt-3 h-4 w-1/2" />
+                                                </Card>
+                                              ))
+                                            : null}
+                                        </div>
+                                      ) : sectionRows.length === 0 ? (
+                                        <div className="px-5 pb-6 pt-4">
+                                          <div className="rounded-[14px] border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                                            Für dieses PDF wurden keine finalen Sections geladen.
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="bg-white pb-5">
+                                          <div className="space-y-2 px-5 py-4">
+                                            {sectionRows.map((section) => {
+                                              const sectionScore = typeof section.score0To100 === "number" ? section.score0To100 : null;
+                                              const sectionScoreClass =
+                                                sectionScore !== null && sectionScore >= 60
+                                                  ? "bg-sky-700 text-white"
+                                                  : sectionScore !== null && sectionScore >= 40
+                                                    ? "bg-sky-50 text-sky-700"
+                                                    : "bg-slate-100 text-slate-700";
+                                              return (
+                                                <div key={section.id} className="rounded-[12px] bg-slate-50 px-4 py-4">
+                                                  <div className="flex items-center justify-between gap-4">
+                                                    <div className="flex min-w-0 items-center gap-4">
+                                                      <div className="shrink-0">
+                                                        <div className={cn("inline-flex min-w-[48px] items-center justify-center rounded-[6px] px-2.5 py-1 text-[12px] font-semibold leading-none tabular-nums", sectionScoreClass)}>
+                                                          {sectionScore !== null ? `${formatScore(sectionScore, 0)}%` : "—"}
+                                                        </div>
+                                                      </div>
+                                                      <div className="min-w-0">
+                                                        <div
+                                                          className="truncate text-[14px] font-medium leading-6 text-slate-950"
+                                                          title={section.title || section.sectionPathText || "Untitled section"}
+                                                        >
+                                                          {section.title || section.sectionPathText || "Untitled section"}
+                                                        </div>
+                                                        <div className="mt-1.5 flex flex-wrap items-center gap-2.5 text-[13px] leading-5 text-slate-500">
+                                                          <span>{formatPageRange(section.pageStart, section.pageEnd)}</span>
+                                                          {(section.subpointCoverageIds || []).slice(0, 6).map((subpointId) => (
+                                                            <Badge key={`${section.id}_${subpointId}`} variant="outline" className="rounded-[4px] border-slate-200 bg-white px-1.5 py-0 text-[11px] text-slate-600">
+                                                              {subpointId}
+                                                            </Badge>
+                                                          ))}
+                                                        </div>
+                                                      </div>
+                                                    </div>
+
+                                                    <div className="shrink-0">
+                                                      <Button
+                                                        variant="ghost"
+                                                        className="h-8 rounded-[6px] px-3 text-[13px] text-slate-700 shadow-none hover:bg-white hover:text-slate-900"
+                                                        onClick={() => {
+                                                          setExtractRequest({
+                                                            projektId,
+                                                            runId: String(activeRun?.id || ""),
+                                                            pdfDocId: String(pdfDoc.id),
+                                                            sectionDocId: String(section.id),
+                                                            chapterId: group.chapterId || undefined,
+                                                            pdfId: String(section.pdfId || "") || undefined,
+                                                            pdfFilename: section.pdfFilename || pdfDoc.pdfFilename || pdfDoc.pdfLabel,
+                                                            storagePath: pdfMeta?.storagePath,
+                                                            anchorPage: typeof section.anchorPage === "number" ? section.anchorPage : undefined,
+                                                          });
+                                                          setExtractOpen(true);
+                                                        }}
+                                                        title="Preview"
+                                                      >
+                                                        Preview
+                                                      </Button>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </AccordionContent>
+                                  </AccordionItem>
+                                );
+                              })}
+                            </Accordion>
+                          </div>
+                          </div>
+                        </section>
+                      );
+                    })
                   )}
-                  </div>
                 </div>
               )}
             </div>
           </main>
         </div>
+
+        <Dialog
+          open={kapitelPickerOpen}
+          onOpenChange={(open) => {
+            setKapitelPickerOpen(open);
+            if (!open) setKapitelFilter("");
+          }}
+        >
+          <DialogContent className="max-h-[92vh] w-[96vw] max-w-[calc(100%-2rem)] gap-0 overflow-hidden border-slate-200 bg-white p-0 shadow-[0_24px_80px_rgba(15,23,42,0.24)] sm:w-[980px] sm:!max-w-[980px] lg:w-[1120px] lg:!max-w-[1120px]">
+            <DialogHeader className="border-b border-slate-200 bg-white px-6 py-5">
+              <DialogTitle className="text-[20px] tracking-[-0.02em] text-slate-950">Kapitel auswählen</DialogTitle>
+              <DialogDescription className="sr-only">
+                Wähle ein oder mehrere Kapitel für den PDF-Scan aus.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="border-b border-slate-200 bg-slate-50 px-6 py-3.5">
+              <div className="relative min-w-0">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={kapitelFilter}
+                  onChange={(event) => setKapitelFilter(event.target.value)}
+                  placeholder="Kapitel suchen..."
+                  className="h-10 border-slate-200 bg-white pl-10 shadow-none"
+                />
+              </div>
+            </div>
+
+            <ScrollArea className="h-[min(74vh,940px)] bg-white">
+              <div className="space-y-0.5 px-4 py-3">
+                {filteredKapitelRows.map((kapitel) => {
+                  const checked = selectedKapitelIdSet.has(kapitel.id);
+                  const depth = kapitelDepth(kapitel.nummer);
+                  return (
+                    <label
+                      key={kapitel.id}
+                      className={cn(
+                        "grid cursor-pointer grid-cols-[20px_auto_minmax(0,1fr)] items-start gap-x-2.5 rounded-[8px] px-3 py-2.5 transition-colors",
+                        checked ? "bg-sky-50" : "hover:bg-slate-50"
+                      )}
+                      style={{ paddingLeft: 12 + depth * 12 }}
+                    >
+                      <div className="pt-0.5">
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(value) => toggleSelectedKapitel(kapitel.id, Boolean(value))}
+                          aria-label={buildKapitelLabel(kapitel)}
+                        />
+                      </div>
+                      <div className="pt-0.5 text-[14px] font-semibold tabular-nums leading-6 text-sky-700">
+                        {kapitel.nummer || "–"}
+                      </div>
+                      <div className="min-w-0 text-[14px] leading-6 text-slate-900">
+                        {kapitel.title}
+                      </div>
+                    </label>
+                  );
+                })}
+                {filteredKapitelRows.length === 0 ? (
+                  <div className="px-3 py-6 text-sm text-slate-500">Keine Kapitel passen zur Suche.</div>
+                ) : null}
+              </div>
+            </ScrollArea>
+
+            <DialogFooter className="border-t border-slate-200 bg-slate-50 px-6 py-3 sm:items-center sm:justify-between">
+              <div className="text-sm text-slate-500">
+                {formatIntDe(selectedKapitelIds.length)} von {formatIntDe(kapitels.length)} ausgewählt
+              </div>
+              <Button className="h-10 bg-[#1680cd] px-4 shadow-none hover:bg-[#0f76c2]" onClick={() => setKapitelPickerOpen(false)}>
+                Fertig
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog
           open={libraryManagerOpen}
