@@ -1,29 +1,18 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-async function getAuthTokenOrNullAsync(): Promise<string | null> {
-  const store = await cookies();
-  const token = store.get('__session')?.value;
-  return typeof token === 'string' && token.trim() ? token.trim() : null;
-}
-
-function joinUrlWithSearchParams(baseUrl: string, request: Request): string {
-  const reqUrl = new URL(request.url);
-  const out = new URL(baseUrl);
-  out.search = reqUrl.search;
-  return out.toString();
-}
+import {
+  buildFastApiUrl,
+  getSessionTokenOrNull,
+  joinFastApiUrlWithRequestSearch,
+} from '@/app/lib/server/fastapi';
 
 export async function GET(request: Request) {
   try {
-    const token = await getAuthTokenOrNullAsync();
+    const token = await getSessionTokenOrNull();
     if (!token) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const url = joinUrlWithSearchParams(`${API_BASE_URL}/api/quellen-finder/project-pdf`, request);
+    const url = joinFastApiUrlWithRequestSearch('/api/quellen-finder/project-pdf', request);
     const res = await fetch(url, {
       method: 'GET',
       headers: {
@@ -58,12 +47,12 @@ export async function GET(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const token = await getAuthTokenOrNullAsync();
+    const token = await getSessionTokenOrNull();
     if (!token) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const url = joinUrlWithSearchParams(`${API_BASE_URL}/api/quellen-finder/project-pdf`, request);
+    const url = joinFastApiUrlWithRequestSearch('/api/quellen-finder/project-pdf', request);
     const res = await fetch(url, {
       method: 'DELETE',
       headers: {
@@ -102,13 +91,13 @@ export async function DELETE(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const token = await getAuthTokenOrNullAsync();
+    const token = await getSessionTokenOrNull();
     if (!token) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
     const bodyText = await request.text();
-    const res = await fetch(`${API_BASE_URL}/api/quellen-finder/project-pdf`, {
+    const res = await fetch(buildFastApiUrl('/api/quellen-finder/project-pdf'), {
       method: 'PATCH',
       headers: {
         Authorization: `Bearer ${token}`,

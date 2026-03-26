@@ -1,36 +1,17 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-type FastApiErrorPayload = { detail?: unknown; error?: unknown; message?: unknown };
-
-async function readFastApiError(res: Response): Promise<string | null> {
-  try {
-    const data = (await res.json()) as FastApiErrorPayload;
-    const candidates = [data?.detail, data?.error, data?.message];
-    for (const c of candidates) {
-      if (typeof c === 'string' && c.trim()) return c.trim();
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-async function getAuthTokenOrNullAsync(): Promise<string | null> {
-  const store = await cookies();
-  const token = store.get('__session')?.value;
-  return typeof token === 'string' && token.trim() ? token.trim() : null;
-}
+import {
+  getSessionTokenOrNull,
+  joinFastApiUrlWithRequestSearch,
+  readFastApiErrorDetail,
+} from '@/app/lib/server/fastapi';
 
 export async function proxyFastApiJson(request: Request, path: string, init?: RequestInit): Promise<Response> {
-  const token = await getAuthTokenOrNullAsync();
+  const token = await getSessionTokenOrNull();
   if (!token) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  const url = `${API_BASE_URL}${path}`;
+  const url = joinFastApiUrlWithRequestSearch(path, request);
   const method = init?.method || request.method || 'GET';
   const headers = new Headers(init?.headers || undefined);
   headers.set('Authorization', `Bearer ${token}`);
@@ -50,7 +31,7 @@ export async function proxyFastApiJson(request: Request, path: string, init?: Re
   });
 
   if (!res.ok) {
-    const detail = await readFastApiError(res);
+    const detail = await readFastApiErrorDetail(res);
     return NextResponse.json({ error: detail || 'Request failed.' }, { status: res.status });
   }
 

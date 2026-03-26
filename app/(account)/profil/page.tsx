@@ -21,7 +21,6 @@ import {
   CreditCard,
 } from "lucide-react";
 import { toast } from "sonner";
-import Cookies from "js-cookie";
 
 import { useAuth } from "@/app/components/providers/AuthProvider";
 import { signOut } from "@/app/lib/firebase/auth";
@@ -37,9 +36,6 @@ import { ExportsTab } from "@/app/components/profile/ExportsTab";
 import { ProjectsTab } from "@/app/components/profile/ProjectsTab";
 
 type ProfileTab = "einstellungen" | "billing" | "statistiken" | "exporte" | "projekte";
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
 
 type UsageInsightsStats = {
   creditsTotal: number;
@@ -204,23 +200,18 @@ export default function ProfilPage() {
     let cancelled = false;
     setStatsLoading(true);
 
-    const token = Cookies.get("__session");
-    if (!token) {
-      setStats(null);
-      setStatsLoading(false);
-      return;
-    }
-
-    fetch(`${API_BASE_URL}/api/usage-insights/stats`, {
+    fetch("/api/usage-insights/stats", {
       method: "GET",
-      headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (res) => {
         if (res.status === 401)
           throw new Error("Sitzung abgelaufen. Bitte melde dich erneut an.");
         if (res.status === 403) return null;
         if (!res.ok) {
-          const detail = (await res.json().catch(() => ({})))?.detail;
+          const errorBody = (await res.json().catch(() => ({}))) as { detail?: unknown; error?: unknown };
+          const detail =
+            (typeof errorBody.error === "string" && errorBody.error.trim() ? errorBody.error.trim() : null) ||
+            (typeof errorBody.detail === "string" && errorBody.detail.trim() ? errorBody.detail.trim() : null);
           throw new Error(
             typeof detail === "string"
               ? detail
@@ -506,17 +497,10 @@ export default function ProfilPage() {
     if (logoutLoading) return;
     setLogoutLoading(true);
     try {
-      const sessionCookie = Cookies.get("__session");
-      if (sessionCookie) {
-        try {
-          await fetch(`${API_BASE_URL}/api/auth/revoke`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionCookie }),
-          });
-        } catch (error) {
-          console.error("Failed to revoke session:", error);
-        }
+      try {
+        await fetch("/api/auth/revoke", { method: "POST" });
+      } catch (error) {
+        console.error("Failed to revoke session:", error);
       }
 
       await signOut();

@@ -81,8 +81,6 @@ import type {
 import { QUELLE_COLORS, colorMap, type QuelleColor } from "@/app/lib/quellen/fieldConfig";
 import { cn } from "@/lib/utils";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
-
 type WithId<T> = T & { id: string };
 type PdfRow = WithId<ProjectPdfDoc>;
 type RunRow = WithId<QuellenFinderRunDoc>;
@@ -1552,15 +1550,9 @@ export function PdfScanWorkspace({
     setStartConfirmOpen(false);
     setDuplicateKapitelConfirmOpen(false);
     setDuplicateKapitelConflictRunId(null);
-    const token = Cookies.get("__session");
-    if (!token) {
-      toast.error("Nicht eingeloggt", { description: "Session-Token fehlt." });
-      return;
-    }
-
-    const res = await fetch(`${API_BASE_URL}/api/quellen-finder/pdf-scan`, {
+    const res = await fetch("/api/quellen-finder/pdf-scan", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         projekt_id: projektId,
         kapitel_ids: selectedKapitelIds,
@@ -1601,15 +1593,9 @@ export function PdfScanWorkspace({
   const cancelPdfScan = async () => {
     if (!activeRun?.id) return;
 
-    const token = Cookies.get("__session");
-    if (!token) {
-      toast.error("Nicht eingeloggt", { description: "Session-Token fehlt." });
-      return;
-    }
-
-    const res = await fetch(`${API_BASE_URL}/api/quellen-finder/pdf-scan/cancel`, {
+    const res = await fetch("/api/quellen-finder/pdf-scan/cancel", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         projekt_id: projektId,
         run_id: activeRun.id,

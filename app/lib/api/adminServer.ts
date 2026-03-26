@@ -1,26 +1,16 @@
 import 'server-only';
 
-import { cookies } from 'next/headers';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
-
-type FastApiErrorPayload = { detail?: unknown };
-
-async function readErrorDetail(res: Response): Promise<string | null> {
-  try {
-    const data = (await res.json()) as FastApiErrorPayload;
-    if (typeof data?.detail === 'string' && data.detail.trim()) return data.detail.trim();
-  } catch {
-    // ignore
-  }
-  return null;
-}
+import {
+  buildFastApiUrl,
+  getSessionTokenOrNull,
+  readFastApiErrorDetail,
+} from '@/app/lib/server/fastapi';
 
 export async function isAdminUser(): Promise<boolean> {
-  const token = await getAuthTokenOrNullAsync();
+  const token = await getSessionTokenOrNull();
   if (!token) return false;
 
-  const res = await fetch(`${API_BASE_URL}/api/admin/me`, {
+  const res = await fetch(buildFastApiUrl('/api/admin/me'), {
     method: 'GET',
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
@@ -68,7 +58,7 @@ export async function listAdminUsers(params?: {
   pageToken?: string;
   maxResults?: number;
 }): Promise<{ users: AdminUserRow[]; nextPageToken: string | null }> {
-  const token = await getAuthTokenOrNullAsync();
+  const token = await getSessionTokenOrNull();
   if (!token) throw new Error('Not authenticated');
 
   const qs = new URLSearchParams();
@@ -76,7 +66,7 @@ export async function listAdminUsers(params?: {
   if (params?.query) qs.set('query', params.query);
   if (params?.pageToken) qs.set('page_token', params.pageToken);
   if (typeof params?.maxResults === 'number') qs.set('max_results', String(params.maxResults));
-  const url = `${API_BASE_URL}/api/admin/users${qs.toString() ? `?${qs.toString()}` : ''}`;
+  const url = buildFastApiUrl(`/api/admin/users${qs.toString() ? `?${qs.toString()}` : ''}`);
 
   const res = await fetch(url, {
     method: 'GET',
@@ -85,7 +75,7 @@ export async function listAdminUsers(params?: {
   });
 
   if (!res.ok) {
-    const detail = await readErrorDetail(res);
+    const detail = await readFastApiErrorDetail(res);
     throw new Error(detail || 'Admin user listing failed.');
   }
 
@@ -155,10 +145,10 @@ export async function listAdminUsers(params?: {
 }
 
 export async function setUserFullAccessByEmail(email: string, fullAccess: boolean): Promise<void> {
-  const token = await getAuthTokenOrNullAsync();
+  const token = await getSessionTokenOrNull();
   if (!token) throw new Error('Not authenticated');
 
-  const res = await fetch(`${API_BASE_URL}/api/admin/users/full-access`, {
+  const res = await fetch(buildFastApiUrl('/api/admin/users/full-access'), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -169,16 +159,16 @@ export async function setUserFullAccessByEmail(email: string, fullAccess: boolea
   });
 
   if (!res.ok) {
-    const detail = await readErrorDetail(res);
+    const detail = await readFastApiErrorDetail(res);
     throw new Error(detail || 'Failed to update user access.');
   }
 }
 
 export async function setUserBlockedByEmail(email: string, blocked: boolean): Promise<void> {
-  const token = await getAuthTokenOrNullAsync();
+  const token = await getSessionTokenOrNull();
   if (!token) throw new Error('Not authenticated');
 
-  const res = await fetch(`${API_BASE_URL}/api/admin/users/block`, {
+  const res = await fetch(buildFastApiUrl('/api/admin/users/block'), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -189,7 +179,7 @@ export async function setUserBlockedByEmail(email: string, blocked: boolean): Pr
   });
 
   if (!res.ok) {
-    const detail = await readErrorDetail(res);
+    const detail = await readFastApiErrorDetail(res);
     throw new Error(detail || 'Failed to update user block status.');
   }
 }
@@ -198,10 +188,10 @@ export async function setUserCanDuplicateSystemPromptsByEmail(
   email: string,
   canDuplicateSystemPrompts: boolean
 ): Promise<void> {
-  const token = await getAuthTokenOrNullAsync();
+  const token = await getSessionTokenOrNull();
   if (!token) throw new Error('Not authenticated');
 
-  const res = await fetch(`${API_BASE_URL}/api/admin/users/system-prompt-copy`, {
+  const res = await fetch(buildFastApiUrl('/api/admin/users/system-prompt-copy'), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -212,7 +202,7 @@ export async function setUserCanDuplicateSystemPromptsByEmail(
   });
 
   if (!res.ok) {
-    const detail = await readErrorDetail(res);
+    const detail = await readFastApiErrorDetail(res);
     throw new Error(detail || 'Failed to update system prompt copy permission.');
   }
 }
@@ -221,10 +211,10 @@ export async function setUserCanViewUsageInsightsByEmail(
   email: string,
   canViewUsageInsights: boolean
 ): Promise<void> {
-  const token = await getAuthTokenOrNullAsync();
+  const token = await getSessionTokenOrNull();
   if (!token) throw new Error('Not authenticated');
 
-  const res = await fetch(`${API_BASE_URL}/api/admin/users/usage-insights`, {
+  const res = await fetch(buildFastApiUrl('/api/admin/users/usage-insights'), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -235,7 +225,7 @@ export async function setUserCanViewUsageInsightsByEmail(
   });
 
   if (!res.ok) {
-    const detail = await readErrorDetail(res);
+    const detail = await readFastApiErrorDetail(res);
     throw new Error(detail || 'Failed to update usage insights permission.');
   }
 }
@@ -244,10 +234,10 @@ export async function setUserCanUseQuellenFinderByEmail(
   email: string,
   canUseQuellenFinder: boolean
 ): Promise<void> {
-  const token = await getAuthTokenOrNullAsync();
+  const token = await getSessionTokenOrNull();
   if (!token) throw new Error('Not authenticated');
 
-  const res = await fetch(`${API_BASE_URL}/api/admin/users/quellen-finder`, {
+  const res = await fetch(buildFastApiUrl('/api/admin/users/quellen-finder'), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -258,16 +248,16 @@ export async function setUserCanUseQuellenFinderByEmail(
   });
 
   if (!res.ok) {
-    const detail = await readErrorDetail(res);
+    const detail = await readFastApiErrorDetail(res);
     throw new Error(detail || 'Failed to update Quellen-Finder permission.');
   }
 }
 
 export async function setUserCanUsePdfScanByEmail(email: string, canUsePdfScan: boolean): Promise<void> {
-  const token = await getAuthTokenOrNullAsync();
+  const token = await getSessionTokenOrNull();
   if (!token) throw new Error('Not authenticated');
 
-  const res = await fetch(`${API_BASE_URL}/api/admin/users/pdf-scan`, {
+  const res = await fetch(buildFastApiUrl('/api/admin/users/pdf-scan'), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -278,13 +268,7 @@ export async function setUserCanUsePdfScanByEmail(email: string, canUsePdfScan: 
   });
 
   if (!res.ok) {
-    const detail = await readErrorDetail(res);
+    const detail = await readFastApiErrorDetail(res);
     throw new Error(detail || 'Failed to update PDF-Scan permission.');
   }
-}
-
-async function getAuthTokenOrNullAsync(): Promise<string | null> {
-  const store = await cookies();
-  const token = store.get('__session')?.value;
-  return typeof token === 'string' && token.trim() ? token.trim() : null;
 }

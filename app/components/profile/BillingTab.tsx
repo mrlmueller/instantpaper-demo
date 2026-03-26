@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Cookies from "js-cookie";
 import {
   AlertCircle,
   BarChart3,
@@ -33,13 +32,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-
-function getSessionTokenOrNull(): string | null {
-  const raw = Cookies.get("__session");
-  if (typeof raw !== "string") return null;
-  const token = raw.trim();
-  return token ? token : null;
-}
 
 function formatCredits(value: number): string {
   const n = Number(value ?? 0);
@@ -110,13 +102,13 @@ export function BillingTab({ active }: { active: boolean }) {
   const LEDGER_MAX_PAGES = 6;
 
   const fetchLedgerUntilVisibleTarget = useCallback(
-    async (token: string, cursor: string | null) => {
+    async (cursor: string | null) => {
       let pageCursor: string | null = cursor;
       let next: string | null = null;
       const all: BillingLedgerEntry[] = [];
 
       for (let i = 0; i < LEDGER_MAX_PAGES; i++) {
-        const res = await fetchBillingLedger(token, {
+        const res = await fetchBillingLedger({
           limit: LEDGER_PAGE_LIMIT,
           cursor: pageCursor,
         });
@@ -135,20 +127,12 @@ export function BillingTab({ active }: { active: boolean }) {
   );
 
   const refreshAll = useCallback(async () => {
-    const token = getSessionTokenOrNull();
-    if (!token) {
-      toast.error("Billing", {
-        description: "Keine Sitzung gefunden. Bitte melde dich erneut an.",
-      });
-      return;
-    }
-
     setLoading(true);
     try {
       const [b, s, firstLedger] = await Promise.all([
-        fetchBillingBalance(token),
-        fetchBillingSubscriptionStatus(token),
-        fetchLedgerUntilVisibleTarget(token, null),
+        fetchBillingBalance(),
+        fetchBillingSubscriptionStatus(),
+        fetchLedgerUntilVisibleTarget(null),
       ]);
       setBalance(b);
       setSubscription(s);
@@ -166,13 +150,11 @@ export function BillingTab({ active }: { active: boolean }) {
   }, []);
 
   const loadMore = useCallback(async () => {
-    const token = getSessionTokenOrNull();
-    if (!token) return;
     if (!nextCursor) return;
 
     setLedgerLoading(true);
     try {
-      const res = await fetchLedgerUntilVisibleTarget(token, nextCursor);
+      const res = await fetchLedgerUntilVisibleTarget(nextCursor);
       setLedger((prev) => [...prev, ...(res.entries || [])]);
       setNextCursor(res.nextCursor);
     } catch (err: unknown) {

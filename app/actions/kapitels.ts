@@ -4,6 +4,7 @@ import { getFirestoreForUser } from '@/app/lib/firebase/serverApp';
 import { requireAuth, type AuthUser } from '@/app/lib/auth/server-auth';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
+import { buildFastApiUrl } from '@/app/lib/server/fastapi';
 import {
   addDoc,
   doc,
@@ -267,14 +268,13 @@ function normalizeArtifactDocStatus(status: unknown): 'running' | 'success' | 'e
 
 async function fetchFastApi(path: string, payload: unknown) {
   await requireAuth();
-  const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
   const cookieStore = await cookies();
   const authToken = cookieStore.get('__session')?.value;
   if (!authToken) return { success: false, error: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.' };
 
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}${path}`, {
+    response = await fetch(buildFastApiUrl(path), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
       body: JSON.stringify(payload),

@@ -68,10 +68,7 @@ import {
 import { AI_GENERIC_ERROR_MESSAGE } from "@/app/lib/ai/messages";
 import { ProcessingStepper } from "./ProcessingStepper";
 import { toast } from "sonner";
-import Cookies from "js-cookie";
 import { fetchBillingBalance } from "@/app/lib/api/billingClient";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
 
 type RunUsageSummary = {
   runId: string;
@@ -433,25 +430,20 @@ export function KapitelWorkspace({
       return;
     }
 
-    const token = Cookies.get("__session");
-    if (!token) {
-      setRunUsage(null);
-      setRunUsageLoading(false);
-      return;
-    }
-
     let cancelled = false;
 
     setRunUsageLoading(true);
-    fetch(`${API_BASE_URL}/api/usage-insights/run/${encodeURIComponent(selectedRun.id)}`, {
+    fetch(`/api/usage-insights/run/${encodeURIComponent(selectedRun.id)}`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (res) => {
         if (res.status === 401 || res.status === 403) return null;
         if (!res.ok) {
-          const detail = (await res.json().catch(() => ({})))?.detail;
-          throw new Error(typeof detail === "string" ? detail : "Konnte Usage Insights nicht laden.");
+          const errorBody = (await res.json().catch(() => ({}))) as { detail?: unknown; error?: unknown };
+          const detail =
+            (typeof errorBody.error === "string" && errorBody.error.trim() ? errorBody.error.trim() : null) ||
+            (typeof errorBody.detail === "string" && errorBody.detail.trim() ? errorBody.detail.trim() : null);
+          throw new Error(detail || "Konnte Usage Insights nicht laden.");
         }
         return (await res.json()) as RunUsageSummary;
       })
@@ -494,13 +486,6 @@ export function KapitelWorkspace({
   useEffect(() => {
     if (!canViewUsageInsights || !usagePopoverOpen) return;
 
-    const token = Cookies.get("__session");
-    if (!token) {
-      setBalanceTotalCredits(null);
-      setBalanceTotalCreditsLoading(false);
-      return;
-    }
-
     let cancelled = false;
     const now = Date.now();
 
@@ -508,7 +493,7 @@ export function KapitelWorkspace({
     if (balanceTotalCredits != null && now - lastBalanceFetchRef.current < 15_000) return;
 
     setBalanceTotalCreditsLoading(true);
-    fetchBillingBalance(token)
+    fetchBillingBalance()
       .then((bal) => {
         if (cancelled) return;
         setBalanceTotalCredits(Number(bal.totalCredits ?? 0));

@@ -2,7 +2,6 @@
 
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import Cookies from "js-cookie";
 import { AlertTriangle, ArrowLeft, Ban, BarChart3, BookOpen, Check, ChevronDown, ExternalLink, Loader2, Play, Search, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 import { limit, onSnapshot, query, where } from "firebase/firestore";
@@ -47,8 +46,6 @@ import type {
 import type { Kapitel } from "@/app/actions/kapitels";
 
 import { PipelineDetailsDialog } from "./PipelineDetailsDialog";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
 
 type WithId<T> = T & { id: string };
 type WithDocId<T> = T & { docId: string };
@@ -671,11 +668,6 @@ export function QuellenFinder({
   };
 
   const confirmStartTwoLaneSources = async () => {
-    const token = Cookies.get("__session");
-    if (!token) {
-      toast.error("Nicht eingeloggt", { description: "Session Token fehlt." });
-      return;
-    }
     if (!selectedKapitelId) {
       toast.error("Bitte ein Kapitel auswählen.");
       return;
@@ -683,9 +675,9 @@ export function QuellenFinder({
     const kapitelId = selectedKapitelId;
     setStartConfirmOpen(false);
 
-    const res = await fetch(`${API_BASE_URL}/api/quellen-finder/sources-two-lane/start`, {
+    const res = await fetch("/api/quellen-finder/sources-two-lane/start", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         projekt_id: projektId,
         kapitel_id: kapitelId,
@@ -720,15 +712,9 @@ export function QuellenFinder({
       toast.error("Kein aktiver Run", { description: "Bitte zuerst einen Run auswählen." });
       return;
     }
-    const token = Cookies.get("__session");
-    if (!token) {
-      toast.error("Nicht eingeloggt", { description: "Session Token fehlt." });
-      return;
-    }
-
-    const res = await fetch(`${API_BASE_URL}/api/quellen-finder/sources-two-lane/cancel`, {
+    const res = await fetch("/api/quellen-finder/sources-two-lane/cancel", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projekt_id: projektId, run_id: activeTwoLaneRun.id }),
     });
 

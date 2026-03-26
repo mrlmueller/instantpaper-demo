@@ -35,8 +35,7 @@ import {
   setDoc,
   deleteField,
 } from 'firebase/firestore';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+import { buildFastApiUrl } from '@/app/lib/server/fastapi';
 
 function validatePlaceholders(stage: PromptStage, instructions: string): string | null {
   const config = STAGE_CONFIG[stage];
@@ -74,7 +73,7 @@ async function loadSystemTemplates(): Promise<{
   }
 
   try {
-    const res = await fetch(`<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>`, {
+    const res = await fetch(buildFastApiUrl('/api/system-prompt-templates'), {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',

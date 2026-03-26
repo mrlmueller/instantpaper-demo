@@ -104,7 +104,6 @@ import { getActiveKapitelCookieName } from '@/app/lib/ui/kapitelSelection';
 import { getActiveProjektCookieName } from '@/app/lib/ui/projektSelection';
 import { getDownloadUrlFromStorage } from '@/app/lib/firebase/storage';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
 const RUN_HISTORY_LIMIT = 10;
 const MAX_RUN_HISTORY_LIMIT = 200;
 
@@ -399,9 +398,8 @@ export function Dashboard({
 
     if (!cached || now - cached.checkedAt > 15_000) {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/billing/balance`, {
+        const res = await fetch('/api/billing/balance', {
           method: 'GET',
-          headers: { Authorization: `Bearer ${token}` },
         });
 
         if (res.status === 401) {
@@ -2210,11 +2208,10 @@ export function Dashboard({
           await applyActivePrompt('gliederung', choice.trim());
         }
 
-        const response = await fetch(`${API_BASE_URL}/api/gliederung/generate`, {
+        const response = await fetch('/api/gliederung/generate', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             projekt_id: projekt.id,
@@ -2316,11 +2313,10 @@ export function Dashboard({
       const toastId = toast.loading('Gliederung wird angepasst...');
       setIsRefiningGliederung(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/api/gliederung/refine`, {
+        const response = await fetch('/api/gliederung/refine', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ draft_id: did, message: msg }),
         });
@@ -2628,11 +2624,10 @@ export function Dashboard({
             const nextQuelle = queue.shift();
             if (!nextQuelle) return;
             try {
-              const response = await fetch(`${API_BASE_URL}/api/process`, {
+              const response = await fetch('/api/process', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
-                  Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({
                   quelle_id: nextQuelle.id,
@@ -2655,7 +2650,8 @@ export function Dashboard({
                   }
 
                   const errorBody = await response.json().catch(() => ({}));
-                  const error: any = new Error(errorBody.detail || 'Fehler beim Verarbeiten');
+                  const errorMessage = (errorBody as any).error || (errorBody as any).detail || 'Fehler beim Verarbeiten';
+                  const error: any = new Error(errorMessage);
                   error.status = response.status;
                   throw error;
                 }
@@ -2787,11 +2783,10 @@ export function Dashboard({
     });
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/combine-run`, {
+      const response = await fetch('/api/combine-run', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           kapitel_id: activeKapitelId,
@@ -2821,7 +2816,7 @@ export function Dashboard({
         }
 
         const error = await response.json().catch(() => ({}));
-        const err: any = new Error(error.detail || 'Fehler beim Kombinieren');
+        const err: any = new Error((error as any).error || (error as any).detail || 'Fehler beim Kombinieren');
         err.status = response.status;
         throw err;
       }
@@ -2915,11 +2910,10 @@ export function Dashboard({
       });
 
       try {
-        const response = await fetch(`${API_BASE_URL}/api/adopt-combined`, {
+        const response = await fetch('/api/adopt-combined', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             kapitel_id: activeKapitelId,
@@ -2950,7 +2944,7 @@ export function Dashboard({
           }
 
           const error = await response.json().catch(() => ({}));
-          const err: any = new Error(error.detail || 'Fehler beim Uebernehmen');
+          const err: any = new Error((error as any).error || (error as any).detail || 'Fehler beim Uebernehmen');
           err.status = response.status;
           throw err;
         }

@@ -3,8 +3,8 @@
 import { getFirestoreForUser } from '@/app/lib/firebase/serverApp';
 import { doc, setDoc, getDoc, serverTimestamp, type Firestore } from 'firebase/firestore';
 import { requireAuth, type AuthUser } from '@/app/lib/auth/server-auth';
+import { buildFastApiUrl, getSessionTokenOrNull } from '@/app/lib/server/fastapi';
 import { getOrCreateDefaultProject } from './projects';
-import { cookies } from 'next/headers';
 
 type ActionContext = {
   user?: AuthUser;
@@ -30,13 +30,11 @@ async function getContext(ctx?: ActionContext) {
 }
 
 async function getUserFeaturePermissionsFromApi(): Promise<UserFeaturePermissions | null> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('__session')?.value;
+  const token = await getSessionTokenOrNull();
   if (!token) return null;
 
-  const apiBaseUrl = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
   try {
-    const res = await fetch(`${apiBaseUrl}/api/me`, {
+    const res = await fetch(buildFastApiUrl('/api/me'), {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',

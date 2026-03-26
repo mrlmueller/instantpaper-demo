@@ -1,23 +1,15 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
-
-async function getAuthTokenOrNullAsync(): Promise<string | null> {
-  const store = await cookies();
-  const token = store.get("__session")?.value;
-  return typeof token === "string" && token.trim() ? token.trim() : null;
-}
+import { buildFastApiUrl, getSessionTokenOrNull } from "@/app/lib/server/fastapi";
 
 export async function POST(request: Request) {
   try {
-    const token = await getAuthTokenOrNullAsync();
+    const token = await getSessionTokenOrNull();
     if (!token) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
     const formData = await request.formData();
-    const res = await fetch(`${API_BASE_URL}/api/quellen-finder/project-pdf-upload`, {
+    const res = await fetch(buildFastApiUrl("/api/quellen-finder/project-pdf-upload"), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,

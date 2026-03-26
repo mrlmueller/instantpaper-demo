@@ -35,7 +35,6 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { useAuth } from "@/app/components/providers/AuthProvider"
 import { signOut as signOutUser } from "@/app/lib/firebase/auth"
-import Cookies from "js-cookie"
 import { fetchBillingBalance } from "@/app/lib/api/billingClient"
 import type { Projekt } from "@/app/types/ui"
 
@@ -103,11 +102,8 @@ export function ProjektHeader({
     const now = Date.now()
     if (totalCredits != null && now - lastCreditsFetchRef.current < 15_000) return
 
-    const token = Cookies.get("__session")
-    if (!token) return
-
     setCreditsLoading(true)
-    fetchBillingBalance(token)
+    fetchBillingBalance()
       .then((bal) => {
         // Always show Gesamt-Credits (do not subtract reserved credits).
         setTotalCredits(Number(bal.totalCredits ?? 0))
