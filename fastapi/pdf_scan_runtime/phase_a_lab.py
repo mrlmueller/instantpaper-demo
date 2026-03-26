@@ -161,14 +161,34 @@ def append_jsonl(path: Path, payload: Any) -> None:
 
 def _find_repo_root_and_pdf_scan_dir() -> tuple[Path, Path]:
     cwd = Path.cwd().resolve()
-    candidates = [cwd, cwd.parent]
+    here = Path(__file__).resolve()
+
+    seen: set[Path] = set()
+    candidates = [cwd, cwd.parent, here.parent, *here.parents]
+
     for base in candidates:
+        if base in seen:
+            continue
+        seen.add(base)
+
         pdf_scan_dir = base / "pdf-scan"
         if pdf_scan_dir.exists() and pdf_scan_dir.is_dir():
             return base, pdf_scan_dir
+
         if base.name == "pdf-scan":
             return base.parent, base
-    raise RuntimeError("Could not resolve repo root / pdf-scan directory from current working directory.")
+
+        # In the packaged FastAPI/Cloud Run image the pipeline is vendored into
+        # /app/pdf_scan_runtime rather than living next to a repo-level
+        # "pdf-scan" directory.
+        if base.name == "pdf_scan_runtime" and (base / "phase_a_lab.py").is_file():
+            fastapi_root = base.parent
+            repo_root = fastapi_root.parent if (fastapi_root / "main.py").is_file() else fastapi_root
+            return repo_root, base
+
+    raise RuntimeError(
+        "Could not resolve repo root / pdf-scan directory from current working directory or packaged runtime path."
+    )
 
 
 REPO_ROOT, PDF_SCAN_DIR = _find_repo_root_and_pdf_scan_dir()
