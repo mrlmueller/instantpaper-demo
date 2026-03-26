@@ -9,10 +9,13 @@ import { identityConverter } from './converters';
 import type {
   ArtifactDoc,
   KapitelDoc,
+  PdfScanAggregateDoc,
+  PdfScanAggregateSection,
+  PdfScanChapterDoc,
+  PdfScanChapterDocSummaryDoc,
+  PdfScanChapterSectionDoc,
   ProjectDoc,
   ProjectPdfDoc,
-  PdfScanDocSummaryDoc,
-  PdfScanResultDoc,
   QuellenFinderRunDoc,
   TwoLaneResultDoc,
   QuelleContentDoc,
@@ -219,43 +222,97 @@ export function quellenFinderTwoLaneTelemetryDoc(
   );
 }
 
-export function quellenFinderPdfScanDocsCol(
+export function quellenFinderPdfScanChaptersCol(
   db: Firestore,
   uid: string,
   projektId: string,
   runId: string
-): CollectionReference<PdfScanDocSummaryDoc> {
-  return collection(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'pdfScanDocs').withConverter(
-    identityConverter<PdfScanDocSummaryDoc>()
+): CollectionReference<PdfScanChapterDoc> {
+  return collection(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'pdfScanChapters').withConverter(
+    identityConverter<PdfScanChapterDoc>()
   );
 }
 
-export function quellenFinderPdfScanSectionsCol(
+export function quellenFinderPdfScanChapterDoc(
   db: Firestore,
   uid: string,
   projektId: string,
-  runId: string
-): CollectionReference<PdfScanResultDoc> {
-  return collection(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'pdfScanSections').withConverter(
-    identityConverter<PdfScanResultDoc>()
+  runId: string,
+  chapterId: string
+): DocumentReference<PdfScanChapterDoc> {
+  return doc(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'pdfScanChapters', chapterId).withConverter(
+    identityConverter<PdfScanChapterDoc>()
   );
 }
 
-export function quellenFinderPdfStage2Col(
+export function quellenFinderPdfScanChapterDocsCol(
   db: Firestore,
   uid: string,
   projektId: string,
-  runId: string
-): CollectionReference<PdfScanDocSummaryDoc> {
-  return quellenFinderPdfScanDocsCol(db, uid, projektId, runId);
+  runId: string,
+  chapterId: string
+): CollectionReference<PdfScanChapterDocSummaryDoc> {
+  return collection(
+    db,
+    'users',
+    uid,
+    'projects',
+    projektId,
+    'researchRuns',
+    runId,
+    'pdfScanChapters',
+    chapterId,
+    'docs'
+  ).withConverter(identityConverter<PdfScanChapterDocSummaryDoc>());
 }
 
-export function quellenFinderPdfStage3Col(
+export function quellenFinderPdfScanChapterSectionsCol(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  runId: string,
+  chapterId: string
+): CollectionReference<PdfScanChapterSectionDoc> {
+  return collection(
+    db,
+    'users',
+    uid,
+    'projects',
+    projektId,
+    'researchRuns',
+    runId,
+    'pdfScanChapters',
+    chapterId,
+    'sections'
+  ).withConverter(identityConverter<PdfScanChapterSectionDoc>());
+}
+
+export function quellenFinderPdfScanAggregateDocsCol(
   db: Firestore,
   uid: string,
   projektId: string,
   runId: string
-): CollectionReference<PdfScanResultDoc> {
-  return quellenFinderPdfScanSectionsCol(db, uid, projektId, runId);
+): CollectionReference<PdfScanAggregateDoc> {
+  return collection(db, 'users', uid, 'projects', projektId, 'researchRuns', runId, 'pdfScanAggregateDocs').withConverter(
+    identityConverter<PdfScanAggregateDoc>()
+  );
+}
+
+export function quellenFinderPdfScanAggregateSectionsCol(
+  db: Firestore,
+  uid: string,
+  projektId: string,
+  runId: string
+): CollectionReference<PdfScanAggregateSection> {
+  return collection(
+    db,
+    'users',
+    uid,
+    'projects',
+    projektId,
+    'researchRuns',
+    runId,
+    'pdfScanAggregateSections'
+  ).withConverter(identityConverter<PdfScanAggregateSection>());
 }
 

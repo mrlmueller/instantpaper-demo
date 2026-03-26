@@ -41,6 +41,7 @@ def extract_quellen_finder_pdf_section(
     user_id: str,
     projekt_id: str,
     run_id: str,
+    chapter_id: str | None,
     pdf_doc_id: str,
     section_doc_id: str,
 ) -> dict:
@@ -54,12 +55,44 @@ def extract_quellen_finder_pdf_section(
     if str(run.get("kind") or "") != "pdf_scan":
         raise HTTPException(status_code=400, detail="Run is not a PDF scan run.")
 
-    pdf_doc_snap = run_ref.collection("pdfScanDocs").document(str(pdf_doc_id)).get()
+    resolved_chapter_id = _as_str(chapter_id)
+    if not resolved_chapter_id:
+        kapitel_ids = [
+            _as_str(value)
+            for value in list(run.get("kapitelIds") or [])
+            if _as_str(value)
+        ]
+        if len(kapitel_ids) == 1:
+            resolved_chapter_id = kapitel_ids[0]
+        else:
+            chapters_col = run_ref.collection("pdfScanChapters")
+            for chapter_snap in chapters_col.stream():
+                if chapter_snap is None or not getattr(chapter_snap, "exists", False):
+                    continue
+                candidate_chapter_id = _as_str(chapter_snap.id)
+                candidate_section_snap = (
+                    chapter_snap.reference.collection("sections").document(str(section_doc_id)).get()
+                )
+                if getattr(candidate_section_snap, "exists", False):
+                    resolved_chapter_id = candidate_chapter_id
+                    break
+            if not resolved_chapter_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="chapter_id is required for multi-chapter PDF scan runs.",
+                )
+
+    chapter_ref = run_ref.collection("pdfScanChapters").document(str(resolved_chapter_id))
+    chapter_snap = chapter_ref.get()
+    if not getattr(chapter_snap, "exists", False):
+        raise HTTPException(status_code=404, detail="PDF scan chapter not found.")
+
+    pdf_doc_snap = chapter_ref.collection("docs").document(str(pdf_doc_id)).get()
     if not getattr(pdf_doc_snap, "exists", False):
         raise HTTPException(status_code=404, detail="PDF summary doc not found.")
     pdf_summary_doc = pdf_doc_snap.to_dict() or {}
 
-    section_snap = run_ref.collection("pdfScanSections").document(str(section_doc_id)).get()
+    section_snap = chapter_ref.collection("sections").document(str(section_doc_id)).get()
     if not getattr(section_snap, "exists", False):
         raise HTTPException(status_code=404, detail="PDF section doc not found.")
     section_doc = section_snap.to_dict() or {}
@@ -112,7 +145,7 @@ def extract_quellen_finder_pdf_section(
             "pdf": {"id": pdf_id, "filename": filename, "storage_path": None, "size": expected_size},
             "hit": {"locator_hint": section_title},
             "extract": {"ok": False, "reason": "missing_storage_path"},
-            "meta": {"pdf_doc_id": pdf_doc_id, "section_doc_id": section_doc_id},
+            "meta": {"chapter_id": resolved_chapter_id, "pdf_doc_id": pdf_doc_id, "section_doc_id": section_doc_id},
         }
 
     with tempfile.TemporaryDirectory(prefix="qf_pdf_extract_") as tmpdir:
@@ -136,7 +169,7 @@ def extract_quellen_finder_pdf_section(
                 "pdf": {"id": pdf_id, "filename": filename, "storage_path": storage_path, "size": expected_size},
                 "hit": {"locator_hint": section_title},
                 "extract": {"ok": False, "reason": "download_failed", "detail": str(exc)[:500]},
-                "meta": {"pdf_doc_id": pdf_doc_id, "section_doc_id": section_doc_id},
+                "meta": {"chapter_id": resolved_chapter_id, "pdf_doc_id": pdf_doc_id, "section_doc_id": section_doc_id},
             }
         download_s = float(time.time() - t0)
 
@@ -175,6 +208,7 @@ def extract_quellen_finder_pdf_section(
                     "hit": {"locator_hint": section_title},
                     "extract": result,
                     "meta": {
+                        "chapter_id": resolved_chapter_id,
                         "pdf_doc_id": pdf_doc_id,
                         "section_doc_id": section_doc_id,
                         "page_count": int(doc.page_count),
@@ -188,9 +222,10 @@ def extract_quellen_finder_pdf_section(
                 "pdf": {"id": pdf_id, "filename": filename, "storage_path": storage_path, "size": expected_size},
                 "hit": {"locator_hint": section_title},
                 "extract": {"ok": False, "reason": "extract_failed", "detail": str(exc)[:500]},
-                "meta": {
-                    "pdf_doc_id": pdf_doc_id,
-                    "section_doc_id": section_doc_id,
-                    "download_s": float(download_s),
-                },
+                    "meta": {
+                        "chapter_id": resolved_chapter_id,
+                        "pdf_doc_id": pdf_doc_id,
+                        "section_doc_id": section_doc_id,
+                        "download_s": float(download_s),
+                    },
             }

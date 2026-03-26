@@ -49,6 +49,10 @@ Thumbs.db
 *.log
 fastapi.log
 
+# Local PDF-scan smoke runs / scratch artifacts
+_tmp_runs/
+_tmp_runs_validate/
+
 # Debug dumps (text refinement flow)
 .prompt_dumps/
 

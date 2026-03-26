@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ import google.auth
 from google.auth.transport.requests import AuthorizedSession
 
 from utils.config import config
+from utils.runtime_paths import resolve_fastapi_root
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +162,158 @@ class CloudRunJobLauncher:
         if not region:
             raise RuntimeError(f"{env_name} is not configured.")
         return region
+
+    def _use_local_pdf_scan_launcher(self) -> bool:
+        return not config.IS_CLOUD_RUN
+
+    def _python_supports_local_pdf_scan(self, python_bin: str) -> bool:
+        fastapi_root = resolve_fastapi_root(__file__)
+        try:
+            completed = subprocess.run(
+                [
+                    python_bin,
+                    "-c",
+                    "import fastapi, firebase_admin, google.cloud.firestore",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=str(fastapi_root),
+                timeout=15,
+            )
+        except Exception:
+            return False
+        return completed.returncode == 0
+
+    def _resolve_local_python_bin(self) -> str:
+        candidates: list[str] = []
+        configured = str(getattr(config, "PDF_SCAN_LOCAL_PYTHON_BIN", "") or "").strip()
+        if configured:
+            candidates.append(configured)
+
+        conda_prefix = str(os.getenv("CONDA_PREFIX", "") or "").strip()
+        if conda_prefix:
+            if os.name == "nt":
+                candidates.append(str(Path(conda_prefix) / "python.exe"))
+            else:
+                candidates.append(str(Path(conda_prefix) / "bin" / "python"))
+
+        fastapi_root = resolve_fastapi_root(__file__)
+        repo_name = str(fastapi_root.parent.name or "").strip()
+        if repo_name:
+            conda_exe = str(os.getenv("CONDA_EXE", "") or "").strip()
+            if conda_exe:
+                conda_base = Path(conda_exe).resolve().parent.parent
+                if os.name == "nt":
+                    candidates.append(str(conda_base / "envs" / repo_name / "python.exe"))
+                else:
+                    candidates.append(str(conda_base / "envs" / repo_name / "bin" / "python"))
+            home = Path.home()
+            if os.name == "nt":
+                candidates.append(str(home / ".conda" / "envs" / repo_name / "python.exe"))
+            else:
+                candidates.append(str(home / ".conda" / "envs" / repo_name / "bin" / "python"))
+
+        current_python = str(sys.executable or "").strip()
+        if current_python:
+            candidates.append(current_python)
+
+        resolved_python = shutil.which("python")
+        if resolved_python:
+            candidates.append(resolved_python)
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            raw = str(candidate or "").strip()
+            if not raw:
+                continue
+            normalized = raw.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            path_obj = Path(raw)
+            if path_obj.exists():
+                candidate = str(path_obj)
+                if self._python_supports_local_pdf_scan(candidate):
+                    return candidate
+                continue
+            looked_up = shutil.which(raw)
+            if looked_up and self._python_supports_local_pdf_scan(str(looked_up)):
+                return str(looked_up)
+
+        raise RuntimeError(
+            "Could not resolve a usable Python interpreter for local PDF scan launch. "
+            "Set PDF_SCAN_LOCAL_PYTHON_BIN to the environment that has FastAPI and the PDF scan dependencies installed."
+        )
+
+    def _spawn_local_process(
+        self,
+        *,
+        script_name: str,
+        args: list[str],
+        run_id: str,
+    ) -> dict[str, str | None]:
+        fastapi_root = resolve_fastapi_root(__file__)
+        script_path = fastapi_root / script_name
+        if not script_path.is_file():
+            raise RuntimeError(f"Local PDF scan launcher script not found: {script_path}")
+
+        python_bin = self._resolve_local_python_bin()
+
+        log_root = Path(tempfile.gettempdir()) / "instantpaper_job_logs" / "pdf_scan"
+        log_root.mkdir(parents=True, exist_ok=True)
+        safe_run_id = re.sub(r"[^A-Za-z0-9._-]+", "_", str(run_id or "").strip()) or "run"
+        log_path = log_root / f"{Path(script_name).stem}_{safe_run_id}.log"
+        env = os.environ.copy()
+        env.setdefault("PYTHONUNBUFFERED", "1")
+
+        creationflags = 0
+        popen_kwargs: dict[str, Any] = {
+            "cwd": str(fastapi_root),
+            "env": env,
+            "stdin": subprocess.DEVNULL,
+            "stderr": subprocess.STDOUT,
+        }
+        if os.name == "nt":
+            creationflags |= int(getattr(subprocess, "DETACHED_PROCESS", 0) or 0)
+            creationflags |= int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) or 0)
+            creationflags |= int(getattr(subprocess, "CREATE_NO_WINDOW", 0) or 0)
+            if creationflags:
+                popen_kwargs["creationflags"] = creationflags
+        else:
+            popen_kwargs["start_new_session"] = True
+
+        with log_path.open("ab") as log_handle:
+            proc = subprocess.Popen(
+                [python_bin, str(script_path), *args],
+                stdout=log_handle,
+                **popen_kwargs,
+            )
+
+        logger.info(
+            "Launched local PDF scan worker | script=%s pid=%s run_id=%s python=%s log=%s",
+            script_name,
+            getattr(proc, "pid", None),
+            run_id,
+            python_bin,
+            log_path,
+        )
+        project_id = (
+            str(config.GOOGLE_CLOUD_PROJECT or "").strip()
+            or str(config.FIREBASE_PROJECT_ID or "").strip()
+            or "local"
+        )
+        execution_name = f"local-pid:{getattr(proc, 'pid', 'unknown')}"
+        return {
+            "job_name": f"local:{script_name}",
+            "region": "local",
+            "project_id": project_id,
+            "operation_name": execution_name,
+            "execution_name": execution_name,
+            "pid": str(getattr(proc, "pid", "") or ""),
+            "log_path": str(log_path),
+            "launch_mode": "local_subprocess",
+        }
 
     def _execute_job_via_gcloud(
         self,
@@ -320,6 +474,16 @@ class CloudRunJobLauncher:
         projekt_id: str,
         run_id: str,
     ) -> dict[str, str | None]:
+        if self._use_local_pdf_scan_launcher():
+            return self._spawn_local_process(
+                script_name="run_pdf_scan_cpu_job.py",
+                args=[
+                    f"--user-id={str(user_id).strip()}",
+                    f"--project-id={str(projekt_id).strip()}",
+                    f"--run-id={str(run_id).strip()}",
+                ],
+                run_id=run_id,
+            )
         region = self._job_region(
             str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip(),
             "PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION",
@@ -343,6 +507,16 @@ class CloudRunJobLauncher:
         projekt_id: str,
         run_id: str,
     ) -> dict[str, str | None]:
+        if self._use_local_pdf_scan_launcher():
+            return self._spawn_local_process(
+                script_name="run_pdf_scan_gpu_job.py",
+                args=[
+                    f"--user-id={str(user_id).strip()}",
+                    f"--project-id={str(projekt_id).strip()}",
+                    f"--run-id={str(run_id).strip()}",
+                ],
+                run_id=run_id,
+            )
         region = self._job_region(
             str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip(),
             "PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION",

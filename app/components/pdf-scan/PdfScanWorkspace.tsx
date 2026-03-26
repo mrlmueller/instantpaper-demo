@@ -54,7 +54,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -66,12 +65,14 @@ import {
   projectPdfsCol,
   projectResearchRunsCol,
   quellenCol,
-  quellenFinderPdfScanDocsCol,
-  quellenFinderPdfScanSectionsCol,
+  quellenFinderPdfScanChapterDocsCol,
+  quellenFinderPdfScanChapterSectionsCol,
+  quellenFinderPdfScanChaptersCol,
 } from "@/app/lib/firestore/refs";
 import type {
-  PdfScanDocSummaryDoc,
-  PdfScanResultDoc,
+  PdfScanChapterDoc,
+  PdfScanChapterDocSummaryDoc,
+  PdfScanChapterSectionDoc,
   ProjectPdfDoc,
   QuelleDoc,
   QuellenFinderPipelineStage,
@@ -85,8 +86,9 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:80
 type WithId<T> = T & { id: string };
 type PdfRow = WithId<ProjectPdfDoc>;
 type RunRow = WithId<QuellenFinderRunDoc>;
-type PdfDocRow = WithId<PdfScanDocSummaryDoc>;
-type PdfSectionRow = WithId<PdfScanResultDoc>;
+type ChapterRow = WithId<PdfScanChapterDoc>;
+type PdfDocRow = WithId<PdfScanChapterDocSummaryDoc>;
+type PdfSectionRow = WithId<PdfScanChapterSectionDoc>;
 type QuelleRow = WithId<QuelleDoc>;
 type ToDateLike = { toDate: () => Date };
 type PdfJsModule = typeof import("pdfjs-dist");
@@ -95,9 +97,12 @@ export type PdfScanWorkspacePreview = {
   runs: RunRow[];
   docRows: PdfDocRow[];
   sectionsByDocId: Record<string, PdfSectionRow[]>;
+  chapterRows?: ChapterRow[];
   initialSelectedKapitelId?: string | null;
+  initialSelectedKapitelIds?: string[];
   initialSelectedPdfIds?: string[];
   initialActiveRunId?: string | null;
+  initialActiveChapterId?: string | null;
   initialActiveDocId?: string | null;
   initialLibraryManagerOpen?: boolean;
 };
@@ -108,10 +113,12 @@ const PDF_SCAN_PIPELINE_STEPS: Array<{ key: string; label: string; title: string
   { key: "phase_a", label: "Phase A", title: "Phase A", description: "Build pipeline manifest" },
   { key: "phase_b", label: "Phase B", title: "Phase B", description: "Text extraction" },
   { key: "phase_c", label: "Phase C", title: "Phase C", description: "Normalize sections" },
+  { key: "phase_c5", label: "Phase C.5", title: "Phase C.5", description: "Prepare shared retrieval cache" },
   { key: "phase_d", label: "Phase D", title: "Phase D", description: "Plan retrieval" },
   { key: "phase_e", label: "Phase E", title: "Phase E", description: "Retrieve candidates" },
   { key: "phase_f", label: "Phase F", title: "Phase F", description: "Rerank candidates" },
   { key: "phase_g", label: "Phase G", title: "Phase G", description: "Score final sections" },
+  { key: "phase_h", label: "Phase H", title: "Phase H", description: "Aggregate chapter results" },
   { key: "persist_results", label: "Persist", title: "Persist", description: "Save UI results" },
 ];
 
@@ -282,6 +289,23 @@ function readTopScore(row: PdfDocRow): number {
   return typeof row.topSectionScore === "number" && Number.isFinite(row.topSectionScore) ? row.topSectionScore : -1;
 }
 
+function buildPdfScanRunLabel(run: RunRow): string {
+  const explicit = String(run.pdfScanDisplay?.runLabel || "").trim();
+  if (explicit) return explicit;
+  const snapshots = Array.isArray(run.kapitelSnapshots) ? run.kapitelSnapshots : [];
+  if (snapshots.length === 1) {
+    const snapshot = snapshots[0];
+    const label = `${snapshot?.nummer ? `${snapshot.nummer} ` : ""}${snapshot?.title || ""}`.trim();
+    if (label) return label;
+  }
+  const chapterCount = Array.isArray(run.kapitelIds) ? run.kapitelIds.length : 0;
+  const pdfCount = Array.isArray(run.pdfIds) ? run.pdfIds.length : 0;
+  if (chapterCount > 0 || pdfCount > 0) {
+    return `${formatIntDe(chapterCount)} Kapitel • ${formatIntDe(pdfCount)} PDFs`;
+  }
+  return "PDF-Scan";
+}
+
 let pdfjsUploadPromise: Promise<PdfJsModule> | null = null;
 
 async function loadPdfJsForUpload(): Promise<PdfJsModule> {
@@ -420,8 +444,8 @@ const MainEmptyState = memo(function MainEmptyState({ selectedKapitel }: { selec
         <div className="mt-6 text-[26px] font-semibold tracking-[-0.03em] text-slate-950">PDF-Scan starten</div>
         <div className="mt-4 text-base leading-8 text-slate-500">
           {selectedKapitel
-            ? "Wähle links die PDFs aus und starte den Scan. Die neue Pipeline läuft deutlich länger und meldet ihren Fortschritt live zurück."
-            : "Wähle links ein Kapitel, lade PDFs hoch und starte dann den Scan."}
+            ? "Wähle links die PDFs aus und starte den Scan. Du kannst mehrere Kapitel gleichzeitig auswählen; die Ergebnisse werden pro Kapitel und aggregiert gespeichert."
+            : "Wähle links ein oder mehrere Kapitel, lade PDFs hoch und starte dann den Scan."}
         </div>
       </div>
     </div>
@@ -500,7 +524,12 @@ export function PdfScanWorkspace({
   const previewMode = Boolean(preview);
 
   const kapitels = useMemo(() => initialKapitels ?? [], [initialKapitels]);
-  const [selectedKapitelId, setSelectedKapitelId] = useState<string | null>(() => preview?.initialSelectedKapitelId ?? null);
+  const [selectedKapitelIds, setSelectedKapitelIds] = useState<string[]>(() => {
+    const initial = Array.isArray(preview?.initialSelectedKapitelIds) ? preview.initialSelectedKapitelIds : [];
+    if (initial.length > 0) return initial.filter((value) => String(value || "").trim());
+    const fallback = String(preview?.initialSelectedKapitelId || "").trim();
+    return fallback ? [fallback] : [];
+  });
 
   const [pdfs, setPdfs] = useState<PdfRow[]>(() => preview?.pdfs ?? []);
   const [selectedPdfIds, setSelectedPdfIds] = useState<string[]>(() => preview?.initialSelectedPdfIds ?? (preview?.pdfs ?? []).map((pdf) => pdf.id));
@@ -515,8 +544,11 @@ export function PdfScanWorkspace({
   const [runs, setRuns] = useState<RunRow[]>(() => preview?.runs ?? []);
   const [runsLoaded, setRunsLoaded] = useState(() => previewMode);
   const [activeRunId, setActiveRunId] = useState<string | null>(() => preview?.initialActiveRunId ?? null);
+  const [activeResultChapterId, setActiveResultChapterId] = useState<string | null>(() => preview?.initialActiveChapterId ?? preview?.initialSelectedKapitelId ?? null);
   const [activeRunCookieRestored, setActiveRunCookieRestored] = useState(() => previewMode);
 
+  const [chapterRows, setChapterRows] = useState<ChapterRow[]>(() => preview?.chapterRows ?? []);
+  const [chapterRowsLoaded, setChapterRowsLoaded] = useState(() => previewMode);
   const [docRows, setDocRows] = useState<PdfDocRow[]>(() => preview?.docRows ?? []);
   const [docRowsLoaded, setDocRowsLoaded] = useState(() => previewMode);
   const [openDocIds, setOpenDocIds] = useState<string[]>(() => (preview?.docRows ?? []).map((row) => row.id));
@@ -541,10 +573,20 @@ export function PdfScanWorkspace({
   const knownDocIdsForRunRef = useRef<Set<string>>(new Set((preview?.docRows ?? []).map((row) => row.id)));
   const activeRunCookieKey = useMemo(() => `pdf_scan_active_run_${projektId}`, [projektId]);
 
-  const selectedKapitel = useMemo(() => {
-    if (!selectedKapitelId) return null;
-    return kapitels.find((item) => item.id === selectedKapitelId) ?? null;
-  }, [kapitels, selectedKapitelId]);
+  const kapitelById = useMemo(() => {
+    const map = new Map<string, Kapitel>();
+    for (const kapitel of kapitels) map.set(kapitel.id, kapitel);
+    return map;
+  }, [kapitels]);
+
+  const selectedKapitelIdSet = useMemo(() => new Set(selectedKapitelIds), [selectedKapitelIds]);
+
+  const selectedKapitelRows = useMemo(
+    () => kapitels.filter((item) => selectedKapitelIdSet.has(item.id)),
+    [kapitels, selectedKapitelIdSet]
+  );
+
+  const primarySelectedKapitel = selectedKapitelRows[0] ?? null;
 
   const pdfsById = useMemo(() => {
     const map = new Map<string, PdfRow>();
@@ -594,11 +636,14 @@ export function PdfScanWorkspace({
   const pdfScanRuns = useMemo(() => runs.filter((run) => run.kind === "pdf_scan"), [runs]);
 
   const selectedKapitelRunningRuns = useMemo(() => {
-    if (!selectedKapitelId) return [];
+    if (selectedKapitelIdSet.size === 0) return [];
     return pdfScanRuns.filter(
-      (run) => isPdfScanRunActive(run) && Array.isArray(run.kapitelIds) && run.kapitelIds.includes(selectedKapitelId)
+      (run) =>
+        isPdfScanRunActive(run) &&
+        Array.isArray(run.kapitelIds) &&
+        run.kapitelIds.some((kapitelId) => selectedKapitelIdSet.has(String(kapitelId || "").trim()))
     );
-  }, [pdfScanRuns, selectedKapitelId]);
+  }, [pdfScanRuns, selectedKapitelIdSet]);
 
   const sameKapitelRunningRun = selectedKapitelRunningRuns[0] ?? null;
 
@@ -607,11 +652,53 @@ export function PdfScanWorkspace({
       const found = pdfScanRuns.find((run) => run.id === activeRunId);
       if (found) return found;
     }
-    if (selectedKapitelId) {
-      return pdfScanRuns.find((run) => Array.isArray(run.kapitelIds) && run.kapitelIds.includes(selectedKapitelId)) ?? null;
+    if (selectedKapitelIds.length > 0) {
+      return (
+        pdfScanRuns.find(
+          (run) =>
+            Array.isArray(run.kapitelIds) &&
+            selectedKapitelIds.every((kapitelId) => run.kapitelIds.includes(kapitelId))
+        ) ?? null
+      );
     }
     return pdfScanRuns[0] ?? null;
-  }, [activeRunId, pdfScanRuns, selectedKapitelId]);
+  }, [activeRunId, pdfScanRuns, selectedKapitelIds]);
+
+  const activeRunChapterRows = useMemo(() => {
+    const runChapterIds = Array.isArray(activeRun?.kapitelIds)
+      ? activeRun.kapitelIds.map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    const chapterMap = new Map(chapterRows.map((row) => [row.chapterId, row]));
+    return runChapterIds.map((chapterId, index) => {
+      const existing = chapterMap.get(chapterId);
+      if (existing) return existing;
+      const kapitel = kapitelById.get(chapterId);
+      return {
+        id: chapterId,
+        chapterId,
+        chapterOrder: index,
+        kapitelSnapshot: {
+          id: chapterId,
+          nummer: kapitel?.nummer,
+          title: kapitel?.title,
+          ueberschrift: kapitel?.title,
+          thema: kapitel?.thema,
+        },
+        status: "queued",
+        usefulPdfCount: 0,
+        documentCount: 0,
+        visibleSectionCount: 0,
+        topSectionCount: 0,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      } as ChapterRow;
+    });
+  }, [activeRun?.kapitelIds, chapterRows, kapitelById]);
+
+  const activeChapterRow = useMemo(
+    () => activeRunChapterRows.find((row) => row.chapterId === activeResultChapterId) ?? null,
+    [activeResultChapterId, activeRunChapterRows]
+  );
 
   const selectedPdfIdSet = useMemo(() => new Set(selectedPdfIds), [selectedPdfIds]);
 
@@ -658,13 +745,19 @@ export function PdfScanWorkspace({
 
   useEffect(() => {
     if (!previewMode && !activeRunCookieRestored) return;
-    if (selectedKapitelId) return;
-    if (activeRun?.kapitelIds?.[0]) {
-      setSelectedKapitelId(activeRun.kapitelIds[0]);
+    if (selectedKapitelIds.length > 0) return;
+    if (activeRun?.kapitelIds?.length) {
+      const nextKapitelIds = activeRun.kapitelIds.filter((value): value is string => Boolean(String(value || "").trim()));
+      setSelectedKapitelIds(nextKapitelIds);
+      setActiveResultChapterId((prev) => (prev && nextKapitelIds.includes(prev) ? prev : nextKapitelIds[0] ?? null));
       return;
     }
-    if (kapitels.length) setSelectedKapitelId(kapitels[0]?.id ?? null);
-  }, [activeRun?.kapitelIds, activeRunCookieRestored, kapitels, previewMode, selectedKapitelId]);
+    if (kapitels.length) {
+      const firstKapitelId = kapitels[0]?.id ?? null;
+      setSelectedKapitelIds(firstKapitelId ? [firstKapitelId] : []);
+      setActiveResultChapterId((prev) => prev ?? firstKapitelId);
+    }
+  }, [activeRun?.kapitelIds, activeRunCookieRestored, kapitels, previewMode, selectedKapitelIds]);
 
   useEffect(() => {
     setSelectedPdfIds((prev) => prev.filter((id) => pdfsById.has(id)));
@@ -692,12 +785,23 @@ export function PdfScanWorkspace({
     previousActiveRunIdRef.current = nextRunId;
 
     setOpenDocIds([]);
+    setChapterRows([]);
+    setChapterRowsLoaded(previewMode);
     setSectionRowsByDocId({});
     setSectionRowsLoaded(previewMode);
     knownDocIdsForRunRef.current = new Set();
     setExtractOpen(false);
     setExtractRequest(null);
   }, [activeRun?.id, previewMode]);
+
+  useEffect(() => {
+    setOpenDocIds([]);
+    setSectionRowsByDocId({});
+    setSectionRowsLoaded(previewMode);
+    knownDocIdsForRunRef.current = new Set();
+    setExtractOpen(false);
+    setExtractRequest(null);
+  }, [activeResultChapterId, previewMode]);
 
   useEffect(() => {
     if (previewMode) return;
@@ -779,12 +883,15 @@ export function PdfScanWorkspace({
     if (activeRunId !== cookieRun.id) {
       setActiveRunId(cookieRun.id);
     }
-    const kapitelId = Array.isArray(cookieRun.kapitelIds) ? String(cookieRun.kapitelIds[0] || "").trim() : "";
-    if (kapitelId && selectedKapitelId !== kapitelId) {
-      setSelectedKapitelId(kapitelId);
+    const nextKapitelIds = Array.isArray(cookieRun.kapitelIds)
+      ? cookieRun.kapitelIds.map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    if (nextKapitelIds.length > 0) {
+      setSelectedKapitelIds(nextKapitelIds);
+      setActiveResultChapterId((prev) => (prev && nextKapitelIds.includes(prev) ? prev : nextKapitelIds[0] ?? null));
     }
     setActiveRunCookieRestored(true);
-  }, [activeRunCookieKey, activeRunCookieRestored, activeRunId, pdfScanRuns, previewMode, runsLoaded, selectedKapitelId]);
+  }, [activeRunCookieKey, activeRunCookieRestored, activeRunId, pdfScanRuns, previewMode, runsLoaded]);
 
   useEffect(() => {
     if (previewMode) return;
@@ -797,19 +904,57 @@ export function PdfScanWorkspace({
   }, [activeRun?.id, activeRunCookieKey, activeRunCookieRestored, previewMode]);
 
   useEffect(() => {
+    if (!activeRun?.kapitelIds?.length) {
+      setActiveResultChapterId(null);
+      return;
+    }
+    const validChapterIds = activeRun.kapitelIds.map((value) => String(value || "").trim()).filter(Boolean);
+    setActiveResultChapterId((prev) => (prev && validChapterIds.includes(prev) ? prev : validChapterIds[0] ?? null));
+  }, [activeRun?.kapitelIds]);
+
+  useEffect(() => {
     if (previewMode) return;
     if (!user?.uid || !projektId || !activeRun?.id) {
+      setChapterRows([]);
+      setChapterRowsLoaded(false);
+      return;
+    }
+    setChapterRowsLoaded(false);
+    const q = query(quellenFinderPdfScanChaptersCol(firestoreClient, user.uid, projektId, activeRun.id), limit(100));
+    return onSnapshot(
+      q,
+      (snap) => {
+        const next = snap.docs
+          .map((entry) => ({ id: entry.id, ...(entry.data() as PdfScanChapterDoc) }))
+          .sort((a, b) => Number(a.chapterOrder || 0) - Number(b.chapterOrder || 0));
+        setChapterRows(next);
+        setChapterRowsLoaded(true);
+      },
+      (err) => {
+        console.error("Failed to load pdfScanChapters:", err);
+        setChapterRows([]);
+        setChapterRowsLoaded(true);
+      }
+    );
+  }, [activeRun?.id, previewMode, projektId, user?.uid]);
+
+  useEffect(() => {
+    if (previewMode) return;
+    if (!user?.uid || !projektId || !activeRun?.id || !activeResultChapterId) {
       setDocRows([]);
       setDocRowsLoaded(false);
       return;
     }
     setDocRowsLoaded(false);
-    const q = query(quellenFinderPdfScanDocsCol(firestoreClient, user.uid, projektId, activeRun.id), limit(200));
+    const q = query(
+      quellenFinderPdfScanChapterDocsCol(firestoreClient, user.uid, projektId, activeRun.id, activeResultChapterId),
+      limit(200)
+    );
     return onSnapshot(
       q,
       (snap) => {
         const next = snap.docs
-          .map((entry) => ({ id: entry.id, ...(entry.data() as PdfScanDocSummaryDoc) }))
+          .map((entry) => ({ id: entry.id, ...(entry.data() as PdfScanChapterDocSummaryDoc) }))
           .sort((a, b) => {
             const scoreDiff = readTopScore(b) - readTopScore(a);
             if (scoreDiff !== 0) return scoreDiff;
@@ -821,27 +966,30 @@ export function PdfScanWorkspace({
         setDocRowsLoaded(true);
       },
       (err) => {
-        console.error("Failed to load pdfScanDocs:", err);
+        console.error("Failed to load pdfScanChapter docs:", err);
         setDocRows([]);
         setDocRowsLoaded(true);
       }
     );
-  }, [activeRun?.id, previewMode, projektId, user?.uid]);
+  }, [activeResultChapterId, activeRun?.id, previewMode, projektId, user?.uid]);
 
   useEffect(() => {
     if (previewMode) return;
-    if (!user?.uid || !projektId || !activeRun?.id) {
+    if (!user?.uid || !projektId || !activeRun?.id || !activeResultChapterId) {
       setSectionRowsByDocId({});
       setSectionRowsLoaded(false);
       return;
     }
     setSectionRowsLoaded(false);
-    const q = query(quellenFinderPdfScanSectionsCol(firestoreClient, user.uid, projektId, activeRun.id), limit(5000));
+    const q = query(
+      quellenFinderPdfScanChapterSectionsCol(firestoreClient, user.uid, projektId, activeRun.id, activeResultChapterId),
+      limit(5000)
+    );
     return onSnapshot(
       q,
       (snap) => {
         const rows = snap.docs
-          .map((entry) => ({ id: entry.id, ...(entry.data() as PdfScanResultDoc) }))
+          .map((entry) => ({ id: entry.id, ...(entry.data() as PdfScanChapterSectionDoc) }))
           .sort((a, b) => {
             const scoreDiff = Number(b.score0To100 || 0) - Number(a.score0To100 || 0);
             if (scoreDiff !== 0) return scoreDiff;
@@ -860,15 +1008,17 @@ export function PdfScanWorkspace({
         setSectionRowsLoaded(true);
       },
       (err) => {
-        console.error("Failed to load pdfScanSections:", err);
+        console.error("Failed to load pdfScanChapter sections:", err);
         setSectionRowsByDocId({});
         setSectionRowsLoaded(true);
       }
     );
-  }, [activeRun?.id, previewMode, projektId, user?.uid]);
+  }, [activeResultChapterId, activeRun?.id, previewMode, projektId, user?.uid]);
 
   useEffect(() => {
     if (!previewMode) return;
+    setChapterRows(preview?.chapterRows ?? []);
+    setChapterRowsLoaded(true);
     setSectionRowsByDocId(preview?.sectionsByDocId ?? {});
     setSectionRowsLoaded(true);
   }, [previewMode, preview]);
@@ -909,10 +1059,16 @@ export function PdfScanWorkspace({
     const nextStatus = String(activeRun.status || "");
     if (prev.status !== nextStatus) {
       if (nextStatus === "success") {
+        const totalVisibleSectionCount =
+          typeof activeRun.pdfScanSummary?.totalVisibleSectionCount === "number"
+            ? activeRun.pdfScanSummary.totalVisibleSectionCount
+            : typeof activeRun.pdfScanSectionCount === "number"
+              ? activeRun.pdfScanSectionCount
+              : null;
         toast.success("PDF-Scan abgeschlossen", {
           description:
-            typeof activeRun.pdfScanSectionCount === "number"
-              ? `${formatIntDe(activeRun.pdfScanSectionCount)} sichtbare Sections`
+            typeof totalVisibleSectionCount === "number"
+              ? `${formatIntDe(totalVisibleSectionCount)} sichtbare Sections`
               : undefined,
         });
       } else if (nextStatus === "error") {
@@ -925,25 +1081,28 @@ export function PdfScanWorkspace({
     }
 
     lastRunStatus.current = { runId: activeRun.id, status: nextStatus };
-  }, [activeRun?.errorMessage, activeRun?.id, activeRun?.pdfScanSectionCount, activeRun?.status]);
+  }, [activeRun?.errorMessage, activeRun?.id, activeRun?.pdfScanSectionCount, activeRun?.pdfScanSummary?.totalVisibleSectionCount, activeRun?.status]);
 
-  const selectKapitel = (kapitelId: string | null) => {
-    setSelectedKapitelId(kapitelId);
-    setOpenDocIds([]);
-    setExtractOpen(false);
-    setExtractRequest(null);
-    if (!kapitelId) {
-      setActiveRunId(null);
-      return;
-    }
-    const mostRecentRun = pdfScanRuns.find((run) => Array.isArray(run.kapitelIds) && run.kapitelIds.includes(kapitelId));
-    setActiveRunId(mostRecentRun?.id ?? null);
+  const toggleSelectedKapitel = (kapitelId: string, nextChecked: boolean) => {
+    const normalizedKapitelId = String(kapitelId || "").trim();
+    if (!normalizedKapitelId) return;
+    setSelectedKapitelIds((prev) => {
+      const next = new Set(prev);
+      if (nextChecked) next.add(normalizedKapitelId);
+      else next.delete(normalizedKapitelId);
+      return Array.from(next);
+    });
   };
 
   const selectRun = (run: RunRow) => {
     setActiveRunId(run.id);
-    const kapitelId = Array.isArray(run.kapitelIds) ? String(run.kapitelIds[0] || "").trim() : "";
-    if (kapitelId) setSelectedKapitelId(kapitelId);
+    const runKapitelIds = Array.isArray(run.kapitelIds)
+      ? run.kapitelIds.map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    if (runKapitelIds.length > 0) {
+      setSelectedKapitelIds(runKapitelIds);
+      setActiveResultChapterId(runKapitelIds[0] ?? null);
+    }
   };
 
   const showPdfSelectionLimitToast = () => {
@@ -1292,8 +1451,8 @@ export function PdfScanWorkspace({
   };
 
   const startPdfScan = () => {
-    if (!selectedKapitelId) {
-      toast.error("Bitte zuerst ein Kapitel auswählen.");
+    if (selectedKapitelIds.length === 0) {
+      toast.error("Bitte zuerst mindestens ein Kapitel auswählen.");
       return;
     }
     if (selectedPdfIds.length === 0) {
@@ -1319,7 +1478,7 @@ export function PdfScanWorkspace({
   };
 
   const confirmStartPdfScan = async (allowDuplicateKapitelRun = false) => {
-    if (!selectedKapitelId || selectedPdfIds.length === 0) return;
+    if (selectedKapitelIds.length === 0 || selectedPdfIds.length === 0) return;
     if (selectedPdfIds.length > PDF_SCAN_MAX_PDFS_PER_RUN) {
       showPdfSelectionLimitToast();
       return;
@@ -1346,7 +1505,7 @@ export function PdfScanWorkspace({
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         projekt_id: projektId,
-        kapitel_id: selectedKapitelId,
+        kapitel_ids: selectedKapitelIds,
         confirm_duplicate_kapitel_run: allowDuplicateKapitelRun,
         pdf_ids: selectedPdfIds,
       }),
@@ -1363,7 +1522,7 @@ export function PdfScanWorkspace({
       if (res.status === 409) {
         const code = typeof detailObject?.code === "string" ? detailObject.code : "";
         const runId = typeof detailObject?.run_id === "string" ? detailObject.run_id : null;
-        if (code === "same_kapitel_scan_running" && !allowDuplicateKapitelRun) {
+        if ((code === "overlapping_kapitel_scan_running" || code === "same_kapitel_scan_running") && !allowDuplicateKapitelRun) {
           setDuplicateKapitelConflictRunId(runId);
           setDuplicateKapitelConfirmOpen(true);
           return;
@@ -1462,19 +1621,39 @@ export function PdfScanWorkspace({
   const stageKey = String(activeRun?.progress?.stage || "");
   const activeStepIndex = PDF_SCAN_PIPELINE_STEPS.findIndex((step) => step.key === stageKey);
   const visibleDocCount =
-    typeof activeRun?.pdfScanDocCount === "number" ? activeRun.pdfScanDocCount : docRows.length;
+    typeof activeChapterRow?.documentCount === "number"
+      ? activeChapterRow.documentCount
+      : typeof activeRun?.pdfScanCounts?.aggregateDocCount === "number"
+        ? activeRun.pdfScanCounts.aggregateDocCount
+        : docRows.length;
   const visibleSectionCount =
-    typeof activeRun?.pdfScanSectionCount === "number"
-      ? activeRun.pdfScanSectionCount
-      : docRows.reduce((sum, row) => sum + (typeof row.visibleSectionCount === "number" ? row.visibleSectionCount : 0), 0);
+    typeof activeChapterRow?.visibleSectionCount === "number"
+      ? activeChapterRow.visibleSectionCount
+      : typeof activeRun?.pdfScanSummary?.totalVisibleSectionCount === "number"
+        ? activeRun.pdfScanSummary.totalVisibleSectionCount
+        : docRows.reduce((sum, row) => sum + (typeof row.visibleSectionCount === "number" ? row.visibleSectionCount : 0), 0);
   const usefulPdfCount =
-    typeof activeRun?.usefulPdfCount === "number"
-      ? activeRun.usefulPdfCount
-      : docRows.filter((row) => row.hasUsefulInformation === true).length;
+    typeof activeChapterRow?.usefulPdfCount === "number"
+      ? activeChapterRow.usefulPdfCount
+      : typeof activeRun?.pdfScanSummary?.usefulPdfCountAnyChapter === "number"
+        ? activeRun.pdfScanSummary.usefulPdfCountAnyChapter
+        : docRows.filter((row) => row.hasUsefulInformation === true).length;
+  const usefulPdfCountAnyChapter =
+    typeof activeRun?.pdfScanSummary?.usefulPdfCountAnyChapter === "number"
+      ? activeRun.pdfScanSummary.usefulPdfCountAnyChapter
+      : usefulPdfCount;
 
-  const activeKapitelSnapshot = activeRun?.kapitelSnapshots?.[0] ?? null;
-  const chapterNummer = String(activeKapitelSnapshot?.nummer ?? selectedKapitel?.nummer ?? "").trim();
-  const chapterTitle = String(activeKapitelSnapshot?.title ?? selectedKapitel?.title ?? "").trim();
+  const activeKapitelSnapshot =
+    activeChapterRow?.kapitelSnapshot ??
+    activeRun?.kapitelSnapshots?.find((snapshot) => String(snapshot?.id || "") === activeResultChapterId) ??
+    primarySelectedKapitel ??
+    null;
+  const chapterNummer = String(activeKapitelSnapshot?.nummer ?? "").trim();
+  const chapterTitle = String(
+    ((activeKapitelSnapshot as { title?: string | null; ueberschrift?: string | null } | null)?.title ??
+      (activeKapitelSnapshot as { title?: string | null; ueberschrift?: string | null } | null)?.ueberschrift ??
+      "")
+  ).trim();
   const chapterHeading = `${chapterNummer ? `${chapterNummer} ` : ""}${chapterTitle || "Kapitel"}`.trim();
   const runCostUsd = readRunCostUsd(activeRun);
   const selectedPdfPreviewRows = selectedPdfRows.slice(0, 3);
@@ -1491,7 +1670,7 @@ export function PdfScanWorkspace({
 
   const startDisabledReasons: string[] = [];
   if (previewMode) startDisabledReasons.push("Der Scan ist in dieser Vorschau deaktiviert.");
-  if (!selectedKapitelId) startDisabledReasons.push("Wähle zuerst ein Kapitel aus.");
+  if (selectedKapitelIds.length === 0) startDisabledReasons.push("Wähle zuerst mindestens ein Kapitel aus.");
   if (selectedPdfIds.length === 0) startDisabledReasons.push("Wähle mindestens eine PDF aus der Bibliothek aus.");
   if (selectedPdfIds.length > PDF_SCAN_MAX_PDFS_PER_RUN) {
     startDisabledReasons.push(`Maximal ${PDF_SCAN_MAX_PDFS_PER_RUN} PDFs pro Scan sind erlaubt.`);
@@ -1519,37 +1698,42 @@ export function PdfScanWorkspace({
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="flex min-h-0 w-[340px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white">
+        <aside className="flex min-h-0 w-[360px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white">
           <div className="shrink-0 space-y-4 border-b border-slate-200 px-5 py-5">
             <div className="space-y-2">
               <div className="text-xs font-medium text-slate-600">Kapitel auswählen</div>
-              <Select value={selectedKapitelId || ""} onValueChange={(value) => selectKapitel(value || null)}>
-                <SelectTrigger className="h-auto min-h-10 w-full rounded-[4px] items-center whitespace-normal border-slate-200 bg-white px-3 py-2.5 shadow-none">
-                  <div className="min-w-0 flex-1 text-left">
-                    {selectedKapitel ? (
-                      <div className="line-clamp-1 text-[14px] leading-snug">
-                        <span className="mr-2 text-slate-400 tabular-nums">{selectedKapitel.nummer}</span>
-                        {selectedKapitel.title}
-                      </div>
-                    ) : (
-                      <span className="text-slate-400">Kapitel wählen...</span>
-                    )}
+              <div className="overflow-hidden rounded-[10px] border border-slate-200 bg-white">
+                <div className="border-b border-slate-100 px-3 py-2.5 text-[13px] text-slate-500">
+                  {selectedKapitelRows.length > 0
+                    ? `${formatIntDe(selectedKapitelRows.length)} Kapitel ausgewählt`
+                    : "Noch kein Kapitel ausgewählt"}
+                </div>
+                <div className="max-h-[180px] overflow-y-auto overscroll-contain">
+                  <div className="divide-y divide-slate-100">
+                    {kapitels.map((kapitel) => {
+                      const depth = kapitelDepth(kapitel.nummer);
+                      const checked = selectedKapitelIdSet.has(kapitel.id);
+                      return (
+                        <label
+                          key={kapitel.id}
+                          className="flex cursor-pointer items-start gap-3 px-3 py-2.5 text-sm hover:bg-slate-50"
+                          style={{ paddingLeft: 12 + depth * 12 }}
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(value) => toggleSelectedKapitel(kapitel.id, Boolean(value))}
+                            aria-label={`${kapitel.nummer || ""} ${kapitel.title}`.trim()}
+                          />
+                          <span className="min-w-0 flex-1 leading-5">
+                            <span className="mr-2 text-slate-400 tabular-nums">{kapitel.nummer}</span>
+                            <span className="block line-clamp-2 text-slate-900">{kapitel.title}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
                   </div>
-                </SelectTrigger>
-                <SelectContent align="start" className="max-h-[60vh] w-[var(--radix-select-trigger-width)]">
-                  {kapitels.map((kapitel) => {
-                    const depth = kapitelDepth(kapitel.nummer);
-                    return (
-                      <SelectItem key={kapitel.id} value={kapitel.id}>
-                        <div className="flex min-w-0 w-full items-start gap-2" style={{ paddingLeft: depth * 12 }}>
-                          <span className="shrink-0 text-slate-400 tabular-nums">{kapitel.nummer}</span>
-                          <span className="min-w-0 leading-snug line-clamp-2">{kapitel.title}</span>
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+                </div>
+              </div>
             </div>
 
             <div>
@@ -1684,13 +1868,12 @@ export function PdfScanWorkspace({
                 </div>
               ) : (
                 pdfScanRuns.map((run) => {
-                  const snapshot = run.kapitelSnapshots?.[0] ?? null;
-                  const label = `${snapshot?.nummer ? `${snapshot.nummer} ` : ""}${snapshot?.title || run.id}`.trim();
+                  const label = buildPdfScanRunLabel(run);
                   const subtitle =
                     run.status === "queued" || run.status === "running"
                       ? `${formatTimeHm(run.startedAt ?? run.createdAt)}  Läuft...`
                       : run.status === "success"
-                        ? `${formatTimeHm(run.startedAt ?? run.createdAt)}  ${formatIntDe(run.pdfScanDocCount ?? 0)} PDFs · ${formatIntDe(run.usefulPdfCount ?? run.pdfScanSectionCount ?? 0)} nützlich`
+                        ? `${formatTimeHm(run.startedAt ?? run.createdAt)}  ${formatIntDe(run.pdfScanSummary?.documentCount ?? run.pdfScanCounts?.aggregateDocCount ?? 0)} PDFs · ${formatIntDe(run.pdfScanSummary?.usefulPdfCountAnyChapter ?? 0)} nützlich`
                         : run.status === "cancelled"
                           ? `${formatTimeHm(run.startedAt ?? run.createdAt)}  Abgebrochen`
                           : `${formatTimeHm(run.startedAt ?? run.createdAt)}  Fehler`;
@@ -1738,7 +1921,10 @@ export function PdfScanWorkspace({
                   <div className="shrink-0 space-y-4">
                   <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                     <div className="min-w-0">
-                      <div className="text-[18px] font-semibold tracking-[-0.02em] text-slate-950">{chapterHeading}</div>
+                      <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                        {buildPdfScanRunLabel(activeRun)}
+                      </div>
+                      <div className="mt-1 text-[18px] font-semibold tracking-[-0.02em] text-slate-950">{chapterHeading}</div>
                       <div className="mt-1 text-xs text-slate-500">
                         Gestartet: {formatDateTimeWithSeconds(runStartedAt)}
                         {runFinishedAt ? <> · Abgeschlossen: {formatDateTimeWithSeconds(runFinishedAt)}</> : null}
@@ -1907,20 +2093,66 @@ export function PdfScanWorkspace({
                       <div className="mt-4.5 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{formatIntDe(visibleSectionCount)}</div>
                     </Card>
                     <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
-                      <div className="text-[13px] text-slate-500">Nützlich</div>
+                      <div className="text-[13px] text-slate-500">Nützlich im Kapitel</div>
                       <div className="mt-4.5 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{formatIntDe(usefulPdfCount)}</div>
                     </Card>
                   </div>
+                  <Card className="rounded-[14px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-950">Kapitelansicht</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {formatIntDe(activeRun.pdfScanSummary?.chapterCount ?? activeRunChapterRows.length)} Kapitel im Run ·{" "}
+                          {formatIntDe(usefulPdfCountAnyChapter)} PDFs in mindestens einem Kapitel nützlich
+                        </div>
+                      </div>
+                      {chapterRowsLoaded ? (
+                        <div className="flex flex-wrap gap-2">
+                          {activeRunChapterRows.map((row) => {
+                            const isActive = row.chapterId === activeResultChapterId;
+                            const status = String(row.status || "").trim();
+                            const label = `${row.kapitelSnapshot?.nummer ? `${row.kapitelSnapshot.nummer} ` : ""}${row.kapitelSnapshot?.title || row.chapterId}`.trim();
+                            return (
+                              <button
+                                key={row.chapterId}
+                                type="button"
+                                onClick={() => setActiveResultChapterId(row.chapterId)}
+                                className={cn(
+                                  "w-[320px] max-w-full rounded-[6px] border px-3 py-1.5 text-left text-xs transition-colors",
+                                  isActive
+                                    ? "border-sky-300 bg-sky-50 text-sky-800"
+                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                )}
+                                title={label}
+                              >
+                                <div className="line-clamp-2 font-medium">{label}</div>
+                                <div className="mt-0.5 text-[11px] text-slate-500">
+                                  {status === "success" ? `${formatIntDe(row.usefulPdfCount)} nützlich` : status || "queued"}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Skeleton className="h-10 w-40" />
+                          <Skeleton className="h-10 w-40" />
+                        </div>
+                      )}
+                    </div>
+                  </Card>
                   </div>
                 </>
               ) : null}
 
               {!activeRun ? (
-                <MainEmptyState selectedKapitel={selectedKapitel} />
+                <MainEmptyState selectedKapitel={primarySelectedKapitel} />
               ) : (
                 <div className="space-y-5 pb-4 pt-2">
                   <div className="min-w-0">
-                    <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-950">Ergebnisse</div>
+                    <div className="text-[14px] font-semibold tracking-[-0.01em] text-slate-950">
+                      Ergebnisse{chapterHeading ? ` · ${chapterHeading}` : ""}
+                    </div>
                   </div>
 
                   <div className="pt-0">
@@ -1929,12 +2161,12 @@ export function PdfScanWorkspace({
                   ) : filteredDocRows.length === 0 ? (
                     <Card className="rounded-[14px] border border-dashed border-slate-200 bg-white px-5 py-14 text-center shadow-none">
                       <div className="text-base font-medium text-slate-900">
-                        {running ? "Noch keine finalen Ergebnisse" : "Keine sichtbaren Sections"}
+                        {running ? "Noch keine finalen Ergebnisse" : `Keine sichtbaren Sections${chapterHeading ? ` für ${chapterHeading}` : ""}`}
                       </div>
                       <div className="mt-2 text-sm leading-7 text-slate-500">
                         {running
                           ? "Die Ergebnisse erscheinen nach Phase G und dem Persistieren der finalen Section-Scores."
-                          : "Für diesen Lauf wurden keine finalen Sections gespeichert."}
+                          : "Für die aktuelle Kapitelansicht wurden keine finalen Sections gespeichert."}
                       </div>
                     </Card>
                   ) : (
@@ -2051,6 +2283,7 @@ export function PdfScanWorkspace({
                                                   runId: String(activeRun?.id || ""),
                                                   pdfDocId: String(pdfDoc.id),
                                                   sectionDocId: String(section.id),
+                                                  chapterId: activeResultChapterId || undefined,
                                                   pdfId: String(section.pdfId || "") || undefined,
                                                   pdfFilename: section.pdfFilename || pdfDoc.pdfFilename || pdfDoc.pdfLabel,
                                                   storagePath: pdfMeta?.storagePath,
@@ -2333,11 +2566,20 @@ export function PdfScanWorkspace({
               <AlertDialogDescription className="text-left text-sm leading-6 text-slate-600">
                 <span className="block">Der Scan wird als neuer Lauf gestartet.</span>
                 <span className="mt-2 block">
-                  Kapitel: <span className="font-medium text-slate-900">{chapterHeading}</span>
+                  Kapitel: <span className="font-medium text-slate-900">{formatIntDe(selectedKapitelIds.length)}</span>
                 </span>
                 <span className="block">
                   PDFs: <span className="font-medium text-slate-900">{formatIntDe(selectedPdfIds.length)}</span>
                 </span>
+                {selectedKapitelRows.length > 0 ? (
+                  <span className="mt-2 block text-xs text-slate-500">
+                    {selectedKapitelRows
+                      .slice(0, 4)
+                      .map((kapitel) => `${kapitel.nummer ? `${kapitel.nummer} ` : ""}${kapitel.title}`)
+                      .join(" · ")}
+                    {selectedKapitelRows.length > 4 ? ` · +${formatIntDe(selectedKapitelRows.length - 4)} weitere` : ""}
+                  </span>
+                ) : null}
                 <span className="mt-3 block">
                   Die Verarbeitung kann je nach Anzahl und Grösse der PDFs bis zu eine Stunde oder länger dauern.
                 </span>
@@ -2368,7 +2610,7 @@ export function PdfScanWorkspace({
               <AlertDialogTitle>Für dieses Kapitel läuft bereits ein Scan</AlertDialogTitle>
               <AlertDialogDescription className="text-left text-sm leading-6 text-slate-600">
                 <span className="block">
-                  Für <span className="font-medium text-slate-900">{chapterHeading}</span> läuft bereits
+                  Für mindestens eines der ausgewählten Kapitel läuft bereits
                   {selectedKapitelRunningRuns.length > 1 ? ` ${formatIntDe(selectedKapitelRunningRuns.length)} aktive Scans` : " ein aktiver Scan"}
                   {duplicateKapitelPromptRunId ? ` (${duplicateKapitelPromptRunId})` : ""}.
                 </span>

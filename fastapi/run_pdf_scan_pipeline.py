@@ -3,7 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
+import time
 from argparse import Namespace
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -20,33 +23,31 @@ from phase_a_lab import (  # noqa: E402
     setup_run_logger,
     stable_hash,
     stage_timer,
+    write_json,
 )
 from phase_a_lab import run_phase_a  # noqa: E402
 from phase_b_lab import PhaseBOptions, run_phase_b  # noqa: E402
 from phase_c_lab import PhaseCOptions, run_phase_c  # noqa: E402
 from phase_d_lab import PhaseDOptions, run_phase_d  # noqa: E402
-from phase_e_lab import PhaseEOptions, run_phase_e  # noqa: E402
-from phase_f_lab import PhaseFOptions, run_phase_f  # noqa: E402
-from phase_g_lab import PhaseGOptions, run_phase_g  # noqa: E402
+from phase_e_lab import PhaseEOptions, prepare_phase_e_shared_dense_cache, run_phase_e  # noqa: E402
 
 EVENT_PREFIX = "PDF_SCAN_EVENT\t"
 PHASE_LABELS = {
     "phase_a": "Phase A",
     "phase_b": "Phase B",
     "phase_c": "Phase C",
+    "phase_c5": "Phase C.5",
     "phase_d": "Phase D",
     "phase_e": "Phase E",
-    "phase_f": "Phase F",
-    "phase_g": "Phase G",
 }
-PHASE_ORDER = ["phase_a", "phase_b", "phase_c", "phase_d", "phase_e", "phase_f", "phase_g"]
+
+
+def default_local_runs_root() -> Path:
+    return Path(tempfile.gettempdir()) / "instantpaper_pdf_scan_runs"
 
 
 def emit(event: str, **payload: Any) -> None:
-    print(
-        EVENT_PREFIX + json.dumps({"event": str(event), **payload}, ensure_ascii=False),
-        flush=True,
-    )
+    print(EVENT_PREFIX + json.dumps({"event": str(event), **payload}, ensure_ascii=False), flush=True)
 
 
 def parse_theme_markdown(path: Path) -> tuple[str, str]:
@@ -59,8 +60,7 @@ def parse_theme_markdown(path: Path) -> tuple[str, str]:
     description = "\n\n".join(part.strip() for part in raw.split("\n\n") if part.strip())
     if description.startswith(title):
         description = description[len(title) :].strip()
-    description = description or title
-    return title, description
+    return title, description or title
 
 
 def update_stage_metrics(run_ctx: Any, stage_name: str, metrics_update: dict[str, Any]) -> None:
@@ -69,48 +69,237 @@ def update_stage_metrics(run_ctx: Any, stage_name: str, metrics_update: dict[str
     save_metrics(run_ctx, metrics)
 
 
+def update_chapter_stage_metrics(run_ctx: Any, chapter_id: str, stage_name: str, metrics_update: dict[str, Any]) -> None:
+    metrics = load_metrics(run_ctx)
+    chapter_metrics = metrics.setdefault("chapters", {}).setdefault(chapter_id, {})
+    chapter_metrics.setdefault("stages", {}).setdefault(stage_name, {}).update(metrics_update)
+    save_metrics(run_ctx, metrics)
+
+
+def build_phase_d_options(args: argparse.Namespace) -> PhaseDOptions:
+    return PhaseDOptions(
+        force_rebuild=bool(args.force_rebuild_phase_d),
+        use_openai_planner=not bool(args.no_openai_planner),
+        allow_heuristic_fallback=True,
+        openai_model="gpt-5-mini",
+        reasoning_effort="low",
+        temperature=0.0,
+        max_completion_tokens=1400,
+        bridge_max_completion_tokens=1800,
+        must_term_limit=8,
+        should_term_limit=20,
+        exclusion_limit=8,
+        subpoint_limit=7,
+        drift_risk_limit=8,
+        source_anchor_limit=24,
+        subpoint_source_anchor_limit=3,
+        max_summary_chars=480,
+        max_subpoint_summary_chars=320,
+        min_anchor_token_overlap=0.67,
+        planner_prompt_mode="coverage",
+        include_should_terms_view=True,
+        include_support_context_view=True,
+        include_subpoint_lexical_views=True,
+        bridge_term_limit=14,
+    )
+
+
+def build_phase_e_options(args: argparse.Namespace) -> PhaseEOptions:
+    return PhaseEOptions(
+        force_rebuild=bool(args.force_rebuild_phase_e),
+        candidate_limit_per_lane=160,
+        fused_candidate_limit=260,
+        per_view_limit_multiplier=4,
+        rrf_k=60,
+        lexical_k1=1.2,
+        lexical_b=0.75,
+        use_openai_dense=not bool(args.no_openai_dense),
+        allow_lexical_only_fallback=True,
+        openai_embedding_model="text-embedding-3-small",
+        openai_timeout_sec=300,
+        dense_batch_size=64,
+        dense_section_max_chars=4200,
+        dense_passage_max_chars=2400,
+        dense_query_max_chars=1600,
+        dense_dimensions=None,
+        dense_min_similarity=0.05,
+        top_candidate_preview_count=20,
+        selection_strategy="round_robin",
+        use_supported_subpoint_selection=False,
+        abstain_when_no_supported_subpoints=False,
+        generic_evidence_bonus=0.01,
+        generic_anchor_score_threshold=1.0,
+        single_support_penalty=0.003,
+        zero_support_penalty=0.008,
+        generic_low_support_penalty=0.004,
+        subpoint_min_supported_candidates=1,
+        subpoint_max_preview_rows=10,
+        diversity_lambda=0.2,
+        enable_doc_title_rescue=True,
+        doc_rescue_doc_limit=10,
+        doc_rescue_sections_per_doc=3,
+        doc_rescue_score_scale=0.06,
+        use_shared_dense_cache=True,
+    )
+
+
+def _run_phase_d_for_chapter(
+    run_ctx: Any,
+    *,
+    chapter: Any,
+    options: PhaseDOptions,
+    run_logger: Any,
+) -> dict[str, Any]:
+    chapter_ctx = run_ctx.for_chapter(chapter.chapter_id)
+    phase_d_summary_path = Path(chapter_ctx.artifacts.retrieval_dir) / "phase_d_summary.json"
+    if not bool(options.force_rebuild) and phase_d_summary_path.exists():
+        return {
+            "chapter_id": chapter.chapter_id,
+            "chapter_title": chapter.chapter_title,
+            "status": "cached",
+            "elapsed_sec": 0.0,
+            "summary": json.loads(phase_d_summary_path.read_text(encoding="utf-8")),
+        }
+
+    started = time.perf_counter()
+    try:
+        result = run_phase_d(
+            chapter_ctx,
+            chapter_title=chapter.chapter_title,
+            chapter_spec_text=chapter.chapter_spec_text,
+            options=options,
+            stable_hash_fn=stable_hash,
+            log_event_fn=log_event,
+            run_logger=run_logger,
+        )
+        elapsed = round(time.perf_counter() - started, 3)
+        update_chapter_stage_metrics(run_ctx, chapter.chapter_id, "phase_d", result.get("metrics_update") or {})
+        return {
+            "chapter_id": chapter.chapter_id,
+            "chapter_title": chapter.chapter_title,
+            "status": "success",
+            "elapsed_sec": elapsed,
+            "summary": result.get("summary") or {},
+        }
+    except Exception as exc:
+        return {
+            "chapter_id": chapter.chapter_id,
+            "chapter_title": chapter.chapter_title,
+            "status": "failed",
+            "elapsed_sec": round(time.perf_counter() - started, 3),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def _run_phase_e_for_chapter(
+    run_ctx: Any,
+    *,
+    chapter: Any,
+    options: PhaseEOptions,
+    run_logger: Any,
+) -> dict[str, Any]:
+    chapter_ctx = run_ctx.for_chapter(chapter.chapter_id)
+    phase_e_summary_path = Path(chapter_ctx.artifacts.retrieval_dir) / "phase_e_summary.json"
+    if not bool(options.force_rebuild) and phase_e_summary_path.exists():
+        return {
+            "chapter_id": chapter.chapter_id,
+            "chapter_title": chapter.chapter_title,
+            "status": "cached",
+            "elapsed_sec": 0.0,
+            "summary": json.loads(phase_e_summary_path.read_text(encoding="utf-8")),
+        }
+
+    started = time.perf_counter()
+    try:
+        result = run_phase_e(
+            chapter_ctx,
+            options=options,
+            stable_hash_fn=stable_hash,
+            log_event_fn=log_event,
+            run_logger=run_logger,
+        )
+        elapsed = round(time.perf_counter() - started, 3)
+        update_chapter_stage_metrics(run_ctx, chapter.chapter_id, "phase_e", result.get("metrics_update") or {})
+        return {
+            "chapter_id": chapter.chapter_id,
+            "chapter_title": chapter.chapter_title,
+            "status": "success",
+            "elapsed_sec": elapsed,
+            "summary": result.get("summary") or {},
+        }
+    except Exception as exc:
+        return {
+            "chapter_id": chapter.chapter_id,
+            "chapter_title": chapter.chapter_title,
+            "status": "failed",
+            "elapsed_sec": round(time.perf_counter() - started, 3),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def run_parallel_chapter_stage(
+    *,
+    chapters: list[Any],
+    max_workers: int,
+    submit_fn,
+) -> dict[str, dict[str, Any]]:
+    if not chapters:
+        return {}
+    if len(chapters) == 1 or max_workers <= 1:
+        result = submit_fn(chapters[0])
+        return {chapters[0].chapter_id: result}
+    out: dict[str, dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(submit_fn, chapter): chapter for chapter in chapters}
+        for future in as_completed(futures):
+            chapter = futures[future]
+            out[chapter.chapter_id] = future.result()
+    return out
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the standalone PDF scan pipeline and emit structured progress events.")
-    parser.add_argument("--theme-md", required=True, help="Path to the topic Text Thema.md file.")
-    parser.add_argument("--pdf-dir", required=True, help="Directory containing the PDFs for the topic.")
-    parser.add_argument("--runs-root", default="", help="Optional root directory for pipeline run artifacts.")
-    parser.add_argument("--pipeline-version", default="pdf_scan_v3_topic_best")
+    parser = argparse.ArgumentParser(description="Run CPU phases (A-E) of the standalone PDF scan pipeline.")
+    chapter_group = parser.add_mutually_exclusive_group(required=True)
+    chapter_group.add_argument("--theme-md", help="Path to a single topic markdown file.")
+    chapter_group.add_argument("--chapters-dir", help="Directory containing one markdown file per chapter.")
+    parser.add_argument("--pdf-dir", required=True, help="Directory containing the PDFs.")
+    parser.add_argument(
+        "--runs-root",
+        default="",
+        help="Optional root directory for pipeline run artifacts. Defaults to the system temp directory for local runs.",
+    )
+    parser.add_argument("--pipeline-version", default="pdf_scan_v3_parallel_topic")
     parser.add_argument("--pdf-glob", default="*.pdf")
     parser.add_argument("--pdf-recursive", action="store_true")
     parser.add_argument("--max-pdfs", type=int, default=100)
     parser.add_argument("--grobid-base-url", default="")
     parser.add_argument("--no-openai-planner", action="store_true")
     parser.add_argument("--no-openai-dense", action="store_true")
-    parser.add_argument("--no-openai-judge", action="store_true")
-    parser.add_argument("--end-phase", choices=PHASE_ORDER, default="phase_g")
+    parser.add_argument("--max-cpu-chapter-concurrency", type=int, default=3)
     parser.add_argument("--force-rebuild-phase-a", action="store_true")
     parser.add_argument("--force-rebuild-phase-b", action="store_true")
     parser.add_argument("--force-rebuild-phase-c", action="store_true")
     parser.add_argument("--force-rebuild-phase-d", action="store_true")
     parser.add_argument("--force-rebuild-phase-e", action="store_true")
-    parser.add_argument("--force-rebuild-phase-f", action="store_true")
-    parser.add_argument("--force-rebuild-phase-g", action="store_true")
     return parser
-
-
-def _phase_enabled(phase_name: str, *, end_phase: str) -> bool:
-    try:
-        return PHASE_ORDER.index(str(phase_name)) <= PHASE_ORDER.index(str(end_phase))
-    except ValueError:
-        return False
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(list(argv or sys.argv[1:]))
-    theme_path = Path(args.theme_md).resolve()
+    theme_path = Path(args.theme_md).resolve() if args.theme_md else None
+    chapters_dir = Path(args.chapters_dir).resolve() if args.chapters_dir else None
     pdf_dir = Path(args.pdf_dir).resolve()
-    chapter_title, chapter_description = parse_theme_markdown(theme_path)
+
+    chapter_title = ""
+    chapter_description = ""
+    if theme_path is not None:
+        chapter_title, chapter_description = parse_theme_markdown(theme_path)
 
     phase_a_args = Namespace(
         input_mode="manual",
-        pipeline_version=str(args.pipeline_version or "pdf_scan_v3_topic_best"),
+        pipeline_version=str(args.pipeline_version or "pdf_scan_v3_parallel_topic"),
         force_rebuild=bool(args.force_rebuild_phase_a),
-        runs_root=str(args.runs_root or ""),
+        runs_root=str(Path(args.runs_root).resolve()) if str(args.runs_root or "").strip() else str(default_local_runs_root().resolve()),
         suite_manifest="",
         chapter_index=0,
         doc_limit=None,
@@ -118,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
         exclude_doc_id=[],
         chapter_title=chapter_title,
         chapter_description=chapter_description,
+        chapters_dir=str(chapters_dir) if chapters_dir else "",
         pdf=[],
         pdf_dir=str(pdf_dir),
         pdf_glob=str(args.pdf_glob or "*.pdf"),
@@ -125,6 +315,7 @@ def main(argv: list[str] | None = None) -> int:
         max_pdfs=int(args.max_pdfs),
     )
 
+    t_start = time.perf_counter()
     phase_doc_totals: dict[str, int] = {}
     phase_doc_progress = {"phase_b": 0, "phase_c": 0}
 
@@ -134,6 +325,7 @@ def main(argv: list[str] | None = None) -> int:
             phase_doc_progress["phase_b"] += 1
             emit(
                 "document_progress",
+                scope="shared",
                 stage=stage,
                 label=PHASE_LABELS.get(stage, stage),
                 current=phase_doc_progress["phase_b"],
@@ -144,6 +336,7 @@ def main(argv: list[str] | None = None) -> int:
             phase_doc_progress["phase_c"] += 1
             emit(
                 "document_progress",
+                scope="shared",
                 stage=stage,
                 label=PHASE_LABELS.get(stage, stage),
                 current=phase_doc_progress["phase_c"],
@@ -152,10 +345,12 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     try:
-        emit("stage_start", stage="phase_a", label=PHASE_LABELS["phase_a"])
+        emit("stage_start", scope="shared", stage="phase_a", label=PHASE_LABELS["phase_a"])
         phase_a_result = run_phase_a(phase_a_args)
         run_ctx = phase_a_result["run_ctx"]
+        config = phase_a_result["config"]
         pdf_manifest = phase_a_result["manifest_rows"]
+        run_logger = setup_run_logger(run_ctx)
         phase_doc_totals["phase_b"] = len(pdf_manifest)
         phase_doc_totals["phase_c"] = len(pdf_manifest)
         emit(
@@ -163,19 +358,19 @@ def main(argv: list[str] | None = None) -> int:
             pipeline_run_id=str(run_ctx.run_id),
             run_dir=str(run_ctx.run_dir),
             document_count=len(pdf_manifest),
+            chapter_count=len(config.chapters),
         )
         emit(
             "stage_complete",
+            scope="shared",
             stage="phase_a",
             label=PHASE_LABELS["phase_a"],
             document_count=len(pdf_manifest),
+            chapter_count=len(config.chapters),
         )
 
-        if _phase_enabled("phase_b", end_phase=args.end_phase) and (
-            bool(args.force_rebuild_phase_b) or not (run_ctx.run_dir / "parser" / "phase_b_summary.json").exists()
-        ):
-            emit("stage_start", stage="phase_b", label=PHASE_LABELS["phase_b"], total=phase_doc_totals["phase_b"])
-            phase_b_logger = setup_run_logger(run_ctx)
+        if bool(args.force_rebuild_phase_b) or not (run_ctx.run_dir / "parser" / "phase_b_summary.json").exists():
+            emit("stage_start", scope="shared", stage="phase_b", label=PHASE_LABELS["phase_b"], total=phase_doc_totals["phase_b"])
             phase_b_options = PhaseBOptions(
                 force_rebuild=bool(args.force_rebuild_phase_b),
                 doc_limit=None,
@@ -210,22 +405,20 @@ def main(argv: list[str] | None = None) -> int:
                     phase_b_options,
                     stable_hash_fn=stable_hash,
                     log_event_fn=bridged_log_event,
-                    run_logger=phase_b_logger,
+                    run_logger=run_logger,
                 )
                 update_stage_metrics(run_ctx, "phase_b", phase_b_result["metrics_update"])
             emit(
                 "stage_complete",
+                scope="shared",
                 stage="phase_b",
                 label=PHASE_LABELS["phase_b"],
                 current=phase_doc_progress["phase_b"],
                 total=phase_doc_totals["phase_b"],
             )
 
-        if _phase_enabled("phase_c", end_phase=args.end_phase) and (
-            bool(args.force_rebuild_phase_c) or not (run_ctx.run_dir / "normalized" / "phase_c_summary.json").exists()
-        ):
-            emit("stage_start", stage="phase_c", label=PHASE_LABELS["phase_c"], total=phase_doc_totals["phase_c"])
-            phase_c_logger = setup_run_logger(run_ctx)
+        if bool(args.force_rebuild_phase_c) or not (run_ctx.run_dir / "normalized" / "phase_c_summary.json").exists():
+            emit("stage_start", scope="shared", stage="phase_c", label=PHASE_LABELS["phase_c"], total=phase_doc_totals["phase_c"])
             phase_c_options = PhaseCOptions(
                 force_rebuild=bool(args.force_rebuild_phase_c),
                 min_section_words=20,
@@ -247,217 +440,144 @@ def main(argv: list[str] | None = None) -> int:
                     phase_c_options,
                     stable_hash_fn=stable_hash,
                     log_event_fn=bridged_log_event,
-                    run_logger=phase_c_logger,
+                    run_logger=run_logger,
                 )
                 update_stage_metrics(run_ctx, "phase_c", phase_c_result["metrics_update"])
             emit(
                 "stage_complete",
+                scope="shared",
                 stage="phase_c",
                 label=PHASE_LABELS["phase_c"],
                 current=phase_doc_progress["phase_c"],
                 total=phase_doc_totals["phase_c"],
             )
 
-        if _phase_enabled("phase_d", end_phase=args.end_phase) and (
-            bool(args.force_rebuild_phase_d) or not (run_ctx.run_dir / "retrieval" / "phase_d_summary.json").exists()
-        ):
-            emit("stage_start", stage="phase_d", label=PHASE_LABELS["phase_d"])
-            phase_d_logger = setup_run_logger(run_ctx)
-            phase_d_options = PhaseDOptions(
-                force_rebuild=bool(args.force_rebuild_phase_d),
-                use_openai_planner=not bool(args.no_openai_planner),
-                allow_heuristic_fallback=True,
-                openai_model="gpt-5-mini",
-                reasoning_effort="low",
-                temperature=0.0,
-                max_completion_tokens=1400,
-                bridge_max_completion_tokens=1800,
-                must_term_limit=8,
-                should_term_limit=20,
-                exclusion_limit=8,
-                subpoint_limit=7,
-                drift_risk_limit=8,
-                source_anchor_limit=24,
-                subpoint_source_anchor_limit=3,
-                max_summary_chars=480,
-                max_subpoint_summary_chars=320,
-                min_anchor_token_overlap=0.67,
-                planner_prompt_mode="coverage",
-                include_should_terms_view=True,
-                include_support_context_view=True,
-                include_subpoint_lexical_views=True,
-                bridge_term_limit=14,
-            )
-            with stage_timer(run_ctx, "phase_d"):
-                phase_d_result = run_phase_d(
-                    run_ctx,
-                    chapter_title=phase_a_result["config"].chapter_title,
-                    chapter_spec_text=phase_a_result["config"].chapter_spec_text,
-                    options=phase_d_options,
-                    stable_hash_fn=stable_hash,
-                    log_event_fn=bridged_log_event,
-                    run_logger=phase_d_logger,
-                )
-                update_stage_metrics(run_ctx, "phase_d", phase_d_result["metrics_update"])
-            emit("stage_complete", stage="phase_d", label=PHASE_LABELS["phase_d"])
+        phase_d_options = build_phase_d_options(args)
+        phase_e_options = build_phase_e_options(args)
+        max_workers = max(1, min(int(args.max_cpu_chapter_concurrency), len(config.chapters)))
+        chapter_lookup = {chapter.chapter_id: chapter for chapter in config.chapters}
 
-        if _phase_enabled("phase_e", end_phase=args.end_phase) and (
-            bool(args.force_rebuild_phase_e) or not (run_ctx.run_dir / "retrieval" / "phase_e_summary.json").exists()
-        ):
-            emit("stage_start", stage="phase_e", label=PHASE_LABELS["phase_e"])
-            phase_e_logger = setup_run_logger(run_ctx)
-            phase_e_options = PhaseEOptions(
-                force_rebuild=bool(args.force_rebuild_phase_e),
-                candidate_limit_per_lane=160,
-                fused_candidate_limit=260,
-                per_view_limit_multiplier=4,
-                rrf_k=60,
-                lexical_k1=1.2,
-                lexical_b=0.75,
-                use_openai_dense=not bool(args.no_openai_dense),
-                allow_lexical_only_fallback=True,
-                openai_embedding_model="text-embedding-3-small",
-                openai_timeout_sec=300,
-                dense_batch_size=64,
-                dense_section_max_chars=4200,
-                dense_passage_max_chars=2400,
-                dense_query_max_chars=1600,
-                dense_dimensions=None,
-                dense_min_similarity=0.05,
-                top_candidate_preview_count=20,
-                selection_strategy="round_robin",
-                use_supported_subpoint_selection=False,
-                abstain_when_no_supported_subpoints=False,
-                generic_evidence_bonus=0.01,
-                generic_anchor_score_threshold=1.0,
-                single_support_penalty=0.003,
-                zero_support_penalty=0.008,
-                generic_low_support_penalty=0.004,
-                subpoint_min_supported_candidates=1,
-                subpoint_max_preview_rows=10,
-                diversity_lambda=0.2,
-                enable_doc_title_rescue=True,
-                doc_rescue_doc_limit=10,
-                doc_rescue_sections_per_doc=3,
-                doc_rescue_score_scale=0.06,
+        emit("stage_start", scope="chapter", stage="phase_d", label=PHASE_LABELS["phase_d"], total=len(config.chapters))
+        with stage_timer(run_ctx, "phase_d_parallel"):
+            phase_d_results = run_parallel_chapter_stage(
+                chapters=config.chapters,
+                max_workers=max_workers,
+                submit_fn=lambda chapter: _run_phase_d_for_chapter(
+                    run_ctx,
+                    chapter=chapter,
+                    options=phase_d_options,
+                    run_logger=run_logger,
+                ),
             )
-            with stage_timer(run_ctx, "phase_e"):
-                phase_e_result = run_phase_e(
+            d_success = sum(1 for row in phase_d_results.values() if row.get("status") in {"success", "cached"})
+            d_failed = len(phase_d_results) - d_success
+            update_stage_metrics(
+                run_ctx,
+                "phase_d_parallel",
+                {
+                    "chapter_count": len(config.chapters),
+                    "successful_chapters": d_success,
+                    "failed_chapters": d_failed,
+                    "max_workers": max_workers,
+                },
+            )
+        for row in phase_d_results.values():
+            emit(
+                "chapter_stage_complete",
+                scope="chapter",
+                stage="phase_d",
+                chapter_id=row.get("chapter_id"),
+                chapter_title=row.get("chapter_title"),
+                status=row.get("status"),
+                elapsed_sec=row.get("elapsed_sec"),
+                error=row.get("error"),
+            )
+        emit("stage_complete", scope="chapter", stage="phase_d", label=PHASE_LABELS["phase_d"], current=d_success, total=len(config.chapters))
+
+        if phase_e_options.use_shared_dense_cache and phase_e_options.use_openai_dense and d_success:
+            emit("stage_start", scope="shared", stage="phase_c5", label=PHASE_LABELS["phase_c5"])
+            with stage_timer(run_ctx, "phase_c5_shared_dense_cache"):
+                shared_cache_summary = prepare_phase_e_shared_dense_cache(
                     run_ctx,
                     options=phase_e_options,
-                    stable_hash_fn=stable_hash,
-                    log_event_fn=bridged_log_event,
-                    run_logger=phase_e_logger,
+                    force_rebuild=bool(args.force_rebuild_phase_e),
                 )
-                update_stage_metrics(run_ctx, "phase_e", phase_e_result["metrics_update"])
-            emit("stage_complete", stage="phase_e", label=PHASE_LABELS["phase_e"])
-
-        phase_g_result = None
-
-        if _phase_enabled("phase_f", end_phase=args.end_phase) and (
-            bool(args.force_rebuild_phase_f) or not (run_ctx.run_dir / "rerank" / "phase_f_summary.json").exists()
-        ):
-            emit("stage_start", stage="phase_f", label=PHASE_LABELS["phase_f"])
-            phase_f_logger = setup_run_logger(run_ctx)
-            phase_f_options = PhaseFOptions(
-                force_rebuild=bool(args.force_rebuild_phase_f),
-                rerank_top_k=140,
-                inject_doc_top_candidates=True,
-                cross_encoder_model="BAAI/bge-reranker-v2-m3",
-                cross_encoder_batch_size=8,
-                cross_encoder_max_length=1536,
-                cross_encoder_subpoint_limit=2,
-                section_excerpt_max_chars=2200,
-                supporting_passage_count=3,
-                passage_excerpt_max_chars=520,
-                use_openai_judge=not bool(args.no_openai_judge),
-                judge_model="gpt-5-mini",
-                judge_reasoning_effort="low",
-                judge_candidate_limit=24,
-                judge_max_per_doc=3,
-                judge_max_output_tokens=550,
-                top_candidate_preview_count=20,
-                cross_encoder_weight=0.72,
-                fused_prior_weight=0.16,
-                evidence_weight=0.12,
-                llm_judge_blend=0.20,
-                generic_title_penalty=0.035,
-                weak_evidence_penalty=0.05,
-                single_passage_penalty=0.02,
-            )
-            with stage_timer(run_ctx, "phase_f"):
-                phase_f_result = run_phase_f(
+                update_stage_metrics(
                     run_ctx,
-                    options=phase_f_options,
-                    stable_hash_fn=stable_hash,
-                    log_event_fn=bridged_log_event,
-                    run_logger=phase_f_logger,
+                    "phase_c5_shared_dense_cache",
+                    {
+                        "status": "success",
+                        "embedding_model": shared_cache_summary.get("model_used"),
+                        "section_count": shared_cache_summary.get("section_count"),
+                        "passage_count": shared_cache_summary.get("passage_count"),
+                        "embedding_cost_usd": ((shared_cache_summary.get("cost") or {}).get("estimated_cost_usd")),
+                    },
                 )
-                update_stage_metrics(run_ctx, "phase_f", phase_f_result["metrics_update"])
-            emit("stage_complete", stage="phase_f", label=PHASE_LABELS["phase_f"])
+            emit("stage_complete", scope="shared", stage="phase_c5", label=PHASE_LABELS["phase_c5"])
 
-        if _phase_enabled("phase_g", end_phase=args.end_phase):
-            emit("stage_start", stage="phase_g", label=PHASE_LABELS["phase_g"])
-            phase_g_logger = setup_run_logger(run_ctx)
-            phase_g_options = PhaseGOptions(
-                force_rebuild=bool(args.force_rebuild_phase_g),
-                top_sections_per_doc=5,
-                top_global_sections=25,
-                section_useful_threshold=34,
-                section_partial_threshold=22,
-                doc_probability_threshold=0.16,
-                top_section_floor=18,
-                strong_top_section_floor=38,
-                min_doc_sections_for_useful=1,
-                min_doc_partial_sections=1,
-                min_top_supporting_passages=1,
-                top_k_for_doc_features=5,
-                support_preview_count=2,
-                support_preview_max_chars=260,
-                generic_only_penalty=0.07,
-                generic_high_penalty=0.02,
-                penalized_type_penalty=0.08,
-                calibration_mode="auto",
-                broad_support_min_sections=1,
-                broad_support_top1_floor=18,
-                broad_support_probability_bonus=0.18,
-            )
-            with stage_timer(run_ctx, "phase_g"):
-                phase_g_result = run_phase_g(
+        chapters_for_e = [
+            chapter_lookup[chapter_id]
+            for chapter_id, row in phase_d_results.items()
+            if row.get("status") in {"success", "cached"} and chapter_id in chapter_lookup
+        ]
+        emit("stage_start", scope="chapter", stage="phase_e", label=PHASE_LABELS["phase_e"], total=len(chapters_for_e))
+        with stage_timer(run_ctx, "phase_e_parallel"):
+            phase_e_results = run_parallel_chapter_stage(
+                chapters=chapters_for_e,
+                max_workers=max_workers,
+                submit_fn=lambda chapter: _run_phase_e_for_chapter(
                     run_ctx,
-                    options=phase_g_options,
-                    stable_hash_fn=stable_hash,
-                    log_event_fn=bridged_log_event,
-                    run_logger=phase_g_logger,
-                )
-                update_stage_metrics(run_ctx, "phase_g", phase_g_result["metrics_update"])
-            emit("stage_complete", stage="phase_g", label=PHASE_LABELS["phase_g"])
+                    chapter=chapter,
+                    options=phase_e_options,
+                    run_logger=run_logger,
+                ),
+            )
+            e_success = sum(1 for row in phase_e_results.values() if row.get("status") in {"success", "cached"})
+            e_failed = len(chapters_for_e) - e_success
+            update_stage_metrics(
+                run_ctx,
+                "phase_e_parallel",
+                {
+                    "chapter_count": len(chapters_for_e),
+                    "successful_chapters": e_success,
+                    "failed_chapters": e_failed,
+                    "max_workers": max_workers,
+                },
+            )
+        for row in phase_e_results.values():
+            emit(
+                "chapter_stage_complete",
+                scope="chapter",
+                stage="phase_e",
+                chapter_id=row.get("chapter_id"),
+                chapter_title=row.get("chapter_title"),
+                status=row.get("status"),
+                elapsed_sec=row.get("elapsed_sec"),
+                error=row.get("error"),
+            )
+        emit("stage_complete", scope="chapter", stage="phase_e", label=PHASE_LABELS["phase_e"], current=e_success, total=len(chapters_for_e))
+
+        cpu_summary = {
+            "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "run_id": run_ctx.run_id,
+            "status": "success" if e_success == len(config.chapters) else ("partial_success" if e_success else "failed"),
+            "chapter_count": len(config.chapters),
+            "phase_d_results": phase_d_results,
+            "phase_e_results": phase_e_results,
+        }
+        write_json(run_ctx.artifacts.shared_dir / "cpu_pipeline_summary.json", cpu_summary)
 
         payload = {
-            "pipeline_run_id": str(run_ctx.run_id),
+            "run_id": run_ctx.run_id,
             "run_dir": str(run_ctx.run_dir),
-            "theme_md": str(theme_path),
-            "pdf_dir": str(pdf_dir),
-            "chapter_title": chapter_title,
-            "chapter_description": chapter_description,
-            "last_completed_phase": str(args.end_phase),
-            "useful_pdfs": (
-                len([row for row in phase_g_result["doc_feature_rows"] if row.get("has_useful_information")])
-                if isinstance(phase_g_result, dict)
-                else None
-            ),
-            "document_count": (
-                len(phase_g_result["doc_feature_rows"])
-                if isinstance(phase_g_result, dict)
-                else len(pdf_manifest)
-            ),
-            "output_json": (
-                str(run_ctx.artifacts.final_dir / "output.json")
-                if _phase_enabled("phase_g", end_phase=args.end_phase)
-                else None
-            ),
+            "chapter_count": len(config.chapters),
+            "phase_d_success": d_success,
+            "phase_e_success": e_success,
+            "cpu_summary_json": str(run_ctx.artifacts.shared_dir / "cpu_pipeline_summary.json"),
+            "last_completed_phase": "phase_e",
+            "document_count": len(pdf_manifest),
         }
-        emit("run_complete", **payload)
+        emit("run_complete", pipeline_run_id=str(run_ctx.run_id), **payload)
         print(json.dumps(payload, ensure_ascii=False, indent=2), flush=True)
         return 0
     except Exception as exc:

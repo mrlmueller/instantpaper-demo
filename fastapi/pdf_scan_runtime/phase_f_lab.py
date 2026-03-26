@@ -216,11 +216,13 @@ def load_cross_encoder_bundle(model_name: str):
         if torch is None:
             missing.append("torch")
         raise RuntimeError(f"Cross-encoder reranker dependencies missing: {', '.join(missing)}")
+    print(f"  [cross-encoder] Loading model {model_name}...")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSequenceClassification.from_pretrained(model_name)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
     model.eval()
+    print(f"  [cross-encoder] Model loaded on {device}")
     max_pos = getattr(getattr(model, "config", None), "max_position_embeddings", None)
     tokenizer_limit = getattr(tokenizer, "model_max_length", None)
     return {
@@ -250,9 +252,15 @@ def score_cross_encoder_pairs(pairs: List[Dict[str, str]], options: PhaseFOption
     batch_size = max(1, int(options.cross_encoder_batch_size))
     max_length = effective_max_length(bundle, int(options.cross_encoder_max_length))
     rows = []
+    total_batches = (len(pairs) + batch_size - 1) // batch_size
+    print(f"  [cross-encoder] {len(pairs)} pairs, batch_size={batch_size}, device={device}, {total_batches} batches")
     started = time.perf_counter()
     with torch.inference_mode():
         for start in range(0, len(pairs), batch_size):
+            batch_idx = start // batch_size + 1
+            if batch_idx == 1 or batch_idx % 10 == 0 or batch_idx == total_batches:
+                elapsed_so_far = time.perf_counter() - started
+                print(f"  [cross-encoder] batch {batch_idx}/{total_batches} ({elapsed_so_far:.1f}s)")
             batch = pairs[start : start + batch_size]
             enc = tokenizer(
                 [str(item.get("query") or "") for item in batch],
@@ -355,107 +363,6 @@ def select_rerank_candidates(fused_rows: List[Dict[str, Any]], options: PhaseFOp
         injected.append(row)
         seen.add(sid)
     return top_rows + injected
-
-
-def build_phase_f_fallback_scores(candidate_packs: List[Dict[str, Any]], options: PhaseFOptions, *, reason: str) -> Dict[str, Any]:
-    fused_rank_values = [int(pack.get("fused_rank") or 0) for pack in candidate_packs if int(pack.get("fused_rank") or 0) > 0]
-    min_rank = min(fused_rank_values) if fused_rank_values else 1
-    max_rank = max(fused_rank_values) if fused_rank_values else max(1, len(candidate_packs))
-    max_selection_score = max([float(pack.get("selection_score") or 0.0) for pack in candidate_packs] + [0.0])
-    max_fused_score = max([float(pack.get("fused_score") or 0.0) for pack in candidate_packs] + [0.0])
-
-    cross_encoder_rows = []
-    score_rows = []
-    for pack in candidate_packs:
-        fused_rank = int(pack.get("fused_rank") or 0)
-        if max_rank > min_rank and fused_rank > 0:
-            fused_prior_norm = 1.0 - ((fused_rank - min_rank) / max(1.0, float(max_rank - min_rank)))
-        else:
-            fused_prior_norm = 1.0 if fused_rank > 0 else 0.0
-        selection_norm = (
-            clamp01(float(pack.get("selection_score") or 0.0) / float(max_selection_score))
-            if max_selection_score > 0.0
-            else clamp01(fused_prior_norm)
-        )
-        fused_score_norm = (
-            clamp01(float(pack.get("fused_score") or 0.0) / float(max_fused_score))
-            if max_fused_score > 0.0
-            else clamp01(fused_prior_norm)
-        )
-        trusted_subpoint_prob = clamp01(min(len(list(pack.get("trusted_subpoint_ids") or [])), 3) / 3.0)
-        evidence_density = candidate_evidence_density(pack)
-        fallback_cross_encoder_score = round(
-            (0.45 * selection_norm) + (0.35 * fused_score_norm) + (0.20 * evidence_density),
-            8,
-        )
-        base_score = round(
-            max(
-                0.0,
-                (0.65 * fallback_cross_encoder_score)
-                + (0.20 * clamp01(fused_prior_norm))
-                + (0.15 * trusted_subpoint_prob),
-            ),
-            8,
-        )
-        cross_encoder_rows.append(
-            {
-                "candidate_id": pack.get("candidate_id"),
-                "doc_id": pack.get("doc_id"),
-                "section_id": pack.get("section_id"),
-                "title": pack.get("title"),
-                "query_kinds_scored": ["fallback_fused_signal"],
-                "global_score_prob": selection_norm,
-                "global_raw_logit": None,
-                "best_subpoint_id": (list(pack.get("chosen_subpoint_ids") or []) or [None])[0],
-                "best_subpoint_score_prob": trusted_subpoint_prob,
-                "best_subpoint_raw_logit": None,
-                "mean_subpoint_score_prob": trusted_subpoint_prob,
-                "cross_encoder_score": fallback_cross_encoder_score,
-                "fused_prior_norm": round(clamp01(fused_prior_norm), 8),
-                "evidence_density": evidence_density,
-                "penalties_applied": 0.0,
-                "base_score_pre_judge": base_score,
-                "fallback_reason": reason,
-                "fallback_mode": True,
-            }
-        )
-        score_rows.append(
-            {
-                **{k: v for k, v in pack.items() if k not in {"source_candidate", "candidate_text", "evidence_rows"}},
-                "candidate_text": pack.get("candidate_text"),
-                "evidence_rows": list(pack.get("evidence_rows") or []),
-                "cross_encoder_score": fallback_cross_encoder_score,
-                "global_score_prob": selection_norm,
-                "global_raw_logit": None,
-                "best_subpoint_id": (list(pack.get("chosen_subpoint_ids") or []) or [None])[0],
-                "best_subpoint_score_prob": trusted_subpoint_prob,
-                "best_subpoint_raw_logit": None,
-                "mean_subpoint_score_prob": trusted_subpoint_prob,
-                "fused_prior_norm": round(clamp01(fused_prior_norm), 8),
-                "evidence_density": evidence_density,
-                "base_score_pre_judge": base_score,
-                "cross_encoder_fallback": True,
-                "cross_encoder_fallback_reason": reason,
-            }
-        )
-
-    runtime = {
-        "pair_count": len(candidate_packs),
-        "elapsed_ms": 0.0,
-        "batch_size": None,
-        "max_length": None,
-        "device": "fallback",
-        "architecture": None,
-        "num_labels": None,
-        "max_position_embeddings": None,
-        "scoring_mode": "fallback",
-        "fallback_reason": reason,
-    }
-    return {
-        "score_rows": score_rows,
-        "cross_encoder_rows": cross_encoder_rows,
-        "runtime": runtime,
-    }
 
 
 def build_candidate_packs(
@@ -790,16 +697,9 @@ def maybe_existing(path: Path) -> bool:
 def resolve_phase_f_judge_concurrency(*, candidate_count: int) -> int:
     if int(candidate_count) <= 1:
         return 1
-    cpu_count = available_cpu_count()
-    if cpu_count <= 2:
-        auto = 1
-    elif cpu_count <= 4:
-        auto = 2
-    elif cpu_count <= 8:
-        auto = 3
-    else:
-        auto = 4
-    return max(1, min(int(candidate_count), auto))
+    # The judge is I/O-bound (HTTP API calls), not CPU-bound.
+    # Use 8 concurrent workers (OpenAI rate limits are the real cap).
+    return max(1, min(int(candidate_count), 8))
 
 
 def judge_payload_is_inconsistent(payload: Dict[str, Any]) -> bool:
@@ -901,7 +801,7 @@ def run_phase_f(run_ctx: Any, *, options: PhaseFOptions, stable_hash_fn=None, lo
 
     warnings, failures = [], []
     cross_encoder_rows = []
-    cross_encoder_runtime = {"scoring_mode": "not_started"}
+    cross_encoder_runtime = {}
     llm_judge_rows = []
     judge_runtime = {"enabled": bool(opt.use_openai_judge)}
 
@@ -912,9 +812,10 @@ def run_phase_f(run_ctx: Any, *, options: PhaseFOptions, stable_hash_fn=None, lo
         write_jsonl_rows(rerank_results_path, [])
         score_rows = []
     else:
-        try:
-            if torch is None or AutoTokenizer is None or AutoModelForSequenceClassification is None:
-                raise RuntimeError("local cross-encoder reranker dependencies are unavailable")
+        if torch is None or AutoTokenizer is None or AutoModelForSequenceClassification is None:
+            failures.append("local cross-encoder reranker dependencies are unavailable")
+            score_rows = []
+        else:
             global_query = build_global_query_text(query_plan)
             bridge_rows = list(query_plan.get("bridge_term_rows") or [])
             global_bridge_terms = [clean_text(item) for item in list(query_plan.get("bridge_terms") or []) if clean_text(item)]
@@ -982,7 +883,6 @@ def run_phase_f(run_ctx: Any, *, options: PhaseFOptions, stable_hash_fn=None, lo
                 "model": opt.cross_encoder_model,
                 "candidate_count": len(candidate_packs),
                 "global_query_length_chars": len(global_query),
-                "scoring_mode": "cross_encoder",
             }
             ce_by_candidate = defaultdict(lambda: {"global": None, "subpoints": []})
             for row in raw_ce_rows:
@@ -1074,20 +974,6 @@ def run_phase_f(run_ctx: Any, *, options: PhaseFOptions, stable_hash_fn=None, lo
                     }
                 )
             write_jsonl_rows(cross_encoder_path, cross_encoder_rows)
-        except Exception as exc:
-            fallback_reason = f"{type(exc).__name__}: {exc}"
-            fallback_payload = build_phase_f_fallback_scores(candidate_packs, opt, reason=fallback_reason)
-            cross_encoder_rows = list(fallback_payload.get("cross_encoder_rows") or [])
-            score_rows = list(fallback_payload.get("score_rows") or [])
-            cross_encoder_runtime = {
-                **dict(fallback_payload.get("runtime") or {}),
-                "candidate_count": len(candidate_packs),
-                "model": opt.cross_encoder_model,
-                "error_type": type(exc).__name__,
-                "error_message": str(exc),
-            }
-            warnings.append("Phase F cross-encoder failed; fallback reranking was used")
-            write_jsonl_rows(cross_encoder_path, cross_encoder_rows)
 
     if not maybe_existing(cross_encoder_path):
         write_jsonl_rows(cross_encoder_path, cross_encoder_rows)
@@ -1153,17 +1039,25 @@ def run_phase_f(run_ctx: Any, *, options: PhaseFOptions, stable_hash_fn=None, lo
             except Exception as e:
                 return index, row, None, e
 
+        total_judge = len(judge_candidates)
+        print(f"  [llm-judge] {total_judge} candidates, concurrency={resolved_judge_concurrency}")
         if resolved_judge_concurrency <= 1:
             for index, row in enumerate(judge_candidates):
                 judge_results.append(run_judge_candidate(index, row))
+                print(f"  [llm-judge] {index + 1}/{total_judge} done")
         else:
             with ThreadPoolExecutor(max_workers=resolved_judge_concurrency) as executor:
                 futures = [
                     executor.submit(run_judge_candidate, index, row)
                     for index, row in enumerate(judge_candidates)
                 ]
+                done_count = 0
                 for future in as_completed(futures):
                     judge_results.append(future.result())
+                    done_count += 1
+                    if done_count == 1 or done_count % 4 == 0 or done_count == total_judge:
+                        elapsed_j = time.perf_counter() - judge_started
+                        print(f"  [llm-judge] {done_count}/{total_judge} done ({elapsed_j:.1f}s)")
 
         for _, row, judge_payload, error in sorted(judge_results, key=lambda item: item[0]):
             if error is None and judge_payload is not None:
@@ -1319,7 +1213,7 @@ def run_phase_f(run_ctx: Any, *, options: PhaseFOptions, stable_hash_fn=None, lo
 
     qc_rows = [
         qc_row(check="reranked_candidate_count", status="OK" if rerank_rows or not candidate_packs else "FAIL", value=len(rerank_rows), expected=">= 1 when candidate packs exist", why="Phase G needs a reranked section table.", fix="inspect fused candidates, cross_encoder.jsonl, and rerank_results.jsonl"),
-        qc_row(check="cross_encoder_available", status="WARN" if candidate_packs and cross_encoder_runtime.get("scoring_mode") == "fallback" else ("OK" if cross_encoder_rows or not candidate_packs else "FAIL"), value=cross_encoder_runtime.get("scoring_mode") or bool(cross_encoder_rows), expected="cross_encoder preferred; fallback acceptable", why="Cross-encoder reranking is the primary precision layer, but fallback scoring keeps the pipeline usable when that layer fails.", fix="check transformers/torch imports and the local reranker model"),
+        qc_row(check="cross_encoder_available", status="OK" if cross_encoder_rows or not candidate_packs else "FAIL", value=bool(cross_encoder_rows), expected="True when candidates exist", why="Cross-encoder reranking is the mandatory precision layer.", fix="check transformers/torch imports and the local reranker model"),
         qc_row(check="score_distribution", status="OK" if float(score_distribution.get("pstdev") or 0.0) >= 0.01 or len(rerank_rows) <= 1 else "WARN", value=score_distribution.get("pstdev"), expected=">= 0.01 preferred", why="A flat score distribution indicates weak separation between candidates.", fix="inspect candidate text packing or reranker model choice"),
         qc_row(check="judge_disagreement", status="OK" if disagreement_avg is None or disagreement_avg <= 0.4 else "WARN", value=disagreement_avg, expected="<= 0.40 preferred", why="Large disagreement can indicate ambiguous evidence or poor score blending.", fix="inspect llm_judge.jsonl and top reranked candidates"),
         qc_row(check="top_candidates_per_pdf", status="OK" if top20_unique_docs >= 2 or len(top20) <= 1 else "WARN", value=top20_unique_docs, expected=">= 2 in top20 when multiple PDFs exist", why="The reranked list should retain multi-document coverage when multiple PDFs are useful.", fix="inspect per_doc_top_rows and fused selection"),

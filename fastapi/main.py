@@ -76,6 +76,7 @@ import unicodedata
 from pathlib import Path
 import html as html_lib
 from urllib.parse import parse_qs
+from typing import Any
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from starlette.background import BackgroundTask
 
@@ -577,6 +578,65 @@ def _find_pdf_scan_run(
 
         return str(snap.id), data
 
+    return None
+
+
+def _normalize_pdf_scan_kapitel_ids(
+    *,
+    kapitel_ids: list[str] | None = None,
+    kapitel_id: str | None = None,
+) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for raw_value in list(kapitel_ids or []):
+        value = str(raw_value or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    legacy_value = str(kapitel_id or "").strip()
+    if legacy_value and legacy_value not in seen:
+        ordered.append(legacy_value)
+    return ordered
+
+
+def _find_overlapping_pdf_scan_run(
+    *,
+    fs: QuellenFinderFirestoreService,
+    user_id: str,
+    projekt_id: str,
+    kapitel_ids: list[str],
+    statuses: set[str] | None = None,
+) -> tuple[str, dict, list[str]] | None:
+    requested = {
+        str(raw_kapitel_id or "").strip()
+        for raw_kapitel_id in list(kapitel_ids or [])
+        if str(raw_kapitel_id or "").strip()
+    }
+    if not requested:
+        return None
+    allowed_statuses = {
+        str(status or "").strip()
+        for status in (statuses or set())
+        if str(status or "").strip()
+    } or None
+    for snap in fs.runs_col(user_id, projekt_id).where(filter=firestore.FieldFilter("kind", "==", "pdf_scan")).stream():
+        if snap is None or not getattr(snap, "exists", False):
+            continue
+        data = snap.to_dict() if snap is not None else {}
+        if not isinstance(data, dict):
+            continue
+        status_now = str((data or {}).get("status") or "").strip()
+        if allowed_statuses is not None and status_now not in allowed_statuses:
+            continue
+        run_kapitel_ids = {
+            str(raw_kapitel_id or "").strip()
+            for raw_kapitel_id in list((data or {}).get("kapitelIds") or [])
+            if str(raw_kapitel_id or "").strip()
+        }
+        overlap = sorted(requested & run_kapitel_ids)
+        if overlap:
+            return str(snap.id), data, overlap
     return None
 
 
@@ -5573,24 +5633,28 @@ async def quellen_finder_pdf_scan(
     user_id: str = Depends(verify_firebase_token),
 ):
     """
-    Run Quellen-Finder PDF scan for a single Kapitel and selected project PDFs.
+    Run Quellen-Finder PDF scan for one or more Kapitels and selected project PDFs.
 
     Creates a server-owned research run doc under:
       users/{uid}/projects/{projektId}/researchRuns/{runId}
-    and writes results under:
-      .../pdfScanDocs/*
-      .../pdfScanSections/*
+    and writes v2 results under:
+      .../pdfScanChapters/{chapterId}/*
+      .../pdfScanAggregateDocs/*
+      .../pdfScanAggregateSections/*
     """
 
     projekt_id = str(request.projekt_id or "").strip()
-    kapitel_id = str(request.kapitel_id or "").strip()
+    kapitel_ids = _normalize_pdf_scan_kapitel_ids(
+        kapitel_ids=list(request.kapitel_ids or []),
+        kapitel_id=request.kapitel_id,
+    )
     confirm_duplicate_kapitel_run = bool(request.confirm_duplicate_kapitel_run)
     pdf_ids = list(dict.fromkeys(str(x or "").strip() for x in (request.pdf_ids or []) if str(x or "").strip()))
 
     if not projekt_id:
         raise HTTPException(status_code=400, detail="projekt_id is required")
-    if not kapitel_id:
-        raise HTTPException(status_code=400, detail="kapitel_id is required")
+    if not kapitel_ids:
+        raise HTTPException(status_code=400, detail="kapitel_ids is required")
     if not pdf_ids:
         raise HTTPException(status_code=400, detail="pdf_ids is required")
     if len(pdf_ids) > PDF_SCAN_MAX_PDFS_PER_RUN:
@@ -5607,13 +5671,33 @@ async def quellen_finder_pdf_scan(
     if bool((projekt or {}).get("archived") is True):
         raise HTTPException(status_code=400, detail="Projekt is archived.")
 
-    kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
-    if not kapitel:
-        raise HTTPException(status_code=404, detail="Kapitel not found.")
-    if str((kapitel or {}).get("projektId") or "").strip() != projekt_id:
-        raise HTTPException(status_code=400, detail="Kapitel gehört nicht zu diesem Projekt.")
-    if bool((kapitel or {}).get("archived") is True):
-        raise HTTPException(status_code=400, detail="Kapitel is archived.")
+    kapitel_snapshots: list[dict[str, Any]] = []
+    chapter_input_snapshots: list[dict[str, Any]] = []
+    for chapter_order, kapitel_id in enumerate(kapitel_ids):
+        kapitel = await firebase_service.get_kapitel(user_id, kapitel_id)
+        if not kapitel:
+            raise HTTPException(status_code=404, detail=f"Kapitel not found: {kapitel_id}")
+        if str((kapitel or {}).get("projektId") or "").strip() != projekt_id:
+            raise HTTPException(status_code=400, detail=f"Kapitel gehört nicht zu diesem Projekt: {kapitel_id}")
+        if bool((kapitel or {}).get("archived") is True):
+            raise HTTPException(status_code=400, detail=f"Kapitel is archived: {kapitel_id}")
+        kapitel_snapshots.append(
+            {
+                "id": kapitel_id,
+                "nummer": str((kapitel or {}).get("nummer") or "").strip() or None,
+                "title": str((kapitel or {}).get("title") or "").strip() or None,
+                "ueberschrift": str((kapitel or {}).get("title") or "").strip() or None,
+                "thema": str((kapitel or {}).get("thema") or "").strip() or None,
+            }
+        )
+        chapter_input_snapshots.append(
+            {
+                "chapterId": kapitel_id,
+                "chapterOrder": int(chapter_order),
+                "chapterTitle": str((kapitel or {}).get("title") or "").strip() or None,
+                "chapterSpecText": str((kapitel or {}).get("thema") or "").strip() or None,
+            }
+        )
 
     credits_service = get_credits_service(firebase_service)
     await credits_service.assert_not_negative_balance(user_id)
@@ -5621,46 +5705,38 @@ async def quellen_finder_pdf_scan(
     fs = QuellenFinderFirestoreService()
 
     try:
-        active_kapitel_pdf_scan = _find_pdf_scan_run(
+        active_kapitel_pdf_scan = _find_overlapping_pdf_scan_run(
             fs=fs,
             user_id=user_id,
             projekt_id=projekt_id,
             statuses={"queued", "running"},
-            kapitel_id=kapitel_id,
+            kapitel_ids=kapitel_ids,
         )
     except Exception as exc:
         logger.exception(
-            "Failed to verify active PDF scan state before start | user_id=%s projekt_id=%s kapitel_id=%s",
+            "Failed to verify active PDF scan state before start | user_id=%s projekt_id=%s kapitel_ids=%s",
             user_id,
             projekt_id,
-            kapitel_id,
+            kapitel_ids,
         )
         raise HTTPException(
             status_code=503,
             detail="Failed to verify active PDF scan state. Please retry.",
         ) from exc
     if active_kapitel_pdf_scan and not confirm_duplicate_kapitel_run:
-        active_pdf_scan_id, _ = active_kapitel_pdf_scan
+        active_pdf_scan_id, _active_data, overlapping_kapitel_ids = active_kapitel_pdf_scan
         raise HTTPException(
             status_code=409,
             detail={
-                "code": "same_kapitel_scan_running",
+                "code": "overlapping_kapitel_scan_running",
                 "message": (
-                    "Für dieses Kapitel läuft bereits ein PDF-Scan. "
+                    "Für mindestens eines der ausgewählten Kapitel läuft bereits ein PDF-Scan. "
                     "Set confirm_duplicate_kapitel_run=true to start another run."
                 ),
                 "run_id": active_pdf_scan_id,
-                "kapitel_id": kapitel_id,
+                "overlapping_kapitel_ids": overlapping_kapitel_ids,
             },
         )
-
-    kapitel_snapshot = {
-        "id": kapitel_id,
-        "nummer": str((kapitel or {}).get("nummer") or "").strip() or None,
-        "title": str((kapitel or {}).get("title") or "").strip() or None,
-        "ueberschrift": str((kapitel or {}).get("title") or "").strip() or None,
-        "thema": str((kapitel or {}).get("thema") or "").strip() or None,
-    }
     pdf_snapshots = []
     missing_pdf_ids: list[str] = []
     for pdf_id in pdf_ids:
@@ -5715,8 +5791,9 @@ async def quellen_finder_pdf_scan(
         user_action_id=run_id,
         estimate={
             "operationType": "pdf_scan_run",
-            "pipelineVersion": "pdf_scan_v3_topic_best",
+            "pipelineVersion": "pdf_scan_v3_parallel_topic",
             "pdfCount": int(len(pdf_snapshots)),
+            "chapterCount": int(len(kapitel_ids)),
             "costUsd": float(estimate_payload.get("total_estimate_usd") or 0.0),
             "openaiEstimateUsd": float(estimate_payload.get("openai_estimate_usd") or 0.0),
             "computeEstimateUsd": float(estimate_payload.get("compute_estimate_usd") or 0.0),
@@ -5724,11 +5801,12 @@ async def quellen_finder_pdf_scan(
             "credits": float(estimate_payload.get("credits") or 0.0),
         },
         projekt_id=projekt_id,
-        kapitel_id=kapitel_id,
+        kapitel_id=kapitel_ids[0],
         run_id=run_id,
         operation_details={
             "pdfCount": int(len(pdf_snapshots)),
-            "pipelineVersion": "pdf_scan_v3_topic_best",
+            "chapterCount": int(len(kapitel_ids)),
+            "pipelineVersion": "pdf_scan_v3_parallel_topic",
         },
     )
     if reservation.result == "blocked":
@@ -5739,14 +5817,27 @@ async def quellen_finder_pdf_scan(
     if reservation.result in {"already_reserved", "finalized"}:
         raise HTTPException(status_code=409, detail="PDF scan billing operation already exists. Please retry later.")
 
-    execution_backend = "cloud_run_split_jobs"
-    configured_execution_backend = str(config.PDF_SCAN_EXECUTION_BACKEND or "").strip().lower()
-    if configured_execution_backend and configured_execution_backend != execution_backend:
-        logger.warning(
-            "Ignoring unsupported PDF scan execution backend %r; using %s.",
-            configured_execution_backend,
-            execution_backend,
-        )
+    execution_backend = "cloud_run_split_jobs" if config.IS_CLOUD_RUN else "local_split_jobs"
+    initial_cpu_job_name = (
+        "local:run_pdf_scan_cpu_job.py"
+        if execution_backend == "local_split_jobs"
+        else str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip() or None
+    )
+    initial_cpu_region = (
+        "local"
+        if execution_backend == "local_split_jobs"
+        else str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip() or None
+    )
+    initial_gpu_job_name = (
+        "local:run_pdf_scan_gpu_job.py"
+        if execution_backend == "local_split_jobs"
+        else str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None
+    )
+    initial_gpu_region = (
+        "local"
+        if execution_backend == "local_split_jobs"
+        else str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip() or None
+    )
 
     try:
         run_id = fs.create_run(
@@ -5754,16 +5845,45 @@ async def quellen_finder_pdf_scan(
             projekt_id=projekt_id,
             run_id=run_id,
             kind="pdf_scan",
-            kapitel_ids=[kapitel_id],
-            kapitel_snapshots=[kapitel_snapshot],
-            model="pdf_scan_v3_topic_best",
+            kapitel_ids=kapitel_ids,
+            kapitel_snapshots=kapitel_snapshots,
+            model="pdf_scan_v3_parallel_topic",
             pdf_ids=pdf_ids,
             extra={
-                "chapterInputSnapshot": {
-                    "chapterTitle": str((kapitel or {}).get("title") or "").strip() or None,
-                    "chapterSpecText": str((kapitel or {}).get("thema") or "").strip() or None,
-                },
+                "pdfScanSchemaVersion": 2,
+                "pdfScanMode": "chapter_matrix",
+                "chapterInputMode": "single" if len(kapitel_ids) == 1 else "multi",
+                "chapterInputSnapshots": chapter_input_snapshots,
                 "pdfSnapshots": pdf_snapshots,
+                "pdfScanSummary": {
+                    "chapterCount": int(len(kapitel_ids)),
+                    "completedChapterCount": 0,
+                    "failedChapterCount": 0,
+                    "documentCount": int(len(pdf_snapshots)),
+                    "usefulPdfCountAnyChapter": 0,
+                    "usefulChapterPairCount": 0,
+                    "multiChapterSectionCount": 0,
+                    "totalVisibleSectionCount": 0,
+                    "aggregateStatus": "running",
+                },
+                "pdfScanCounts": {
+                    "aggregateDocCount": 0,
+                    "aggregateSectionCount": 0,
+                    "chapterDocCount": 0,
+                    "chapterSectionCount": 0,
+                },
+                "pdfScanDisplay": {
+                    "runLabel": f"{len(kapitel_ids)} Kapitel • {len(pdf_ids)} PDFs",
+                    "chapterPreview": [
+                        {
+                            "chapterId": row.get("id"),
+                            "nummer": row.get("nummer"),
+                            "title": row.get("title"),
+                        }
+                        for row in kapitel_snapshots[:6]
+                    ],
+                    "chapterCountLabel": f"{len(kapitel_ids)} Kapitel",
+                },
                 "billing": {
                     "status": "reserved",
                     "reservationOperationId": reservation_operation_id,
@@ -5774,23 +5894,55 @@ async def quellen_finder_pdf_scan(
                     "spendRate": float(estimate_payload.get("spend_rate") or 0.0),
                 },
                 "job": {
-                    "provider": "cloud_run_split_jobs",
-                    "jobName": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                    "region": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                    "provider": execution_backend,
+                    "jobName": initial_cpu_job_name,
+                    "region": initial_cpu_region,
                     "operationName": None,
                     "executionName": None,
                     "launchedAt": None,
                     "launchError": None,
                     "cpu": {
-                        "jobName": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                        "region": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                        "jobName": initial_cpu_job_name,
+                        "region": initial_cpu_region,
                     },
                     "gpu": {
-                        "jobName": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                        "region": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                        "jobName": initial_gpu_job_name,
+                        "region": initial_gpu_region,
                     },
                 },
             },
+        )
+        fs.write_subcollection_docs(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            name="pdfScanChapters",
+            docs=[
+                (
+                    str(snapshot.get("id") or ""),
+                    {
+                        "chapterId": str(snapshot.get("id") or ""),
+                        "chapterOrder": int(index),
+                        "kapitelSnapshot": snapshot,
+                        "status": "queued",
+                        "errorMessage": None,
+                        "progress": {"stage": "queued", "message": "Queued"},
+                        "pipelineStages": None,
+                        "startedAt": None,
+                        "finishedAt": None,
+                        "usefulPdfCount": 0,
+                        "documentCount": int(len(pdf_snapshots)),
+                        "visibleSectionCount": 0,
+                        "topSectionCount": 0,
+                        "outputPath": None,
+                        "docFeaturesPath": None,
+                        "sectionScoresPath": None,
+                        "createdAt": SERVER_TIMESTAMP,
+                        "updatedAt": SERVER_TIMESTAMP,
+                    },
+                )
+                for index, snapshot in enumerate(kapitel_snapshots)
+            ],
         )
     except Exception:
         await budget_service.mark_status(
@@ -5836,18 +5988,18 @@ async def quellen_finder_pdf_scan(
                 "progress": {"stage": "error", "message": "Error"},
                 "billing": {"status": "error", "reservationOperationId": reservation_operation_id},
                 "job": {
-                    "provider": "cloud_run_split_jobs",
-                    "jobName": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                    "region": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                    "provider": execution_backend,
+                    "jobName": initial_cpu_job_name,
+                    "region": initial_cpu_region,
                     "launchError": msg,
                     "cpu": {
-                        "jobName": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                        "region": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                        "jobName": initial_cpu_job_name,
+                        "region": initial_cpu_region,
                         "launchError": msg,
                     },
                     "gpu": {
-                        "jobName": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                        "region": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                        "jobName": initial_gpu_job_name,
+                        "region": initial_gpu_region,
                     },
                 },
             },
@@ -5859,24 +6011,24 @@ async def quellen_finder_pdf_scan(
         {
             "updatedAt": SERVER_TIMESTAMP,
             "job": {
-                "provider": "cloud_run_split_jobs",
+                "provider": execution_backend,
                 "jobName": str((launch or {}).get("job_name") or config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or ""),
-                "region": str((launch or {}).get("region") or config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or ""),
+                "region": str((launch or {}).get("region") or initial_cpu_region or ""),
                 "operationName": (launch or {}).get("operation_name"),
                 "executionName": (launch or {}).get("execution_name"),
                 "launchedAt": SERVER_TIMESTAMP,
                 "launchError": None,
                 "cpu": {
-                    "jobName": str((launch or {}).get("job_name") or config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or ""),
-                    "region": str((launch or {}).get("region") or config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or ""),
+                    "jobName": str((launch or {}).get("job_name") or initial_cpu_job_name or ""),
+                    "region": str((launch or {}).get("region") or initial_cpu_region or ""),
                     "operationName": (launch or {}).get("operation_name"),
                     "executionName": (launch or {}).get("execution_name"),
                     "launchedAt": SERVER_TIMESTAMP,
                     "launchError": None,
                 },
                 "gpu": {
-                    "jobName": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                    "region": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                    "jobName": initial_gpu_job_name,
+                    "region": initial_gpu_region,
                 },
             },
         },
@@ -5887,7 +6039,7 @@ async def quellen_finder_pdf_scan(
         "status": "queued",
         "run_id": run_id,
         "projekt_id": projekt_id,
-        "kapitel_id": kapitel_id,
+        "kapitel_ids": kapitel_ids,
         "pdf_ids": pdf_ids,
         "execution_backend": execution_backend,
         "job_execution_name": (launch or {}).get("execution_name"),
@@ -5940,6 +6092,7 @@ async def quellen_finder_pdf_extract(
 
     projekt_id = str(request.projekt_id or "").strip()
     run_id = str(request.run_id or "").strip()
+    chapter_id = str(request.chapter_id or "").strip()
     pdf_doc_id = str(request.pdf_doc_id or "").strip()
     section_doc_id = str(request.section_doc_id or "").strip()
 
@@ -5964,6 +6117,7 @@ async def quellen_finder_pdf_extract(
         user_id=user_id,
         projekt_id=projekt_id,
         run_id=run_id,
+        chapter_id=chapter_id or None,
         pdf_doc_id=pdf_doc_id,
         section_doc_id=section_doc_id,
     )

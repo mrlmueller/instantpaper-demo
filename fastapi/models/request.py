@@ -295,13 +295,21 @@ class QuellenFinderTwoLaneCancelRequest(BaseModel):
 
 
 class QuellenFinderPdfScanRequest(BaseModel):
-    """Request model for running Quellen-Finder PDF scan for a single Kapitel and selected project PDFs."""
+    """Request model for running Quellen-Finder PDF scan for one or more Kapitels and selected project PDFs."""
 
     projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
-    kapitel_id: str = Field(..., description="Kapitel ID to run PDF scan for")
+    kapitel_ids: List[str] = Field(
+        default_factory=list,
+        description="Ordered Kapitel IDs to run PDF scan for",
+        min_length=0,
+    )
+    kapitel_id: Optional[str] = Field(
+        default=None,
+        description="Legacy single Kapitel ID input; normalized into kapitel_ids server-side",
+    )
     confirm_duplicate_kapitel_run: bool = Field(
         default=False,
-        description="Explicit confirmation required to start another PDF scan while the same Kapitel already has a queued or running scan",
+        description="Explicit confirmation required to start another PDF scan while any requested Kapitel already has a queued or running scan",
     )
     pdf_ids: List[str] = Field(
         ...,
@@ -313,7 +321,7 @@ class QuellenFinderPdfScanRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "projekt_id": "proj123",
-                "kapitel_id": "kap456",
+                "kapitel_ids": ["kap456", "kap789"],
                 "confirm_duplicate_kapitel_run": False,
                 "pdf_ids": ["pdfA", "pdfB"],
             }
@@ -335,14 +343,19 @@ class QuellenFinderPdfExtractRequest(BaseModel):
 
     projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
     run_id: str = Field(..., description="Research run ID (kind=pdf_scan)")
-    pdf_doc_id: str = Field(..., description="PDF summary document ID inside pdfScanDocs")
-    section_doc_id: str = Field(..., description="Final section document ID inside pdfScanSections")
+    chapter_id: Optional[str] = Field(
+        default=None,
+        description="Optional chapter ID for chapter-scoped PDF scan results",
+    )
+    pdf_doc_id: str = Field(..., description="PDF summary document ID inside the selected PDF-scan result view")
+    section_doc_id: str = Field(..., description="Final section document ID inside the selected PDF-scan result view")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "projekt_id": "proj123",
                 "run_id": "run456",
+                "chapter_id": "kap456",
                 "pdf_doc_id": "currency_bullion_and_accounts-d06d74cdba02",
                 "section_doc_id": "currency_bullion_and_accounts-d06d74cdba02__cf857d73af6067fc",
             }

@@ -110,10 +110,12 @@ class Config:
         "PDF_SCAN_ARTIFACT_PREFIX",
         "pdf-scan-runs",
     ).strip().strip("/")
-    PDF_SCAN_EXECUTION_BACKEND: str = os.getenv(
+    PDF_SCAN_EXECUTION_BACKEND_RAW: str = os.getenv(
         "PDF_SCAN_EXECUTION_BACKEND",
-        "cloud_run_split_jobs",
+        "",
     ).strip().lower()
+    PDF_SCAN_EXECUTION_BACKEND: str = "cloud_run_split_jobs" if IS_CLOUD_RUN else "local_split_jobs"
+    PDF_SCAN_LOCAL_PYTHON_BIN: str = os.getenv("PDF_SCAN_LOCAL_PYTHON_BIN", "").strip()
     PDF_SCAN_STORAGE_RPC_TIMEOUT_SEC: int = max(
         10,
         _read_int_env("PDF_SCAN_STORAGE_RPC_TIMEOUT_SEC", 90),

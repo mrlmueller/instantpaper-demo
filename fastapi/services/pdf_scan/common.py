@@ -36,10 +36,12 @@ PDF_SCAN_STAGE_LABELS = {
     "phase_a": "Building pipeline manifest",
     "phase_b": "Parsing PDF structure",
     "phase_c": "Normalizing sections",
+    "phase_c5": "Preparing shared dense cache",
     "phase_d": "Planning retrieval",
     "phase_e": "Retrieving candidate sections",
     "phase_f": "Reranking candidate sections",
     "phase_g": "Scoring final sections",
+    "phase_h": "Aggregating chapter results",
     "persist_results": "Saving UI results",
     "gpu_handoff": "Uploading CPU-to-GPU handoff",
     "gpu_queue": "Queueing GPU worker",
@@ -198,45 +200,103 @@ async def load_required_run_doc(
 
 
 def build_runtime_settings_from_run_doc(data: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    chapter_input = data.get("chapterInputSnapshot")
-    if not isinstance(chapter_input, dict):
-        chapter_input = {}
-    kapitel_snapshots = data.get("kapitelSnapshots")
-    kapitel_snapshot = (
-        kapitel_snapshots[0]
-        if isinstance(kapitel_snapshots, list) and kapitel_snapshots and isinstance(kapitel_snapshots[0], dict)
-        else {}
-    )
-    chapter_title = str(
-        (chapter_input or {}).get("chapterTitle")
-        or (kapitel_snapshot or {}).get("title")
-        or (kapitel_snapshot or {}).get("ueberschrift")
-        or ""
-    ).strip()
-    chapter_spec_text = str(
-        (chapter_input or {}).get("chapterSpecText")
-        or (kapitel_snapshot or {}).get("thema")
-        or ""
-    ).strip()
-    if not chapter_title:
-        raise RuntimeError("Run is missing chapter title snapshot.")
-    if not chapter_spec_text:
-        raise RuntimeError("Run is missing chapter spec snapshot.")
     pdf_snapshots = data.get("pdfSnapshots")
     pdf_snapshot_rows = [row for row in list(pdf_snapshots or []) if isinstance(row, dict)]
     if not pdf_snapshot_rows:
         raise RuntimeError("Run is missing pdfSnapshots.")
+
     kapitel_ids = data.get("kapitelIds")
-    kapitel_id = (
-        str(kapitel_ids[0]).strip()
-        if isinstance(kapitel_ids, list) and kapitel_ids and str(kapitel_ids[0]).strip()
-        else ""
-    )
-    if not kapitel_id:
-        raise RuntimeError("Run is missing kapitelIds[0].")
-    return kapitel_id, {
-        "chapter_title": chapter_title,
-        "chapter_spec_text": chapter_spec_text,
+    kapitel_id_list = [
+        str(raw_kapitel_id or "").strip()
+        for raw_kapitel_id in list(kapitel_ids or [])
+        if str(raw_kapitel_id or "").strip()
+    ]
+    if not kapitel_id_list:
+        raise RuntimeError("Run is missing kapitelIds.")
+
+    chapter_input_snapshots_raw = data.get("chapterInputSnapshots")
+    chapter_input_snapshots = [
+        row for row in list(chapter_input_snapshots_raw or []) if isinstance(row, dict)
+    ]
+    kapitel_snapshots = [
+        row for row in list(data.get("kapitelSnapshots") or []) if isinstance(row, dict)
+    ]
+    kapitel_snapshot_by_id = {
+        str(row.get("id") or "").strip(): row
+        for row in kapitel_snapshots
+        if str(row.get("id") or "").strip()
+    }
+
+    if not chapter_input_snapshots:
+        legacy_chapter_input = data.get("chapterInputSnapshot")
+        legacy_first_kapitel_id = kapitel_id_list[0]
+        legacy_snapshot = kapitel_snapshot_by_id.get(legacy_first_kapitel_id) or {}
+        if not isinstance(legacy_chapter_input, dict):
+            legacy_chapter_input = {}
+        chapter_input_snapshots = [
+            {
+                "chapterId": legacy_first_kapitel_id,
+                "chapterOrder": 0,
+                "chapterTitle": str(
+                    (legacy_chapter_input or {}).get("chapterTitle")
+                    or (legacy_snapshot or {}).get("title")
+                    or (legacy_snapshot or {}).get("ueberschrift")
+                    or ""
+                ).strip(),
+                "chapterSpecText": str(
+                    (legacy_chapter_input or {}).get("chapterSpecText")
+                    or (legacy_snapshot or {}).get("thema")
+                    or ""
+                ).strip(),
+            }
+        ]
+
+    normalized_chapters: list[dict[str, Any]] = []
+    for idx, kapitel_id in enumerate(kapitel_id_list):
+        input_row = next(
+            (
+                row
+                for row in chapter_input_snapshots
+                if str(row.get("chapterId") or row.get("kapitelId") or "").strip() == kapitel_id
+            ),
+            {},
+        )
+        kapitel_snapshot = dict(kapitel_snapshot_by_id.get(kapitel_id) or {})
+        chapter_title = str(
+            (input_row or {}).get("chapterTitle")
+            or (kapitel_snapshot or {}).get("title")
+            or (kapitel_snapshot or {}).get("ueberschrift")
+            or ""
+        ).strip()
+        chapter_spec_text = str(
+            (input_row or {}).get("chapterSpecText")
+            or (kapitel_snapshot or {}).get("thema")
+            or ""
+        ).strip()
+        if not chapter_title:
+            raise RuntimeError(f"Run is missing chapter title snapshot for {kapitel_id}.")
+        if not chapter_spec_text:
+            raise RuntimeError(f"Run is missing chapter spec snapshot for {kapitel_id}.")
+        chapter_order = _as_int_or_none((input_row or {}).get("chapterOrder"))
+        normalized_chapters.append(
+            {
+                "chapter_id": kapitel_id,
+                "chapter_order": int(chapter_order if chapter_order is not None else idx),
+                "chapter_title": chapter_title,
+                "chapter_spec_text": chapter_spec_text,
+                "kapitel_snapshot": kapitel_snapshot,
+            }
+        )
+
+    normalized_chapters.sort(key=lambda row: (int(row.get("chapter_order") or 0), str(row.get("chapter_id") or "")))
+
+    primary_kapitel_id = str(normalized_chapters[0].get("chapter_id") or "").strip()
+    if not primary_kapitel_id:
+        raise RuntimeError("Run is missing a primary chapter id.")
+
+    return primary_kapitel_id, {
+        "chapters": normalized_chapters,
+        "chapter_input_mode": "single" if len(normalized_chapters) == 1 else "multi",
         "pdf_snapshots": pdf_snapshot_rows,
     }
 

@@ -264,6 +264,37 @@ export type QuellenFinderRunDoc = ArchiveFields & {
   cancelledAt?: Timestamp | null;
   twoLaneSettings?: Record<string, unknown>;
   summary?: Record<string, unknown>;
+  pdfScanSchemaVersion?: number;
+  pdfScanMode?: 'chapter_matrix' | null;
+  chapterInputMode?: 'single' | 'multi' | null;
+  chapterInputSnapshots?: Array<{
+    chapterId: string;
+    chapterOrder: number;
+    chapterTitle?: string | null;
+    chapterSpecText?: string | null;
+  }> | null;
+  pdfScanSummary?: {
+    chapterCount: number;
+    completedChapterCount: number;
+    failedChapterCount: number;
+    documentCount: number;
+    usefulPdfCountAnyChapter: number;
+    usefulChapterPairCount: number;
+    multiChapterSectionCount: number;
+    totalVisibleSectionCount: number;
+    aggregateStatus: 'success' | 'partial_success' | 'error';
+  } | null;
+  pdfScanCounts?: {
+    aggregateDocCount: number;
+    aggregateSectionCount: number;
+    chapterDocCount: number;
+    chapterSectionCount: number;
+  } | null;
+  pdfScanDisplay?: {
+    runLabel?: string | null;
+    chapterPreview?: Array<{ chapterId: string; nummer?: string | null; title?: string | null }> | null;
+    chapterCountLabel?: string | null;
+  } | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   startedAt?: Timestamp | null;
@@ -393,5 +424,80 @@ export type PdfScanResultDoc = {
     lanes?: string[] | null;
     text?: string | null;
   }> | null;
+  createdAt: Timestamp;
+};
+
+export type PdfScanChapterDoc = {
+  chapterId: string;
+  chapterOrder: number;
+  kapitelSnapshot: KapitelSnapshot;
+  status: 'queued' | 'running' | 'success' | 'error' | 'cancelled';
+  errorMessage?: string | null;
+  progress?: QuellenFinderProgress | null;
+  pipelineStages?: Record<string, QuellenFinderPipelineStage> | null;
+  startedAt?: Timestamp | null;
+  finishedAt?: Timestamp | null;
+  usefulPdfCount: number;
+  documentCount: number;
+  visibleSectionCount: number;
+  topSectionCount: number;
+  outputPath?: string | null;
+  docFeaturesPath?: string | null;
+  sectionScoresPath?: string | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+
+export type PdfScanChapterDocSummaryDoc = PdfScanDocSummaryDoc & {
+  chapterId: string;
+  chapterOrder: number;
+  chapterTitle?: string | null;
+  chapterRank?: number | null;
+};
+
+export type PdfScanChapterSectionDoc = PdfScanResultDoc & {
+  chapterId: string;
+  chapterOrder: number;
+  chapterTitle?: string | null;
+};
+
+export type PdfScanAggregateDoc = {
+  pdfId: string;
+  docId: string;
+  pdfFilename?: string | null;
+  pdfLabel: string;
+  docTitle: string;
+  usefulForChapters: string[];
+  usefulChapterCount: number;
+  bestChapterMatch: {
+    chapterId: string;
+    docMatchProbability?: number | null;
+    topSectionScore?: number | null;
+    topSectionTitle?: string | null;
+  } | null;
+  perChapter: Record<
+    string,
+    {
+      hasUsefulInformation: boolean;
+      docMatchProbability?: number | null;
+      topSectionScore?: number | null;
+      topSectionTitle?: string | null;
+      abstentionReason?: string | null;
+    }
+  >;
+  createdAt: Timestamp;
+};
+
+export type PdfScanAggregateSection = {
+  pdfId: string;
+  docId: string;
+  docTitle: string;
+  sectionId: string;
+  title?: string | null;
+  sectionType?: string | null;
+  pageStart?: number | null;
+  pageEnd?: number | null;
+  chapterIds: string[];
+  chapterCount: number;
   createdAt: Timestamp;
 };

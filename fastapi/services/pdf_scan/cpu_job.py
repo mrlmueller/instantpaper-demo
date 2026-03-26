@@ -32,6 +32,34 @@ from utils.config import config
 logger = logging.getLogger(__name__)
 
 
+def _pdf_scan_job_provider() -> str:
+    return "cloud_run_split_jobs" if config.IS_CLOUD_RUN else "local_split_jobs"
+
+
+def _default_cpu_job_name() -> str | None:
+    if _pdf_scan_job_provider() == "local_split_jobs":
+        return "local:run_pdf_scan_cpu_job.py"
+    return str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip() or None
+
+
+def _default_cpu_job_region() -> str | None:
+    if _pdf_scan_job_provider() == "local_split_jobs":
+        return "local"
+    return str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip() or None
+
+
+def _default_gpu_job_name() -> str | None:
+    if _pdf_scan_job_provider() == "local_split_jobs":
+        return "local:run_pdf_scan_gpu_job.py"
+    return str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None
+
+
+def _default_gpu_job_region() -> str | None:
+    if _pdf_scan_job_provider() == "local_split_jobs":
+        return "local"
+    return str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip() or None
+
+
 def _artifact_store_from_config() -> PdfScanArtifactStore:
     bucket_name = str(config.PDF_SCAN_ARTIFACT_BUCKET or "").strip() or str(config.FIREBASE_STORAGE_BUCKET or "").strip()
     if not bucket_name:
@@ -189,7 +217,7 @@ async def run_pdf_scan_cpu_job(
                     "startedAt": SERVER_TIMESTAMP,
                 },
                 "job": {
-                    "provider": "cloud_run_split_jobs",
+                    "provider": _pdf_scan_job_provider(),
                 },
                 "splitExecution": {
                     "cpu": {
@@ -204,21 +232,28 @@ async def run_pdf_scan_cpu_job(
             merge=True,
         )
         await progress.on_progress("prepare_inputs", "Preparing PDF scan inputs")
-        await asyncio.to_thread(fs.clear_subcollection, user_id=user_id, projekt_id=projekt_id, run_id=run_id, name="pdfScanDocs")
-        await asyncio.to_thread(fs.clear_subcollection, user_id=user_id, projekt_id=projekt_id, run_id=run_id, name="pdfScanSections")
+        await asyncio.to_thread(fs.clear_pdf_scan_v2_results, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
 
         with tempfile.TemporaryDirectory(prefix="qf_pdf_scan_cpu_") as tmpdir:
             temp_root = Path(tmpdir)
-            theme_path = temp_root / "Text Thema.md"
+            chapters_input_dir = temp_root / "chapters"
             pdf_root = temp_root / "pdfs"
             pipeline_runs_root = temp_root / "pipeline_runs"
-            theme_path.write_text(
-                build_theme_markdown(
-                    chapter_title=str((settings or {}).get("chapter_title") or "").strip(),
-                    chapter_spec_text=str((settings or {}).get("chapter_spec_text") or "").strip(),
-                ),
-                encoding="utf-8",
-            )
+            chapters_input_dir.mkdir(parents=True, exist_ok=True)
+            for index, chapter in enumerate(list((settings or {}).get("chapters") or []), start=1):
+                chapter_id = str((chapter or {}).get("chapter_id") or "").strip()
+                chapter_title = str((chapter or {}).get("chapter_title") or "").strip()
+                chapter_spec_text = str((chapter or {}).get("chapter_spec_text") or "").strip()
+                if not chapter_id or not chapter_title or not chapter_spec_text:
+                    raise RuntimeError("Run contains an invalid chapter input snapshot.")
+                chapter_filename = f"{index:03d}__{chapter_id}.md"
+                (chapters_input_dir / chapter_filename).write_text(
+                    build_theme_markdown(
+                        chapter_title=chapter_title,
+                        chapter_spec_text=chapter_spec_text,
+                    ),
+                    encoding="utf-8",
+                )
 
             pdf_snapshot_rows = list((settings or {}).get("pdf_snapshots") or [])
             pdf_snapshot_by_id = await asyncio.to_thread(
@@ -235,7 +270,7 @@ async def run_pdf_scan_cpu_job(
             pipeline_state = await run_pipeline_subprocess(
                 script_path=FASTAPI_ROOT / "run_pdf_scan_pipeline.py",
                 script_args=[
-                    f"--theme-md={theme_path}",
+                    f"--chapters-dir={chapters_input_dir}",
                     f"--pdf-dir={pdf_root}",
                     f"--runs-root={pipeline_runs_root}",
                     f"--max-pdfs={len(pdf_snapshot_rows)}",
@@ -245,7 +280,6 @@ async def run_pdf_scan_cpu_job(
                     "--force-rebuild-phase-c",
                     "--force-rebuild-phase-d",
                     "--force-rebuild-phase-e",
-                    "--end-phase=phase_e",
                 ],
                 working_dir=FASTAPI_ROOT,
                 on_progress=progress.on_progress,
@@ -283,8 +317,8 @@ async def run_pdf_scan_cpu_job(
                     {
                         "job": {
                             "gpu": {
-                                "jobName": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                                "region": str(config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                                "jobName": _default_gpu_job_name(),
+                                "region": _default_gpu_job_region(),
                                 "launchError": str(exc or "")[:1000] or "Failed to launch GPU job.",
                             }
                         }
@@ -297,20 +331,20 @@ async def run_pdf_scan_cpu_job(
             fs.run_ref(user_id, projekt_id, run_id).set(
                 {
                     "job": {
-                        "provider": "cloud_run_split_jobs",
-                        "jobName": str((gpu_launch or {}).get("job_name") or config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                        "region": str((gpu_launch or {}).get("region") or config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                        "provider": _pdf_scan_job_provider(),
+                        "jobName": str((gpu_launch or {}).get("job_name") or _default_gpu_job_name() or "").strip() or None,
+                        "region": str((gpu_launch or {}).get("region") or _default_gpu_job_region() or "").strip() or None,
                         "operationName": (gpu_launch or {}).get("operation_name"),
                         "executionName": (gpu_launch or {}).get("execution_name"),
                         "launchedAt": SERVER_TIMESTAMP,
                         "launchError": None,
                         "cpu": {
-                            "jobName": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                            "region": str(config.PDF_SCAN_CPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                            "jobName": _default_cpu_job_name(),
+                            "region": _default_cpu_job_region(),
                         },
                         "gpu": {
-                            "jobName": str((gpu_launch or {}).get("job_name") or config.PDF_SCAN_GPU_CLOUD_RUN_JOB_NAME or "").strip() or None,
-                            "region": str((gpu_launch or {}).get("region") or config.PDF_SCAN_GPU_CLOUD_RUN_JOB_REGION or "").strip() or None,
+                            "jobName": str((gpu_launch or {}).get("job_name") or _default_gpu_job_name() or "").strip() or None,
+                            "region": str((gpu_launch or {}).get("region") or _default_gpu_job_region() or "").strip() or None,
                             "operationName": (gpu_launch or {}).get("operation_name"),
                             "executionName": (gpu_launch or {}).get("execution_name"),
                             "launchedAt": SERVER_TIMESTAMP,

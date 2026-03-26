@@ -8,6 +8,9 @@ from typing import Any
 
 from google.api_core.exceptions import Forbidden, NotFound
 from google.cloud import storage
+from google.oauth2 import service_account
+
+from utils.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +71,23 @@ class PdfScanArtifactLocation:
         return build_gs_uri(self.bucket, self.object_name)
 
 
+def _build_storage_credentials():
+    has_key_pair = bool(config.FIREBASE_PRIVATE_KEY and config.FIREBASE_CLIENT_EMAIL)
+    if not has_key_pair:
+        return None
+    project_id = str(config.FIREBASE_PROJECT_ID or config.GOOGLE_CLOUD_PROJECT or "").strip()
+    cred_dict = {
+        "type": "service_account",
+        "project_id": project_id,
+        "private_key": str(config.FIREBASE_PRIVATE_KEY or "").replace("\\n", "\n"),
+        "client_email": str(config.FIREBASE_CLIENT_EMAIL or "").strip(),
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    }
+    return service_account.Credentials.from_service_account_info(cred_dict)
+
+
 class PdfScanArtifactStore:
     def __init__(
         self,
@@ -76,7 +96,10 @@ class PdfScanArtifactStore:
         base_prefix: str = "",
         project_id: str = "",
     ) -> None:
-        self._client = storage.Client(project=str(project_id or "").strip() or None)
+        self._client = storage.Client(
+            project=str(project_id or "").strip() or None,
+            credentials=_build_storage_credentials(),
+        )
         self._configured_bucket_name = str(bucket_name or "").strip()
         self._project_id = str(project_id or "").strip()
         self._base_prefix = str(base_prefix or "").strip().strip("/")

@@ -8,14 +8,14 @@ Integrate the new multi-chapter PDF-scan pipeline from `pdf-scan/` into the main
 - the main app uses the split production execution path that already exists:
   - CPU job for shared work and chapter-local `D/E`
   - GPU job for chapter-local `F/G` and aggregate `H`
-- old historical PDF-scan runs remain readable in the UI without data migration
+- old historical PDF-scan runs are migrated into the new v2 structure before frontend cutover
 - new runs are stored in a clean, chapter-aware Firebase structure
 - the frontend exposes all required functionality:
   - multi-chapter input selection
   - run overview across chapters
   - per-chapter result browsing
   - aggregate cross-chapter views
-- stale single-chapter-only code is removed once the new path is live and stable
+- stale single-chapter-only code is removed after migration and cutover
 
 This document is written as the implementation source of truth for the migration.
 
@@ -26,14 +26,13 @@ In scope:
 - Firestore schema v2 for PDF-scan runs
 - Cloud Storage artifact layout for v2 runs
 - FastAPI request/validation/execution/persistence changes
-- frontend state model, component structure, and dual-read logic
-- backwards compatibility for old runs
+- frontend state model, component structure, and v2-only rendering after migration
+- migration script and migration rollout
 - rollout, testing, and cleanup
 
 Out of scope:
 
 - changing the underlying `pdf-scan/` local pipeline logic beyond what is required to expose chapter-aware progress/events into FastAPI
-- migrating old Firestore data into the new schema
 
 ## External Constraints That Drive The Design
 
@@ -115,20 +114,20 @@ The app integration should mirror that structure instead of forcing the new pipe
 
 ## Core Design Decisions
 
-### 1. Use a schema version instead of trying to mutate old runs
+### 1. Use a schema version and migrate all old PDF-scan runs into v2
 
 Decision:
 
-- keep old runs exactly as they are
 - add `pdfScanSchemaVersion`
-- old runs implicitly remain `v1`
+- migrate all terminal historical PDF-scan runs from `v1` to `v2`
 - all new runs are `v2`
 
 Why:
 
-- historical runs already render from flat collections
-- rewriting them is risky and unnecessary
-- the UI can dual-read by schema version with low complexity
+- one runtime format is cleaner than a permanent dual-read setup
+- it allows removal of flat-result readers, refs, and types
+- it reduces long-term UI and backend complexity
+- migration is safe because old PDF-scan runs are single-chapter by design
 
 ### 2. Keep everything under `researchRuns/{runId}`
 
@@ -447,52 +446,175 @@ Run doc `pdfScanArtifacts` should store only:
 
 Do not mirror the entire artifact tree into Firestore.
 
-## Backwards Compatibility Strategy
+## Migration Strategy
 
-### Legacy runs
+The app should not carry permanent legacy runtime support for flat PDF-scan results.
 
-Legacy runs are any PDF-scan run where:
+The correct target state is:
 
-- `pdfScanSchemaVersion` is missing
-- or `pdfScanSchemaVersion < 2`
+- all old PDF-scan runs are migrated to v2
+- all new PDF-scan runs are written as v2
+- the frontend renders only v2
+- the backend persists only v2
+- old flat subcollections and flat-only code are deleted after migration verification
 
-Legacy data shape remains:
+### Which runs need migration
 
-- `pdfScanDocs`
-- `pdfScanSections`
+Migrate every PDF-scan run where:
 
-Frontend behavior for legacy runs:
+- `kind == "pdf_scan"`
+- `pdfScanSchemaVersion` is missing or `< 2`
+- `status` is terminal:
+  - `success`
+  - `error`
+  - `cancelled`
 
-- continue reading the flat collections
-- continue rendering with the current single-chapter result view
-- treat `kapitelSnapshots?.[0]` as the active chapter label
+Do not migrate non-terminal runs during the first pass.
 
-### New runs
+For old active runs:
 
-New runs always have:
+- wait until they finish
+- rerun the migration script
+- do not cut the frontend to v2-only until no active v1 runs remain
+
+### Migration output target
+
+Each migrated old run becomes a normal v2 run with:
 
 - `pdfScanSchemaVersion = 2`
+- `pdfScanMode = "chapter_matrix"`
+- `chapterInputMode = "single"`
+- one `pdfScanChapters/{chapterId}` doc
+- one `pdfScanChapters/{chapterId}/docs/*` subtree copied from old `pdfScanDocs`
+- one `pdfScanChapters/{chapterId}/sections/*` subtree copied from old `pdfScanSections`
+- one `pdfScanAggregateDocs/*` projection derived from the old flat doc summaries
+- an empty `pdfScanAggregateSections` collection unless there is explicit overlap data to synthesize
 
-New run behavior:
+This is valid because all historical PDF-scan runs were single-chapter runs.
 
-- frontend reads chapter-aware collections
-- if the run has exactly one chapter, UI still looks almost the same as today
-- if the run has multiple chapters, UI exposes overview plus chapter-specific browsing
+### Migration metadata
 
-### Important rule
+Every migrated run should be stamped with:
 
-Do not dual-write new runs into both old and new result subcollections.
+```ts
+type PdfScanMigrationMeta = {
+  migratedFromSchemaVersion: 1;
+  migratedToSchemaVersion: 2;
+  migrationStatus: "migrated";
+  migrationScriptVersion: string;
+  migratedAt: Timestamp;
+  migratedBy: string;
+  sourceFlatDocCount: number;
+  sourceFlatSectionCount: number;
+  targetChapterDocCount: number;
+  targetChapterSectionCount: number;
+  targetAggregateDocCount: number;
+};
+```
 
-Reason:
+Recommended root field:
 
-- it doubles write cost
-- it preserves stale assumptions
-- it keeps dead code alive longer
+- `pdfScanMigration`
 
-The correct compatibility model is:
+### Backup policy before deletion
 
-- old runs = old reader
-- new runs = new writer + new reader
+Before deleting legacy subcollections, the migration script should optionally export a compact JSON backup for each migrated run to Cloud Storage.
+
+Recommended backup prefix:
+
+- `pdf-scan-runs/{userId}/{projectId}/{runId}/migration-backup/`
+
+Backup contents:
+
+- root run doc snapshot before migration
+- old `pdfScanDocs` collection as JSONL
+- old `pdfScanSections` collection as JSONL
+
+This backup is not for the UI. It is a rollback safety net.
+
+### Migration script
+
+Create a server-side admin script:
+
+- `fastapi/scripts/migrate_pdf_scan_runs_to_v2.py`
+
+It must use the Firebase Admin SDK / server credentials, not the client SDK.
+
+Required CLI behavior:
+
+- `--user-id`
+- `--project-id`
+- `--run-id`
+- `--limit`
+- `--dry-run`
+- `--write-v2`
+- `--backup`
+- `--delete-legacy`
+- `--force`
+
+Recommended execution modes:
+
+1. Dry run
+
+- scan candidate runs
+- print what will be migrated
+- print expected counts
+- do not write
+
+2. Write v2 only
+
+- create v2 structure
+- keep old flat data in place temporarily
+- stamp `pdfScanMigration`
+
+3. Delete legacy
+
+- only after counts verify
+- remove old flat subcollections
+- optionally remove flat-only root fields
+
+### Migration algorithm
+
+For each eligible run:
+
+1. Read root run doc.
+2. Read old flat `pdfScanDocs`.
+3. Read old flat `pdfScanSections`.
+4. Resolve the single historical chapter ID from `kapitelIds[0]`.
+5. Build one v2 chapter doc.
+6. Copy flat doc summaries into `pdfScanChapters/{chapterId}/docs`.
+7. Copy flat section docs into `pdfScanChapters/{chapterId}/sections`.
+8. Build `pdfScanAggregateDocs` from the old flat doc summaries:
+   - `usefulForChapters = [chapterId]` only when `hasUsefulInformation == true`
+   - `usefulChapterCount = 1` or `0`
+   - `bestChapterMatch.chapterId = chapterId`
+   - `perChapter[chapterId]` from the old summary row
+9. Build run-level `pdfScanSummary`, `pdfScanCounts`, and `pdfScanDisplay`.
+10. Write `pdfScanSchemaVersion = 2`.
+11. Verify written counts.
+12. If `--delete-legacy` is enabled and verification passes:
+    - delete `pdfScanDocs`
+    - delete `pdfScanSections`
+    - delete flat-only root fields
+13. Stamp `pdfScanMigration`.
+
+### Verification rules
+
+The script must fail the run migration if any of these checks fail:
+
+- source flat doc count does not equal target chapter doc count
+- source flat section count does not equal target chapter section count
+- aggregate doc count does not equal source flat doc count
+- the target chapter doc does not exist
+- `kapitelIds` is empty or has more than one chapter in a v1 run
+
+### Cutover rule
+
+Do not deploy a v2-only frontend until:
+
+- migration has completed for all terminal old runs
+- no v1 run remains in `queued` or `running`
+- migration verification reports are clean
 
 ## Backend Implementation Plan
 
@@ -788,22 +910,17 @@ Add v2 types:
 - `PdfScanAggregateDoc`
 - `PdfScanAggregateSection`
 
-Keep legacy types:
-
-- `PdfScanDocSummaryDoc`
-- `PdfScanResultDoc`
-
 Add a discriminant:
 
 ```ts
-type PdfScanSchemaVersion = 1 | 2;
+type PdfScanSchemaVersion = 2;
 ```
 
 Run helper:
 
 ```ts
-function getPdfScanSchemaVersion(run: QuellenFinderRunDoc): 1 | 2 {
-  return Number(run.pdfScanSchemaVersion || 1) >= 2 ? 2 : 1;
+function isPdfScanRunV2(run: QuellenFinderRunDoc): boolean {
+  return Number(run.pdfScanSchemaVersion || 0) >= 2;
 }
 ```
 
@@ -812,11 +929,6 @@ function getPdfScanSchemaVersion(run: QuellenFinderRunDoc): 1 | 2 {
 Files:
 
 - `app/lib/firestore/refs.ts`
-
-Keep legacy refs:
-
-- `quellenFinderPdfScanDocsCol`
-- `quellenFinderPdfScanSectionsCol`
 
 Add v2 refs:
 
@@ -843,8 +955,6 @@ Refactor into:
   - run list and run status summaries
 - `PdfScanRunHeader.tsx`
   - selected run meta, billing, stage summary
-- `PdfScanLegacyRunView.tsx`
-  - old flat result rendering
 - `PdfScanOverviewView.tsx`
   - aggregate document matrix
 - `PdfScanChapterView.tsx`
@@ -855,7 +965,6 @@ Refactor into:
 Add hooks:
 
 - `usePdfScanRuns(...)`
-- `usePdfScanLegacyResults(...)`
 - `usePdfScanV2RunData(...)`
 - `usePdfScanChapterResults(...)`
 
@@ -889,10 +998,6 @@ For v2 runs:
 - show first one or two chapter titles, then `+N`
 - show `hadPartialFailures` visibly
 
-For v1 runs:
-
-- keep the current single-chapter label based on `kapitelSnapshots?.[0]`
-
 #### Run detail
 
 For v2 runs, add tabs:
@@ -917,10 +1022,6 @@ For v2 runs, add tabs:
 
 - render `pdfScanAggregateSections`
 - highlight sections useful for more than one chapter
-
-For v1 runs:
-
-- keep the current document/section explorer
 
 ### Live listeners and performance
 
@@ -993,92 +1094,99 @@ and manage index exemptions there going forward.
 
 ## Rollout Plan
 
-### Phase A. Backend first, dual-read-ready
+### Phase A. Backend v2 writer + migration tooling
 
 Implement backend v2 support first:
 
 - request model accepts `kapitel_ids`
 - CPU/GPU jobs can execute multi-chapter runs
 - Firestore persistence writes v2 schema
+- migration script exists and is safe to run in dry-run mode
 
-At this point the frontend may still be legacy, but no production UI should point at the new start contract yet.
+Do not cut the frontend yet.
 
-### Phase B. Frontend dual-read
+### Phase B. Migration dry run
 
-Implement the new frontend readers:
+Run the migration script in dry-run mode:
 
-- legacy flat result reader for v1
-- new chapter-aware reader for v2
+- collect candidate runs
+- verify count mappings
+- verify that all old runs are single-chapter
+- verify that no active v1 runs remain unaccounted for
 
-Do not remove legacy display yet.
+### Phase C. Write migrated v2 data
 
-### Phase C. Frontend start flow
+Execute migration with:
 
-Switch the start UI to send:
+- backup enabled
+- v2 write enabled
+- legacy deletion disabled on the first pass
 
-- `kapitel_ids`
+Then verify:
 
-Keep backend fallback support for `kapitel_id` for one stabilization window.
+- root `pdfScanSchemaVersion`
+- `pdfScanChapters`
+- `pdfScanAggregateDocs`
+- `pdfScanSummary`
+- `pdfScanCounts`
 
-### Phase D. Stabilization
+### Phase D. Delete legacy Firestore data
 
-Smoke-test all of these:
+Run the cleanup mode of the migration script:
 
-- new single-chapter run
-- new multi-chapter run
-- old historical run rendering
-- run cancellation
-- partial success with one failed chapter
-- live progress while run is active
+- delete old `pdfScanDocs`
+- delete old `pdfScanSections`
+- delete flat-only root fields where no longer needed
 
-### Phase E. Cleanup
+Only do this after verification passes.
 
-After the new path is verified:
+### Phase E. Frontend cutover
 
-- remove old backend write path for flat PDF-scan results
-- remove single-chapter-only request handling if no longer needed
-- keep legacy read adapter for historical runs
+Switch the main app UI to v2 only:
+
+- no flat reader
+- no legacy result components
+- multi-chapter start flow active
+- v2 overview and chapter views active
+
+### Phase F. Final cleanup
+
+After cutover is stable:
+
+- remove old backend flat write path
+- remove old frontend flat read path
+- remove temporary migration compatibility branches
 
 ## Detailed Cleanup Plan
 
-### Remove after v2 is stable
+### Remove after migration and cutover
 
 Backend:
 
-- legacy single-chapter PDF-scan request documentation and validation branches
+- temporary request normalization branches for `kapitel_id`
 - `build_persisted_view_docs(...)` once nothing calls it
-- `replace_pdf_scan_results(...)` once no active code writes flat results
+- `replace_pdf_scan_results(...)`
 - single-chapter helper logic in `build_runtime_settings_from_run_doc(...)`
+- migration-only verification helpers once the migration window is closed
 
 Frontend:
 
 - state logic that auto-binds `selectedKapitelId` to `activeRun`
 - run labeling that assumes `kapitelSnapshots?.[0]`
 - flat result loading as the default path
-
-### Keep for backwards compatibility
-
-Do not delete these until you intentionally stop supporting historical run display:
-
-- legacy Firestore refs for:
-  - `pdfScanDocs`
-  - `pdfScanSections`
-- legacy Firestore TS types
-- legacy run rendering component
-
-The correct approach is to isolate these in a clear `legacy` adapter, not to pretend they are dead code.
+- legacy-only run rendering components and hooks
+- legacy Firestore refs for flat result collections
+- legacy Firestore TS types for flat PDF-scan docs and sections
 
 ### Code organization target
 
 By the end of cleanup:
 
 - new code should live in explicit v2 modules or generic modules
-- legacy code should be isolated behind:
-  - `legacy`
-  - `v1`
-  - or `adapter`
+- there should be no active v1 PDF-scan read/write path in the main app
+- migration code should live in explicit `scripts/` or `admin/` locations, not in the main runtime path
 
-Do not leave mixed v1/v2 branches scattered through unrelated files.
+Do not leave mixed migration/runtime branches scattered through unrelated files.
 
 ## Implementation File Checklist
 
@@ -1090,6 +1198,7 @@ Do not leave mixed v1/v2 branches scattered through unrelated files.
 - `fastapi/services/pdf_scan/cpu_job.py`
 - `fastapi/services/pdf_scan/gpu_job.py`
 - `fastapi/services/quellen_finder_firestore_service.py`
+- `fastapi/scripts/migrate_pdf_scan_runs_to_v2.py`
 
 Potential new backend helper files:
 
@@ -1110,10 +1219,8 @@ Recommended new frontend files:
 - `app/components/pdf-scan/PdfScanOverviewView.tsx`
 - `app/components/pdf-scan/PdfScanChapterView.tsx`
 - `app/components/pdf-scan/PdfScanOverlapView.tsx`
-- `app/components/pdf-scan/PdfScanLegacyRunView.tsx`
 - `app/components/pdf-scan/hooks/usePdfScanRuns.ts`
 - `app/components/pdf-scan/hooks/usePdfScanV2RunData.ts`
-- `app/components/pdf-scan/hooks/usePdfScanLegacyResults.ts`
 
 ### Local pipeline touchpoints
 
@@ -1128,7 +1235,7 @@ The integration is done only when all of the following are true:
 
 1. A new single-chapter PDF-scan run works end to end in the main app using the v2 schema.
 2. A new multi-chapter PDF-scan run works end to end in the main app using the v2 schema.
-3. The UI can still open and display an old flat PDF-scan run correctly.
+3. All historical terminal PDF-scan runs have been migrated to the v2 schema.
 4. The UI can:
    - start a run with multiple chapters
    - show aggregate run results
@@ -1136,10 +1243,16 @@ The integration is done only when all of the following are true:
    - show overlapping sections across chapters
 5. Cancelling a run still works.
 6. A run with one failed chapter renders as successful with partial failures visible.
-7. No new frontend code depends on `kapitelSnapshots?.[0]` for v2 runs.
-8. No new backend code writes flat `pdfScanDocs` / `pdfScanSections` for v2 runs.
-9. Firestore writes are chunked and cleanly replace nested v2 subcollections.
-10. Historical runs do not require migration to render.
+7. The migration script can:
+   - dry-run
+   - back up
+   - write v2
+   - verify counts
+   - delete legacy flat data safely
+8. No frontend runtime code reads flat `pdfScanDocs` / `pdfScanSections`.
+9. No backend runtime code writes flat `pdfScanDocs` / `pdfScanSections`.
+10. Firestore writes are chunked and cleanly replace nested v2 subcollections.
+11. No active `pdf_scan` run remains on schema v1 after cutover.
 
 ## Recommended Implementation Order
 
@@ -1149,13 +1262,16 @@ The integration is done only when all of the following are true:
 4. Implement CPU runtime settings builder for multi-chapter runs.
 5. Implement GPU persistence builder for v2 projections.
 6. Implement Firestore v2 write helpers.
-7. Add chapter-aware progress updates.
-8. Refactor frontend state model.
-9. Build new overview and chapter views.
-10. Add legacy adapter view.
-11. Switch start flow to multi-select.
-12. Run full compatibility and live-progress tests.
-13. Remove dead v1 write code.
+7. Implement `migrate_pdf_scan_runs_to_v2.py`.
+8. Add chapter-aware progress updates.
+9. Dry-run migration and verify candidate runs.
+10. Execute migration with backups and verification.
+11. Delete legacy flat run data.
+12. Refactor frontend state model.
+13. Build v2-only overview and chapter views.
+14. Switch start flow to multi-select.
+15. Run full migration, cutover, and live-progress tests.
+16. Remove dead v1 code.
 
 ## Final Recommendation
 
@@ -1165,13 +1281,13 @@ The correct implementation is:
 
 - keep the run root stable
 - add a clean v2 chapter-aware subtree under it
-- dual-read old and new runs in the UI
+- migrate old flat runs once instead of carrying permanent dual-read logic
 - decouple input selection state from result browsing state
-- isolate legacy code instead of mixing legacy assumptions into the new implementation
+- delete flat-only runtime code after migration verifies cleanly
 
 That gives you a system that is:
 
-- backwards compatible
+- internally consistent
 - structurally aligned with the real local pipeline
-- safe for future cleanup
+- safe for future cleanup because there is only one active runtime format
 - much easier to maintain than the current flat single-chapter assumptions

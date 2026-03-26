@@ -18,18 +18,27 @@ from services.pdf_scan.common import (
     PdfScanRunCancelled,
     PdfScanRunTerminated,
     RunProgressTracker,
-    build_persisted_view_docs,
     load_required_run_doc,
     read_pdf_scan_api_usage,
     resolve_pipeline_run_dir,
     run_pipeline_subprocess,
 )
 from services.pdf_scan.handoff import restore_handoff_bundle, upload_final_outputs
+from services.pdf_scan.persistence_v2 import build_persisted_pdf_scan_v2_view
 from services.pdf_scan.storage import PdfScanArtifactStore
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
 from utils.config import config
 
 logger = logging.getLogger(__name__)
+
+
+def _merge_persisted_root_update(extra: dict[str, Any], persisted: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(extra or {})
+    root_update = dict((persisted or {}).get("root_update") or {})
+    for key in ["pdfScanSchemaVersion", "pdfScanMode", "chapterInputMode", "pdfScanSummary", "pdfScanCounts", "pdfScanDisplay"]:
+        if key in root_update:
+            merged[key] = root_update.get(key)
+    return merged
 
 
 def _artifact_store_from_run_doc(run_doc: dict[str, Any]) -> PdfScanArtifactStore:
@@ -223,6 +232,7 @@ async def run_pdf_scan_gpu_job(
                     f"--run-dir={restored_run_dir}",
                     "--force-rebuild-phase-f",
                     "--force-rebuild-phase-g",
+                    "--force-rebuild-phase-h",
                 ],
                 working_dir=FASTAPI_ROOT,
                 on_progress=progress.on_progress,
@@ -244,22 +254,72 @@ async def run_pdf_scan_gpu_job(
                 if str(row.get("id") or "").strip()
             }
             persisted = await asyncio.to_thread(
-                build_persisted_view_docs,
+                build_persisted_pdf_scan_v2_view,
                 run_dir=pipeline_run_dir,
                 pdf_snapshot_by_id=pdf_snapshot_by_id,
+                kapitel_snapshots=list((run_doc.get("kapitelSnapshots") or [])),
             )
             await check_cancel()
 
-            total_docs = int(len(list(persisted.get("doc_docs") or [])))
+            total_docs = int(
+                sum(len(rows) for rows in list((persisted.get("chapter_doc_docs") or {}).values()))
+                + len(list(persisted.get("aggregate_doc_docs") or []))
+            )
             await progress.on_progress("persist_results", "Saving PDF result cards", current=total_docs, total=total_docs)
             await asyncio.to_thread(
-                fs.replace_pdf_scan_results,
+                fs.replace_pdf_scan_v2_results,
                 user_id=user_id,
                 projekt_id=projekt_id,
                 run_id=run_id,
-                doc_docs=list(persisted.get("doc_docs") or []),
-                section_docs=list(persisted.get("section_docs") or []),
+                root_payload=dict(persisted.get("root_update") or {}),
+                chapter_docs=list(persisted.get("chapter_docs") or []),
+                chapter_doc_docs=dict(persisted.get("chapter_doc_docs") or {}),
+                chapter_section_docs=dict(persisted.get("chapter_section_docs") or {}),
+                aggregate_doc_docs=list(persisted.get("aggregate_doc_docs") or []),
+                aggregate_section_docs=list(persisted.get("aggregate_section_docs") or []),
             )
+            verification = await asyncio.to_thread(
+                fs.verify_pdf_scan_v2_results,
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+                chapter_docs=list(persisted.get("chapter_docs") or []),
+                chapter_doc_docs=dict(persisted.get("chapter_doc_docs") or {}),
+                chapter_section_docs=dict(persisted.get("chapter_section_docs") or {}),
+                aggregate_doc_docs=list(persisted.get("aggregate_doc_docs") or []),
+                aggregate_section_docs=list(persisted.get("aggregate_section_docs") or []),
+            )
+            if not bool((verification or {}).get("ok")):
+                logger.warning(
+                    "PDF scan v2 persistence verification failed after first write; retrying once | run_id=%s verification=%s",
+                    run_id,
+                    verification,
+                )
+                await asyncio.to_thread(
+                    fs.replace_pdf_scan_v2_results,
+                    user_id=user_id,
+                    projekt_id=projekt_id,
+                    run_id=run_id,
+                    root_payload=dict(persisted.get("root_update") or {}),
+                    chapter_docs=list(persisted.get("chapter_docs") or []),
+                    chapter_doc_docs=dict(persisted.get("chapter_doc_docs") or {}),
+                    chapter_section_docs=dict(persisted.get("chapter_section_docs") or {}),
+                    aggregate_doc_docs=list(persisted.get("aggregate_doc_docs") or []),
+                    aggregate_section_docs=list(persisted.get("aggregate_section_docs") or []),
+                )
+                verification = await asyncio.to_thread(
+                    fs.verify_pdf_scan_v2_results,
+                    user_id=user_id,
+                    projekt_id=projekt_id,
+                    run_id=run_id,
+                    chapter_docs=list(persisted.get("chapter_docs") or []),
+                    chapter_doc_docs=dict(persisted.get("chapter_doc_docs") or {}),
+                    chapter_section_docs=dict(persisted.get("chapter_section_docs") or {}),
+                    aggregate_doc_docs=list(persisted.get("aggregate_doc_docs") or []),
+                    aggregate_section_docs=list(persisted.get("aggregate_section_docs") or []),
+                )
+            if not bool((verification or {}).get("ok")):
+                raise RuntimeError(f"PDF scan v2 persistence verification failed: {verification}")
             await progress.on_progress(
                 "persist_results",
                 "Saving PDF result cards complete",
@@ -305,8 +365,8 @@ async def run_pdf_scan_gpu_job(
                 operation_details={
                     "pdfCount": int(len(resolved_pdf_snapshots)),
                     "pipelineVersion": str(run_doc.get("model") or "pdf_scan_v3_topic_best"),
-                    "visibleDocCount": int(persisted.get("visible_doc_count") or 0),
-                    "visibleSectionCount": int(persisted.get("visible_section_count") or 0),
+                    "visibleDocCount": int((persisted.get("root_update") or {}).get("pdfScanCounts", {}).get("aggregateDocCount") or 0),
+                    "visibleSectionCount": int(persisted.get("total_visible_section_count") or 0),
                     "hadPartialFailures": bool(persisted.get("had_partial_failures")),
                 },
                 model=str(run_doc.get("model") or "pdf_scan_v3_topic_best"),
@@ -340,7 +400,7 @@ async def run_pdf_scan_gpu_job(
                 projekt_id=projekt_id,
                 run_id=run_id,
                 had_partial_failures=bool(persisted.get("had_partial_failures")),
-                extra={
+                extra=_merge_persisted_root_update({
                     "billing": {
                         "status": "success",
                         "reservationOperationId": reservation_operation_id,
@@ -364,16 +424,16 @@ async def run_pdf_scan_gpu_job(
                             "status": "success",
                             "finishedAt": SERVER_TIMESTAMP,
                             "elapsedSeconds": float(round(dt_gpu, 3)),
-                            "lastCompletedPhase": str(pipeline_state.get("last_completed_phase") or "phase_g"),
+                            "lastCompletedPhase": str(pipeline_state.get("last_completed_phase") or "phase_h"),
                             "pipelineRunId": pipeline_state.get("pipeline_run_id"),
                         }
                     },
                     "resultSummary": {
-                        "visibleDocCount": int(persisted.get("visible_doc_count") or 0),
-                        "visibleSectionCount": int(persisted.get("visible_section_count") or 0),
-                        "usefulPdfCount": int(persisted.get("useful_pdf_count") or 0),
+                        "visibleDocCount": int((persisted.get("root_update") or {}).get("pdfScanCounts", {}).get("aggregateDocCount") or 0),
+                        "visibleSectionCount": int(persisted.get("total_visible_section_count") or 0),
+                        "usefulPdfCount": int(persisted.get("useful_pdf_count_any_chapter") or 0),
                     },
-                },
+                }, persisted),
             )
     except PdfScanRunCancelled as exc:
         logger.info("PDF scan GPU worker cancelled | run_id=%s err=%s", run_id, exc)

@@ -23,6 +23,7 @@ function qfLog(message: string, data?: Record<string, unknown>) {
 export type PdfExtractRequest = {
   projektId: string;
   runId: string;
+  chapterId?: string;
   pdfDocId: string;
   sectionDocId: string;
   pdfId?: string;
@@ -544,6 +545,7 @@ function PdfExtractDialogPanel(props: { request: PdfExtractRequest }) {
       qfLog("extract request start", {
         projektId: request.projektId,
         runId: request.runId,
+        chapterId: request.chapterId,
         pdfDocId: request.pdfDocId,
         sectionDocId: request.sectionDocId,
       });
@@ -554,6 +556,7 @@ function PdfExtractDialogPanel(props: { request: PdfExtractRequest }) {
         body: JSON.stringify({
           projekt_id: request.projektId,
           run_id: request.runId,
+          chapter_id: request.chapterId,
           pdf_doc_id: request.pdfDocId,
           section_doc_id: request.sectionDocId,
         }),
@@ -902,7 +905,9 @@ export function PdfExtractDialog(props: {
   request: PdfExtractRequest | null;
 }) {
   const { open, onOpenChange, request } = props;
-  const requestKey = request ? [request.projektId, request.runId, request.pdfDocId, request.sectionDocId].join(":") : "empty";
+  const requestKey = request
+    ? [request.projektId, request.runId, request.chapterId || "", request.pdfDocId, request.sectionDocId].join(":")
+    : "empty";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

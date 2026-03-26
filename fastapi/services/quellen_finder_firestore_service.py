@@ -330,6 +330,31 @@ class QuellenFinderFirestoreService:
                 batch.delete(snap.reference)
             batch.commit()
 
+    def _write_collection_docs(
+        self,
+        *,
+        col_ref: Any,
+        docs: Iterable[tuple[str, dict]],
+    ) -> None:
+        docs_list = list(docs)
+        count = 0
+        sanitized_any = False
+        for start in range(0, len(docs_list), 400):
+            batch = self.firebase.db.batch()
+            chunk = docs_list[start : start + 400]
+            for doc_id, payload in chunk:
+                payload2, changed = _sanitize_firestore_value(payload)
+                sanitized_any = sanitized_any or changed
+                batch.set(col_ref.document(str(doc_id)), payload2)
+                count += 1
+            if chunk:
+                batch.commit()
+        if count and sanitized_any:
+            logger.warning(
+                "Firestore payload sanitized (nested arrays / non-finite numbers) | docs=%s",
+                int(count),
+            )
+
     def write_two_lane_results(
         self,
         *,
@@ -372,27 +397,7 @@ class QuellenFinderFirestoreService:
         docs: Iterable[tuple[str, dict]],
     ) -> None:
         col = self.run_ref(user_id, projekt_id, run_id).collection(str(name))
-        docs_list = list(docs)
-        count = 0
-        sanitized_any = False
-        for start in range(0, len(docs_list), 400):
-            batch = self.firebase.db.batch()
-            chunk = docs_list[start : start + 400]
-            for doc_id, payload in chunk:
-                payload2, changed = _sanitize_firestore_value(payload)
-                sanitized_any = sanitized_any or changed
-                batch.set(col.document(str(doc_id)), payload2)
-                count += 1
-            if chunk:
-                batch.commit()
-        if count:
-            if sanitized_any:
-                logger.warning(
-                    "Firestore payload sanitized (nested arrays / non-finite numbers) | subcollection=%s run_id=%s docs=%s",
-                    str(name),
-                    str(run_id),
-                    int(count),
-                )
+        self._write_collection_docs(col_ref=col, docs=docs)
 
     def replace_pdf_scan_results(
         self,
@@ -445,3 +450,148 @@ class QuellenFinderFirestoreService:
                 str(run_id),
                 int(count),
             )
+
+    def clear_pdf_scan_v2_results(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        clear_legacy_flat: bool = False,
+    ) -> None:
+        run_ref = self.run_ref(user_id, projekt_id, run_id)
+        names = ["pdfScanAggregateDocs", "pdfScanAggregateSections"]
+        if bool(clear_legacy_flat):
+            names.extend(["pdfScanDocs", "pdfScanSections"])
+        for name in names:
+            self.clear_subcollection(user_id=user_id, projekt_id=projekt_id, run_id=run_id, name=name)
+
+        chapters_col = run_ref.collection("pdfScanChapters")
+        chapter_snaps = list(chapters_col.stream())
+        for chapter_snap in chapter_snaps:
+            if chapter_snap is None or not getattr(chapter_snap, "exists", False):
+                continue
+            chapter_ref = chapter_snap.reference
+            for child_name in ["docs", "sections"]:
+                child_snaps = list(chapter_ref.collection(child_name).stream())
+                for start in range(0, len(child_snaps), 400):
+                    batch = self.firebase.db.batch()
+                    for snap in child_snaps[start : start + 400]:
+                        batch.delete(snap.reference)
+                    if child_snaps[start : start + 400]:
+                        batch.commit()
+        if chapter_snaps:
+            for start in range(0, len(chapter_snaps), 400):
+                batch = self.firebase.db.batch()
+                for snap in chapter_snaps[start : start + 400]:
+                    batch.delete(snap.reference)
+                batch.commit()
+
+    def replace_pdf_scan_v2_results(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        root_payload: dict[str, Any],
+        chapter_docs: Iterable[tuple[str, dict]],
+        chapter_doc_docs: dict[str, Iterable[tuple[str, dict]]],
+        chapter_section_docs: dict[str, Iterable[tuple[str, dict]]],
+        aggregate_doc_docs: Iterable[tuple[str, dict]],
+        aggregate_section_docs: Iterable[tuple[str, dict]],
+    ) -> None:
+        run_ref = self.run_ref(user_id, projekt_id, run_id)
+        chapter_docs_list = list(chapter_docs)
+        aggregate_doc_docs_list = list(aggregate_doc_docs)
+        aggregate_section_docs_list = list(aggregate_section_docs)
+        chapter_doc_docs_map = {str(k): list(v) for k, v in dict(chapter_doc_docs or {}).items()}
+        chapter_section_docs_map = {str(k): list(v) for k, v in dict(chapter_section_docs or {}).items()}
+
+        try:
+            self.clear_pdf_scan_v2_results(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+            if root_payload:
+                payload2, _ = _sanitize_firestore_value(root_payload)
+                run_ref.set(payload2, merge=True)
+
+            chapters_col = run_ref.collection("pdfScanChapters")
+            self._write_collection_docs(col_ref=chapters_col, docs=chapter_docs_list)
+
+            for chapter_id, docs_list in chapter_doc_docs_map.items():
+                if docs_list:
+                    self._write_collection_docs(
+                        col_ref=chapters_col.document(str(chapter_id)).collection("docs"),
+                        docs=docs_list,
+                    )
+            for chapter_id, docs_list in chapter_section_docs_map.items():
+                if docs_list:
+                    self._write_collection_docs(
+                        col_ref=chapters_col.document(str(chapter_id)).collection("sections"),
+                        docs=docs_list,
+                    )
+
+            self._write_collection_docs(
+                col_ref=run_ref.collection("pdfScanAggregateDocs"),
+                docs=aggregate_doc_docs_list,
+            )
+            self._write_collection_docs(
+                col_ref=run_ref.collection("pdfScanAggregateSections"),
+                docs=aggregate_section_docs_list,
+            )
+        except Exception:
+            logger.exception("Failed replacing PDF scan v2 results | run_id=%s", str(run_id))
+            raise
+
+    def verify_pdf_scan_v2_results(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        chapter_docs: Iterable[tuple[str, dict]],
+        chapter_doc_docs: dict[str, Iterable[tuple[str, dict]]],
+        chapter_section_docs: dict[str, Iterable[tuple[str, dict]]],
+        aggregate_doc_docs: Iterable[tuple[str, dict]],
+        aggregate_section_docs: Iterable[tuple[str, dict]],
+    ) -> dict[str, Any]:
+        run_ref = self.run_ref(user_id, projekt_id, run_id)
+        expected_chapter_ids = [str(doc_id) for doc_id, _payload in list(chapter_docs or [])]
+        chapter_doc_docs_map = {str(k): list(v) for k, v in dict(chapter_doc_docs or {}).items()}
+        chapter_section_docs_map = {str(k): list(v) for k, v in dict(chapter_section_docs or {}).items()}
+        expected_aggregate_doc_count = len(list(aggregate_doc_docs or []))
+        expected_aggregate_section_count = len(list(aggregate_section_docs or []))
+
+        chapter_rows: list[dict[str, Any]] = []
+        for chapter_id in expected_chapter_ids:
+            chapter_ref = run_ref.collection("pdfScanChapters").document(str(chapter_id))
+            chapter_snap = chapter_ref.get()
+            chapter_rows.append(
+                {
+                    "chapterId": str(chapter_id),
+                    "exists": bool(getattr(chapter_snap, "exists", False)),
+                    "docCount": sum(1 for _ in chapter_ref.collection("docs").stream()),
+                    "sectionCount": sum(1 for _ in chapter_ref.collection("sections").stream()),
+                    "expectedDocCount": len(chapter_doc_docs_map.get(str(chapter_id)) or []),
+                    "expectedSectionCount": len(chapter_section_docs_map.get(str(chapter_id)) or []),
+                }
+            )
+
+        aggregate_doc_count = sum(1 for _ in run_ref.collection("pdfScanAggregateDocs").stream())
+        aggregate_section_count = sum(1 for _ in run_ref.collection("pdfScanAggregateSections").stream())
+        ok = (
+            all(
+                row.get("exists")
+                and int(row.get("docCount") or 0) == int(row.get("expectedDocCount") or 0)
+                and int(row.get("sectionCount") or 0) == int(row.get("expectedSectionCount") or 0)
+                for row in chapter_rows
+            )
+            and int(aggregate_doc_count) == int(expected_aggregate_doc_count)
+            and int(aggregate_section_count) == int(expected_aggregate_section_count)
+        )
+        return {
+            "ok": bool(ok),
+            "chapters": chapter_rows,
+            "aggregateDocCount": int(aggregate_doc_count),
+            "aggregateSectionCount": int(aggregate_section_count),
+            "expectedAggregateDocCount": int(expected_aggregate_doc_count),
+            "expectedAggregateSectionCount": int(expected_aggregate_section_count),
+        }

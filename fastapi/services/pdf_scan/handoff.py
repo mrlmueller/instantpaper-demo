@@ -8,17 +8,23 @@ from typing import Any
 
 from services.pdf_scan.storage import PdfScanArtifactStore
 
-PDF_SCAN_HANDOFF_SCHEMA_VERSION = "1"
-PDF_SCAN_HANDOFF_RELATIVE_PATHS = [
+PDF_SCAN_HANDOFF_SCHEMA_VERSION = "2"
+PDF_SCAN_HANDOFF_REQUIRED_RELATIVE_PATHS = [
     "config.json",
     "pdf_manifest.json",
-    "query_plan.json",
     "metrics.json",
     "logs.jsonl",
     "api_calls.jsonl",
     "parser",
     "normalized",
+    "shared",
+    "chapters",
+]
+
+PDF_SCAN_HANDOFF_OPTIONAL_RELATIVE_PATHS = [
+    "query_plan.json",
     "retrieval",
+    "aggregate",
 ]
 
 PDF_SCAN_FINAL_UPLOAD_RELATIVE_PATHS = [
@@ -31,8 +37,10 @@ PDF_SCAN_FINAL_UPLOAD_RELATIVE_PATHS = [
     "parser",
     "normalized",
     "retrieval",
+    "chapters",
     "rerank",
     "final",
+    "aggregate",
     "pdf_reports",
 ]
 
@@ -68,8 +76,12 @@ def create_handoff_archive(*, run_dir: Path, archive_path: Path) -> Path:
     archive = Path(archive_path).resolve()
     archive.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive, mode="w:gz") as tar:
-        for rel in PDF_SCAN_HANDOFF_RELATIVE_PATHS:
+        for rel in PDF_SCAN_HANDOFF_REQUIRED_RELATIVE_PATHS:
             _add_path_to_tar(tar, run_dir=Path(run_dir), relative_path=rel)
+        for rel in PDF_SCAN_HANDOFF_OPTIONAL_RELATIVE_PATHS:
+            abs_path = (Path(run_dir).resolve() / _safe_rel(rel)).resolve()
+            if abs_path.exists():
+                _add_path_to_tar(tar, run_dir=Path(run_dir), relative_path=rel)
     return archive
 
 
@@ -90,7 +102,8 @@ def build_handoff_manifest(
         "bundle_uri": str(bundle_uri or "").strip(),
         "bundle_sha256": str(bundle_sha256 or "").strip(),
         "bundle_size_bytes": int(bundle_size_bytes or 0),
-        "required_paths": list(PDF_SCAN_HANDOFF_RELATIVE_PATHS),
+        "required_paths": list(PDF_SCAN_HANDOFF_REQUIRED_RELATIVE_PATHS),
+        "optional_paths": list(PDF_SCAN_HANDOFF_OPTIONAL_RELATIVE_PATHS),
     }
 
 
