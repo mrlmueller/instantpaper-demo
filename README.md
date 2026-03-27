@@ -1,5 +1,7 @@
 # InstantPaper (Next.js Frontend)
 
+Temporary migration note: the product frontend now lives in `frontend/`, while the product backend is still in `fastapi/` until the backend move batch lands. This root README has not been fully rewritten yet, so treat path references below as transitional unless they already mention `frontend/`.
+
 InstantPaper is a Next.js (App Router) web app for academic writing workflows:
 
 - Manage sources ("Quellen") with text and optional images
@@ -7,7 +9,7 @@ InstantPaper is a Next.js (App Router) web app for academic writing workflows:
 - Start processing runs ("Runs") that call the FastAPI backend to generate results and derived artifacts (combined / shortened / lesefluss)
 - Track usage and costs and export DOCX files
 
-This repo contains both the frontend (root) and the backend (`fastapi/`). Start here for the UI; see `fastapi/README.md` for backend setup and API docs.
+This repo contains both the frontend (`frontend/`) and the backend (`fastapi/`). Start here for the UI; see `fastapi/README.md` for backend setup and API docs.
 
 ---
 
@@ -51,12 +53,13 @@ This repo contains both the frontend (root) and the backend (`fastapi/`). Start 
 ### 1) Install dependencies
 
 ```bash
+cd frontend
 npm install
 ```
 
 ### 2) Configure `.env.local`
 
-Create `.env.local` in the repo root:
+Create `frontend/.env.local`:
 
 ```env
 # Firebase Web App config (client-side)
@@ -68,11 +71,8 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
 NEXT_PUBLIC_FIREBASE_APP_ID=...
 NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=...
 
-# Backend base URL (defaults to http://localhost:8000 if unset)
-NEXT_PUBLIC_FASTAPI_URL=http://localhost:8000
-
-# Some older/frontend-only calls also read NEXT_PUBLIC_API_URL (keep in sync)
-NEXT_PUBLIC_API_URL=http://localhost:8000
+# Backend base URL for server-side Next route handlers
+FASTAPI_BASE_URL=http://localhost:8000
 ```
 
 ### 3) Start the backend
@@ -82,6 +82,7 @@ Follow `fastapi/README.md` to run FastAPI locally (default: `http://localhost:80
 ### 4) Start the frontend
 
 ```bash
+cd frontend
 npm run dev
 ```
 
@@ -101,6 +102,7 @@ Grant access by setting the Firebase custom claim `fullAccess: true` (legacy `ap
 ## Frontend scripts
 
 ```bash
+cd frontend
 npm run dev     # start Next.js dev server (http://localhost:3000)
 npm run build   # build for production
 npm run start   # start production server
@@ -173,7 +175,7 @@ Main routes you will use while working with InstantPaper:
 
 The system is split into three main parts:
 
-1) **Next.js app (this folder)**
+1) **Next.js app (`frontend/`)**
 - Handles UI, login, and most Firestore reads/writes.
 - Server Actions in `app/actions/` mutate data and revalidate pages.
 - Client components subscribe to Firestore for realtime updates.

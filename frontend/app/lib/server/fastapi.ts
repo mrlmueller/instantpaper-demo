@@ -15,10 +15,7 @@ function normalizeBaseUrl(value: string): string {
 }
 
 export function getFastApiBaseUrl(): string {
-  const configured =
-    process.env.FASTAPI_BASE_URL ||
-    process.env.NEXT_PUBLIC_FASTAPI_URL ||
-    FASTAPI_LOCAL_FALLBACK;
+  const configured = process.env.FASTAPI_BASE_URL || FASTAPI_LOCAL_FALLBACK;
 
   return normalizeBaseUrl(configured);
 }
