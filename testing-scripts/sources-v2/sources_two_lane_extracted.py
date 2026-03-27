@@ -523,17 +523,17 @@ except Exception as e:
     ) from e
 
 # Load repo-root .env first (override=True so local project config wins),
-# then load fastapi/.env as a fallback (override=False).
+# then load backend/.env as a fallback (override=False).
 loaded_env_files = []
 root_env = REPO_ROOT / ".env"
 if root_env.exists():
     load_dotenv(dotenv_path=root_env, override=True)
     loaded_env_files.append(str(root_env))
 
-fastapi_env = REPO_ROOT / "fastapi" / ".env"
-if fastapi_env.exists():
-    load_dotenv(dotenv_path=fastapi_env, override=False)
-    loaded_env_files.append(str(fastapi_env))
+backend_env = REPO_ROOT / "backend" / ".env"
+if backend_env.exists():
+    load_dotenv(dotenv_path=backend_env, override=False)
+    loaded_env_files.append(str(backend_env))
 
 REQUIRED_ENV_VARS = [
     "OPENAI_API_KEY",

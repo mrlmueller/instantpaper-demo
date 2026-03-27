@@ -1,4 +1,4 @@
-name: Deploy FastAPI and Workers
+name: Deploy Backend and Workers
 
 on:
   workflow_dispatch:
@@ -64,7 +64,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: fastapi/Dockerfile
+          file: backend/Dockerfile
           push: true
           tags: ${{ env.IMAGE }}
           cache-from: type=gha
@@ -74,7 +74,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: fastapi/Dockerfile.gpu
+          file: backend/Dockerfile.gpu
           push: true
           tags: ${{ env.GPU_IMAGE }}
           provenance: false

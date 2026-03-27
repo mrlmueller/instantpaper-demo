@@ -23,7 +23,7 @@ def configure_logging() -> None:
     - Avoid writing log files.
     """
     # Ensure `.env` values are available even when this is called before utils.config import.
-    # override=True so local dev uses the checked-in `fastapi/.env` consistently.
+    # override=True so local dev uses the checked-in `backend/.env` consistently.
     dotenv_path = Path(__file__).resolve().parent.parent / ".env"
     load_dotenv(dotenv_path=dotenv_path, override=True)
 

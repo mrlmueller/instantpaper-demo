@@ -17,15 +17,15 @@ MAX_TEXT_WORDS = 7000
 MAX_TEXT_CHARS = 140000
 
 
-def _load_fastapi_env() -> None:
+def _load_backend_env() -> None:
     """
-    Load `fastapi/.env` regardless of current working directory.
+    Load `backend/.env` regardless of current working directory.
 
-    The FastAPI app uses `python-dotenv` via `fastapi/utils/config.py`. When this
+    The backend app uses `python-dotenv` via `backend/utils/config.py`. When this
     script is run from the repo root, we still want the same env.
     """
-    fastapi_dir = Path(__file__).resolve().parents[1]
-    env_path = fastapi_dir / ".env"
+    backend_dir = Path(__file__).resolve().parents[1]
+    env_path = backend_dir / ".env"
     if env_path.exists():
         load_dotenv(env_path, override=True)
     else:
@@ -921,7 +921,7 @@ def migrate(
     delete_old: bool,
     truncate_long_texts: bool,
 ) -> None:
-    _load_fastapi_env()
+    _load_backend_env()
     db = _init_firestore()
     default_max_depth = _as_int(os.getenv("TEXT_REFINEMENT_MAX_DEPTH", "4"), default=4)
 

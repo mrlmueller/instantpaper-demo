@@ -1,5 +1,5 @@
-/fastapi/
-/fastapi/**
+/backend/
+/backend/**
 *.log
 github-deployer-key.json
 **/*.ipynb

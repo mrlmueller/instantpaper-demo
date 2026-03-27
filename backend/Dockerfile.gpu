@@ -6,10 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/opt/huggingface
 
-COPY fastapi/requirements-gpu.txt ./requirements-gpu.txt
+COPY backend/requirements-gpu.txt ./requirements-gpu.txt
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu126 -r requirements-gpu.txt
 
-COPY fastapi/ ./
+COPY backend/ ./
 
 ARG PRELOAD_PDF_SCAN_RERANKER=0
 RUN mkdir -p /opt/huggingface && \

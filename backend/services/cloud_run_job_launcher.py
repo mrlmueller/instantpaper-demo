@@ -15,7 +15,7 @@ import google.auth
 from google.auth.transport.requests import AuthorizedSession
 
 from utils.config import config
-from utils.runtime_paths import resolve_fastapi_root
+from utils.runtime_paths import resolve_backend_root
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ class CloudRunJobLauncher:
         return not config.IS_CLOUD_RUN
 
     def _python_supports_local_pdf_scan(self, python_bin: str) -> bool:
-        fastapi_root = resolve_fastapi_root(__file__)
+        backend_root = resolve_backend_root(__file__)
         try:
             completed = subprocess.run(
                 [
@@ -178,7 +178,7 @@ class CloudRunJobLauncher:
                 check=False,
                 capture_output=True,
                 text=True,
-                cwd=str(fastapi_root),
+                cwd=str(backend_root),
                 timeout=15,
             )
         except Exception:
@@ -198,8 +198,8 @@ class CloudRunJobLauncher:
             else:
                 candidates.append(str(Path(conda_prefix) / "bin" / "python"))
 
-        fastapi_root = resolve_fastapi_root(__file__)
-        repo_name = str(fastapi_root.parent.name or "").strip()
+        backend_root = resolve_backend_root(__file__)
+        repo_name = str(backend_root.parent.name or "").strip()
         if repo_name:
             conda_exe = str(os.getenv("CONDA_EXE", "") or "").strip()
             if conda_exe:
@@ -253,8 +253,8 @@ class CloudRunJobLauncher:
         args: list[str],
         run_id: str,
     ) -> dict[str, str | None]:
-        fastapi_root = resolve_fastapi_root(__file__)
-        script_path = fastapi_root / script_name
+        backend_root = resolve_backend_root(__file__)
+        script_path = backend_root / script_name
         if not script_path.is_file():
             raise RuntimeError(f"Local PDF scan launcher script not found: {script_path}")
 
@@ -269,7 +269,7 @@ class CloudRunJobLauncher:
 
         creationflags = 0
         popen_kwargs: dict[str, Any] = {
-            "cwd": str(fastapi_root),
+            "cwd": str(backend_root),
             "env": env,
             "stdin": subprocess.DEVNULL,
             "stderr": subprocess.STDOUT,

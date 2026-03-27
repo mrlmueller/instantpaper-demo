@@ -47,7 +47,7 @@ Thumbs.db
 
 # Logs
 *.log
-fastapi.log
+backend.log
 
 # Local PDF-scan smoke runs / scratch artifacts
 _tmp_runs/

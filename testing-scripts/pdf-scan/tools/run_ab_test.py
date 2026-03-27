@@ -35,10 +35,10 @@ PDF_SCAN_DIR = Path(__file__).resolve().parents[1]
 if str(PDF_SCAN_DIR) not in sys.path:
     sys.path.insert(0, str(PDF_SCAN_DIR))
 
-# Load OpenAI API key from fastapi/.env if not already set
-FASTAPI_ENV = PDF_SCAN_DIR.parent / "fastapi" / ".env"
-if not os.environ.get("OPENAI_API_KEY") and FASTAPI_ENV.exists():
-    for line in FASTAPI_ENV.read_text(encoding="utf-8").splitlines():
+# Load OpenAI API key from backend/.env if not already set
+BACKEND_ENV = PDF_SCAN_DIR.parent / "backend" / ".env"
+if not os.environ.get("OPENAI_API_KEY") and BACKEND_ENV.exists():
+    for line in BACKEND_ENV.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line.startswith("OPENAI_API_KEY="):
             os.environ["OPENAI_API_KEY"] = line.split("=", 1)[1].strip().strip('"')

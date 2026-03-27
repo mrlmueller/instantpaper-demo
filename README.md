@@ -1,6 +1,6 @@
 # InstantPaper (Next.js Frontend)
 
-Temporary migration note: the product frontend now lives in `frontend/`, while the product backend is still in `fastapi/` until the backend move batch lands. This root README has not been fully rewritten yet, so treat path references below as transitional unless they already mention `frontend/`.
+Temporary migration note: the product frontend now lives in `frontend/` and the product backend now lives in `backend/`. This root README has not been fully rewritten yet, so treat legacy wording below as transitional where needed.
 
 InstantPaper is a Next.js (App Router) web app for academic writing workflows:
 
@@ -9,7 +9,7 @@ InstantPaper is a Next.js (App Router) web app for academic writing workflows:
 - Start processing runs ("Runs") that call the FastAPI backend to generate results and derived artifacts (combined / shortened / lesefluss)
 - Track usage and costs and export DOCX files
 
-This repo contains both the frontend (`frontend/`) and the backend (`fastapi/`). Start here for the UI; see `fastapi/README.md` for backend setup and API docs.
+This repo contains both the frontend (`frontend/`) and the backend (`backend/`). Start here for the UI; see `backend/README.md` for backend setup and API docs.
 
 ---
 
@@ -48,7 +48,7 @@ This repo contains both the frontend (`frontend/`) and the backend (`fastapi/`).
 
 - Node.js 18.18+ (or 20+) and npm
 - A Firebase project (Authentication + Firestore + Storage)
-- For full stack dev: Python 3.10+ (backend), see `fastapi/README.md`
+- For full stack dev: Python 3.10+ (backend), see `backend/README.md`
 
 ### 1) Install dependencies
 
@@ -77,7 +77,7 @@ FASTAPI_BASE_URL=http://localhost:8000
 
 ### 3) Start the backend
 
-Follow `fastapi/README.md` to run FastAPI locally (default: `http://localhost:8000`).
+Follow `backend/README.md` to run FastAPI locally (default: `http://localhost:8000`).
 
 ### 4) Start the frontend
 
@@ -94,7 +94,7 @@ Login is always allowed. Without access, users are redirected to `/activate`.
 
 Grant access by setting the Firebase custom claim `fullAccess: true` (legacy `approved: true` is accepted during migration):
 
-- Use the backend access UI (`GET http://localhost:8000/approve`) or the admin endpoints described in `fastapi/README.md`.
+- Use the backend access UI (`GET http://localhost:8000/approve`) or the admin endpoints described in `backend/README.md`.
 - Then refresh the token (or sign out and sign in again) so the claim is applied.
 
 ---
@@ -129,7 +129,7 @@ Other notable libraries:
 
 Backend:
 
-- FastAPI (Python) in `fastapi/`
+- FastAPI (Python) in `backend/`
 - Firebase Admin SDK
 - OpenAI Responses API
 
@@ -181,7 +181,7 @@ The system is split into three main parts:
 - Client components subscribe to Firestore for realtime updates.
 - Calls the backend API for AI operations and admin functions.
 
-2) **FastAPI backend (`fastapi/`)**
+2) **FastAPI backend (`backend/`)**
 - Verifies Firebase auth.
 - Runs OpenAI calls (including background tasks).
 - Writes results/artifacts/exports back to Firestore/Storage.
@@ -403,7 +403,7 @@ firebase deploy --only firestore:rules,storage
 ### Run both servers
 
 - Terminal 1 (frontend): `npm run dev` (http://localhost:3000)
-- Terminal 2 (backend): see `fastapi/README.md` (http://localhost:8000)
+- Terminal 2 (backend): see `backend/README.md` (http://localhost:8000)
 
 ### Typical flow in the UI
 
@@ -421,11 +421,11 @@ firebase deploy --only firestore:rules,storage
 There are two "admin" mechanisms:
 
 1) **Approving users (allowlist)** via backend Basic Auth endpoints  
-   - Requires `fastapi/.env` `ADMIN_BASIC_PASSWORD` (and optionally `ADMIN_BASIC_USER`).
+   - Requires `backend/.env` `ADMIN_BASIC_PASSWORD` (and optionally `ADMIN_BASIC_USER`).
    - Use `http://localhost:8000/approve` to approve or revoke by email.
 
 2) **Admin UI in Next.js (`/admin`)** via Firebase UID allowlist  
-   - Requires `fastapi/.env` `ADMIN_UIDS` (comma-separated Firebase Auth UIDs).
+   - Requires `backend/.env` `ADMIN_UIDS` (comma-separated Firebase Auth UIDs).
    - To find your UID:
      - Firebase Console -> Authentication -> Users (UID column), or
      - read it from the UI/Firestore user doc after first login (InstantPaper writes `users/{uid}`).
@@ -462,7 +462,7 @@ Key folders/files:
 Related docs:
 
 - `CLAUDE.md`: repo-level development notes and architecture overview
-- `fastapi/README.md`: backend setup and API docs
+- `backend/README.md`: backend setup and API docs
 
 ---
 
@@ -566,7 +566,7 @@ Firebase auth uses the `__session` cookie to share the current ID token between 
 - External images are proxied with SSRF protection.
 - `.env.local` is ignored by git and should never be committed.
 
-For backend security details, see `fastapi/README.md`.
+For backend security details, see `backend/README.md`.
 
 ---
 
@@ -579,8 +579,8 @@ For backend security details, see `fastapi/README.md`.
 
 ### Backend
 
-- Deploy the backend separately (see `fastapi/README.md`).
-- Ensure `fastapi/.env` `ALLOWED_ORIGINS` contains your frontend production origin(s).
+- Deploy the backend separately (see `backend/README.md`).
+- Ensure `backend/.env` `ALLOWED_ORIGINS` contains your frontend production origin(s).
 
 ---
 
@@ -610,7 +610,7 @@ For end to end validation, run both servers locally and walk through:
 ### 403 "Account not authorized"
 
 - Your Firebase user has no access (`fullAccess`) or is blocked.
-  - Grant/revoke access in `/admin` or via `fastapi/README.md` and refresh the token.
+  - Grant/revoke access in `/admin` or via `backend/README.md` and refresh the token.
   - If blocked, unblock first (hard gate).
 
 ### Firestore permission errors
@@ -619,7 +619,7 @@ For end to end validation, run both servers locally and walk through:
 
 ### CORS errors when calling FastAPI
 
-- Add your frontend origin to `fastapi/.env` `ALLOWED_ORIGINS` (comma-separated) and restart FastAPI.
+- Add your frontend origin to `backend/.env` `ALLOWED_ORIGINS` (comma-separated) and restart FastAPI.
 
 ### Prompt template errors (missing placeholders)
 

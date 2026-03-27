@@ -14,7 +14,7 @@ from services.credits_service import get_credits_service
 from services.firebase_service import firebase_service
 from services.openai_budget_service import get_openai_budget_service
 from services.pdf_scan.common import (
-    FASTAPI_ROOT,
+    BACKEND_ROOT,
     PdfScanRunCancelled,
     PdfScanRunTerminated,
     RunProgressTracker,
@@ -227,14 +227,14 @@ async def run_pdf_scan_gpu_job(
             await check_cancel()
 
             pipeline_state = await run_pipeline_subprocess(
-                script_path=FASTAPI_ROOT / "run_pdf_scan_gpu_pipeline.py",
+                script_path=BACKEND_ROOT / "run_pdf_scan_gpu_pipeline.py",
                 script_args=[
                     f"--run-dir={restored_run_dir}",
                     "--force-rebuild-phase-f",
                     "--force-rebuild-phase-g",
                     "--force-rebuild-phase-h",
                 ],
-                working_dir=FASTAPI_ROOT,
+                working_dir=BACKEND_ROOT,
                 on_progress=progress.on_progress,
                 cancel_requested_sync=user_cancel_requested_sync,
                 termination_requested_sync=termination_requested_sync,

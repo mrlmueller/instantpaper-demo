@@ -1,4 +1,4 @@
-# InstantPaper FastAPI Backend
+# InstantPaper Backend (FastAPI)
 
 FastAPI backend server for processing papers with OpenAI. This service authenticates users via Firebase tokens, fetches papers from Firestore, processes them with OpenAI, and stores results back in Firestore.
 
@@ -23,7 +23,7 @@ FastAPI backend server for processing papers with OpenAI. This service authentic
 ### 1. Create Virtual Environment
 
 ```bash
-cd fastapi
+cd backend
 python -m venv venv
 
 # Activate virtual environment
@@ -200,7 +200,7 @@ Process a paper with OpenAI based on user instructions.
 ### Directory Structure
 
 ```
-fastapi/
+backend/
 ├── main.py                    # FastAPI app entry point
 ├── requirements.txt           # Python dependencies
 ├── .env                       # Environment variables (not in git)

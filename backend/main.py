@@ -100,6 +100,7 @@ def _safe_env_diagnostics() -> dict:
     Intended for logs only.
     """
     admin_env_keys = sorted([k for k in os.environ.keys() if "ADMIN" in k.upper()])
+    backend_env_path = Path(__file__).resolve().parent / ".env"
     return {
         "k_service": os.getenv("K_SERVICE", ""),
         "k_revision": os.getenv("K_REVISION", ""),
@@ -109,8 +110,8 @@ def _safe_env_diagnostics() -> dict:
         "admin_basic_user_present": "ADMIN_BASIC_USER" in os.environ,
         "admin_basic_password_present": "ADMIN_BASIC_PASSWORD" in os.environ,
         "admin_basic_password_len": len(os.getenv("ADMIN_BASIC_PASSWORD", "") or ""),
-        "dot_env_present": Path(".env").exists(),
-        "fastapi_dot_env_present": Path("fastapi/.env").exists(),
+        "cwd_dot_env_present": Path(".env").exists(),
+        "backend_dot_env_present": backend_env_path.exists(),
     }
 
 

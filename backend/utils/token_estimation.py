@@ -11,7 +11,7 @@ def _get_encoder():
         import tiktoken  # type: ignore
     except Exception as exc:
         raise RuntimeError(
-            "tiktoken is required for token estimation. Install backend deps via fastapi/requirements.txt."
+            "tiktoken is required for token estimation. Install backend deps via backend/requirements.txt."
         ) from exc
 
     return tiktoken.get_encoding("o200k_base")

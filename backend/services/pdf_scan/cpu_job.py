@@ -13,7 +13,7 @@ from services.cloud_run_job_launcher import cloud_run_job_launcher
 from services.firebase_service import firebase_service
 from services.openai_budget_service import get_openai_budget_service
 from services.pdf_scan.common import (
-    FASTAPI_ROOT,
+    BACKEND_ROOT,
     PdfScanRunCancelled,
     PdfScanRunTerminated,
     RunProgressTracker,
@@ -268,7 +268,7 @@ async def run_pdf_scan_cpu_job(
             await check_cancel()
 
             pipeline_state = await run_pipeline_subprocess(
-                script_path=FASTAPI_ROOT / "run_pdf_scan_pipeline.py",
+                script_path=BACKEND_ROOT / "run_pdf_scan_pipeline.py",
                 script_args=[
                     f"--chapters-dir={chapters_input_dir}",
                     f"--pdf-dir={pdf_root}",
@@ -281,7 +281,7 @@ async def run_pdf_scan_cpu_job(
                     "--force-rebuild-phase-d",
                     "--force-rebuild-phase-e",
                 ],
-                working_dir=FASTAPI_ROOT,
+                working_dir=BACKEND_ROOT,
                 on_progress=progress.on_progress,
                 cancel_requested_sync=user_cancel_requested_sync,
                 termination_requested_sync=termination_requested_sync,

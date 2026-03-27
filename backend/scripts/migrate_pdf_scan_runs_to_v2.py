@@ -10,9 +10,9 @@ from typing import Any
 from google.cloud import firestore
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
-FASTAPI_ROOT = Path(__file__).resolve().parents[1]
-if str(FASTAPI_ROOT) not in sys.path:
-    sys.path.insert(0, str(FASTAPI_ROOT))
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
 
 from firebase_admin import storage  # noqa: E402
 

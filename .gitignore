@@ -28,6 +28,7 @@
 *.pem
 
 # python
+.venv/
 __pycache__/
 *.pyc
 
@@ -42,6 +43,7 @@ _tmp_*.txt
 # env files (can opt-in for committing if needed)
 .env*
 !frontend/.env.local.example
+!backend/.env.example
 
 # vercel
 .vercel
@@ -55,7 +57,7 @@ instantpaper-e80e5-firebase-adminsdk-fbsvc-40e6f9c871.json
 new-design
 updated-design/
 
-fastapi/.prompt_dumps
+backend/.prompt_dumps
 /.llm_label_cache_v1
 /.embed_cache
 /sources_workspace/.embed_cache
@@ -85,11 +87,11 @@ fastapi/.prompt_dumps
 /testing-scripts/sources-v2/prompt_research/embedding_probe_cache/
 
 # Quellen-Finder caches / dev artifacts
-fastapi/.quellen_finder_cache/
-fastapi/.two_lane_artifacts/
+backend/.quellen_finder_cache/
+backend/.two_lane_artifacts/
 /.pdf_scan_artifacts/
-fastapi/.pdf_scan_artifacts/
-fastapi/pdf_scan_runtime/runs/
+backend/.pdf_scan_artifacts/
+backend/pdf_scan_runtime/runs/
 /testing-scripts/pdf-scan/pdf-scan-test.extracted.py
 /testing-scripts/pdf-scan/runs/
 

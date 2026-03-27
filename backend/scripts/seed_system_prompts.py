@@ -10,9 +10,9 @@ from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-FASTAPI_DIR = Path(__file__).resolve().parents[1]
-if str(FASTAPI_DIR) not in sys.path:
-    sys.path.insert(0, str(FASTAPI_DIR))
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 from services.prompt_service import DEFAULT_INSTRUCTIONS
 from services.prompt_service import (
@@ -32,9 +32,9 @@ from services.prompt_service import (
 )
 
 
-def _load_fastapi_env() -> None:
-    fastapi_dir = Path(__file__).resolve().parents[1]
-    env_path = fastapi_dir / ".env"
+def _load_backend_env() -> None:
+    backend_dir = Path(__file__).resolve().parents[1]
+    env_path = backend_dir / ".env"
     if env_path.exists():
         load_dotenv(env_path, override=True)
     else:
@@ -85,7 +85,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    _load_fastapi_env()
+    _load_backend_env()
     db = _init_firestore()
 
     supported_stages = ["process_quelle", "combine", "summary", "shorten", "lesefluss"]

@@ -41,7 +41,7 @@ class TwoLaneRunCancelled(RuntimeError):
     pass
 
 
-def _fastapi_root() -> Path:
+def _backend_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
@@ -50,7 +50,7 @@ def _repo_root() -> Path:
 
 
 def _artifacts_root_local() -> Path:
-    return _fastapi_root() / ".two_lane_artifacts" / "runs"
+    return _backend_root() / ".two_lane_artifacts" / "runs"
 
 
 def _prune_old_runs(root: Path, *, keep: int = 10) -> None:

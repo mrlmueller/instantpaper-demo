@@ -6,13 +6,38 @@ from pathlib import Path
 from typing import Any
 
 
-def _extract_module_assign(tree: ast.Module, name: str) -> Any:
+def _module_assignments(tree: ast.Module) -> dict[str, ast.AST]:
+    assignments: dict[str, ast.AST] = {}
     for node in tree.body:
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == name:
-                    return ast.literal_eval(node.value)
-    raise KeyError(f"Assignment not found: {name}")
+                if isinstance(target, ast.Name):
+                    assignments[target.id] = node.value
+    return assignments
+
+
+def _resolve_node(node: ast.AST, assignments: dict[str, ast.AST]) -> Any:
+    if isinstance(node, ast.Name):
+        if node.id not in assignments:
+            raise KeyError(f"Assignment not found: {node.id}")
+        return _resolve_node(assignments[node.id], assignments)
+    if isinstance(node, ast.Dict):
+        return {
+            _resolve_node(key, assignments): _resolve_node(value, assignments)
+            for key, value in zip(node.keys, node.values)
+        }
+    if isinstance(node, ast.List):
+        return [_resolve_node(item, assignments) for item in node.elts]
+    if isinstance(node, ast.Tuple):
+        return tuple(_resolve_node(item, assignments) for item in node.elts)
+    return ast.literal_eval(node)
+
+
+def _extract_module_assign(tree: ast.Module, name: str) -> Any:
+    assignments = _module_assignments(tree)
+    if name not in assignments:
+        raise KeyError(f"Assignment not found: {name}")
+    return _resolve_node(assignments[name], assignments)
 
 
 def main() -> int:
@@ -48,11 +73,11 @@ def main() -> int:
 
     md = []
     md.append("# Prompt Inventory\n")
-    md.append(f"_Generated at {generated_at} by `fastapi/scripts/generate_prompts_md.py`._\n")
+    md.append(f"_Generated at {generated_at} by `backend/scripts/generate_prompts_md.py`._\n")
 
     md.append("## Runtime prompt dumps\n")
     md.append(
-        "In local development (`DEBUG=true`), when `DUMP_OPENAI_PROMPTS=true`, the backend writes a markdown file for every OpenAI request into `fastapi/.prompt_dumps/` (disabled on Cloud Run).\n"
+        "In local development (`DEBUG=true`), when `DUMP_OPENAI_PROMPTS=true`, the backend writes a markdown file for every OpenAI request into `backend/.prompt_dumps/` (disabled on Cloud Run).\n"
     )
     md.append(
         "Each dump file separates `System Prompt` vs `Instructions` (user input) so you can iteratively improve prompts one-by-one.\n"
@@ -72,7 +97,7 @@ def main() -> int:
 
     md.append("## Instruction templates (defaults)\n")
     md.append(
-        "These are the **default** instruction templates in `fastapi/services/prompt_service.py`.\n"
+        "These are the **default** instruction templates in `backend/services/prompt_service.py`.\n"
         "They can be overridden per-user via Firestore (`users/{userId}/promptTemplates` + `promptSettings/active`).\n"
     )
 
@@ -81,10 +106,10 @@ def main() -> int:
         md.append("```text\n" + default_instructions.get(stage, "") + "\n```\n")
 
     md.append("## Where each prompt is used\n")
-    md.append("- Quelle processing: `fastapi/services/quelle_service.py` → `OpenAIService.process_quelle()`\n")
-    md.append("- Combining: `fastapi/services/quelle_service.py` → `OpenAIService.combine_texts()`\n")
-    md.append("- Summary/shorten/lesefluss: `fastapi/services/shorten_service.py`\n")
-    md.append("- Text refinements: `fastapi/services/refinement_service.py` (reuses the same OpenAI calls)\n")
+    md.append("- Quelle processing: `backend/services/quelle_service.py` → `OpenAIService.process_quelle()`\n")
+    md.append("- Combining: `backend/services/quelle_service.py` → `OpenAIService.combine_texts()`\n")
+    md.append("- Summary/shorten/lesefluss: `backend/services/shorten_service.py`\n")
+    md.append("- Text refinements: `backend/services/refinement_service.py` (reuses the same OpenAI calls)\n")
 
     output_path.write_text("\n".join(md), encoding="utf-8")
     return 0

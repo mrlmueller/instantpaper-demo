@@ -21,11 +21,11 @@ from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
 from utils.config import config
-from utils.runtime_paths import resolve_fastapi_root
+from utils.runtime_paths import resolve_backend_root
 
 logger = logging.getLogger(__name__)
 
-FASTAPI_ROOT = resolve_fastapi_root(__file__)
+BACKEND_ROOT = resolve_backend_root(__file__)
 PIPELINE_EVENT_PREFIX = "PDF_SCAN_EVENT\t"
 VISIBLE_SCORE_THRESHOLD = 5.0
 PDF_SCAN_MAX_PDF_BYTES = max(1, int(getattr(config, "PDF_SCAN_MAX_PDF_BYTES", 50 * 1024 * 1024) or 50 * 1024 * 1024))
@@ -1015,7 +1015,7 @@ async def run_pipeline_subprocess(
         nonlocal cancel_requested, termination_requested
         proc = subprocess.Popen(
             args,
-            cwd=str(Path(working_dir or FASTAPI_ROOT).resolve()),
+            cwd=str(Path(working_dir or BACKEND_ROOT).resolve()),
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -1121,7 +1121,7 @@ async def run_pipeline_subprocess(
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
-            cwd=str(Path(working_dir or FASTAPI_ROOT).resolve()),
+            cwd=str(Path(working_dir or BACKEND_ROOT).resolve()),
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

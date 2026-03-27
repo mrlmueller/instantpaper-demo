@@ -68,7 +68,7 @@ This is good news. The frontend does not need a major architecture change. It al
 
 ### 2.2 FastAPI backend behavior today
 
-The current start endpoint in `fastapi/main.py` does this:
+The current start endpoint in `backend/main.py` does this:
 
 1. validates user, project, and chapter
 2. creates a run doc in Firestore
@@ -82,7 +82,7 @@ That last point is the deployment problem. The HTTP request returns quickly, but
 
 The repo currently has one workflow:
 
-- `.github/workflows/deploy-fastapi.yml`
+- `.github/workflows/deploy-backend.yml`
 
 It currently:
 
@@ -99,7 +99,7 @@ It does not:
 
 ### 2.4 Current Firebase Admin auth today
 
-`fastapi/services/firebase_service.py` currently initializes Firebase Admin using:
+`backend/services/firebase_service.py` currently initializes Firebase Admin using:
 
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_CLIENT_EMAIL`
@@ -109,7 +109,7 @@ That means the Cloud Run runtime currently depends on a long-lived service-accou
 
 ### 2.5 Current two-lane provider env usage today
 
-The two-lane pipeline reads provider env vars from `fastapi/services/two_lane_sources/pipeline.py`:
+The two-lane pipeline reads provider env vars from `backend/services/two_lane_sources/pipeline.py`:
 
 - `OPENAI_API_KEY`
 - `OPENALEX_API_KEY`
@@ -207,7 +207,7 @@ The Cloud Run Job worker should:
 
 ### 4.2 Proposed code changes by file
 
-#### A. `fastapi/main.py`
+#### A. `backend/main.py`
 
 Replace the current `BackgroundTasks` launch with a Cloud Run Job launch flow.
 
@@ -243,7 +243,7 @@ Recommended endpoint behavior:
 }
 ```
 
-#### B. `fastapi/services/quellen_finder_firestore_service.py`
+#### B. `backend/services/quellen_finder_firestore_service.py`
 
 Add new helpers.
 
@@ -305,7 +305,7 @@ Reason:
 - lower rollout risk
 - no extra Firestore index required on day 1
 
-#### C. `fastapi/services/quellen_finder_sources_two_lane_job.py`
+#### C. `backend/services/quellen_finder_sources_two_lane_job.py`
 
 Keep this module as the main business-logic worker function, but stop treating it as an in-process background task only.
 
@@ -327,7 +327,7 @@ That wrapper should:
 5. derive `kapitel_id` from `kapitelIds[0]`
 6. call the existing worker logic
 
-#### D. New file: `fastapi/services/cloud_run_job_launcher.py`
+#### D. New file: `backend/services/cloud_run_job_launcher.py`
 
 Create a small dedicated launcher service.
 
@@ -361,9 +361,9 @@ This requires the API runtime service account to have:
 
 - `roles/run.jobsExecutorWithOverrides` on the Cloud Run Job
 
-#### E. New file: `fastapi/run_two_lane_job.py`
+#### E. New file: `backend/run_two_lane_job.py`
 
-Add a dedicated worker entrypoint at the `fastapi/` root.
+Add a dedicated worker entrypoint at the `backend/` root.
 
 Suggested behavior:
 
@@ -383,7 +383,7 @@ Why a dedicated entrypoint is recommended:
 - the Docker image stays shared, but the process entrypoint differs cleanly
 - this keeps job startup simpler and easier to reason about
 
-#### F. `fastapi/Dockerfile`
+#### F. `backend/Dockerfile`
 
 Keep one shared image.
 
@@ -404,7 +404,7 @@ python run_two_lane_job.py
 
 and then per-execution args overrides provide the specific run identifiers.
 
-#### G. `fastapi/services/firebase_service.py`
+#### G. `backend/services/firebase_service.py`
 
 Refactor Firebase Admin initialization to support both:
 
@@ -443,7 +443,7 @@ Important:
 - keep local development working
 - do not break scripts that still rely on local env credentials
 
-#### H. `fastapi/utils/config.py`
+#### H. `backend/utils/config.py`
 
 Add non-secret config for the job launcher.
 
@@ -637,7 +637,7 @@ Keep one workflow file and build one image.
 
 Recommended file:
 
-- replace or rename `.github/workflows/deploy-fastapi.yml`
+- replace or rename `.github/workflows/deploy-backend.yml`
 
 Recommended trigger:
 
@@ -1137,7 +1137,7 @@ You have two safe local-dev options.
 
 This is the least disruptive local-dev path.
 
-Keep in `fastapi/.env`:
+Keep in `backend/.env`:
 
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_CLIENT_EMAIL`
@@ -1321,18 +1321,18 @@ That is why this document includes exact commands and UI steps.
 
 When the actual code implementation starts, the first patch should touch roughly these files:
 
-- `fastapi/main.py`
-- `fastapi/services/quellen_finder_firestore_service.py`
-- `fastapi/services/quellen_finder_sources_two_lane_job.py`
-- `fastapi/services/firebase_service.py`
-- `fastapi/utils/config.py`
-- `fastapi/Dockerfile`
-- `.github/workflows/deploy-fastapi.yml`
+- `backend/main.py`
+- `backend/services/quellen_finder_firestore_service.py`
+- `backend/services/quellen_finder_sources_two_lane_job.py`
+- `backend/services/firebase_service.py`
+- `backend/utils/config.py`
+- `backend/Dockerfile`
+- `.github/workflows/deploy-backend.yml`
 
 and add roughly these files:
 
-- `fastapi/services/cloud_run_job_launcher.py`
-- `fastapi/run_two_lane_job.py`
+- `backend/services/cloud_run_job_launcher.py`
+- `backend/run_two_lane_job.py`
 
 ## 17. Why This Plan Minimizes Problems
 
@@ -1373,3 +1373,4 @@ and add roughly these files:
   - https://firebase.google.com/docs/admin/setup
 - Firebase Admin Python reference:
   - https://firebase.google.com/docs/reference/admin/python/firebase_admin
+

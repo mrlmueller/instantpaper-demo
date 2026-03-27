@@ -32,7 +32,7 @@ The admin endpoints had **overly broad exception handling** that caught all erro
 - **After**: Now properly logged when Firestore operations fail
 - **Impact**: Blocking operations are logged, making timeouts visible
 
-## Changes Made to `fastapi/main.py`
+## Changes Made to `backend/main.py`
 
 ### 1. Admin Users List Endpoint (lines 1447-1590)
 
@@ -103,7 +103,7 @@ The server logs will now show the ACTUAL error, such as:
 
 ## How to Debug in Production
 
-1. **Redeploy** the updated `fastapi/main.py` to production
+1. **Redeploy** the updated `backend/main.py` to production
 2. **Reproduce** the error in the live admin UI
 3. **Check the FastAPI server logs** for the specific error message
 4. **Address the root cause** based on the actual error
@@ -136,3 +136,4 @@ The fix maintains backward compatibility while greatly improving observability. 
 - 🔴 Third-party service (e.g., billing, subscriptions)
 
 All improvements follow FastAPI/Python best practices for error handling and logging.
+

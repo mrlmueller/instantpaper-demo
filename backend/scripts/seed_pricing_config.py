@@ -4,7 +4,7 @@ Seed/overwrite the global OpenAI pricing config in Firestore.
 Writes to: _config/pricing
 
 Run:
-  cd fastapi
+  cd backend
   python scripts/seed_pricing_config.py
 """
 
