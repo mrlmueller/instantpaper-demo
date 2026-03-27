@@ -1,6 +1,6 @@
 # Frontend / Backend Split And Cleanup Master Plan
 
-Stand: 2026-03-26
+Stand: 2026-03-27
 
 This document is the implementation plan for restructuring this repository into a clean `frontend/` and `backend/` split while also removing stale code, isolating research/testing assets, and fixing deployment/config drift.
 
@@ -116,7 +116,7 @@ Short version:
 - `testing-scripts/` should hold research/test trees.
 - `functions/` should either remain a root infra exception for now, or later be retired/replaced in a dedicated billing/webhooks pass.
 
-## Implementation Progress On 2026-03-26
+## Implementation Progress On 2026-03-27
 
 Work has already started. This plan is now a live migration document, not only a proposal.
 
@@ -127,20 +127,29 @@ Completed commits so far:
 - `a371ba6` `chore(frontend): remove unused kapitel skeleton`
 - `1cc55ae` `fix(backend): isolate vendored pdf scan runtime`
 - `3b8c85c` `refactor: reduce dashboard auth gating and harden pdf runtime defaults`
+- `2bd192e` `refactor(repo): move research trees under testing-scripts`
+- `3aa3473` `refactor(frontend): move next app into frontend root`
 
 What is now already true in the repo:
 
 - browser-side absolute FastAPI calls have been removed from the product frontend
 - same-origin Next Route Handlers now cover billing, usage insights, gliederung generation/refinement, process, combine, adopt-combined, PDF-scan start/cancel, sources-two-lane start/cancel, and logout revoke
 - `PdfScanWorkspace` and `QuellenFinder` no longer send `Authorization: Bearer ...` from the browser into same-origin `/api` calls
-- a shared server helper now centralizes backend URL resolution and cookie-token lookup in `app/lib/server/fastapi.ts`
+- a shared server helper now centralizes backend URL resolution and cookie-token lookup in `frontend/app/lib/server/fastapi.ts`
 - several clearly unreferenced frontend components and UI primitives have already been removed
+- `pdf-scan/` and `sources-v2/` no longer live at repo root; both have moved under `testing-scripts/`
+- the production Next.js app no longer lives at repo root; it now lives under `frontend/`
+- the frontend now expects a server-only `FASTAPI_BASE_URL` instead of reading `NEXT_PUBLIC_FASTAPI_URL`
+- `frontend/.env.local.example` exists as the new tracked frontend env template
+- `frontend` has been verified with `npx tsc --noEmit` and `npm run build`
 
 Important remaining work after these commits:
 
 - `Dashboard.tsx` still uses cookies for UI persistence, but the redundant client-side session-auth prechecks have been removed
-- README/env documentation still reflects the older direct-browser-to-FastAPI model
+- root and backend docs still need a proper rewrite around the new `frontend/` layout and the future `backend/` move
 - backend runtime still contains lab-oriented phase files, even though the dangerous repo-/benchmark-default coupling has now been reduced
+- the production backend still physically lives in `fastapi/`; the `backend/` move has not landed yet
+- frontend `eslint` still reports a substantial pre-existing rules backlog (`no-explicit-any`, `set-state-in-effect`, image warnings, and related issues)
 - `functions/` still needs a deliberate keep/retire decision with live verification
 
 ## Target Repo Layout
