@@ -1,462 +1,296 @@
-# InstantPaper Backend (FastAPI)
+# InstantPaper Backend
 
-FastAPI backend server for processing papers with OpenAI. This service authenticates users via Firebase tokens, fetches papers from Firestore, processes them with OpenAI, and stores results back in Firestore.
+This directory contains the production FastAPI backend and worker runtime for InstantPaper.
 
-## Features
+It is the server-side execution layer for:
 
-- Firebase Authentication (token verification)
-- Firestore integration for papers and results
-- OpenAI API integration (GPT-4o-mini, GPT-4o, O1)
-- Async/await architecture for performance
-- CORS support for Next.js frontend
-- Comprehensive logging
+- AI processing
+- Firebase Admin operations
+- billing state mirroring
+- export generation
+- Quellen-Finder jobs
+- PDF scan orchestration
+
+## Scope
+
+`backend/` owns:
+
+- the FastAPI application in [main.py](main.py)
+- reusable business logic in `services/`
+- auth middleware in `middleware/`
+- request/response models in `models/`
+- runtime config and utilities in `utils/`
+- the vendored production PDF scan runtime in `pdf_scan_runtime/`
+- local and Cloud Run worker entrypoints in the root of `backend/`
+- Dockerfiles for CPU and GPU worker images
+
+It is intended to be production-sufficient without `testing-scripts/`.
+
+## Runtime Topology
+
+Production backend surfaces:
+
+- Cloud Run service: `instantpaper-api`
+- Cloud Run Job: `instantpaper-two-lane-sources`
+- Cloud Run Job: `instantpaper-pdf-scan-cpu`
+- Cloud Run Job: `instantpaper-pdf-scan-gpu`
+
+Deploy workflow:
+
+- [deploy-backend.yml](../.github/workflows/deploy-backend.yml)
+
+Docker images:
+
+- [Dockerfile](Dockerfile)
+- [Dockerfile.gpu](Dockerfile.gpu)
 
 ## Requirements
 
-- **Python 3.10+** (recommended)
-- Python 3.8+ will work but with deprecation warnings from Google libraries
+- Python 3.11 recommended
+- pip
+- access to Firebase Admin credentials or ADC
+- OpenAI API key
 
-**Note**: If you see warnings about Python 3.8 being unsupported, the server will still function correctly. However, for the best experience and to avoid deprecation warnings, upgrade to Python 3.10 or later.
+The local development environment has often been run from the Conda environment named `instantpaper`, but a normal virtual environment also works.
 
-## Setup
+## Install
 
-### 1. Create Virtual Environment
+### Option A: Conda
 
 ```bash
+conda activate instantpaper
 cd backend
-python -m venv venv
-
-# Activate virtual environment
-# Windows:
-venv\Scripts\activate
-
-# Linux/Mac:
-source venv/bin/activate
-```
-
-### 2. Install Dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure Environment Variables
+### Option B: venv
 
-Copy `.env.example` to `.env` and fill in your credentials:
+```bash
+cd backend
+python -m venv .venv
+.venv\\Scripts\\activate
+pip install -r requirements.txt
+```
+
+## Environment Variables
+
+Copy the template:
 
 ```bash
 cp .env.example .env
 ```
 
-Required environment variables:
-
-#### Firebase Admin SDK
-
-Get these from Firebase Console → Project Settings → Service Accounts → Generate New Private Key
+The template in [backend/.env.example](.env.example) contains the minimum local surface:
 
 ```env
-FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_PROJECT_ID=
+GOOGLE_CLOUD_PROJECT=
+FIREBASE_CLIENT_EMAIL=
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project.iam.gserviceaccount.com
-```
+FIREBASE_STORAGE_BUCKET=
 
-**Important**: The private key must include the escaped newlines (`\n`). When copying from the JSON file, make sure to preserve them.
+OPENAI_API_KEY=
+OPENALEX_API_KEY=
+SEMANTICSCHOLAR_API_KEY=
+USER_KEY_ENCRYPTION_KEY=
 
-#### OpenAI API
-
-Get your API key from https://platform.openai.com/api-keys
-
-```env
-OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxx
-```
-
-#### User key encryption
-
-Base64-encoded AES key used to encrypt per-user OpenAI keys. Generate one (32 bytes recommended) and keep it secret.
-
-```bash
-python - <<'PY'
-import base64, os
-print(base64.b64encode(os.urandom(32)).decode())
-PY
-```
-
-```env
-USER_KEY_ENCRYPTION_KEY=base64-encoded-aes-key
-```
-
-#### Server Configuration
-
-```env
 PORT=8000
-ALLOWED_ORIGINS=http://localhost:3000,https://instantpaper.vercel.app,https://www.instantpaper.de
+ALLOWED_ORIGINS=http://localhost:3000
 DEBUG=true
+
+ADMIN_BASIC_USER=admin
+ADMIN_BASIC_PASSWORD=
+ADMIN_UIDS=
+
+TWO_LANE_SOURCES_EXECUTION_BACKEND=local_background
+PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
 ```
 
-## Running the Server
+### Required for a basic local API
 
-### Development Mode (with auto-reload)
+- `FIREBASE_PROJECT_ID`
+- `OPENAI_API_KEY`
+- either:
+  - `FIREBASE_PRIVATE_KEY` and `FIREBASE_CLIENT_EMAIL`
+  - or `GOOGLE_APPLICATION_CREDENTIALS` pointing to valid ADC credentials
+
+### Commonly important optional settings
+
+- `GOOGLE_CLOUD_PROJECT`
+  - explicit GCP project override
+- `FIREBASE_STORAGE_BUCKET`
+  - bucket override, defaults from project ID when omitted
+- `ALLOWED_ORIGINS`
+  - comma-separated CORS allowlist
+- `ADMIN_BASIC_USER` / `ADMIN_BASIC_PASSWORD`
+  - protects the `/approve` HTML admin access surface
+- `ADMIN_UIDS`
+  - Firebase UID allowlist for `/api/admin/*`
+- `OPENALEX_API_KEY` / `SEMANTICSCHOLAR_API_KEY`
+  - used by two-lane sources workflows
+- `USER_KEY_ENCRYPTION_KEY`
+  - used by per-user key encryption features
+
+More advanced runtime options are defined in [utils/config.py](utils/config.py).
+
+Important behavior from config:
+
+- `backend/.env` is loaded regardless of working directory
+- Cloud Run automatically flips execution defaults toward job-based backends
+- local development defaults to local-background or local-split-job execution
+
+## Run Locally
+
+Start the API:
 
 ```bash
+cd backend
+python main.py
+```
+
+Alternative:
+
+```bash
+cd backend
 python -m uvicorn main:app --reload --port 8000
 ```
 
-Or simply:
+By default the app listens on `http://localhost:8000`.
 
-```bash
-python main.py
-```
+## Main Endpoint Families
 
-### Production Mode
+Useful endpoints:
 
-```bash
-python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
-```
+- `GET /health`
+- `GET /api/billing/status`
+- `POST /api/process`
+- `POST /api/quellen-finder/sources-two-lane/start`
+- `POST /api/quellen-finder/pdf-scan`
+- `POST /api/quellen-finder/pdf-extract`
+- `GET /api/admin/users`
+- `GET /approve`
 
-The server will start on `http://localhost:8000`
+The frontend normally reaches these through Next route handlers, not by direct browser-to-FastAPI calls.
 
-## API Endpoints
+## Directory Guide
 
-### Health Check
-
-```
-GET /health
-```
-
-Returns server status and configuration check.
-
-**Response**:
-
-```json
-{
-  "status": "healthy",
-  "version": "1.0.0",
-  "firebase": "connected",
-  "openai": "connected"
-}
-```
-
-### Test Authentication
-
-```
-GET /test/auth
-Authorization: Bearer <firebase-id-token>
-```
-
-Test endpoint to verify Firebase token verification works.
-
-**Response**:
-
-```json
-{
-  "message": "Authentication successful",
-  "user_id": "abc123xyz"
-}
-```
-
-### Process Paper
-
-```
-POST /api/process
-Authorization: Bearer <firebase-id-token>
-Content-Type: application/json
-```
-
-Process a paper with OpenAI based on user instructions.
-
-**Request Body**:
-
-```json
-{
-  "paper_id": "paper123",
-  "user_input": "Summarize the main points in bullet format",
-  "model": "gpt-4o-mini"
-}
-```
-
-**Models**: `gpt-4o-mini` (default), `gpt-4o`, `o1`
-
-**Response**:
-
-```json
-{
-  "result_id": "result456",
-  "paper_id": "paper123",
-  "result_content": "Summary of the paper...",
-  "model_used": "gpt-4o-mini",
-  "tokens_used": 1523,
-  "created_at": "2025-01-15T10:30:00Z"
-}
-```
-
-**Errors**:
-
-- `401`: Invalid or missing Firebase token
-- `404`: Paper not found or user doesn't own it
-- `500`: OpenAI API error or server error
-
-## Architecture
-
-### Directory Structure
-
-```
+```text
 backend/
-├── main.py                    # FastAPI app entry point
-├── requirements.txt           # Python dependencies
-├── .env                       # Environment variables (not in git)
-├── .env.example              # Environment template
-├── .gitignore                # Python gitignore
-├── README.md                 # This file
-├── models/
-│   ├── __init__.py
-│   ├── request.py            # Pydantic request models
-│   └── response.py           # Pydantic response models
-├── services/
-│   ├── __init__.py
-│   ├── firebase_service.py   # Firebase Admin SDK
-│   ├── openai_service.py     # OpenAI API client
-│   └── paper_service.py      # Business logic
-├── middleware/
-│   ├── __init__.py
-│   └── auth.py               # Token verification
-└── utils/
-    ├── __init__.py
-    └── config.py             # Configuration loader
+|- main.py                  FastAPI entrypoint
+|- middleware/              auth and request guards
+|- models/                  request/response models
+|- services/                business logic and external integrations
+|- utils/                   config, logging, helpers
+|- pdf_scan_runtime/        production PDF scan runtime
+|- scripts/                 maintenance and support scripts
+|- Dockerfile               CPU/API image
+`- Dockerfile.gpu           GPU worker image
 ```
 
-### Data Flow
+Important runtime entrypoints:
 
-```
-Next.js Frontend
-    ↓ POST /api/process (with Firebase token)
-FastAPI Backend
-    ↓ Verify token with Firebase Admin
-    ↓ Fetch paper from Firestore (verify ownership)
-    ↓ Process with OpenAI API
-    ↓ Save result to Firestore
-    ↑ Return result
-Next.js Frontend
-    ↓ Display result to user
-```
+- [run_two_lane_job.py](run_two_lane_job.py)
+- [run_pdf_scan_cpu_job.py](run_pdf_scan_cpu_job.py)
+- [run_pdf_scan_gpu_job.py](run_pdf_scan_gpu_job.py)
+- [run_pdf_scan_pipeline.py](run_pdf_scan_pipeline.py)
+- [run_pdf_scan_gpu_pipeline.py](run_pdf_scan_gpu_pipeline.py)
 
-### Firestore Structure
+## Key Services
 
-```
-users/{userId}/
-  papers/{paperId}/
-    title: string
-    content: string
-    createdAt: Timestamp
-  results/{resultId}/
-    paper_id: string
-    user_input: string
-    result_content: string
-    model_used: string
-    tokens_used: number
-    created_at: Timestamp
-```
+Representative service modules:
 
-## Testing
+- `services/firebase_service.py`
+  - Firebase Admin init, session cookies, custom claims, admin mutations
+- `services/credits_service.py`
+  - billing ledger and Stripe-derived credit synchronization
+- `services/prompt_service.py`
+  - prompt defaults and system prompt templates
+- `services/export_service.py`
+  - DOCX export generation
+- `services/cloud_run_job_launcher.py`
+  - Cloud Run Job orchestration
+- `services/two_lane_sources/`
+  - production two-lane sources runtime
+- `services/pdf_scan/`
+  - production PDF scan orchestration layer
 
-### 1. Test Server Startup
+## Local Verification
 
-```bash
-python main.py
-```
-
-Should see:
-
-```
-INFO:     Starting InstantPaper API server...
-INFO:     Debug mode: True
-INFO:     Uvicorn running on http://0.0.0.0:8000
-```
-
-### 2. Test Health Endpoint
+Health check:
 
 ```bash
 curl http://localhost:8000/health
 ```
 
-### 3. Test Authentication
-
-Get your Firebase token from the browser:
-
-- Open Next.js app and sign in
-- Open browser DevTools → Application → Cookies
-- Copy the `__session` cookie value
+Compile-check:
 
 ```bash
-curl -H "Authorization: Bearer YOUR_TOKEN_HERE" http://localhost:8000/test/auth
+python -m compileall backend
 ```
 
-### 4. Test Paper Processing
+Prompt docs regeneration:
 
 ```bash
-curl -X POST http://localhost:8000/api/process \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "paper_id": "YOUR_PAPER_ID",
-    "user_input": "Summarize the main points",
-    "model": "gpt-4o-mini"
-  }'
+cd backend
+python scripts/generate_prompts_md.py
 ```
 
-## Troubleshooting
+## Deployment
 
-### Server won't start
+The backend deploy workflow:
 
-**Problem**: Missing or invalid credentials
+- authenticates to the main GCP project with Workload Identity
+- builds a CPU/API image from [backend/Dockerfile](Dockerfile)
+- builds a GPU image from [backend/Dockerfile.gpu](Dockerfile.gpu)
+- deploys the FastAPI service
+- creates or updates the Cloud Run Jobs for two-lane sources and PDF scan
 
-**Solution**:
+Important workflow defaults from [deploy-backend.yml](../.github/workflows/deploy-backend.yml):
 
-1. Check `.env` file exists and has all required variables
-2. Verify Firebase private key includes escaped newlines (`\n`)
-3. Test with just health endpoint first (doesn't require credentials)
+- GCP region: `europe-west3`
+- PDF scan GPU region: `europe-west1`
+- service account-driven deploys
+- secrets injected via Cloud Run secret bindings
 
-### "Unable to load PEM file" Error
+### Backend deploy secrets and envs
 
-**Problem**: Firebase private key is empty or malformed
+The workflow expects GitHub Actions secrets such as:
 
-**Solution**:
+- `GCP_PROJECT_ID`
+- `FIREBASE_PROJECT_ID`
+- `GCP_WIF_PROVIDER`
+- `GCP_WIF_SERVICE_ACCOUNT`
 
-1. Download fresh credentials from Firebase Console
-2. When copying private key, ensure it's in this format:
-   ```
-   "-----BEGIN PRIVATE KEY-----\nMIIE...\n...\n-----END PRIVATE KEY-----\n"
-   ```
-3. The `\n` characters are literal backslash-n, not actual newlines
+It also binds Cloud Run secrets for runtime values such as:
 
-### "Service account info not in expected format"
+- `OPENAI_API_KEY`
+- `ALLOWED_ORIGINS`
+- `USER_KEY_ENCRYPTION_KEY`
+- `ADMIN_UIDS`
+- `OPENALEX_API_KEY`
+- `SEMANTICSCHOLAR_API_KEY`
 
-**Problem**: Missing required OAuth2 fields
+## Relationship To `testing-scripts/`
 
-**Solution**: This should be handled automatically. If you see this error, verify your `firebase_service.py` includes these fields in the credential dictionary:
+The backend runtime should not import from `testing-scripts/`.
 
-- `token_uri`
-- `auth_uri`
-- `auth_provider_x509_cert_url`
+Specifically:
 
-### CORS Errors
+- `testing-scripts/pdf-scan/` is research and benchmarking
+- `backend/pdf_scan_runtime/` is the production PDF scan runtime
+- `testing-scripts/sources-v2/` is research and local tooling
+- `backend/services/two_lane_sources/` is the production two-lane runtime
 
-**Problem**: Next.js frontend can't connect to FastAPI
+If deleting or moving `testing-scripts/` breaks the API, that is a bug.
 
-**Solution**:
+## Known Transitional Details
 
-1. Verify `ALLOWED_ORIGINS` in `.env` matches your Next.js URL (default: `http://localhost:3000`)
-2. Check both servers are running
-3. Ensure Next.js is using the correct FastAPI URL in `ProcessPaperDialog.tsx`
+- the backend still accepts legacy `approved` claims during migration to `fullAccess`
+- the legacy `functions/` package is outside this deploy path
+- Firebase rules/index deployment is not managed from inside `backend/`
 
-### OpenAI API Errors
+## Related Documentation
 
-**Problem**: Rate limit or API key issues
-
-**Solution**:
-
-1. Verify `OPENAI_API_KEY` is correct
-2. Check your OpenAI account has credits/quota
-3. Review console logs for detailed error messages (increase verbosity via `FASTAPI_LOG_LEVEL=INFO` if needed)
-
-### Authentication Fails
-
-**Problem**: Token verification fails
-
-**Solution**:
-
-1. Ensure Firebase Admin SDK credentials match your Firebase project
-2. Verify the token is from the same Firebase project
-3. Check token hasn't expired (tokens expire after 1 hour)
-4. Make sure to include `Bearer ` prefix in Authorization header
-
-## Logging
-
-Logs are written to console output (stdout).
-
-Default log level is `WARNING` to keep background processing quiet. To temporarily increase verbosity:
-
-- `FASTAPI_LOG_LEVEL=INFO` (more details)
-- `FASTAPI_LOG_LEVEL=DEBUG` (very verbose)
-
-Uvicorn access logs (HTTP requests) stay enabled at `INFO`.
-
-## User Access (Gate)
-
-InstantPaper is gated via Firebase Auth custom claims:
-
-- Legacy (migration): `approved: true`
-- New: `fullAccess: true`
-
-Login is always allowed; without access the frontend redirects users to `/activate`.
-
-### Configure Admin Credentials
-
-Set these env vars on the FastAPI server:
-
-- `ADMIN_BASIC_USER` (default: `admin`)
-- `ADMIN_BASIC_PASSWORD` (required)
-
-### Grant / Revoke Access
-
-Open (browser prompts for basic auth):
-
-- Grant access: `/api/admin/approve?email=user@gmail.com&fullAccess=true`
-- Revoke access: `/api/admin/approve?email=user@gmail.com&fullAccess=false`
-- Web form (no email in URL): open `/approve` and submit the form (Basic Auth protected).
-- Quick approve (no query string): `/api/admin/quick-approve` (Basic Auth username=email, password=`ADMIN_BASIC_PASSWORD`)
-- Quick revoke (no query string): `/api/admin/quick-revoke` (Basic Auth username=email, password=`ADMIN_BASIC_PASSWORD`)
-
-Users must refresh their token (or re-login) after access changes for the claim to apply.
-
-### Block / Unblock (Hard Gate)
-
-Blocking is stored in Firestore (`users/{uid}.accountStatus = "blocked"`) and is enforced immediately for Firestore + backend requests.
-Storage enforcement uses a `blocked` custom claim (stale tokens up to ~1h are acceptable).
-
-## Development
-
-### Code Structure
-
-- **main.py**: FastAPI app initialization, CORS, endpoints
-- **models/**: Pydantic models for request/response validation
-- **services/firebase_service.py**: Singleton service for Firebase Admin SDK operations (lazy initialization)
-- **services/openai_service.py**: Singleton service for OpenAI API calls
-- **services/paper_service.py**: Business logic for paper processing
-- **middleware/auth.py**: Firebase token verification dependency
-- **utils/config.py**: Environment configuration loader
-
-### Design Patterns
-
-- **Singleton Pattern**: Firebase and OpenAI services use singleton to avoid multiple initializations
-- **Lazy Initialization**: Firebase only initializes when first needed, allowing server to start without credentials
-- **Dependency Injection**: Auth middleware uses FastAPI's `Depends()` for token verification
-- **Async/Await**: All I/O operations are async for better performance
-
-## Next Steps
-
-### Immediate
-
-1. Add your Firebase Admin SDK credentials to `.env`
-2. Add your OpenAI API key to `.env`
-3. Deploy Firestore security rules: `firebase deploy --only firestore:rules`
-4. Test the complete flow from Next.js UI
-
-### Future Enhancements
-
-- Multi-paper concurrent processing (with `asyncio.Semaphore`)
-- Additional endpoints: `GET /api/results`, `GET /api/results/{result_id}`
-- Streaming responses from OpenAI
-- Rate limiting middleware
-- Caching for frequently accessed papers
-- Background job processing
-- Production deployment (Cloud Run, Lambda, etc.)
-
-## Support
-
-For issues or questions:
-
-1. Check the server console logs
-2. Verify environment variables are set correctly
-3. Test endpoints individually (health → auth → process)
-4. Review Firebase Console for Firestore errors
-5. Check OpenAI dashboard for API usage/errors
+- repo overview: [README.md](../README.md)
+- frontend app: [frontend/README.md](../frontend/README.md)
+- migration notes: [FRONTEND_BACKEND_SPLIT_AND_CLEANUP_MASTER_PLAN.md](../FRONTEND_BACKEND_SPLIT_AND_CLEANUP_MASTER_PLAN.md)
