@@ -126,6 +126,7 @@ Completed commits so far:
 - `cbcdd9e` `chore(frontend): remove stale auth shell and ui primitives`
 - `a371ba6` `chore(frontend): remove unused kapitel skeleton`
 - `1cc55ae` `fix(backend): isolate vendored pdf scan runtime`
+- `3b8c85c` `refactor: reduce dashboard auth gating and harden pdf runtime defaults`
 
 What is now already true in the repo:
 
@@ -137,9 +138,9 @@ What is now already true in the repo:
 
 Important remaining work after these commits:
 
-- `Dashboard.tsx` still reads the session cookie client-side for some local gating logic
+- `Dashboard.tsx` still uses cookies for UI persistence, but the redundant client-side session-auth prechecks have been removed
 - README/env documentation still reflects the older direct-browser-to-FastAPI model
-- backend runtime still contains lab-oriented CLI defaults inside vendored PDF-scan phase files, even though the main repo-level `pdf-scan/` fallback has now been removed
+- backend runtime still contains lab-oriented phase files, even though the dangerous repo-/benchmark-default coupling has now been reduced
 - `functions/` still needs a deliberate keep/retire decision with live verification
 
 ## Target Repo Layout
@@ -911,8 +912,9 @@ Tasks:
 Status update:
 
 - mostly implemented already in commit `6af05c9`
+- redundant `__session` gating in `Dashboard.tsx` has been removed in commit `3b8c85c`
 - remaining cleanup is mainly:
-  - remove or justify client-side session-cookie gating in `Dashboard.tsx`
+  - keep client-side cookies limited to UI state/persistence only
   - rewrite setup docs/env docs away from the old public-backend-URL assumptions
   - decide whether server-side direct FastAPI callers outside `app/api` stay as an intentional server integration layer or get further consolidated
 
@@ -938,8 +940,9 @@ Status update:
 
 - the highest-priority blocker in vendored PDF-scan runtime has already been fixed in commit `1cc55ae`
 - `fastapi/pdf_scan_runtime/phase_a_lab.py` no longer searches for a repo-level `pdf-scan/` directory and now resolves its runtime roots from the vendored backend package itself
+- vendored phase CLI defaults have been hardened in commit `3b8c85c`: `input_mode` now defaults to `manual` and `suite_manifest` defaults to empty instead of pointing at benchmark assets
 - `sources-v2/` appears technically isolated from the production backend already; remaining references are provenance comments, not runtime imports
-- remaining work in this phase is mostly tightening lab/benchmark CLI defaults so the shipped backend runtime no longer suggests test-tree paths by default
+- remaining work in this phase is mostly structural cleanup: deciding whether some lab-oriented phase entrypoints should stay vendored in `backend/` at all or later move to `testing-scripts/`
 
 Exit criteria:
 
