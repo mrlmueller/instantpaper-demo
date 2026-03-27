@@ -129,6 +129,7 @@ Completed commits so far:
 - `3b8c85c` `refactor: reduce dashboard auth gating and harden pdf runtime defaults`
 - `2bd192e` `refactor(repo): move research trees under testing-scripts`
 - `3aa3473` `refactor(frontend): move next app into frontend root`
+- `fc8069e` `refactor(backend): move fastapi service into backend root`
 
 What is now already true in the repo:
 
@@ -139,16 +140,21 @@ What is now already true in the repo:
 - several clearly unreferenced frontend components and UI primitives have already been removed
 - `pdf-scan/` and `sources-v2/` no longer live at repo root; both have moved under `testing-scripts/`
 - the production Next.js app no longer lives at repo root; it now lives under `frontend/`
+- the production backend no longer lives in `fastapi/`; it now lives under `backend/`
 - the frontend now expects a server-only `FASTAPI_BASE_URL` instead of reading `NEXT_PUBLIC_FASTAPI_URL`
 - `frontend/.env.local.example` exists as the new tracked frontend env template
+- `backend/.env.example` exists as the new tracked backend env template
+- the Cloud Run deployment workflow and backend Dockerfiles now target `backend/`
+- research/test scripts that used to read `fastapi/.env` now read `backend/.env`
 - `frontend` has been verified with `npx tsc --noEmit` and `npm run build`
+- `backend` has been verified with `python -m compileall`, targeted import/path checks, and a repaired prompt inventory generator run
 
 Important remaining work after these commits:
 
 - `Dashboard.tsx` still uses cookies for UI persistence, but the redundant client-side session-auth prechecks have been removed
-- root and backend docs still need a proper rewrite around the new `frontend/` layout and the future `backend/` move
+- root and backend docs still need a proper rewrite around the new `frontend/` / `backend/` split
 - backend runtime still contains lab-oriented phase files, even though the dangerous repo-/benchmark-default coupling has now been reduced
-- the production backend still physically lives in `fastapi/`; the `backend/` move has not landed yet
+- external deployment settings still need to be switched to the new repo layout (`frontend/` in Vercel and `backend/` in any out-of-repo references)
 - frontend `eslint` still reports a substantial pre-existing rules backlog (`no-explicit-any`, `set-state-in-effect`, image warnings, and related issues)
 - `functions/` still needs a deliberate keep/retire decision with live verification
 
@@ -235,7 +241,7 @@ This means the frontend move must move the **whole Next app**, not only `app/`.
 
 ### Backend
 
-Current production backend is the current `fastapi/` tree only.
+Current production backend is the current `backend/` tree only.
 
 Production runtime already excludes:
 
@@ -244,17 +250,17 @@ Production runtime already excludes:
 - `functions/`
 - frontend app files
 
-because the current Docker build context is intentionally filtered to build Cloud Run images from `fastapi/`.
+because the current Docker build context is intentionally filtered to build Cloud Run images from `backend/`.
 
 ### PDF scan
 
 Current production PDF scan is the vendored backend runtime:
 
-- `fastapi/pdf_scan_runtime/`
-- `fastapi/run_pdf_scan_pipeline.py`
-- `fastapi/run_pdf_scan_gpu_pipeline.py`
-- `fastapi/services/pdf_scan/*`
-- `fastapi/services/quellen_finder_pdf_extract_pipeline.py`
+- `backend/pdf_scan_runtime/`
+- `backend/run_pdf_scan_pipeline.py`
+- `backend/run_pdf_scan_gpu_pipeline.py`
+- `backend/services/pdf_scan/*`
+- `backend/services/quellen_finder_pdf_extract_pipeline.py`
 
 `pdf-scan/` is not the production truth and must become purely test/research.
 
@@ -262,8 +268,8 @@ Current production PDF scan is the vendored backend runtime:
 
 Current production sources pipeline is the backend-safe port:
 
-- `fastapi/services/two_lane_sources/*`
-- `fastapi/services/quellen_finder_sources_two_lane_job.py`
+- `backend/services/two_lane_sources/*`
+- `backend/services/quellen_finder_sources_two_lane_job.py`
 
 `sources-v2/` is not the production truth and must become purely test/research.
 
@@ -376,7 +382,7 @@ The backend runtime works, but it still looks like a vendored research tree.
 
 ### Current issues
 
-- `fastapi/pdf_scan_runtime/phase_a_lab.py` still tries to find repo-level `pdf-scan/`
+- `backend/pdf_scan_runtime/phase_a_lab.py` still tries to find repo-level `pdf-scan/`
 - it still loads root `.env` and `pdf-scan/.env`
 - it still contains notebook-era path fallbacks
 - it still contains benchmark-oriented defaults and lab naming
@@ -412,7 +418,7 @@ This area is better than PDF scan.
 
 Current truth:
 
-- production runtime uses `fastapi/services/two_lane_sources/`
+- production runtime uses `backend/services/two_lane_sources/`
 - deployed images exclude `sources-v2/`
 - product execution does not depend on the repo-level sources notebook tree
 
@@ -532,17 +538,17 @@ Action:
 
 Strong candidate:
 
-- `fastapi/utils/pdf_text_utils.py`
+- `backend/utils/pdf_text_utils.py`
 
 Conditional candidate:
 
-- `fastapi/utils/crypto.py`
+- `backend/utils/crypto.py`
 
 `crypto.py` should only survive if some real encrypted-user-key flow remains after cleanup.
 
 ## 5. Test / Research Code Is Mixed Into Deployable Backend Content
 
-Current examples inside `fastapi/`:
+Current examples inside `backend/`:
 
 - `test_openai_response.py`
 - `test_cost_calculation.py`
@@ -552,7 +558,7 @@ These are not backend runtime code.
 
 Current packaging problem:
 
-- both backend Docker images copy the full `fastapi/` tree into the image
+- both backend Docker images copy the full `backend/` tree into the image
 
 Action:
 
@@ -581,7 +587,7 @@ Move to `testing-scripts/backend/`:
 Current state is not clean:
 
 - root `.env` mixes frontend-public and backend-secret/provider values
-- `fastapi/.env` also exists
+- `backend/.env` also exists
 - research/testing code also loads root and backend env files
 - frontend server code often uses `NEXT_PUBLIC_FASTAPI_URL`
 - legacy `NEXT_PUBLIC_API_URL` still exists for logout only
@@ -658,18 +664,18 @@ This must be updated deliberately; otherwise the split will break deploys immedi
 
 Current workflow:
 
-- `.github/workflows/deploy-fastapi.yml`
+- `.github/workflows/deploy-backend.yml`
 
 Hard-coded assumptions:
 
 - Docker build context is repo root
-- backend Dockerfiles live in `fastapi/`
+- backend Dockerfiles live in `backend/`
 - deployed service/job names are injected from root workflow env
 
 Required changes:
 
 - move Dockerfiles to `backend/`
-- change workflow file paths from `fastapi/Dockerfile*` to `backend/Dockerfile*`
+- change workflow file paths from `backend/Dockerfile*` to `backend/Dockerfile*`
 - decide whether Docker build context should become `backend/` instead of repo root
 - if context becomes `backend/`, rework `.dockerignore` accordingly
 
@@ -800,7 +806,7 @@ Those are generated/local.
 
 ### Move into `backend/`
 
-Move the **contents** of current `fastapi/` to `backend/`, not a nested `backend/fastapi/`, because the user wants a clean two-root product structure.
+Move the **contents** of current `backend/` to `backend/`, not a nested `backend/backend/`, because the user wants a clean two-root product structure.
 
 This includes:
 
@@ -948,7 +954,7 @@ Tasks:
 Status update:
 
 - the highest-priority blocker in vendored PDF-scan runtime has already been fixed in commit `1cc55ae`
-- `fastapi/pdf_scan_runtime/phase_a_lab.py` no longer searches for a repo-level `pdf-scan/` directory and now resolves its runtime roots from the vendored backend package itself
+- `backend/pdf_scan_runtime/phase_a_lab.py` no longer searches for a repo-level `pdf-scan/` directory and now resolves its runtime roots from the vendored backend package itself
 - vendored phase CLI defaults have been hardened in commit `3b8c85c`: `input_mode` now defaults to `manual` and `suite_manifest` defaults to empty instead of pointing at benchmark assets
 - `sources-v2/` appears technically isolated from the production backend already; remaining references are provenance comments, not runtime imports
 - remaining work in this phase is mostly structural cleanup: deciding whether some lab-oriented phase entrypoints should stay vendored in `backend/` at all or later move to `testing-scripts/`
@@ -985,7 +991,7 @@ Goal:
 Tasks:
 
 - move root Next app into `frontend/`
-- move current `fastapi/` contents into `backend/`
+- move current `backend/` contents into `backend/`
 - move `pdf-scan/` and `sources-v2/` into `testing-scripts/`
 - update imports, path aliases, Dockerfiles, workflow paths, docs, ignore files
 
@@ -1191,3 +1197,4 @@ It should begin with:
 Only then should the physical move happen.
 
 If you do it in that order, the later folder move becomes a mechanical consequence of an already cleaner architecture, instead of a risky repository shuffle.
+
