@@ -1681,14 +1681,14 @@ def run_phase_e(run_ctx: Any, *, options: PhaseEOptions, stable_hash_fn=None, lo
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Phase E lab for the PDF scan pipeline.")
-    parser.add_argument("--input-mode", choices=["small_gold", "manual"], default="small_gold")
+    parser.add_argument("--input-mode", choices=["small_gold", "manual"], default="manual")
     parser.add_argument("--pipeline-version", default="pdf_scan_v3_phase_e_lab")
     parser.add_argument("--force-rebuild-phase-a", action="store_true")
     parser.add_argument("--force-rebuild-phase-b", action="store_true")
     parser.add_argument("--force-rebuild-phase-c", action="store_true")
     parser.add_argument("--force-rebuild-phase-d", action="store_true")
     parser.add_argument("--force-rebuild-phase-e", action="store_true")
-    parser.add_argument("--suite-manifest", default="benchmark/small_gold/manifests/suite_manifest.json")
+    parser.add_argument("--suite-manifest", default="")
     parser.add_argument("--chapter-index", type=int, default=0)
     parser.add_argument("--doc-limit", type=int, default=None)
     parser.add_argument("--include-doc-id", action="append", default=[])

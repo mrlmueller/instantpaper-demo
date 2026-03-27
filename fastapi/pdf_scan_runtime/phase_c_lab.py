@@ -2887,12 +2887,12 @@ def build_phase_c_preview_rows(summary_rows, section_rows, *, per_doc: int = 6, 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Phase C lab for the PDF scan pipeline.")
-    parser.add_argument("--input-mode", choices=["small_gold", "manual"], default="small_gold")
+    parser.add_argument("--input-mode", choices=["small_gold", "manual"], default="manual")
     parser.add_argument("--pipeline-version", default="pdf_scan_v3_phase_c_lab")
     parser.add_argument("--force-rebuild-phase-a", action="store_true")
     parser.add_argument("--force-rebuild-phase-b", action="store_true")
     parser.add_argument("--force-rebuild-phase-c", action="store_true")
-    parser.add_argument("--suite-manifest", default="benchmark/small_gold/manifests/suite_manifest.json")
+    parser.add_argument("--suite-manifest", default="")
     parser.add_argument("--chapter-index", type=int, default=0)
     parser.add_argument("--doc-limit", type=int, default=None)
     parser.add_argument("--include-doc-id", action="append", default=[])

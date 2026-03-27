@@ -383,12 +383,6 @@ export function Dashboard({
   }, []);
 
   const ensureOpenAIAccess = useCallback(async (): Promise<boolean> => {
-    const token = Cookies.get('__session');
-    if (!token) {
-      handleAuthFailure();
-      return false;
-    }
-
     const cached = negativeBalanceGateRef.current;
     const now = Date.now();
     if (cached?.isNegative && now - cached.checkedAt <= 15_000) {
@@ -2194,12 +2188,6 @@ export function Dashboard({
 
       if (!(await ensureOpenAIAccess())) return;
 
-      const token = Cookies.get('__session');
-      if (!token) {
-        handleAuthFailure();
-        return;
-      }
-
       const toastId = toast.loading('Gliederung wird erstellt...');
       setIsGeneratingGliederung(true);
       try {
@@ -2303,12 +2291,6 @@ export function Dashboard({
       }
 
       if (!(await ensureOpenAIAccess())) return;
-
-      const token = Cookies.get('__session');
-      if (!token) {
-        handleAuthFailure();
-        return;
-      }
 
       const toastId = toast.loading('Gliederung wird angepasst...');
       setIsRefiningGliederung(true);
@@ -2480,12 +2462,6 @@ export function Dashboard({
 
       if (!settings.ueberschrift.trim() || !settings.thema.trim()) {
         toast.error('Bitte Überschrift und Thema angeben.');
-        return;
-      }
-
-      const token = Cookies.get('__session');
-      if (!token) {
-        handleAuthFailure();
         return;
       }
 
@@ -2754,12 +2730,6 @@ export function Dashboard({
       return;
     }
 
-    const token = Cookies.get('__session');
-    if (!token) {
-      handleAuthFailure();
-      return;
-    }
-
     if (isCombining) return;
     setIsCombining(true);
 
@@ -2893,12 +2863,6 @@ export function Dashboard({
         toast.error('Uebernehmen nicht moeglich', {
           description: 'Die ausgewaehlte Quelle ist nicht der einzige verwertbare Text in diesem Run.',
         });
-        return;
-      }
-
-      const token = Cookies.get('__session');
-      if (!token) {
-        handleAuthFailure();
         return;
       }
 
