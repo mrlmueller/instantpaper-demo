@@ -524,15 +524,15 @@ Action:
 
 ### Stale function candidate
 
-Strong candidate:
+Originally identified strong candidate:
 
 - `functions/index.js` -> `deleteProjectPermanently`
 
 Product behavior today archives projects instead of hard-deleting them.
 
-Action:
+Update:
 
-- treat as stale unless some external operator flow still calls it
+- removed from the repo legacy package on 2026-03-27 after repo-wide grep found no product callsites and live Firebase function listings showed only Stripe extension functions
 
 ### Unused or questionable backend utilities
 
@@ -744,7 +744,7 @@ Implication:
 Current status:
 
 - repo code exists for custom Firebase Functions
-- live Firebase project currently shows Stripe extension functions, not the repo custom functions
+- live verification on 2026-03-27 via `gcloud functions list --project instantpaper-e80e5` shows Stripe extension functions only, not the repo custom functions
 - frontend product usage is clearly tied to the Stripe extension
 - repo custom functions therefore look unresolved: legacy, undeployed, or deployed elsewhere
 
@@ -779,7 +779,13 @@ If doing this:
 - add Firebase deploy config
 - verify whether the package is actually still deployed anywhere
 - document its project/region
-- remove clearly stale exports such as `deleteProjectPermanently`
+- keep only the still-unresolved Stripe activation logic and remove clearly stale exports
+
+Update after current batch:
+
+- `functions/index.js` no longer exports `deleteProjectPermanently`
+- the callable had no remaining repo callsites and is not present in live Firebase function listings
+- this trims the legacy package without touching the still-open Stripe activation path
 
 ## 10. Recommended Folder Ownership After The Split
 
@@ -1155,7 +1161,7 @@ Delete only after replacement/validation.
 - `/api/auth/session`
 - `/api/user/openai-key`
 - encrypted-user-key helpers
-- `functions/deleteProjectPermanently`
+- remaining legacy Firebase Functions once Stripe activation behavior is replaced or explicitly declared unnecessary
 
 ### Delete only after runtime isolation work
 
