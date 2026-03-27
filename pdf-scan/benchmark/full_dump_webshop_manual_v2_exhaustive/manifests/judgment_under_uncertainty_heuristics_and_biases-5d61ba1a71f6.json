@@ -1,8 +1,0 @@
-{
-  "doc_id": "judgment_under_uncertainty_heuristics_and_biases-5d61ba1a71f6",
-  "label": "Judgment under Uncertainty: Heuristics and Biases",
-  "path": "../../paper-dump/Judgment Under Uncertainty Heuristics and Biases.pdf",
-  "role_in_suite": "manual_exhaustive_positive",
-  "expected_difficulty": "manual_exhaustive",
-  "notes": "Core theory source for heuristics, biases, representativeness, availability, base rates, risk perception, and confidence under uncertainty. Existing benchmark note: Broad positive recall judgment for heuristics, biases, and perceived risk."
-}

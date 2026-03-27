@@ -13,9 +13,7 @@ fastapi/.quellen_finder_cache
 fastapi/.two_lane_artifacts
 fastapi/.prompt_dumps
 fastapi/firebase-debug.log
-pdf-scan/paper-dump
-pdf-scan/runs
-pdf-scan
+testing-scripts
 .claude
 .playwright-cli
 .vscode
@@ -25,7 +23,6 @@ config
 functions
 lib
 public
-sources-v2
 .env
 CLAUDE.md
 README.md

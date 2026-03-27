@@ -1,8 +1,0 @@
-{
-  "doc_id": "using_online_reviews_for_customer_sentiment_anal-ba995f136320",
-  "label": "Using Online Reviews for Customer Sentiment Analysis",
-  "path": "../../paper-dump/Using Online Reviews for Customer Sentiment Analysis.pdf",
-  "role_in_suite": "manual_exhaustive_positive",
-  "expected_difficulty": "manual_exhaustive",
-  "notes": "Useful applied source for unfamiliar/complex products, smartphone reviews, helpfulness filtering, and fake/ingenuine review concerns. Existing benchmark note: User-marked positive. Strong for unfamiliar/innovation products, helpfulness votes, fake or ingenuine reviews, and review-based uncertainty reduction."
-}
