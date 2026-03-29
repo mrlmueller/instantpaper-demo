@@ -1,4 +1,12 @@
-# Fallback only. The real Vercel project root should be `frontend/`.
-/*
-!/frontend/
-!/frontend/**
+/backend/
+/backend/**
+*.log
+github-deployer-key.json
+**/*.ipynb
+
+/testing-scripts/
+/testing-scripts/**
+/sources_workspace/
+/sources_workspace/**
+/prompt_research/
+/prompt_research/**
