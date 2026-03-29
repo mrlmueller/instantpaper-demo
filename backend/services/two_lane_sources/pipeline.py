@@ -50,6 +50,7 @@ from services.firebase_service import firebase_service
 from services.openai_budget_service import get_openai_budget_service
 from services.openai_service import OpenAIService
 from services.user_key_service import user_key_service
+from services.two_lane_sources.provider_rate_limit import build_provider_rate_limiter
 from utils.config import config as app_config
 from utils.token_estimation import count_tokens
 
@@ -3333,23 +3334,6 @@ def _trim_cache_dir(run_ctx: RunContext) -> Path:
     ensure_dir(p)
     return p
 
-
-class RateLimiter:
-    def __init__(self, rps: float):
-        self.rps = float(rps or 0.0)
-        self.min_interval = (1.0 / self.rps) if self.rps > 0 else 0.0
-        self._next_ts = 0.0
-
-    def acquire(self) -> None:
-        if self.min_interval <= 0:
-            return
-        now = time.monotonic()
-        if now < self._next_ts:
-            time.sleep(self._next_ts - now)
-        now2 = time.monotonic()
-        self._next_ts = max(self._next_ts, now2) + self.min_interval
-
-
 def _truncate_for_log(x: Any, max_str_len: int = 400) -> Any:
     if isinstance(x, str):
         return _truncate(x, max_str_len)
@@ -3382,7 +3366,7 @@ def request_json(
     params: Optional[Dict[str, Any]],
     body: Optional[Dict[str, Any]],
     timeout_s: float,
-    rate_limiter: Optional[RateLimiter],
+    rate_limiter: Optional[Any],
     max_attempts: int = 8,
     backoff_initial_s: float = 1.0,
     backoff_max_s: float = 60.0,
@@ -3529,7 +3513,17 @@ def fetch_openalex_to_cache(
     cache_root = _trim_cache_dir(run_ctx) / "openalex"
     ensure_dir(cache_root)
 
-    limiter = RateLimiter(cfg.openalex_rps)
+    limiter = build_provider_rate_limiter(
+        provider="openalex",
+        rps=cfg.openalex_rps,
+        backend=cfg.provider_rate_limit_backend,
+        collection_name=cfg.provider_rate_limit_collection,
+        holder=f"run:{run_ctx.run_id}",
+        run_id=run_ctx.run_id,
+        stage=stage,
+        max_future_ms=cfg.provider_rate_limit_max_future_ms,
+        dispatch_buffer_ms=cfg.provider_rate_limit_dispatch_buffer_ms,
+    )
     session = requests.Session()
     session.headers.update({"User-Agent": "instantpaper-two-lane/1.0"})
 
@@ -3695,7 +3689,17 @@ def fetch_s2_to_cache(
     cache_root = _trim_cache_dir(run_ctx) / "semanticscholar"
     ensure_dir(cache_root)
 
-    limiter = RateLimiter(cfg.semanticscholar_rps)
+    limiter = build_provider_rate_limiter(
+        provider="semanticscholar",
+        rps=cfg.semanticscholar_rps,
+        backend=cfg.provider_rate_limit_backend,
+        collection_name=cfg.provider_rate_limit_collection,
+        holder=f"run:{run_ctx.run_id}",
+        run_id=run_ctx.run_id,
+        stage=stage,
+        max_future_ms=cfg.provider_rate_limit_max_future_ms,
+        dispatch_buffer_ms=cfg.provider_rate_limit_dispatch_buffer_ms,
+    )
     session = requests.Session()
     session.headers.update({"User-Agent": "instantpaper-two-lane/1.0"})
     if cfg.semanticscholar_api_key:
@@ -4717,9 +4721,14 @@ class PipelineConfig(BaseModel):
     openalex_rps: float = 10.0
 
     semanticscholar_base_url: str = "https://api.semanticscholar.org/graph/v1"
+    semanticscholar_recommendations_url: str = "https://api.semanticscholar.org/recommendations/v1/papers"
     semanticscholar_api_key: Optional[str] = Field(default=None, repr=False)
     semanticscholar_timeout_s: float = 60.0
     semanticscholar_rps: float = 1.0
+    provider_rate_limit_backend: Literal["firestore", "local"] = "firestore"
+    provider_rate_limit_collection: str = "quellenFinderProviderRateLimits"
+    provider_rate_limit_max_future_ms: int = 86_400_000
+    provider_rate_limit_dispatch_buffer_ms: int = 150
 
     # Hard caps
     max_queries_per_provider: int = 50
@@ -4783,13 +4792,48 @@ class PipelineConfig(BaseModel):
 
     @classmethod
     def from_env(cls, *, runs_root: Path, pipeline_version: str) -> "PipelineConfig":
+        def _read_float(name: str, default: float) -> float:
+            raw = (os.getenv(name) or "").strip()
+            if not raw:
+                return float(default)
+            try:
+                return float(raw)
+            except ValueError:
+                logger.warning("Invalid float env for %s=%r (using %s)", name, raw, default)
+                return float(default)
+
+        def _read_int(name: str, default: int) -> int:
+            raw = (os.getenv(name) or "").strip()
+            if not raw:
+                return int(default)
+            try:
+                return int(raw)
+            except ValueError:
+                logger.warning("Invalid int env for %s=%r (using %s)", name, raw, default)
+                return int(default)
+
         return cls(
             pipeline_version=pipeline_version,
             runs_root=Path(runs_root),
             openai_api_key=(os.getenv("OPENAI_API_KEY") or "").strip() or None,
             openalex_api_key=(os.getenv("OPENALEX_API_KEY") or "").strip() or None,
             openalex_email=((os.getenv("OPENALEX_EMAIL") or "").strip() or (os.getenv("OPENALEX_MAILTO") or "").strip() or None),
+            openalex_rps=_read_float("TWO_LANE_OPENALEX_RPS", 10.0),
             semanticscholar_api_key=(os.getenv("SEMANTICSCHOLAR_API_KEY") or "").strip() or None,
+            semanticscholar_recommendations_url=(
+                (os.getenv("SEMANTICSCHOLAR_RECOMMENDATIONS_URL") or "").strip()
+                or "https://api.semanticscholar.org/recommendations/v1/papers"
+            ),
+            semanticscholar_rps=_read_float("TWO_LANE_SEMANTICSCHOLAR_RPS", 1.0),
+            provider_rate_limit_backend=(
+                (os.getenv("TWO_LANE_PROVIDER_RATE_LIMIT_BACKEND") or "").strip().lower() or "firestore"
+            ),
+            provider_rate_limit_collection=(
+                (os.getenv("TWO_LANE_PROVIDER_RATE_LIMIT_COLLECTION") or "").strip()
+                or "quellenFinderProviderRateLimits"
+            ),
+            provider_rate_limit_max_future_ms=_read_int("TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS", 86_400_000),
+            provider_rate_limit_dispatch_buffer_ms=_read_int("TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS", 150),
         )
 
 
