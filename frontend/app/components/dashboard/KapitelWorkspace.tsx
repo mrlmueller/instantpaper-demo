@@ -1,0 +1,2007 @@
+"use client";
+
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "@/components/ui/collapsible";
+import {
+  Play,
+  FileText,
+  Calendar,
+  Copy,
+  Maximize2,
+  BookOpen,
+  History,
+  Layers,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  AlertCircle,
+  Coins,
+  Scissors,
+  Sparkles,
+  Library,
+  Pencil,
+  MoreVertical,
+  Star,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
+import type { Kapitel, Quelle, Run, IntermediateGroup } from "@/app/types/ui";
+import { useAuth } from "@/app/components/providers/AuthProvider";
+import {
+  getCombinedGroups,
+  getSummaries,
+  hasCombinedGroups,
+  renameKapitelRun,
+  setKapitelActiveRun,
+  type SummaryResult,
+} from "@/app/actions/kapitels";
+import { AI_GENERIC_ERROR_MESSAGE } from "@/app/lib/ai/messages";
+import { ProcessingStepper } from "./ProcessingStepper";
+import { toast } from "sonner";
+import { fetchBillingBalance } from "@/app/lib/api/billingClient";
+
+type RunUsageSummary = {
+  runId: string;
+  totalCredits: number;
+  totalCostUsd?: number;
+  byOperationType: Array<{ operationType: string; count: number; credits: number; costUsd?: number }>;
+};
+
+function formatCredits(value: number): string {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "0";
+  const abs = Math.abs(n);
+  const maximumFractionDigits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
+  return n.toLocaleString("de-DE", { maximumFractionDigits });
+}
+
+function formatUsd(value: number): string {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "$0,00";
+  const abs = Math.abs(n);
+  const maximumFractionDigits =
+    abs >= 1 ? 2 : abs >= 0.1 ? 3 : abs >= 0.01 ? 4 : abs >= 0.001 ? 5 : 6;
+  const formatted = n.toLocaleString("de-DE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits,
+  });
+  return `$${formatted}`;
+}
+
+interface KapitelWorkspaceProps {
+  loading: boolean;
+  kapitel: Kapitel;
+  assignedQuellen: Quelle[];
+  runs: Run[];
+  selectedRun: Run | undefined;
+  allKapitels: Kapitel[];
+  onSelectRun: (id: string) => void;
+  onLoadAllRuns: () => void;
+  allRunsLoaded: boolean;
+  onOpenTextViewer: (content: { title: string; text: string }) => void;
+  onOpenProcessing: () => void;
+  onCombineTexts: () => void;
+  onAdoptSingleTextAsCombined: (quelleId: string) => void;
+  isCombining: boolean;
+  onToggleQuellenPanel: () => void;
+  onOpenShorten: () => void;
+  onOpenLesefluss: () => void;
+  onOpenLeseflussRefinement: () => void;
+  onOpenCombinedRefinement: () => void;
+  onOpenShortenedRefinement: () => void;
+  onOpenResultRefinement: (quelleId: string, quelleName: string) => void;
+}
+
+export function KapitelWorkspace({
+  loading,
+  kapitel,
+  assignedQuellen,
+  runs,
+  selectedRun,
+  allKapitels,
+  onSelectRun,
+  onLoadAllRuns,
+  allRunsLoaded,
+  onOpenTextViewer,
+  onOpenProcessing,
+  onCombineTexts,
+  onAdoptSingleTextAsCombined,
+  isCombining,
+  onToggleQuellenPanel,
+  onOpenShorten,
+  onOpenLesefluss,
+  onOpenLeseflussRefinement,
+  onOpenCombinedRefinement,
+  onOpenShortenedRefinement,
+  onOpenResultRefinement,
+}: KapitelWorkspaceProps) {
+  const ENTER_ANIM = "motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200 motion-safe:ease-out";
+  const ENTER_UP_ANIM = `${ENTER_ANIM} motion-safe:slide-in-from-bottom-1`;
+
+  const { canViewUsageInsights } = useAuth();
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showFullAnweisung, setShowFullAnweisung] = useState(false);
+  const [usagePopoverOpen, setUsagePopoverOpen] = useState(false);
+  const usagePopoverCloseTimer = useRef<number | null>(null);
+  const [runUsage, setRunUsage] = useState<RunUsageSummary | null>(null);
+  const [runUsageLoading, setRunUsageLoading] = useState(false);
+  const [balanceTotalCredits, setBalanceTotalCredits] = useState<number | null>(null);
+  const [balanceTotalCreditsLoading, setBalanceTotalCreditsLoading] = useState(false);
+  const lastBalanceFetchRef = useRef<number>(0);
+  const [hasIntermediateGroups, setHasIntermediateGroups] = useState<boolean | null>(null);
+  const [hasIntermediateGroupsLoading, setHasIntermediateGroupsLoading] = useState(false);
+  const [intermediateGroupsExpanded, setIntermediateGroupsExpanded] =
+    useState(false);
+  const [intermediateGroupsLoading, setIntermediateGroupsLoading] = useState(false);
+  const [intermediateGroups, setIntermediateGroups] = useState<IntermediateGroup[] | null>(null);
+  const [gekuerztSummariesExpanded, setGekuerztSummariesExpanded] =
+    useState(false);
+  const [verbessertSummariesExpanded, setVerbessertSummariesExpanded] =
+    useState(false);
+  const [showAllQuellen, setShowAllQuellen] = useState(false);
+  const [summaries, setSummaries] = useState<SummaryResult[]>([]);
+  const [summariesLoading, setSummariesLoading] = useState(false);
+  const [runSelectOpen, setRunSelectOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<Run | null>(null);
+  const [renameFallbackIndex, setRenameFallbackIndex] = useState(0);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [activeRunSavingId, setActiveRunSavingId] = useState<string | null>(null);
+  const [adoptCombinedDialogOpen, setAdoptCombinedDialogOpen] = useState(false);
+  const [adoptQuelleId, setAdoptQuelleId] = useState("");
+
+  const hasContent =
+    selectedRun?.combinedText && selectedRun.combinedText.length > 0;
+  const hasQuellenErgebnisse =
+    selectedRun?.quellenErgebnisse && selectedRun.quellenErgebnisse.length > 0;
+  const hasGekuerzt =
+    selectedRun?.shortenedText && selectedRun.shortenedText.length > 0;
+  const hasVerbessert =
+    selectedRun?.leseflussText && selectedRun.leseflussText.length > 0;
+
+  const combinedStatus = selectedRun?.combinedStatus ?? (hasContent ? "success" : "empty");
+  const shortenedStatus = selectedRun?.shortenedStatus ?? (hasGekuerzt ? "success" : "empty");
+  const leseflussStatus = selectedRun?.leseflussStatus ?? (hasVerbessert ? "success" : "empty");
+  const canShowIntermediateGroups = Boolean(selectedRun?.combinedText && selectedRun.combinedText.length > 0);
+  const combineEligibleResults = (selectedRun?.quellenErgebnisse || []).filter(
+    (qe) => qe.status === "success" && Boolean(qe.text && qe.text.trim().length > 0)
+  );
+  const combineEligibleCount = combineEligibleResults.length;
+  const canCombineFromResults = combineEligibleCount >= 2;
+  const canAdoptSingleFromResults = combineEligibleCount === 1;
+
+  const effectiveActiveRunId =
+    activeRunSavingId ?? kapitel.activeRunId ?? runs[0]?.id;
+
+  const getRunLabel = (run: Run, fallbackIndex: number) => {
+    const name = (run.name || "").trim();
+    if (name) return name;
+    if (typeof run.index === "number" && run.index > 0) return `Run ${run.index}`;
+    return `Run ${fallbackIndex}`;
+  };
+
+  const handleSetActiveRun = async (runId: string) => {
+    setActiveRunSavingId(runId);
+    try {
+      const result = await setKapitelActiveRun(kapitel.id, runId);
+      if (!result?.success) {
+        throw new Error(result?.error || "Run konnte nicht als Standard gesetzt werden.");
+      }
+      toast.success("Standard-Run gesetzt");
+    } catch (err) {
+      console.error("Error setting active run:", err);
+      toast.error("Fehler", {
+        description: err instanceof Error ? err.message : "Run konnte nicht als Standard gesetzt werden.",
+      });
+    } finally {
+      setActiveRunSavingId(null);
+    }
+  };
+
+  const openRename = (run: Run, fallbackIndex: number) => {
+    setRenameTarget(run);
+    setRenameFallbackIndex(fallbackIndex);
+    setRenameValue((run.name || "").trim());
+    setRenameDialogOpen(true);
+  };
+
+  const handleRenameSave = async () => {
+    if (!renameTarget) return;
+    setRenameSaving(true);
+    try {
+      const result = await renameKapitelRun(kapitel.id, renameTarget.id, renameValue);
+      if (!result?.success) {
+        throw new Error(result?.error || "Run konnte nicht umbenannt werden.");
+      }
+      setRenameDialogOpen(false);
+      toast.success("Run umbenannt");
+    } catch (err) {
+      console.error("Error renaming run:", err);
+      toast.error("Fehler", {
+        description: err instanceof Error ? err.message : "Run konnte nicht umbenannt werden.",
+      });
+    } finally {
+      setRenameSaving(false);
+    }
+  };
+
+  const renameTargetDefaultLabel = renameTarget
+    ? typeof renameTarget.index === "number" && renameTarget.index > 0
+      ? `Run ${renameTarget.index}`
+      : renameFallbackIndex > 0
+        ? `Run ${renameFallbackIndex}`
+        : "Run"
+    : "Run";
+
+  const renameTrimmed = renameValue.trim();
+  const renameCandidateLabel = renameTarget ? (renameTrimmed || renameTargetDefaultLabel).trim() : "";
+  const renameCandidateNormalized = renameCandidateLabel.toLowerCase();
+  const renameReservedRunName = Boolean(renameTrimmed && /^run\s*\d+$/i.test(renameTrimmed));
+  const renameDuplicateLabel = Boolean(
+    renameTarget &&
+      runs.some((run, index) => {
+        if (run.id === renameTarget.id) return false;
+        const fallbackIndex = runs.length - index;
+        const otherLabel = getRunLabel(run, fallbackIndex).trim();
+        return otherLabel.toLowerCase() === renameCandidateNormalized;
+      })
+  );
+
+  const renameValidationError =
+    renameTrimmed.length > 30
+      ? "Name ist zu lang (max. 30 Zeichen)."
+      : renameReservedRunName
+        ? 'Bitte keinen Namen im Format "Run 12" verwenden. Lass den Namen leer, um die Standardanzeige zu nutzen.'
+      : renameDuplicateLabel
+        ? "Dieser Run-Name ist bereits vergeben."
+        : "";
+
+  const adoptSelectedResult = (selectedRun?.quellenErgebnisse || []).find((r) => r.quelleId === adoptQuelleId);
+  const adoptSelectedPreview = (adoptSelectedResult?.text || "").trim();
+  const adoptSelectedEligible = Boolean(adoptSelectedResult?.status === "success" && adoptSelectedPreview);
+
+  const handleOpenAdoptCombined = () => {
+    if (!selectedRun || !canAdoptSingleFromResults) return;
+
+    const onlyEligible = combineEligibleResults[0];
+    const defaultQuelleId = (onlyEligible?.quelleId || "").trim();
+    if (!defaultQuelleId) {
+      toast.error("Uebernehmen nicht moeglich", {
+        description: "Es wurde kein verwertbarer Quellentext gefunden.",
+      });
+      return;
+    }
+
+    const hasMultipleQuellen = (selectedRun.quellenErgebnisse?.length ?? 0) > 1;
+    if (hasMultipleQuellen) {
+      setAdoptQuelleId(defaultQuelleId);
+      setAdoptCombinedDialogOpen(true);
+      return;
+    }
+
+    onAdoptSingleTextAsCombined(defaultQuelleId);
+  };
+
+  const handleConfirmAdoptCombined = () => {
+    const id = adoptQuelleId.trim();
+    if (!id) return;
+    setAdoptCombinedDialogOpen(false);
+    onAdoptSingleTextAsCombined(id);
+  };
+
+  // Reset intermediate groups when selected run changes
+  useEffect(() => {
+    setShowFullAnweisung(false);
+    setHasIntermediateGroups(null);
+    setHasIntermediateGroupsLoading(false);
+    setIntermediateGroupsExpanded(false);
+    setIntermediateGroupsLoading(false);
+    setIntermediateGroups(null);
+    setAdoptCombinedDialogOpen(false);
+    setAdoptQuelleId("");
+  }, [selectedRun?.id]);
+
+  // Only show Zwischengruppen when there are actually group docs.
+  useEffect(() => {
+    if (!selectedRun) return;
+    if (!canShowIntermediateGroups) return;
+
+    let cancelled = false;
+    setHasIntermediateGroupsLoading(true);
+    hasCombinedGroups(kapitel.id, selectedRun.id)
+      .then((exists) => {
+        if (cancelled) return;
+        setHasIntermediateGroups(Boolean(exists));
+      })
+      .catch((err) => {
+        console.error("Error checking intermediate groups existence:", err);
+        if (cancelled) return;
+        setHasIntermediateGroups(false);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setHasIntermediateGroupsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRun?.id, kapitel.id, canShowIntermediateGroups]);
+
+  // Lazy-load intermediate groups only when expanded
+  useEffect(() => {
+    if (!intermediateGroupsExpanded) return;
+    if (!selectedRun) return;
+    if (intermediateGroupsLoading) return;
+    if (intermediateGroups !== null) return;
+
+    setIntermediateGroupsLoading(true);
+    getCombinedGroups(kapitel.id, selectedRun.id)
+      .then((groups) => {
+        const uiGroups: IntermediateGroup[] = groups.map((g) => ({
+          id: g.id,
+          groupNumber: g.groupNumber,
+          combinedContent: g.content,
+          sourceQuelleIds: g.sourceQuelleIds,
+          sourceCount: g.sourceQuelleIds.length,
+          heading: g.heading,
+          topic: g.topic,
+          modelUsed: g.model,
+          tokensUsed: g.usage?.totalTokens ?? 0,
+          cost: Math.round((g.costUsd ?? 0) * 100),
+          costUsd: Number(g.costUsd ?? 0),
+          createdAt: new Date(g.createdAt),
+        }));
+        setIntermediateGroups(uiGroups);
+      })
+      .finally(() => setIntermediateGroupsLoading(false));
+  }, [intermediateGroupsExpanded, intermediateGroupsLoading, intermediateGroups, selectedRun?.id, kapitel.id]);
+
+  // Fetch summaries when selectedRun changes and has generated text (shortened or improved)
+  useEffect(() => {
+    if (selectedRun?.shortenedText || selectedRun?.leseflussText) {
+      setSummariesLoading(true);
+      getSummaries(kapitel.id, selectedRun.id)
+        .then((fetchedSummaries) => {
+          setSummaries(fetchedSummaries);
+          setSummariesLoading(false);
+        })
+        .catch((error) => {
+          console.error("Error fetching summaries:", error);
+          setSummaries([]);
+          setSummariesLoading(false);
+        });
+    } else {
+      setSummaries([]);
+    }
+  }, [selectedRun?.id, selectedRun?.shortenedText, selectedRun?.leseflussText, kapitel.id]);
+
+  const handleCopy = async (text: string, id: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  useEffect(() => {
+    if (!canViewUsageInsights) {
+      setRunUsage(null);
+      setRunUsageLoading(false);
+      setUsagePopoverOpen(false);
+      setBalanceTotalCredits(null);
+      setBalanceTotalCreditsLoading(false);
+      return;
+    }
+
+    if (!selectedRun?.id) {
+      setRunUsage(null);
+      setRunUsageLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    setRunUsageLoading(true);
+    fetch(`/api/usage-insights/run/${encodeURIComponent(selectedRun.id)}`, {
+      method: "GET",
+    })
+      .then(async (res) => {
+        if (res.status === 401 || res.status === 403) return null;
+        if (!res.ok) {
+          const errorBody = (await res.json().catch(() => ({}))) as { detail?: unknown; error?: unknown };
+          const detail =
+            (typeof errorBody.error === "string" && errorBody.error.trim() ? errorBody.error.trim() : null) ||
+            (typeof errorBody.detail === "string" && errorBody.detail.trim() ? errorBody.detail.trim() : null);
+          throw new Error(detail || "Konnte Usage Insights nicht laden.");
+        }
+        return (await res.json()) as RunUsageSummary;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        if (!data) {
+          setRunUsage(null);
+          return;
+        }
+        const items = Array.isArray((data as any).byOperationType) ? (data as any).byOperationType : [];
+        setRunUsage({
+          runId: String((data as any).runId || selectedRun.id),
+          totalCredits: Number((data as any).totalCredits ?? 0),
+          totalCostUsd: Number((data as any).totalCostUsd ?? 0),
+          byOperationType: items
+            .map((x: any) => ({
+              operationType: String(x?.operationType || ""),
+              count: Number(x?.count ?? 0),
+              credits: Number(x?.credits ?? 0),
+              costUsd: typeof x?.costUsd === "number" ? Number(x.costUsd) : undefined,
+            }))
+            .filter((x: any) => x.operationType),
+        });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Failed to load run usage:", err);
+        setRunUsage(null);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setRunUsageLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewUsageInsights, selectedRun?.id]);
+
+  useEffect(() => {
+    if (!canViewUsageInsights || !usagePopoverOpen) return;
+
+    let cancelled = false;
+    const now = Date.now();
+
+    // Fetch Gesamt-Credits (do not subtract reserved credits). Cache for 15s.
+    if (balanceTotalCredits != null && now - lastBalanceFetchRef.current < 15_000) return;
+
+    setBalanceTotalCreditsLoading(true);
+    fetchBillingBalance()
+      .then((bal) => {
+        if (cancelled) return;
+        setBalanceTotalCredits(Number(bal.totalCredits ?? 0));
+        lastBalanceFetchRef.current = now;
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Failed to load billing balance:", err);
+        setBalanceTotalCredits(null);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setBalanceTotalCreditsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewUsageInsights, usagePopoverOpen, balanceTotalCredits]);
+
+  const openUsagePopover = () => {
+    if (usagePopoverCloseTimer.current) {
+      window.clearTimeout(usagePopoverCloseTimer.current);
+      usagePopoverCloseTimer.current = null;
+    }
+    setUsagePopoverOpen(true);
+  };
+
+  const scheduleCloseUsagePopover = () => {
+    const CLOSE_DELAY_MS = 250;
+    if (usagePopoverCloseTimer.current) {
+      window.clearTimeout(usagePopoverCloseTimer.current);
+    }
+    usagePopoverCloseTimer.current = window.setTimeout(() => {
+      setUsagePopoverOpen(false);
+      usagePopoverCloseTimer.current = null;
+    }, CLOSE_DELAY_MS);
+  };
+
+  const runUsageRows = (() => {
+    if (!runUsage?.byOperationType?.length) return [];
+
+    type OpAgg = { count: number; costUsd: number };
+    const byType = new Map<string, OpAgg>();
+    for (const item of runUsage.byOperationType) {
+      const key = String(item.operationType || "").trim();
+      if (!key) continue;
+      const prev = byType.get(key) || { count: 0, costUsd: 0 };
+      byType.set(key, {
+        count: prev.count + Number(item.count ?? 0),
+        costUsd: prev.costUsd + Number(item.costUsd ?? 0),
+      });
+    }
+
+    const sum = (keys: string[]) =>
+      keys.reduce(
+        (acc, key) => {
+          const v = byType.get(key);
+          if (!v) return acc;
+          return { count: acc.count + v.count, costUsd: acc.costUsd + v.costUsd };
+        },
+        { count: 0, costUsd: 0 } as OpAgg
+      );
+
+    const formatHint = (count: number, unitSingular: string, unitPlural: string) => {
+      if (!count) return undefined;
+      return `${count} ${count === 1 ? unitSingular : unitPlural}`;
+    };
+
+    const row = (key: string, label: string, agg: OpAgg, hint?: string, indent = 0) => ({
+      key,
+      label,
+      hint,
+      costUsd: agg.costUsd,
+      count: agg.count,
+      indent,
+    });
+
+    // Pipeline order (top -> bottom), matching the requested bottom-to-top sequence:
+    // Quellen verarbeiten -> Text kombinieren -> Text kürzen -> Lesefluss verbessern.
+    const groups = [
+      {
+        key: "lesefluss",
+        label: "Lesefluss verbessern",
+        base: sum(["lesefluss"]),
+        hint: formatHint(sum(["lesefluss"]).count, "Run", "Runs"),
+        children: [
+          { key: "refine_lesefluss", label: "Verfeinerung (Lesefluss)", unit: ["Version", "Versionen"] as const },
+        ],
+      },
+      {
+        key: "summary",
+        label: "Kontext-Summaries",
+        base: sum(["summary"]),
+        hint: formatHint(sum(["summary"]).count, "Kapitel", "Kapitel"),
+        children: [],
+      },
+      {
+        key: "shorten",
+        label: "Text kürzen",
+        base: sum(["shorten"]),
+        hint: formatHint(sum(["shorten"]).count, "Run", "Runs"),
+        children: [
+          { key: "refine_shortened", label: "Verfeinerung (Gekürzt)", unit: ["Version", "Versionen"] as const },
+        ],
+      },
+      {
+        key: "combine",
+        label: "Text kombinieren",
+        base: sum(["combine", "combine_intermediate"]),
+        hint: (() => {
+          const agg = sum(["combine", "combine_intermediate"]);
+          return formatHint(agg.count, "Run", "Runs");
+        })(),
+        children: [
+          { key: "refine_combined", label: "Verfeinerung (Kombiniert)", unit: ["Version", "Versionen"] as const },
+        ],
+      },
+      {
+        key: "process_quelle",
+        label: "Quellen verarbeiten",
+        base: sum(["process_quelle"]),
+        hint: formatHint(sum(["process_quelle"]).count, "Quelle", "Quellen"),
+        children: [
+          { key: "refine_result", label: "Verfeinerung (Quelle)", unit: ["Version", "Versionen"] as const },
+        ],
+      },
+    ];
+
+    const knownKeys = new Set<string>([
+      "lesefluss",
+      "summary",
+      "shorten",
+      "combine",
+      "process_quelle",
+      "combine_intermediate",
+      "refine_combined",
+      "refine_shortened",
+      "refine_lesefluss",
+      "refine_result",
+      "export_docx",
+    ]);
+
+    const out: Array<{ key: string; label: string; hint?: string; costUsd: number; count: number; indent: number }> = [];
+
+    for (const g of groups) {
+      const baseAgg = g.base;
+      const hasAny =
+        baseAgg.count > 0 ||
+        baseAgg.costUsd > 0 ||
+        g.children.some((c) => (byType.get(c.key)?.count ?? 0) > 0);
+      if (!hasAny) continue;
+
+      out.push(row(g.key, g.label, baseAgg, g.hint, 0));
+
+      for (const child of g.children) {
+        const agg = byType.get(child.key);
+        if (!agg || (agg.count <= 0 && agg.costUsd <= 0)) continue;
+        out.push(
+          row(
+            child.key,
+            child.label,
+            agg,
+            formatHint(agg.count, child.unit[0], child.unit[1]),
+            1
+          )
+        );
+      }
+    }
+
+    // Add remaining operation types (if any) so we never "hide" usage.
+    const extras: Array<{ key: string; agg: OpAgg }> = [];
+    for (const [key, agg] of byType.entries()) {
+      if (knownKeys.has(key)) continue;
+      if (agg.count <= 0 && agg.costUsd <= 0) continue;
+      extras.push({ key, agg });
+    }
+    extras.sort((a, b) => b.agg.costUsd - a.agg.costUsd);
+    for (const extra of extras) {
+      out.push(row(extra.key, extra.key, extra.agg, formatHint(extra.agg.count, "×", "×"), 0));
+    }
+
+    return out;
+  })();
+
+  const themaIsLong = selectedRun?.thema && selectedRun.thema.length > 80;
+
+  // Show first 5 quellen by default in header tags
+  const MAX_VISIBLE_QUELLEN_HEADER = 5;
+  const hasMoreQuellenHeader = assignedQuellen.length > MAX_VISIBLE_QUELLEN_HEADER;
+  const visibleQuellen = showAllQuellen
+    ? assignedQuellen
+    : assignedQuellen.slice(0, MAX_VISIBLE_QUELLEN_HEADER);
+  const hiddenCount = assignedQuellen.length - MAX_VISIBLE_QUELLEN_HEADER;
+
+  return (
+    <div className="h-full overflow-y-auto">
+        <div className="max-w-4xl mx-auto py-12 px-8">
+          {/* Kapitel Header with Quellen Tags */}
+          <div key={kapitel.id} className={cn("mb-6", ENTER_ANIM)}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight">
+                  <span className="text-muted-foreground mr-2">{kapitel.nummer}</span>
+                {kapitel.title}
+              </h1>
+              {assignedQuellen.length > 0 && (
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-muted-foreground">Quellen:</span>
+                  {visibleQuellen.map((quelle) => (
+                    <span
+                      key={quelle.id}
+                      className="px-2 py-0.5 bg-primary/10 text-primary rounded text-xs font-medium"
+                    >
+                      {quelle.name.length > 25 ? `${quelle.name.slice(0, 25)}...` : quelle.name}
+                    </span>
+                  ))}
+                  {hasMoreQuellenHeader && !showAllQuellen && (
+                    <button
+                      onClick={() => setShowAllQuellen(true)}
+                      className="px-2 py-0.5 bg-muted text-muted-foreground rounded text-xs font-medium hover:bg-muted/80 transition-colors"
+                    >
+                      +{hiddenCount} weitere
+                    </button>
+                  )}
+                  {showAllQuellen && hasMoreQuellenHeader && (
+                    <button
+                      onClick={() => setShowAllQuellen(false)}
+                      className="px-2 py-0.5 bg-muted text-muted-foreground rounded text-xs font-medium hover:bg-muted/80 transition-colors"
+                    >
+                      weniger
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={onToggleQuellenPanel}>
+                <Library className="h-4 w-4 mr-2" />
+                Quellen
+              </Button>
+              <Button onClick={onOpenProcessing}>
+                <Play className="h-4 w-4 mr-2" />
+                Kapitel verarbeiten
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Run Selector & Cost Display */}
+        {loading && !selectedRun && (
+          <div className={cn("flex items-center justify-between mb-4 gap-4", ENTER_ANIM)}>
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-10 w-[200px] rounded-md" />
+              <Skeleton className="h-9 w-9 rounded-md" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-7 w-28 rounded-md" />
+            </div>
+          </div>
+        )}
+
+        {selectedRun && (
+          <div className={cn("flex items-center justify-between mb-4 gap-4", ENTER_ANIM)}>
+            <div className="flex items-center gap-2">
+              <Select
+                value={selectedRun.id}
+                onValueChange={onSelectRun}
+                open={runSelectOpen}
+                onOpenChange={setRunSelectOpen}
+              >
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Run auswählen" />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  {runs.map((run, index) => {
+                    const fallbackIndex = runs.length - index;
+                    const isActive = run.id === effectiveActiveRunId;
+                    return (
+                      <SelectItem
+                        key={run.id}
+                        value={run.id}
+                        className={cn(
+                          isActive &&
+                            "bg-sky-50 text-sky-900 data-[state=checked]:bg-sky-100 data-[state=checked]:text-sky-900"
+                        )}
+                      >
+                        {getRunLabel(run, fallbackIndex)}
+                      </SelectItem>
+                    );
+                  })}
+
+                  {!allRunsLoaded && (
+                    <>
+                      <SelectSeparator />
+                      <div className="px-1 py-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="w-full justify-start"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onLoadAllRuns();
+                            setTimeout(() => setRunSelectOpen(true), 0);
+                          }}
+                        >
+                          <History className="h-4 w-4 mr-2" />
+                          Alle Runs laden
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </SelectContent>
+              </Select>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-9 w-9">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      const selectedIndex = runs.findIndex((r) => r.id === selectedRun.id);
+                      const fallbackIndex = selectedIndex >= 0 ? runs.length - selectedIndex : runs.length;
+                      openRename(selectedRun, fallbackIndex);
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Umbenennen
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={activeRunSavingId != null || effectiveActiveRunId === selectedRun.id}
+                    onSelect={async () => {
+                      await handleSetActiveRun(selectedRun.id);
+                    }}
+                  >
+                    <Star className="h-4 w-4" />
+                    Als Standard festlegen
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {canViewUsageInsights ? (
+                <Popover open={usagePopoverOpen} onOpenChange={setUsagePopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex items-center rounded-md border border-border bg-background shadow-sm select-none"
+                      onMouseEnter={openUsagePopover}
+                      onMouseLeave={scheduleCloseUsagePopover}
+                      onFocus={openUsagePopover}
+                      onBlur={scheduleCloseUsagePopover}
+                    >
+                      <span className="px-2.5 py-1 text-sm text-muted-foreground">{selectedRun.model}</span>
+                      <span className="border-l border-border px-2.5 py-1 text-sm font-medium tabular-nums">
+                        {runUsageLoading ? "…" : formatUsd(runUsage?.totalCostUsd ?? 0)}
+                      </span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="bottom"
+                    align="end"
+                    sideOffset={0}
+                    className="w-[340px] p-3"
+                    onMouseEnter={openUsagePopover}
+                    onMouseLeave={scheduleCloseUsagePopover}
+                    onOpenAutoFocus={(e) => e.preventDefault()}
+                    onCloseAutoFocus={(e) => e.preventDefault()}
+                  >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-medium">Kostenübersicht (Run)</span>
+                          <span className="text-xs font-medium tabular-nums">
+                            {formatUsd(runUsage?.totalCostUsd ?? 0)}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                          <span>Guthaben (Gesamt)</span>
+                          <span className="tabular-nums">
+                            {balanceTotalCreditsLoading
+                              ? "…"
+                              : balanceTotalCredits == null
+                                ? "-"
+                                : `${formatCredits(balanceTotalCredits)} Credits`}
+                          </span>
+                        </div>
+
+                        <Separator />
+
+                        {runUsageRows.length > 0 ? (
+                          <div className="space-y-1">
+                            {runUsageRows.map((row) => (
+                              <div
+                                key={row.key}
+                                className={cn(
+                                  "flex items-start justify-between gap-3 text-xs",
+                                  row.indent ? "pl-3 border-l border-border/60" : ""
+                                )}
+                              >
+                                <div className="min-w-0">
+                                  <div
+                                    className={cn(
+                                      "truncate",
+                                      row.indent ? "text-muted-foreground" : "text-foreground"
+                                    )}
+                                  >
+                                    {row.label}
+                                  </div>
+                                  {row.hint ? (
+                                    <div className={cn(row.indent ? "text-muted-foreground/70" : "text-muted-foreground")}>
+                                      {row.hint}
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <span className="tabular-nums">{formatUsd(row.costUsd)}</span>
+                              </div>
+                            ))}
+                          </div>
+                      ) : runUsageLoading ? (
+                        <div className="text-xs text-muted-foreground">Lädt…</div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground">Noch keine Kosten erfasst.</div>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              ) : (
+                <span className="text-sm text-muted-foreground">{selectedRun.model}</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Run umbenennen</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-2">
+              <Label htmlFor="run-name">Name</Label>
+              <Input
+                id="run-name"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                placeholder="z. B. Literatur v2"
+                maxLength={30}
+                disabled={renameSaving}
+              />
+              {renameValidationError && (
+                <p className="text-xs text-destructive">{renameValidationError}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Standardanzeige:{" "}
+                <span className="font-medium text-foreground">
+                  {renameTargetDefaultLabel}
+                </span>
+                . Leerer Name entfernt den Custom-Namen.
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRenameDialogOpen(false)} disabled={renameSaving}>
+                Abbrechen
+              </Button>
+              <Button onClick={handleRenameSave} disabled={renameSaving || Boolean(renameValidationError)}>
+                {renameSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Speichern
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={adoptCombinedDialogOpen} onOpenChange={setAdoptCombinedDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Einzeltext als kombinierten Text uebernehmen</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Quelle</Label>
+                <Select value={adoptQuelleId} onValueChange={setAdoptQuelleId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Quelle auswaehlen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(selectedRun?.quellenErgebnisse || []).map((r) => {
+                      const eligible = Boolean(r.status === "success" && r.text && r.text.trim().length > 0);
+                      return (
+                        <SelectItem key={r.quelleId} value={r.quelleId} disabled={!eligible}>
+                          {r.quelleName || r.quelleId}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Nur Quellen mit verwertbarem Text sind auswaehlbar.
+                </p>
+              </div>
+
+              {adoptSelectedPreview && (
+                <div className="rounded-md border p-3 text-sm text-foreground/80 whitespace-pre-wrap max-h-44 overflow-auto">
+                  {adoptSelectedPreview}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setAdoptCombinedDialogOpen(false)}
+                disabled={isCombining}
+              >
+                Abbrechen
+              </Button>
+              <Button onClick={handleConfirmAdoptCombined} disabled={isCombining || !adoptSelectedEligible}>
+                {isCombining ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Uebernehmen
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {loading && !selectedRun && (
+          <>
+            <Card className={cn("p-4 mb-6 bg-muted/20", ENTER_ANIM)}>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-start gap-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-56" />
+                </div>
+                <div className="flex items-start gap-2">
+                  <Skeleton className="h-4 w-24" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-5/6" />
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <Card className={cn("mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20", ENTER_UP_ANIM)}>
+              <div className="p-8">
+                <Skeleton className="h-6 w-48 mb-6" />
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-5/6" />
+                  <Skeleton className="h-4 w-2/3" />
+                </div>
+              </div>
+            </Card>
+
+            <div className={cn("mt-8", ENTER_UP_ANIM)}>
+              <div className="flex items-center justify-between mb-4">
+                <Skeleton className="h-4 w-64" />
+                <Skeleton className="h-8 w-36 rounded-md" />
+              </div>
+              <div className="space-y-3">
+                {Array.from({
+                  length: Math.min(4, Math.max(assignedQuellen.length, 1)),
+                }).map((_, i) => (
+                  <Card key={`quelle-skeleton-initial-${i}`} className="p-4 bg-muted/10">
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-56" />
+                      <Skeleton className="h-3 w-full" />
+                      <Skeleton className="h-3 w-5/6" />
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {!loading && runs.length > 0 && !selectedRun && (
+          <Card className={cn("mb-6 bg-card border-border shadow-sm", ENTER_ANIM)}>
+            <div className="p-6 flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Run wird geladen...</span>
+            </div>
+          </Card>
+        )}
+
+        {/* Processing Stepper */}
+        {selectedRun && (
+          <div className={ENTER_ANIM}>
+            <ProcessingStepper
+              hasQuellen={!!hasQuellenErgebnisse}
+              hasCombined={!!hasContent}
+              hasGekuerzt={!!hasGekuerzt}
+              hasVerbessert={!!hasVerbessert}
+            />
+          </div>
+        )}
+
+        {/* Run Info Card */}
+        {selectedRun && (
+          <Card className={cn("p-4 mb-6 bg-muted/20", ENTER_ANIM)}>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-start gap-2">
+                <span className="text-muted-foreground shrink-0 w-24">Überschrift:</span>
+                <span className="text-foreground">{selectedRun.ueberschrift}</span>
+              </div>
+              {selectedRun.thema && (
+                <div className="flex items-start gap-2">
+                  <span className="text-muted-foreground shrink-0 w-24">Anweisung:</span>
+                  <div className="flex-1">
+                    <span className={cn("text-foreground", themaIsLong && !showFullAnweisung && "line-clamp-2")}>
+                      {selectedRun.thema}
+                    </span>
+                    {themaIsLong && (
+                      <div className="mt-1">
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="sm"
+                          className="h-auto p-0 text-xs"
+                          onClick={() => setShowFullAnweisung((v) => !v)}
+                        >
+                          {showFullAnweisung ? "Weniger anzeigen" : "Alles anzeigen"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
+
+        {/* NEW ORDER: Verbessert → Gekürzt → Intermediate Groups → Kombiniert → Quellen */}
+
+        {/* 1. Verbesserter Text (Lesefluss) - PRIMARY STYLING */}
+        {selectedRun && leseflussStatus === "running" && (
+          <Card className={cn("mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Verbesserter Text</h2>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Text wird generiert...</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {selectedRun && leseflussStatus === "error" && (
+          <Card className={cn("mb-8 bg-card border-destructive/30 shadow-sm", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Verbesserter Text</h2>
+              </div>
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm">{selectedRun.leseflussErrorMessage ?? AI_GENERIC_ERROR_MESSAGE}</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {selectedRun && leseflussStatus === "success" && !hasVerbessert && (
+          <Card className={cn("mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Verbesserter Text</h2>
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-11/12" />
+                <Skeleton className="h-4 w-4/5" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {hasVerbessert && leseflussStatus === "success" && (
+          <>
+            {/* Verbesserter Text Card */}
+            <Card className={cn("mb-8 bg-card border-border shadow-sm ring-2 ring-primary/20", ENTER_UP_ANIM)}>
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-medium text-foreground">
+                      Verbesserter Text
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={onOpenLeseflussRefinement} title="Text verfeinern">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        handleCopy(selectedRun.leseflussText!, "verbessert")
+                      }
+                    >
+                      {copiedId === "verbessert" ? (
+                        <Check className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        onOpenTextViewer({
+                          title: `${kapitel.nummer} ${kapitel.title} - Verbesserter Text`,
+                          text: selectedRun.leseflussText!,
+                        })
+                      }
+                    >
+                      <Maximize2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="prose prose-sm max-w-none">
+                  <div className="text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-[12]">
+                    {selectedRun.leseflussText}
+                  </div>
+                </div>
+              </div>
+
+              {/* Kontext-Zusammenfassungen for Verbesserter Text */}
+              {summaries.length > 0 && (
+                <div className="px-8 pb-8">
+                  <div className="pt-6 border-t border-border/50">
+                    <Collapsible
+                      open={verbessertSummariesExpanded}
+                      onOpenChange={setVerbessertSummariesExpanded}
+                    >
+                      <CollapsibleTrigger asChild>
+                        <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full justify-between group">
+                          <span className="font-medium">
+                            Kontext-Zusammenfassungen ({summaries.length})
+                          </span>
+                          <ChevronDown
+                            className={cn(
+                              "h-4 w-4 transition-transform",
+                              verbessertSummariesExpanded && "rotate-180"
+                            )}
+                          />
+                        </button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="mt-3 space-y-3">
+                        {summaries.map((summary) => {
+                          const sourceKapitel = allKapitels.find(
+                            (k) => k.id === summary.sourceKapitelId
+                          );
+
+                          return (
+                            <div
+                              key={summary.id}
+                              className="p-3 bg-muted/30 rounded-md"
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-xs font-medium text-muted-foreground">
+                                  <span className="mr-1">
+                                    {sourceKapitel?.nummer || "?"}
+                                  </span>
+                                  {sourceKapitel?.title || "Unbekanntes Kapitel"}
+                                </h4>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() =>
+                                    onOpenTextViewer({
+                                      title: `Zusammenfassung: ${sourceKapitel?.nummer} ${sourceKapitel?.title}`,
+                                      text: summary.content,
+                                    })
+                                  }
+                                >
+                                  <Maximize2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              <p className="text-xs text-foreground/70 leading-relaxed line-clamp-3">
+                                {summary.content}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </>
+        )}
+
+        {/* 2. Gekürzter Text (Shortened) */}
+        {selectedRun && shortenedStatus === "running" && (
+          <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Gekürzter Text</h2>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Text wird gekürzt...</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {selectedRun && shortenedStatus === "error" && (
+          <Card className={cn("mb-8 bg-card border-destructive/30 shadow-sm", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Gekürzter Text</h2>
+              </div>
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm">{selectedRun.shortenedErrorMessage ?? AI_GENERIC_ERROR_MESSAGE}</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {selectedRun && shortenedStatus === "success" && !hasGekuerzt && (
+          <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Gekürzter Text</h2>
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-11/12" />
+                <Skeleton className="h-4 w-4/5" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {hasGekuerzt && shortenedStatus === "success" && (
+          <>
+            <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-medium text-foreground">
+                      Gekürzter Text
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={onOpenShortenedRefinement} title="Text verfeinern">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onOpenLesefluss}
+                    >
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      Lesefluss
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        handleCopy(selectedRun!.shortenedText!, "gekuerzt")
+                      }
+                    >
+                      {copiedId === "gekuerzt" ? (
+                        <Check className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        onOpenTextViewer({
+                          title: `${kapitel.nummer} ${kapitel.title} - Gekürzter Text`,
+                          text: selectedRun!.shortenedText!,
+                        })
+                      }
+                    >
+                      <Maximize2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="prose prose-sm max-w-none">
+                  <div className="text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-[12]">
+                    {selectedRun!.shortenedText}
+                  </div>
+                </div>
+                {selectedRun!.shortenedText!.split("\n").length > 12 && (
+                  <Button
+                    variant="link"
+                    className="mt-4 p-0 h-auto text-primary"
+                    onClick={() =>
+                      onOpenTextViewer({
+                        title: `${kapitel.nummer} ${kapitel.title} - Gekürzter Text`,
+                        text: selectedRun!.shortenedText!,
+                      })
+                    }
+                  >
+                    Vollständigen Text anzeigen
+                  </Button>
+                )}
+              </div>
+
+              {/* Context Summaries for Gekürzt - Collapsible with preview */}
+              {summaries.length > 0 && (
+                <div className="px-8 pb-8">
+                  <div className="pt-6 border-t border-border/50">
+                    <Collapsible
+                      open={gekuerztSummariesExpanded}
+                      onOpenChange={setGekuerztSummariesExpanded}
+                    >
+                      <CollapsibleTrigger asChild>
+                        <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full justify-between group">
+                          <span className="font-medium">
+                            Kontext-Zusammenfassungen ({summaries.length})
+                          </span>
+                          <ChevronDown
+                            className={cn(
+                              "h-4 w-4 transition-transform",
+                              gekuerztSummariesExpanded && "rotate-180"
+                            )}
+                          />
+                        </button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="mt-3 space-y-3">
+                        {summaries.map((summary) => {
+                          const sourceKapitel = allKapitels.find(
+                            (k) => k.id === summary.sourceKapitelId
+                          );
+
+                          return (
+                            <div
+                              key={summary.id}
+                              className="p-3 bg-muted/30 rounded-md"
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-xs font-medium text-muted-foreground">
+                                  <span className="mr-1">
+                                    {sourceKapitel?.nummer || "?"}
+                                  </span>
+                                  {sourceKapitel?.title || "Unbekanntes Kapitel"}
+                                </h4>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() =>
+                                    onOpenTextViewer({
+                                      title: `Zusammenfassung: ${sourceKapitel?.nummer} ${sourceKapitel?.title}`,
+                                      text: summary.content,
+                                    })
+                                  }
+                                >
+                                  <Maximize2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              <p className="text-xs text-foreground/70 leading-relaxed line-clamp-3">
+                                {summary.content}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </>
+        )}
+
+        {/* 3. Intermediate Groups - IMPROVED STYLING */}
+        {false && (
+          <Card className="mb-8 bg-card border-border shadow-sm">
+            <Collapsible
+              open={intermediateGroupsExpanded}
+              onOpenChange={setIntermediateGroupsExpanded}
+            >
+              <div className="p-6 pb-4">
+                <CollapsibleTrigger asChild>
+                  <button className="flex items-center justify-between w-full group">
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-5 w-5 text-muted-foreground" />
+                      <h3 className="text-lg font-medium text-foreground">
+                        Zwischengruppen
+                      </h3>
+                      <span className="text-sm text-muted-foreground">
+                        {intermediateGroupsLoading
+                          ? "(lädt...)"
+                          : intermediateGroups
+                          ? `(${(intermediateGroups?.length ?? 0)} Gruppen)`
+                          : "(0 Gruppen)"}
+                      </span>
+                    </div>
+                    <ChevronDown
+                      className={cn(
+                        "h-5 w-5 text-muted-foreground group-hover:text-foreground transition-all",
+                        intermediateGroupsExpanded && "rotate-180"
+                      )}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+              </div>
+
+              <CollapsibleContent>
+                <div className="px-6 pb-6 space-y-4">
+                  {(intermediateGroups ?? []).map((group) => (
+                    <Card key={group.id} className="p-4 bg-muted/30">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-medium text-muted-foreground">
+                              Gruppe {group.groupNumber}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {group.sourceCount} Quellen
+                            </span>
+                          </div>
+                          <h4 className="font-medium">{group.heading}</h4>
+                          {group.topic && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {group.topic}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              handleCopy(
+                                group.combinedContent,
+                                `group-${group.id}`
+                              )
+                            }
+                          >
+                            {copiedId === `group-${group.id}` ? (
+                              <Check className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              onOpenTextViewer({
+                                title: `Gruppe ${group.groupNumber}: ${group.heading}`,
+                                text: group.combinedContent,
+                              })
+                            }
+                          >
+                            <Maximize2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">
+                        {group.combinedContent}
+                      </p>
+                      <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>{group.modelUsed}</span>
+                        {canViewUsageInsights ? (
+                          <>
+                            <span>•</span>
+                            <span>{group.tokensUsed.toLocaleString()} tokens</span>
+                          </>
+                        ) : null}
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          </Card>
+        )}
+
+        {/* 4. Kombinierter Text (Combined) */}
+        {selectedRun && combinedStatus === "running" && (
+          <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Kombinierter Text</h2>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Texte werden kombiniert...</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {selectedRun && combinedStatus === "error" && (
+          <Card className={cn("mb-8 bg-card border-destructive/30 shadow-sm", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Kombinierter Text</h2>
+              </div>
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm">{selectedRun.combinedErrorMessage ?? AI_GENERIC_ERROR_MESSAGE}</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {selectedRun && combinedStatus === "success" && !hasContent && (
+          <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">Kombinierter Text</h2>
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {hasContent && combinedStatus === "success" && (
+          <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-medium text-foreground">
+                  Kombinierter Text
+                </h2>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onOpenShorten}
+                    disabled={!hasContent}
+                  >
+                    <Scissors className="h-4 w-4 mr-2" />
+                    Kürzen
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onOpenCombinedRefinement}
+                    disabled={!hasContent}
+                    title="Text verfeinern"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      handleCopy(selectedRun!.combinedText, "kombiniert")
+                    }
+                  >
+                    {copiedId === "kombiniert" ? (
+                      <Check className="h-4 w-4 text-primary" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      onOpenTextViewer({
+                        title: `${kapitel.nummer} ${kapitel.title} - Kombinierter Text`,
+                        text: selectedRun!.combinedText,
+                      })
+                    }
+                  >
+                    <Maximize2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="prose prose-sm max-w-none">
+                <div className="text-foreground/90 leading-relaxed whitespace-pre-wrap line-clamp-[12]">
+                  {selectedRun!.combinedText}
+                </div>
+              </div>
+              {selectedRun!.combinedText.split("\n").length > 12 && (
+                <Button
+                  variant="link"
+                  className="mt-4 p-0 h-auto text-primary"
+                  onClick={() =>
+                    onOpenTextViewer({
+                      title: `${kapitel.nummer} ${kapitel.title} - Kombinierter Text`,
+                      text: selectedRun!.combinedText,
+                    })
+                  }
+                >
+                  Vollständigen Text anzeigen
+                </Button>
+              )}
+            </div>
+          </Card>
+        )}
+
+        {/* Zwischengruppen (only show when there is actually data) */}
+        {hasContent && hasIntermediateGroups === true && !hasIntermediateGroupsLoading && (
+          <Card className={cn("mb-8 bg-card border-border shadow-sm", ENTER_UP_ANIM)}>
+            <Collapsible open={intermediateGroupsExpanded} onOpenChange={setIntermediateGroupsExpanded}>
+              <div className="p-6 pb-4">
+                <CollapsibleTrigger asChild>
+                  <button className="flex items-center justify-between w-full group">
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-5 w-5 text-muted-foreground" />
+                      <h3 className="text-lg font-medium text-foreground">Zwischengruppen</h3>
+                      {intermediateGroups && (
+                        <span className="text-sm text-muted-foreground">({intermediateGroups.length} Gruppen)</span>
+                      )}
+                    </div>
+                    <ChevronDown
+                      className={cn(
+                        "h-5 w-5 text-muted-foreground group-hover:text-foreground transition-all",
+                        intermediateGroupsExpanded && "rotate-180"
+                      )}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+              </div>
+
+              <CollapsibleContent>
+                <div className="px-6 pb-6 space-y-4">
+                  {intermediateGroupsLoading && (
+                    <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Zwischengruppen werden geladen...
+                    </div>
+                  )}
+
+                  {(intermediateGroups ?? []).map((group) => (
+                    <Card key={group.id} className="p-4 bg-muted/30">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-medium text-muted-foreground">Gruppe {group.groupNumber}</span>
+                            <span className="text-xs text-muted-foreground">{group.sourceCount} Quellen</span>
+                          </div>
+                          <h4 className="font-medium">{group.heading}</h4>
+                          {group.topic && <p className="text-sm text-muted-foreground mt-1">{group.topic}</p>}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleCopy(group.combinedContent, `group-${group.id}`)}
+                          >
+                            {copiedId === `group-${group.id}` ? (
+                              <Check className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              onOpenTextViewer({
+                                title: `Gruppe ${group.groupNumber}: ${group.heading}`,
+                                text: group.combinedContent,
+                              })
+                            }
+                          >
+                            <Maximize2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-sm text-foreground/80 leading-relaxed line-clamp-3">{group.combinedContent}</p>
+                      <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>{group.modelUsed}</span>
+                        {canViewUsageInsights ? (
+                          <>
+                            <span>·</span>
+                            <span>{group.tokensUsed.toLocaleString()} tokens</span>
+                          </>
+                        ) : null}
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          </Card>
+        )}
+
+        {/* Combine Button (if only quellen exist) */}
+        {!loading &&
+          hasQuellenErgebnisse &&
+          !hasContent &&
+          combinedStatus !== "running" &&
+          (canCombineFromResults || canAdoptSingleFromResults) && (
+          <Card className={cn("mb-8 bg-accent/30 border-border border-dashed", ENTER_UP_ANIM)}>
+            <div className="p-8 text-center">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                {canCombineFromResults ? (
+                  <Layers className="h-6 w-6 text-primary" />
+                ) : (
+                  <FileText className="h-6 w-6 text-primary" />
+                )}
+              </div>
+              <h3 className="text-base font-medium text-foreground mb-2">
+                {canCombineFromResults ? "Einzeltexte bereit zum Kombinieren" : "Einzeltext bereit zum Uebernehmen"}
+              </h3>
+              <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
+                {canCombineFromResults
+                  ? "Die Einzeltexte wurden generiert. Klicke auf den Button, um sie zu einem zusammenhaengenden Kapiteltext zu kombinieren."
+                  : "Es gibt genau einen verwertbaren Quellentext. Du kannst ihn ohne weitere Verarbeitung als kombinierten Text uebernehmen."}
+              </p>
+              <Button onClick={canCombineFromResults ? onCombineTexts : handleOpenAdoptCombined} disabled={isCombining}>
+                {isCombining ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <>
+                    {canCombineFromResults ? (
+                      <Layers className="h-4 w-4 mr-2" />
+                    ) : (
+                      <FileText className="h-4 w-4 mr-2" />
+                    )}
+                  </>
+                )}
+                {canCombineFromResults ? "Texte kombinieren" : "Als kombinierten Text uebernehmen"}
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {/* No Run Yet */}
+        {!loading && runs.length === 0 && (
+          <Card className={cn("mb-8 bg-accent/30 border-border border-dashed", ENTER_UP_ANIM)}>
+            <div className="p-12 text-center">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                <Play className="h-6 w-6 text-primary" />
+              </div>
+              <h3 className="text-base font-medium text-foreground mb-2">
+                Noch kein Text generiert
+              </h3>
+              <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
+                {assignedQuellen.length === 0
+                  ? "Füge zuerst Quellen zu diesem Kapitel hinzu, dann kannst du es verarbeiten."
+                  : `Du hast ${assignedQuellen.length} Quellen zugewiesen. Verarbeite dieses Kapitel, um einen zusammenhängenden Text zu erstellen.`}
+              </p>
+              <Button
+                onClick={onOpenProcessing}
+                disabled={assignedQuellen.length === 0}
+                className="bg-primary text-primary-foreground"
+              >
+                <Play className="h-4 w-4 mr-2" />
+                Kapitel verarbeiten
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {/* 5. Ergebnisse pro Quelle */}
+        {hasQuellenErgebnisse && (
+          <div className={cn("mt-8", ENTER_UP_ANIM)}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <BookOpen className="h-4 w-4" />
+                Ergebnisse pro Quelle ({selectedRun!.quellenErgebnisse.length})
+              </h3>
+              {!loading &&
+                !hasContent &&
+                combinedStatus !== "running" &&
+                (canCombineFromResults || canAdoptSingleFromResults) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={canCombineFromResults ? onCombineTexts : handleOpenAdoptCombined}
+                  disabled={isCombining}
+                >
+                  {isCombining ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <>
+                      {canCombineFromResults ? (
+                        <Layers className="h-4 w-4 mr-1" />
+                      ) : (
+                        <FileText className="h-4 w-4 mr-1" />
+                      )}
+                    </>
+                  )}
+                  {canCombineFromResults ? "Texte kombinieren" : "Uebernehmen"}
+                </Button>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              {loading ? (
+                <>
+                  {Array.from({
+                    length: Math.min(4, Math.max(assignedQuellen.length, 1)),
+                  }).map((_, i) => (
+                    <Card key={`quelle-skeleton-${i}`} className="p-4 bg-muted/10">
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-56" />
+                        <Skeleton className="h-3 w-full" />
+                        <Skeleton className="h-3 w-5/6" />
+                      </div>
+                    </Card>
+                  ))}
+                </>
+              ) : (
+                selectedRun!.quellenErgebnisse.map((ergebnis) => (
+                  <Card key={ergebnis.id} className={cn("p-4 bg-muted/10", ENTER_ANIM)}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold text-foreground mb-1">{ergebnis.quelleName}</h4>
+
+                        {ergebnis.status === "pending" && (
+                          <div className={cn("mt-2 space-y-2", ENTER_ANIM)}>
+                            <Skeleton className="h-3 w-full" />
+                            <Skeleton className="h-3 w-5/6" />
+                            <Skeleton className="h-3 w-2/3" />
+                          </div>
+                        )}
+
+                        {ergebnis.status === "not-in-run" && (
+                          <div className={cn("text-sm text-muted-foreground", ENTER_ANIM)}>Nicht im Run enthalten</div>
+                        )}
+
+                        {ergebnis.status === "waiting" && (
+                          <div className={cn("flex items-center gap-2 text-muted-foreground", ENTER_ANIM)}>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span className="text-sm">Text wird generiert...</span>
+                          </div>
+                        )}
+                        {ergebnis.status === "no-content" && (
+                          <div className={cn("flex items-center gap-2 text-amber-600", ENTER_ANIM)}>
+                            <AlertCircle className="h-4 w-4" />
+                            <span className="text-sm">Kein verwertbarer Inhalt</span>
+                          </div>
+                        )}
+                        {ergebnis.status === "error" && (
+                          <div className={cn("flex items-center gap-2 text-destructive", ENTER_ANIM)}>
+                            <AlertCircle className="h-4 w-4" />
+                            <span className="text-sm">{ergebnis.errorMessage ?? AI_GENERIC_ERROR_MESSAGE}</span>
+                          </div>
+                        )}
+                        {ergebnis.status === "success" && ergebnis.text && (
+                          <p className={cn("text-sm text-foreground/80 line-clamp-3", ENTER_ANIM)}>{ergebnis.text}</p>
+                        )}
+                      </div>
+
+                      {ergebnis.status === "success" && ergebnis.text && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onOpenResultRefinement(ergebnis.quelleId, ergebnis.quelleName)}
+                            title="Text verfeinern"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleCopy(ergebnis.text, ergebnis.id)}>
+                            {copiedId === ergebnis.id ? (
+                              <Check className="h-4 w-4 text-primary" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              onOpenTextViewer({
+                                title: ergebnis.quelleName,
+                                text: ergebnis.text,
+                              })
+                            }
+                          >
+                            <Maximize2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {!loading && runs.length === 0 && assignedQuellen.length === 0 && (
+          <div className="mt-8 p-8 rounded-lg bg-muted/30 text-center">
+            <p className="text-sm text-muted-foreground">
+              Füge Quellen zu diesem Kapitel hinzu, um mit der Verarbeitung zu
+              beginnen.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+/frontend/node_modules/
+/functions/node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -16,6 +18,8 @@
 # next.js
 /.next/
 /out/
+/frontend/.next/
+/frontend/out/
 
 # production
 /build
@@ -25,6 +29,7 @@
 *.pem
 
 # python
+.venv/
 __pycache__/
 *.pyc
 
@@ -38,9 +43,12 @@ _tmp_*.txt
 
 # env files (can opt-in for committing if needed)
 .env*
+!frontend/.env.local.example
+!backend/.env.example
 
 # vercel
 .vercel
+/frontend/.vercel/
 
 # typescript
 *.tsbuildinfo
@@ -50,7 +58,7 @@ instantpaper-e80e5-firebase-adminsdk-fbsvc-40e6f9c871.json
 new-design
 updated-design/
 
-fastapi/.prompt_dumps
+backend/.prompt_dumps
 /.llm_label_cache_v1
 /.embed_cache
 /sources_workspace/.embed_cache
@@ -69,22 +77,22 @@ fastapi/.prompt_dumps
 
 # Two-lane pipeline run artifacts (generated)
 /runs/
-/sources-v2/runs/
-/sources-v2/openai_request_debug/
-/sources-v2/embeddings_cache_global/
-/sources-v2/run_*/
-/sources-v2/.openalex_cache_nb/
-/sources-v2/.ipynb_checkpoints/
-/sources-v2/prompt_research/.venv_phase_c_probe/
-/sources-v2/prompt_research/probe_outputs/
-/sources-v2/prompt_research/embedding_probe_cache/
+/testing-scripts/sources-v2/runs/
+/testing-scripts/sources-v2/openai_request_debug/
+/testing-scripts/sources-v2/embeddings_cache_global/
+/testing-scripts/sources-v2/run_*/
+/testing-scripts/sources-v2/.openalex_cache_nb/
+/testing-scripts/sources-v2/.ipynb_checkpoints/
+/testing-scripts/sources-v2/prompt_research/.venv_phase_c_probe/
+/testing-scripts/sources-v2/prompt_research/probe_outputs/
+/testing-scripts/sources-v2/prompt_research/embedding_probe_cache/
 
 # Quellen-Finder caches / dev artifacts
-fastapi/.quellen_finder_cache/
-fastapi/.two_lane_artifacts/
+backend/.quellen_finder_cache/
+backend/.two_lane_artifacts/
 /.pdf_scan_artifacts/
-fastapi/.pdf_scan_artifacts/
-fastapi/pdf_scan_runtime/runs/
-pdf-scan/pdf-scan-test.extracted.py
-pdf-scan/runs/
+backend/.pdf_scan_artifacts/
+backend/pdf_scan_runtime/runs/
+/testing-scripts/pdf-scan/pdf-scan-test.extracted.py
+/testing-scripts/pdf-scan/runs/
 

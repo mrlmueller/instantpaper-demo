@@ -1,14 +1,12 @@
-/fastapi/
-/fastapi/**
+/backend/
+/backend/**
 *.log
 github-deployer-key.json
 **/*.ipynb
 
-/sources-v2/
-/sources-v2/**
+/testing-scripts/
+/testing-scripts/**
 /sources_workspace/
 /sources_workspace/**
-/pdf-scan/
-/pdf-scan/**
 /prompt_research/
 /prompt_research/**

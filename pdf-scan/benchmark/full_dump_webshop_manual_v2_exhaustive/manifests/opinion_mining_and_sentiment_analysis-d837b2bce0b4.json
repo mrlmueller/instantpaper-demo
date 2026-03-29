@@ -1,8 +1,0 @@
-{
-  "doc_id": "opinion_mining_and_sentiment_analysis-d837b2bce0b4",
-  "label": "Opinion Mining and Sentiment Analysis",
-  "path": "../../paper-dump/Opinion Mining and Sentiment Analysis.pdf",
-  "role_in_suite": "manual_exhaustive_positive",
-  "expected_difficulty": "manual_exhaustive",
-  "notes": "Strong source for online opinion demand, helpfulness signals, product-feature extraction, manipulation, and review quality/trust issues. Existing benchmark note: User-marked positive. Strong for uncertainty in online information, concrete product-evaluation examples, feature-level explanations, helpfulness signals, and manipulation/trust issues."
-}

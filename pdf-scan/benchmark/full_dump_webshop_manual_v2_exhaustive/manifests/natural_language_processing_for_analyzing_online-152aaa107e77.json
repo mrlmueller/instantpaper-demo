@@ -1,8 +1,0 @@
-{
-  "doc_id": "natural_language_processing_for_analyzing_online-152aaa107e77",
-  "label": "Natural Language Processing for Analyzing Online Customer Reviews: A Survey, Taxonomy, and Open Research Challenges",
-  "path": "../../paper-dump/Natural language processing for analyzing online customer reviews a survey, taxonomy, and open research challenges.pdf",
-  "role_in_suite": "manual_exhaustive_positive",
-  "expected_difficulty": "manual_exhaustive",
-  "notes": "Useful survey source for review authenticity, fake-review detection, trust models, verified-purchase-like signals, overload, and review summarization. Existing benchmark note: User-marked positive. Strong for review authenticity, trustworthiness, helpfulness, verified purchase, information overload, and better presentation of review information."
-}

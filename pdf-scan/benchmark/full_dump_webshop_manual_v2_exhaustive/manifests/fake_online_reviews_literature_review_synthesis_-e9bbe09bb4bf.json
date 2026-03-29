@@ -1,8 +1,0 @@
-{
-  "doc_id": "fake_online_reviews_literature_review_synthesis_-e9bbe09bb4bf",
-  "label": "Fake online reviews Literature review, synthesis, and directions for future research",
-  "path": "../../paper-dump/Fake online reviews Literature review, synthesis, and directions for future research.pdf",
-  "role_in_suite": "manual_exhaustive_positive",
-  "expected_difficulty": "manual_exhaustive",
-  "notes": "Strong source on fake reviews, uncertainty, distrust, review credibility degradation, and platform response strategies. Existing benchmark note: User-marked positive. Strong for fake reviews, uncertainty, distrust, information quality degradation, platform responses, and context moderators."
-}
