@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - master
+      - feature/ratelimit_source_search_pipeline
 
 permissions:
   contents: read

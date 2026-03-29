@@ -1804,9 +1804,10 @@ Your job is to maximize useful recall without losing the chapter's true object.
 Priority order:
 1) Keep every query inside the chapter object, corpus, or domain.
 2) Cover the main constructs, data/proxy constraints, and required facets.
-3) Add breadth through controlled synonym and facet variation.
-4) Add authority boosters only when they remain chapter-anchored.
-5) Prefer simpler provider-safe syntax over clever but brittle syntax.
+3) Rotate core object terms across the match set before repeating near-duplicate object families.
+4) Add breadth through controlled synonym and facet variation.
+5) Add authority boosters only when they remain chapter-anchored.
+6) Prefer simpler provider-safe syntax over clever but brittle syntax.
 
 Do not output prose. Output only valid JSON.
 Be deterministic.
@@ -1843,6 +1844,15 @@ PLANNER-CONTROLLED INPUT FIELDS:
 - authority_blueprints is the canonical upstream authority split.
 - authority_blueprints_expanded repeats each blueprint with its target facet controls for easier use.
 - Generate authority queries from authority_blueprints first. Do not invent flat authority families that ignore this split.
+- Treat primary_context_anchors as semantic reference anchors, not mandatory verbatim strings.
+- Treat core_object_terms as the preferred object rotation set for MATCH queries.
+
+INTERPRETING PLANNER ANCHORS:
+- Preserve the meaning of primary_context_anchors, but exact surface-form copying is NOT required when it would sound unnatural in titles/abstracts.
+- If a planner anchor is a fused phrase, you may decompose it into natural literature phrasing while keeping the same meaning explicit.
+- Example: `Sparkasse pilot projects` can become `Sparkasse` + `"pilot project"` or `"case study"`.
+- Example: `Marktfolge back office` can become `Marktfolge` + `"back office"` or `"post-sale operations"`.
+- Example: `bank document automation` can become `"document automation"` + bank/Sparkasse context when that is more literature-native.
 
 OUTPUT JSON SCHEMA:
 {
@@ -1876,7 +1886,8 @@ So for THIS task:
 - avoid slash tokens X/Y; rewrite as (X OR Y)
 
 MANDATORY RETRIEVAL RULES:
-1) Every query MUST include at least one term from primary_context_anchors[language].
+1) Every query MUST remain explicitly anchored to the chapter object/domain using core_object_terms[language] and/or primary_context_anchors[language].
+   Exact verbatim reuse of a planner anchor is NOT required if a natural decomposed variant is clearer and still equivalent.
 2) Every MATCH query must include:
    - one core object/corpus/domain anchor
    - and one construct/data/method group that is meaningful only inside that object
@@ -1916,6 +1927,12 @@ LANGUAGE POLICY:
 - if the German rendering becomes too literal, niche, or implementation-like, prefer one strongly object-anchored DE core query over multiple dead DE clones
 - keep DE coverage for queries whose object phrase and facet phrase are both likely to appear in German titles/abstracts
 
+MATCH-SET DIVERSITY RULES:
+- Spread MATCH queries across different core_object_terms before repeating the same object family with new facet or method wording.
+- If multiple document/corpus types are relevant, give each one at least one clearly object-led MATCH query before adding near-duplicate expansions.
+- Do not let one English object-anchor pair dominate most of the MATCH set when multiple plausible core_object_terms are available.
+- When broad authority coverage is needed, vary the high-level object wording rather than cloning the same object pair with minor syntax changes.
+
 LEXICALITY POLICY:
 - prefer literature-native phrases that are likely to appear verbatim in titles/abstracts
 - prefer direct object phrases over implementation jargon or abstract substitutes
@@ -1946,6 +1963,8 @@ EMPTY-QUERY TARGET:
 SELF-CHECK (must enforce silently):
 - Would this query still retrieve many generic method surveys if the object phrase were removed? If yes, strengthen it.
 - Does every query include an object anchor, not only a method term? If not, fix it.
+- For MATCH queries in the same language, am I reusing the same object-anchor pair too often? If yes, rotate to other core_object_terms.
+- Am I copying a fused planner anchor literally even though a decomposed literature-native phrasing would be clearer? If yes, rewrite it.
 - Did this authority query come from a core or booster authority blueprint? If not, fix it.
 - Does the query shape match the facet's query_family_preference? If not, fix it.
 - Are exclusions atomic and provider-safe? If not, omit them.
@@ -2533,78 +2552,6 @@ def _canonicalize_openalex_filters(filters: str, *, language: str) -> str:
     return ",".join(required + tail)
 
 
-def _normalize_openalex_query(q: OpenAlexQuery) -> OpenAlexQuery:
-    qs = _normalize_unicode_query_text(str(q.query_string or "")).strip()
-    if any(ch in qs for ch in ("*", "?", "~")):
-        raise ValueError(f"OpenAlex forbidden character in query_string: {qs!r}")
-    qs = _expand_slash_tokens(qs, or_operator="OR")
-    qs = _uppercase_boolean_ops_outside_quotes(qs)
-    qs = re.sub(r"\s+", " ", qs).strip()
-    _lint_openalex_not_clauses_atomic(qs)
-
-    filters = _canonicalize_openalex_filters(q.filters, language=q.language)
-
-    search_field = getattr(q, "search_field", None) or "title_and_abstract.search"
-    if q.intent == "match":
-        search_field = "title_and_abstract.search"
-    elif search_field not in ("default.search", "title_and_abstract.search"):
-        search_field = "title_and_abstract.search"
-
-    sort = q.sort
-    if q.intent == "authority":
-        sort = "cited_by_count:desc"
-    elif q.intent == "match":
-        if sort not in (None, "relevance_score:desc"):
-            sort = "relevance_score:desc"
-
-    notes = _limit_words(q.notes, 18)
-
-    return q.model_copy(
-        update={
-            "search_field": search_field,
-            "query_string": qs,
-            "filters": filters,
-            "sort": sort,
-            "per_page": 200,
-            "notes": notes,
-        }
-    )
-
-
-def _normalize_s2_query(q: S2BulkQuery) -> S2BulkQuery:
-    qs = _normalize_unicode_query_text(str(q.query_string or ""))
-    qs = _expand_slash_tokens(qs.strip(), or_operator="|")
-    qs = re.sub(r"\s+", " ", qs)
-    if "?" in qs:
-        raise ValueError(f"S2 forbidden character in query_string: {qs!r}")
-    _validate_s2_advanced_ops(qs)
-    _lint_s2_negative_terms_atomic(qs)
-    if not re.search(r"\+\s*(?:\(|\")", qs):
-        raise ValueError(f"S2 query_string must contain at least one +anchor: {qs!r}")
-
-    plus_count = len(re.findall(r"(?:^|\s)\+", qs))
-    if q.intent == "match" and plus_count < 2:
-        raise ValueError(f"S2 match query_string must contain >=2 required components (+): {qs!r}")
-
-    depth = 0
-    in_quote = False
-    for ch in qs:
-        if ch == '"':
-            in_quote = not in_quote
-            continue
-        if in_quote:
-            continue
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth = max(depth - 1, 0)
-        elif ch == "|" and depth <= 0:
-            raise ValueError(f"S2 operator sanity: '|' must be inside parentheses: {qs!r}")
-
-    notes = _limit_words(q.notes, 18)
-    return q.model_copy(update={"query_string": qs.strip(), "notes": notes})
-
-
 def _validate_language_coverage(queries: List[Any], *, provider: str) -> None:
     langs = sorted({getattr(q, "language", None) for q in queries})
     if "en" not in langs or "de" not in langs:
@@ -2615,42 +2562,6 @@ def _validate_intent_coverage(queries: List[Any], *, provider: str) -> None:
     intents = sorted({getattr(q, "intent", None) for q in queries})
     if "authority" not in intents or "match" not in intents:
         raise ValueError(f"{provider}: expected both intents authority+match, got {intents}")
-
-
-def _find_anchor_terms_in_text(text: str, terms: List[str]) -> List[str]:
-    s = str(text or "").casefold()
-    hits: List[str] = []
-    for t in terms or []:
-        tt = str(t or "").strip()
-        if not tt:
-            continue
-        if tt.casefold() in s:
-            hits.append(tt)
-    return hits
-
-
-def _validate_openalex_anchor_presence(queries: List[OpenAlexQuery], *, plan: QueryPlan) -> None:
-    for q in queries:
-        anchors = getattr(plan.primary_context_anchors, q.language, []) or []
-        if not anchors:
-            continue
-        hits = _find_anchor_terms_in_text(q.query_string, list(anchors))
-        if not hits:
-            raise ValueError(
-                f"OpenAlex: query missing required anchor (lang={q.language}, intent={q.intent}): {q.query_string!r}"
-            )
-
-
-def _validate_s2_anchor_presence(queries: List[S2BulkQuery], *, plan: QueryPlan) -> None:
-    for q in queries:
-        anchors = getattr(plan.primary_context_anchors, q.language, []) or []
-        if not anchors:
-            continue
-        hits = _find_anchor_terms_in_text(q.query_string, list(anchors))
-        if not hits:
-            raise ValueError(
-                f"S2: query missing required primary anchor (lang={q.language}, intent={q.intent}): {q.query_string!r}"
-            )
 
 
 def _openalex_quote_term(term: str) -> str:
@@ -2760,59 +2671,6 @@ def _maybe_inject_missing_s2_anchor(q: S2BulkQuery, *, plan: QueryPlan) -> Tuple
     return q.model_copy(update={"query_string": new_qs}), True
 
 
-def _validate_openalex_match_anchor_fingerprint_diversity(
-    queries: List[OpenAlexQuery],
-    *,
-    plan: QueryPlan,
-    max_share: float = 0.60,
-) -> None:
-    for lang in ("en", "de"):
-        anchors = getattr(plan.primary_context_anchors, lang, []) or []
-        anchors = [t for t in anchors if str(t or "").strip()]
-        if not anchors:
-            continue
-
-        match_qs = [q for q in queries if q.intent == "match" and q.language == lang]
-        if len(match_qs) < 4:
-            continue
-
-        # Some plans include 1–2 very generic, chapter-wide anchors that will naturally show up in nearly every
-        # query (e.g. time period + geography). We exclude those "always-on" anchors from the diversity heuristic
-        # to avoid false positives that would otherwise abort the run.
-        presence_counts: Dict[str, int] = {str(a): 0 for a in anchors}
-        for q in match_qs:
-            qs = str(q.query_string or "")
-            for a in anchors:
-                if str(a).casefold() in qs.casefold():
-                    presence_counts[str(a)] += 1
-
-        n_total = max(len(match_qs), 1)
-        variable_anchors = [a for a in anchors if (presence_counts.get(str(a), 0) / n_total) < 0.90]
-        if len(variable_anchors) < 2:
-            continue
-
-        counts: Dict[Tuple[str, str], int] = {}
-        eligible = 0
-        for q in match_qs:
-            hits = _find_anchor_terms_in_text(q.query_string, variable_anchors)
-            top2 = [h.lower() for h in hits[:2]]
-            if len(top2) < 2:
-                continue
-            fp = (top2[0], top2[1])
-            counts[fp] = counts.get(fp, 0) + 1
-            eligible += 1
-
-        if eligible < 4:
-            continue
-
-        most_fp, most_n = max(counts.items(), key=lambda kv: kv[1])
-        share = most_n / max(eligible, 1)
-        if share > float(max_share):
-            raise ValueError(
-                f"OpenAlex: anchor fingerprint concentration too high (lang={lang}, share={share:.2f}, fp={most_fp}): regenerate"
-            )
-
-
 def _count_s2_required_components(qs: str) -> int:
     return len(re.findall(r"(?:^|\s)\+(?=(?:\(|\"|[\w]))", str(qs or ""), flags=re.UNICODE))
 
@@ -2862,6 +2720,7 @@ def _normalize_openalex_query(q: OpenAlexQuery) -> OpenAlexQuery:
     search_field = raw_search_field
 
     qs = _normalize_unicode_query_text(str(q.query_string or "")).strip()
+    qs = qs.replace('\\"', '"').replace("\\'", "'")
     qs = _expand_slash_tokens(qs, or_operator="OR")
     qs = _uppercase_boolean_ops_outside_quotes(qs)
     qs = re.sub(r"\s+", " ", qs).strip()
@@ -2895,6 +2754,7 @@ def _normalize_openalex_query(q: OpenAlexQuery) -> OpenAlexQuery:
 
 def _normalize_s2_query(q: S2BulkQuery) -> S2BulkQuery:
     qs = _normalize_unicode_query_text(str(q.query_string or ""))
+    qs = qs.replace('\\"', '"').replace("\\'", "'")
     qs = _expand_slash_tokens(qs.strip(), or_operator="|")
     qs = re.sub(r"\s+", " ", qs)
     if "?" in qs:
@@ -2954,9 +2814,30 @@ def _find_anchor_terms_in_text(text: str, terms: List[str]) -> List[str]:
     return uniq
 
 
+def _dedupe_terms_preserve_order(terms: List[str]) -> List[str]:
+    seen: set[str] = set()
+    deduped: List[str] = []
+    for term in terms:
+        clean = str(term or "").strip()
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        deduped.append(clean)
+        seen.add(key)
+    return deduped
+
+
+def _openalex_required_anchor_terms(*, query: OpenAlexQuery, plan: QueryPlan) -> List[str]:
+    primary_terms = list(getattr(plan.primary_context_anchors, query.language, []) or [])
+    core_terms = _plan_language_terms(plan, "core_object_terms", query.language)
+    return _dedupe_terms_preserve_order(list(core_terms) + primary_terms)
+
+
 def _validate_openalex_anchor_presence(queries: List[OpenAlexQuery], *, plan: QueryPlan) -> None:
     for q in queries:
-        anchors = getattr(plan.primary_context_anchors, q.language, []) or []
+        anchors = _openalex_required_anchor_terms(query=q, plan=plan)
         if not anchors:
             continue
         hits = _find_anchor_terms_in_text(q.query_string, list(anchors))
@@ -2988,26 +2869,83 @@ def _validate_match_core_object_presence(queries: List[Any], *, plan: QueryPlan,
             )
 
 
+def _select_variable_openalex_match_anchors(
+    queries: List[OpenAlexQuery],
+    *,
+    anchors: List[str],
+    always_on_share_threshold: float = 0.90,
+) -> List[str]:
+    clean_anchors = [str(anchor or "").strip() for anchor in (anchors or []) if str(anchor or "").strip()]
+    if not clean_anchors:
+        return []
+
+    presence_counts: Dict[str, int] = {anchor: 0 for anchor in clean_anchors}
+    for q in queries:
+        query_text = str(q.query_string or "")
+        for anchor in clean_anchors:
+            if anchor.casefold() in query_text.casefold():
+                presence_counts[anchor] += 1
+
+    total_queries = max(len(queries), 1)
+    variable_anchors = [
+        anchor
+        for anchor in clean_anchors
+        if 0 < presence_counts.get(anchor, 0) < total_queries
+        and (presence_counts.get(anchor, 0) / total_queries) < float(always_on_share_threshold)
+    ]
+    return variable_anchors
+
+
+def _openalex_match_fingerprint_anchor_pool(
+    queries: List[OpenAlexQuery],
+    *,
+    plan: QueryPlan,
+    language: str,
+    always_on_share_threshold: float = 0.90,
+) -> List[str]:
+    core_terms = _plan_language_terms(plan, "core_object_terms", language)
+    variable_core_terms = _select_variable_openalex_match_anchors(
+        queries,
+        anchors=list(core_terms),
+        always_on_share_threshold=always_on_share_threshold,
+    )
+    if len(variable_core_terms) >= 2:
+        return variable_core_terms
+
+    primary_terms = getattr(plan.primary_context_anchors, language, []) or []
+    variable_primary_terms = _select_variable_openalex_match_anchors(
+        queries,
+        anchors=list(primary_terms),
+        always_on_share_threshold=always_on_share_threshold,
+    )
+    return _dedupe_terms_preserve_order(list(variable_core_terms) + list(variable_primary_terms))
+
+
 def _validate_openalex_match_anchor_fingerprint_diversity(
     queries: List[OpenAlexQuery],
     *,
     plan: QueryPlan,
-    max_share: float = 0.60,
+    max_share: float = 0.75,
+    always_on_share_threshold: float = 0.90,
 ) -> None:
     for lang in ("en", "de"):
-        anchors = getattr(plan.primary_context_anchors, lang, []) or []
-        anchors = [t for t in anchors if str(t or "").strip()]
-        if not anchors:
-            continue
-
         match_qs = [q for q in queries if q.intent == "match" and q.language == lang]
         if len(match_qs) < 4:
+            continue
+
+        variable_anchors = _openalex_match_fingerprint_anchor_pool(
+            match_qs,
+            plan=plan,
+            language=lang,
+            always_on_share_threshold=always_on_share_threshold,
+        )
+        if len(variable_anchors) < 2:
             continue
 
         counts: Dict[Tuple[str, str], int] = {}
         eligible = 0
         for q in match_qs:
-            hits = _find_anchor_terms_in_text(q.query_string, anchors)
+            hits = _find_anchor_terms_in_text(q.query_string, variable_anchors)
             top2 = [h.lower() for h in hits[:2]]
             if len(top2) < 2:
                 continue
