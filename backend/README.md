@@ -103,6 +103,12 @@ ADMIN_BASIC_PASSWORD=
 ADMIN_UIDS=
 
 TWO_LANE_SOURCES_EXECUTION_BACKEND=local_background
+TWO_LANE_OPENALEX_RPS=5
+TWO_LANE_SEMANTICSCHOLAR_RPS=1
+TWO_LANE_PROVIDER_RATE_LIMIT_BACKEND=firestore
+TWO_LANE_PROVIDER_RATE_LIMIT_COLLECTION=quellenFinderProviderRateLimits
+TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS=86400000
+TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS=150
 PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
 ```
 
@@ -128,6 +134,16 @@ PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
   - Firebase UID allowlist for `/api/admin/*`
 - `OPENALEX_API_KEY` / `SEMANTICSCHOLAR_API_KEY`
   - used by two-lane sources workflows
+- `TWO_LANE_OPENALEX_RPS` / `TWO_LANE_SEMANTICSCHOLAR_RPS`
+  - provider-level request targets for the shared limiter
+- `TWO_LANE_PROVIDER_RATE_LIMIT_BACKEND`
+  - `firestore` for shared cross-run throttling, `local` for deterministic offline tests
+- `TWO_LANE_PROVIDER_RATE_LIMIT_COLLECTION`
+  - Firestore collection used by the shared limiter
+- `TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS`
+  - recovery guard if a limiter doc is accidentally pushed too far into the future
+- `TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS`
+  - extra safety margin so actual HTTP send times preserve the target spacing under Firestore round-trip latency
 - `USER_KEY_ENCRYPTION_KEY`
   - used by per-user key encryption features
 
@@ -228,6 +244,22 @@ Compile-check:
 python -m compileall backend
 ```
 
+Shared provider limiter tests:
+
+```bash
+cd backend
+python scripts/test_two_lane_provider_rate_limit.py
+python scripts/test_two_lane_provider_pipeline_http.py --backend local --workers 4
+```
+
+If local Firestore credentials are available, also run:
+
+```bash
+cd backend
+python scripts/test_two_lane_provider_rate_limit.py --firestore
+python scripts/test_two_lane_provider_pipeline_http.py --backend firestore --workers 4
+```
+
 Prompt docs regeneration:
 
 ```bash
@@ -269,6 +301,15 @@ It also binds Cloud Run secrets for runtime values such as:
 - `ADMIN_UIDS`
 - `OPENALEX_API_KEY`
 - `SEMANTICSCHOLAR_API_KEY`
+
+The deploy workflow also sets two-lane rate-limit envs directly on the API service and the two-lane Cloud Run job:
+
+- `TWO_LANE_OPENALEX_RPS`
+- `TWO_LANE_SEMANTICSCHOLAR_RPS`
+- `TWO_LANE_PROVIDER_RATE_LIMIT_BACKEND`
+- `TWO_LANE_PROVIDER_RATE_LIMIT_COLLECTION`
+- `TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS`
+- `TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS`
 
 ## Relationship To `testing-scripts/`
 
