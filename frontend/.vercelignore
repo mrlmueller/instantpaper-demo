@@ -1,3 +1,18 @@
-*.log
-.next
-node_modules
+# Upload only the files the Next.js app actually needs.
+/*
+!app/
+!app/**
+!components/
+!components/**
+!lib/
+!lib/**
+!public/
+!public/**
+!eslint.config.mjs
+!next-env.d.ts
+!next.config.ts
+!package-lock.json
+!package.json
+!postcss.config.mjs
+!proxy.ts
+!tsconfig.json
