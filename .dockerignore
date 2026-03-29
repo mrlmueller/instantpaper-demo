@@ -1,3 +1,4 @@
+# Repo-root safety net. Production CI builds use `backend/` as the Docker context.
 .git
 .github
 .next
@@ -7,12 +8,20 @@ __pycache__
 *.log
 output
 backend/.env
+backend/.env.*
 backend/venv
 backend/__pycache__
 backend/.quellen_finder_cache
 backend/.two_lane_artifacts
 backend/.prompt_dumps
 backend/firebase-debug.log
+backend/README.md
+backend/PROMPTS.md
+backend/TWO_LANE_CLOUD_RUN_JOB_REFACTOR_PLAN.md
+backend/scripts
+backend/test_cost_calculation.py
+backend/test_openai_response.py
+backend/verify_cost_fix.py
 testing-scripts
 .claude
 .playwright-cli
@@ -20,6 +29,7 @@ testing-scripts
 frontend
 functions
 .env
+.env.*
 CLAUDE.md
 README.md
 firestore.rules

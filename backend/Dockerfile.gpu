@@ -6,10 +6,20 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/opt/huggingface
 
-COPY backend/requirements-gpu.txt ./requirements-gpu.txt
+COPY requirements-gpu.txt ./requirements-gpu.txt
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu126 -r requirements-gpu.txt
 
-COPY backend/ ./
+COPY main.py ./
+COPY run_two_lane_job.py ./
+COPY run_pdf_scan_cpu_job.py ./
+COPY run_pdf_scan_gpu_job.py ./
+COPY run_pdf_scan_pipeline.py ./
+COPY run_pdf_scan_gpu_pipeline.py ./
+COPY middleware ./middleware
+COPY models ./models
+COPY pdf_scan_runtime ./pdf_scan_runtime
+COPY services ./services
+COPY utils ./utils
 
 ARG PRELOAD_PDF_SCAN_RERANKER=0
 RUN mkdir -p /opt/huggingface && \

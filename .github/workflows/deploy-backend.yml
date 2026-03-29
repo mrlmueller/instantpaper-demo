@@ -63,8 +63,8 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: backend/Dockerfile
+          context: ./backend
+          file: ./backend/Dockerfile
           push: true
           tags: ${{ env.IMAGE }}
           cache-from: type=gha
@@ -73,8 +73,8 @@ jobs:
       - name: Build and push GPU Docker image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: backend/Dockerfile.gpu
+          context: ./backend
+          file: ./backend/Dockerfile.gpu
           push: true
           tags: ${{ env.GPU_IMAGE }}
           provenance: false
