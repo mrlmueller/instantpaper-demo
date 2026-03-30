@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import time
 import uuid
 from pathlib import Path
 from typing import Any
+
+from google.cloud import firestore
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
@@ -45,12 +48,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--output-name", default="staging_split_concurrency_latest.json")
+    parser.add_argument("--seed-topup-credits", type=float, default=10.0)
     return parser.parse_args(argv)
 
 
 def _gcloud_run_job_execute(*, job_name: str, region: str, user_id: str, projekt_id: str, run_id: str, stage: str) -> dict[str, Any]:
+    gcloud_bin = shutil.which("gcloud") or shutil.which("gcloud.cmd")
+    if not gcloud_bin:
+        raise RuntimeError("gcloud executable was not found on PATH")
     cmd = [
-        "gcloud",
+        gcloud_bin,
         "run",
         "jobs",
         "execute",
@@ -130,6 +137,29 @@ def _create_run(*, fs: QuellenFinderFirestoreService, title: str, spec: str, suf
     }
 
 
+def _seed_test_billing(*, user_id: str, topup_credits: float) -> None:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+    firebase_service.db.collection("users").document(uid).set(
+        {
+            "uid": uid,
+            "email": f"{uid}@example.invalid",
+            "displayName": uid,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+    firebase_service.db.collection("users").document(uid).collection("billing").document("balance").set(
+        {
+            "topupCredits": float(max(topup_credits, 0.0)),
+            "reservedCredits": 0.0,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+
+
 def _read_run(fs: QuellenFinderFirestoreService, ids: dict[str, str]) -> dict[str, Any]:
     return fs.get_run(user_id=ids["user_id"], projekt_id=ids["projekt_id"], run_id=ids["run_id"])
 
@@ -167,6 +197,10 @@ def main(argv: list[str] | None = None) -> int:
     for idx in range(1, count + 1):
         suffix = f"{suffix_root}-{idx:02d}"
         ids = _create_run(fs=fs, title=str(args.chapter_title), spec=str(args.chapter_spec), suffix=suffix)
+        _seed_test_billing(
+            user_id=ids["user_id"],
+            topup_credits=float(args.seed_topup_credits or 0.0),
+        )
         launch = _gcloud_run_job_execute(
             job_name=str(args.job_name),
             region=str(args.region),
