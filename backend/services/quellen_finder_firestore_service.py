@@ -166,13 +166,14 @@ class QuellenFinderFirestoreService:
         run_id: str,
         job_name: str,
         region: str,
+        provider: str | None = None,
         operation_name: str | None = None,
         execution_name: str | None = None,
     ) -> None:
         payload: dict[str, Any] = {
             "updatedAt": SERVER_TIMESTAMP,
             "job": {
-                "provider": "cloud_run_jobs",
+                "provider": _as_str(provider) or "cloud_run_jobs",
                 "jobName": _as_str(job_name),
                 "region": _as_str(region),
                 "operationName": _as_str(operation_name),
@@ -192,6 +193,7 @@ class QuellenFinderFirestoreService:
         error_message: str,
         job_name: str | None = None,
         region: str | None = None,
+        provider: str | None = None,
         operation_name: str | None = None,
     ) -> None:
         payload: dict[str, Any] = {
@@ -202,7 +204,7 @@ class QuellenFinderFirestoreService:
             "updatedAt": SERVER_TIMESTAMP,
             "progress": {"stage": "error", "message": "Error"},
             "job": {
-                "provider": "cloud_run_jobs",
+                "provider": _as_str(provider) or "cloud_run_jobs",
                 "jobName": _as_str(job_name),
                 "region": _as_str(region),
                 "operationName": _as_str(operation_name),

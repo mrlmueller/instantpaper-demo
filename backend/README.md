@@ -103,6 +103,8 @@ ADMIN_BASIC_PASSWORD=
 ADMIN_UIDS=
 
 TWO_LANE_SOURCES_EXECUTION_BACKEND=local_background
+TWO_LANE_ARTIFACT_BUCKET=
+TWO_LANE_ARTIFACT_PREFIX=two-lane-runs
 TWO_LANE_OPENALEX_RPS=5
 TWO_LANE_SEMANTICSCHOLAR_RPS=1
 TWO_LANE_PROVIDER_RATE_LIMIT_BACKEND=firestore
@@ -126,6 +128,11 @@ PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
   - explicit GCP project override
 - `FIREBASE_STORAGE_BUCKET`
   - bucket override, defaults from project ID when omitted
+- `TWO_LANE_SOURCES_EXECUTION_BACKEND`
+  - `local_background` / `cloud_run_job` keep the current monolith
+  - `local_split_jobs` / `cloud_run_split_jobs` enable the new staged handoff path
+- `TWO_LANE_ARTIFACT_BUCKET` / `TWO_LANE_ARTIFACT_PREFIX`
+  - GCS location used by the staged two-lane backend for temporary handoff bundles
 - `ALLOWED_ORIGINS`
   - comma-separated CORS allowlist
 - `ADMIN_BASIC_USER` / `ADMIN_BASIC_PASSWORD`

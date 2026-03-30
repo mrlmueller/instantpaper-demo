@@ -5507,8 +5507,9 @@ async def quellen_finder_sources_two_lane_start(
         "chapterSpecText": chapter_spec_text,
     }
     execution_backend = str(config.TWO_LANE_SOURCES_EXECUTION_BACKEND or "").strip().lower()
-    if execution_backend not in {"cloud_run_job", "local_background"}:
+    if execution_backend not in {"cloud_run_job", "local_background", "cloud_run_split_jobs", "local_split_jobs"}:
         execution_backend = "cloud_run_job" if config.IS_CLOUD_RUN else "local_background"
+    split_backend = execution_backend in {"cloud_run_split_jobs", "local_split_jobs"}
 
     run_id = fs.create_run(
         user_id=user_id,
@@ -5518,18 +5519,27 @@ async def quellen_finder_sources_two_lane_start(
         kapitel_snapshots=[kapitel_snapshot],
         model=str(request.planner_model or "").strip() or "gpt-5-mini",
         extra={
+            "executionBackend": execution_backend,
             "chapterInputSnapshot": chapter_input_snapshot,
             "twoLaneSettingsRequested": pipeline_settings,
             "job": {
-                "provider": "cloud_run_jobs" if execution_backend == "cloud_run_job" else "local_background_task",
+                "provider": (
+                    "cloud_run_split_jobs"
+                    if execution_backend == "cloud_run_split_jobs"
+                    else "local_split_jobs"
+                    if execution_backend == "local_split_jobs"
+                    else "cloud_run_jobs"
+                    if execution_backend == "cloud_run_job"
+                    else "local_background_task"
+                ),
                 "jobName": (
                     str(config.TWO_LANE_CLOUD_RUN_JOB_NAME or "").strip() or None
-                    if execution_backend == "cloud_run_job"
+                    if execution_backend in {"cloud_run_job", "cloud_run_split_jobs"}
                     else None
                 ),
                 "region": (
                     str(config.TWO_LANE_CLOUD_RUN_JOB_REGION or "").strip() or None
-                    if execution_backend == "cloud_run_job"
+                    if execution_backend in {"cloud_run_job", "cloud_run_split_jobs"}
                     else None
                 ),
                 "operationName": None,
@@ -5537,6 +5547,18 @@ async def quellen_finder_sources_two_lane_start(
                 "launchedAt": None,
                 "launchError": None,
             },
+            "splitExecution": (
+                {
+                    "backend": execution_backend,
+                    "version": 1,
+                    "currentStage": "preprocess",
+                    "preprocess": {"status": "queued", "queuedAt": SERVER_TIMESTAMP},
+                    "fetch": {"status": "pending"},
+                    "finalize": {"status": "pending"},
+                }
+                if split_backend
+                else None
+            ),
         },
     )
 
@@ -5556,12 +5578,56 @@ async def quellen_finder_sources_two_lane_start(
             "queued_at": datetime.utcnow().isoformat() + "Z",
         }
 
+    if execution_backend == "local_split_jobs":
+        try:
+            launch = await asyncio.to_thread(
+                cloud_run_job_launcher.execute_two_lane_sources_job,
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+                stage="preprocess",
+            )
+        except Exception as exc:
+            msg = str(exc or "Two-lane split job launch failed.")[:1000]
+            fs.mark_launch_failed(
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+                error_message=msg,
+                job_name="local:run_two_lane_job.py",
+                region="local",
+                provider="local_split_jobs",
+            )
+            raise HTTPException(status_code=502, detail=msg) from exc
+
+        fs.attach_job_execution(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            job_name=str((launch or {}).get("job_name") or "local:run_two_lane_job.py"),
+            region=str((launch or {}).get("region") or "local"),
+            provider="local_split_jobs",
+            operation_name=(launch or {}).get("operation_name"),
+            execution_name=(launch or {}).get("execution_name"),
+        )
+        return {
+            "status": "queued",
+            "run_id": run_id,
+            "projekt_id": projekt_id,
+            "kapitel_id": kapitel_id,
+            "execution_backend": execution_backend,
+            "job_execution_name": (launch or {}).get("execution_name"),
+            "job_operation_name": (launch or {}).get("operation_name"),
+            "queued_at": datetime.utcnow().isoformat() + "Z",
+        }
+
     try:
         launch = await asyncio.to_thread(
             cloud_run_job_launcher.execute_two_lane_sources_job,
             user_id=user_id,
             projekt_id=projekt_id,
             run_id=run_id,
+            stage="preprocess" if split_backend else None,
         )
     except Exception as exc:
         msg = str(exc or "Cloud Run Job launch failed.")[:1000]
@@ -5572,6 +5638,7 @@ async def quellen_finder_sources_two_lane_start(
             error_message=msg,
             job_name=str(config.TWO_LANE_CLOUD_RUN_JOB_NAME or "").strip() or None,
             region=str(config.TWO_LANE_CLOUD_RUN_JOB_REGION or "").strip() or None,
+            provider="cloud_run_split_jobs" if split_backend else "cloud_run_jobs",
         )
         raise HTTPException(status_code=502, detail=msg) from exc
 
@@ -5581,6 +5648,7 @@ async def quellen_finder_sources_two_lane_start(
         run_id=run_id,
         job_name=str((launch or {}).get("job_name") or config.TWO_LANE_CLOUD_RUN_JOB_NAME or ""),
         region=str((launch or {}).get("region") or config.TWO_LANE_CLOUD_RUN_JOB_REGION or ""),
+        provider="cloud_run_split_jobs" if split_backend else "cloud_run_jobs",
         operation_name=(launch or {}).get("operation_name"),
         execution_name=(launch or {}).get("execution_name"),
     )

@@ -243,3 +243,19 @@ class PdfScanArtifactStore:
             uploaded.append(self.upload_file(local_path=file_path, path_or_uri=object_name, content_type=content_type))
         logger.info("Uploaded %s PDF scan artifact file(s) to gs://%s/%s", len(uploaded), self.bucket_name, str(prefix or "").strip("/"))
         return uploaded
+
+    def delete_prefix(self, *, prefix: str) -> int:
+        object_prefix = self._normalize_object_name(str(prefix or "").strip().strip("/"))
+        if not object_prefix:
+            return 0
+        deleted = 0
+        bucket = self._resolve_bucket()
+        blobs = list(self._client.list_blobs(bucket, prefix=object_prefix))
+        for start in range(0, len(blobs), 100):
+            chunk = blobs[start : start + 100]
+            if not chunk:
+                continue
+            for blob in chunk:
+                blob.delete()
+                deleted += 1
+        return int(deleted)

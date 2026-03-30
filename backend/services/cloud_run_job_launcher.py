@@ -166,7 +166,7 @@ class CloudRunJobLauncher:
     def _use_local_pdf_scan_launcher(self) -> bool:
         return not config.IS_CLOUD_RUN
 
-    def _python_supports_local_pdf_scan(self, python_bin: str) -> bool:
+    def _python_supports_local_backend(self, python_bin: str) -> bool:
         backend_root = resolve_backend_root(__file__)
         try:
             completed = subprocess.run(
@@ -234,11 +234,11 @@ class CloudRunJobLauncher:
             path_obj = Path(raw)
             if path_obj.exists():
                 candidate = str(path_obj)
-                if self._python_supports_local_pdf_scan(candidate):
+                if self._python_supports_local_backend(candidate):
                     return candidate
                 continue
             looked_up = shutil.which(raw)
-            if looked_up and self._python_supports_local_pdf_scan(str(looked_up)):
+            if looked_up and self._python_supports_local_backend(str(looked_up)):
                 return str(looked_up)
 
         raise RuntimeError(
@@ -252,6 +252,7 @@ class CloudRunJobLauncher:
         script_name: str,
         args: list[str],
         run_id: str,
+        log_family: str = "pdf_scan",
     ) -> dict[str, str | None]:
         backend_root = resolve_backend_root(__file__)
         script_path = backend_root / script_name
@@ -260,7 +261,7 @@ class CloudRunJobLauncher:
 
         python_bin = self._resolve_local_python_bin()
 
-        log_root = Path(tempfile.gettempdir()) / "instantpaper_job_logs" / "pdf_scan"
+        log_root = Path(tempfile.gettempdir()) / "instantpaper_job_logs" / str(log_family or "jobs")
         log_root.mkdir(parents=True, exist_ok=True)
         safe_run_id = re.sub(r"[^A-Za-z0-9._-]+", "_", str(run_id or "").strip()) or "run"
         log_path = log_root / f"{Path(script_name).stem}_{safe_run_id}.log"
@@ -291,7 +292,8 @@ class CloudRunJobLauncher:
             )
 
         logger.info(
-            "Launched local PDF scan worker | script=%s pid=%s run_id=%s python=%s log=%s",
+            "Launched local worker | family=%s script=%s pid=%s run_id=%s python=%s log=%s",
+            log_family,
             script_name,
             getattr(proc, "pid", None),
             run_id,
@@ -450,7 +452,24 @@ class CloudRunJobLauncher:
         user_id: str,
         projekt_id: str,
         run_id: str,
+        stage: str | None = None,
     ) -> dict[str, str | None]:
+        args = [
+            f"--user-id={str(user_id).strip()}",
+            f"--project-id={str(projekt_id).strip()}",
+            f"--run-id={str(run_id).strip()}",
+        ]
+        stage_norm = str(stage or "").strip().lower()
+        if stage_norm:
+            args.append(f"--stage={stage_norm}")
+
+        if not config.IS_CLOUD_RUN:
+            return self._spawn_local_process(
+                script_name="run_two_lane_job.py",
+                args=args,
+                run_id=run_id,
+                log_family="two_lane",
+            )
         region = self._job_region(
             str(config.TWO_LANE_CLOUD_RUN_JOB_REGION or "").strip(),
             "TWO_LANE_CLOUD_RUN_JOB_REGION",
@@ -459,12 +478,7 @@ class CloudRunJobLauncher:
             str(config.TWO_LANE_CLOUD_RUN_JOB_NAME or "").strip(),
             "TWO_LANE_CLOUD_RUN_JOB_NAME",
         )
-        args = [
-            "run_two_lane_job.py",
-            f"--user-id={str(user_id).strip()}",
-            f"--project-id={str(projekt_id).strip()}",
-            f"--run-id={str(run_id).strip()}",
-        ]
+        args = ["run_two_lane_job.py", *args]
         return self._execute_job(job_name=job_name, region=region, args=args)
 
     def execute_pdf_scan_cpu_job(

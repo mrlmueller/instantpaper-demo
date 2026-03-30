@@ -85,6 +85,17 @@ class Config:
         "TWO_LANE_SOURCES_EXECUTION_BACKEND",
         "cloud_run_job" if IS_CLOUD_RUN else "local_background",
     ).strip().lower()
+    TWO_LANE_ARTIFACT_BUCKET: str = os.getenv(
+        "TWO_LANE_ARTIFACT_BUCKET",
+        os.getenv(
+            "FIREBASE_STORAGE_BUCKET",
+            f"{os.getenv('FIREBASE_PROJECT_ID', '').strip()}.firebasestorage.app",
+        ),
+    ).strip()
+    TWO_LANE_ARTIFACT_PREFIX: str = os.getenv(
+        "TWO_LANE_ARTIFACT_PREFIX",
+        "two-lane-runs",
+    ).strip().strip("/")
     PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME: str = os.getenv(
         "PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME",
         "instantpaper-pdf-scan-cpu",

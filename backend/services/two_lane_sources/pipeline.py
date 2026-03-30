@@ -25,6 +25,7 @@ import statistics
 import subprocess
 import tempfile
 import time
+import threading
 import traceback
 import unicodedata
 from array import array
@@ -55,6 +56,8 @@ from utils.config import config as app_config
 from utils.token_estimation import count_tokens
 
 logger = logging.getLogger(__name__)
+_METRICS_LOCKS_GUARD = threading.Lock()
+_METRICS_LOCKS: dict[str, threading.Lock] = {}
 
 
 # -----------------------------
@@ -336,14 +339,38 @@ def save_metrics(run_ctx: RunContext, metrics: Dict[str, Any]) -> None:
     write_json(run_ctx.artifacts.metrics_json, metrics)
 
 
+def _metrics_lock(run_ctx: RunContext) -> threading.Lock:
+    key = str(Path(run_ctx.artifacts.metrics_json).resolve())
+    with _METRICS_LOCKS_GUARD:
+        lock = _METRICS_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _METRICS_LOCKS[key] = lock
+        return lock
+
+
+def update_metrics(run_ctx: RunContext, updater) -> Dict[str, Any]:
+    lock = _metrics_lock(run_ctx)
+    with lock:
+        metrics = load_metrics(run_ctx)
+        updated = updater(metrics)
+        out = updated if isinstance(updated, dict) else metrics
+        save_metrics(run_ctx, out)
+        return out
+
+
 @contextmanager
 def stage_timer(run_ctx: RunContext, stage: str):
     t0 = time.time()
     yield
     dt = time.time() - t0
-    metrics = load_metrics(run_ctx)
-    metrics.setdefault("stages", {}).setdefault(stage, {})["last_duration_s"] = round(dt, 3)
-    save_metrics(run_ctx, metrics)
+    update_metrics(
+        run_ctx,
+        lambda metrics: (
+            metrics.setdefault("stages", {}).setdefault(stage, {}).__setitem__("last_duration_s", round(dt, 3))
+            or metrics
+        ),
+    )
 
 
 # -----------------------------
@@ -1706,9 +1733,13 @@ async def plan_queries_llm(
     write_json(cache_path, plan.model_dump(mode="json"))
     log_event(run_ctx, stage=stage, event="cache_write", path=str(cache_path), model_used=meta.get("model_used"), usage=meta.get("usage"), cost=meta.get("cost_usd"))
 
-    metrics = load_metrics(run_ctx)
-    metrics.setdefault("stages", {}).setdefault(stage, {})["openai"] = meta
-    save_metrics(run_ctx, metrics)
+    update_metrics(
+        run_ctx,
+        lambda metrics: (
+            metrics.setdefault("stages", {}).setdefault(stage, {}).__setitem__("openai", meta)
+            or metrics
+        ),
+    )
 
     meta = dict(meta)
     meta["cache_hit"] = False
@@ -3155,10 +3186,13 @@ async def build_openalex_queries_llm(
     write_json(cache_path, {"openalex_queries": [q.model_dump(mode="json") for q in queries]})
     log_event(run_ctx, stage=stage, event="cache_write", path=str(cache_path), model_used=meta.get("model_used"), usage=meta.get("usage"), cost=meta.get("cost_usd"), query_count=len(queries))
 
-    metrics = load_metrics(run_ctx)
-    metrics.setdefault("stages", {}).setdefault(stage, {})["openai"] = meta
-    metrics["stages"][stage]["query_count"] = len(queries)
-    save_metrics(run_ctx, metrics)
+    def _merge_query_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
+        stage_metrics = metrics.setdefault("stages", {}).setdefault(stage, {})
+        stage_metrics["openai"] = meta
+        stage_metrics["query_count"] = len(queries)
+        return metrics
+
+    update_metrics(run_ctx, _merge_query_metrics)
 
     meta = dict(meta)
     meta["cache_hit"] = False
@@ -3308,10 +3342,13 @@ async def build_s2_bulk_queries_llm(
     write_json(cache_path, {"s2_bulk_queries": [q.model_dump(mode="json") for q in queries]})
     log_event(run_ctx, stage=stage, event="cache_write", path=str(cache_path), model_used=meta.get("model_used"), usage=meta.get("usage"), cost=meta.get("cost_usd"), query_count=len(queries))
 
-    metrics = load_metrics(run_ctx)
-    metrics.setdefault("stages", {}).setdefault(stage, {})["openai"] = meta
-    metrics["stages"][stage]["query_count"] = len(queries)
-    save_metrics(run_ctx, metrics)
+    def _merge_query_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
+        stage_metrics = metrics.setdefault("stages", {}).setdefault(stage, {})
+        stage_metrics["openai"] = meta
+        stage_metrics["query_count"] = len(queries)
+        return metrics
+
+    update_metrics(run_ctx, _merge_query_metrics)
 
     meta = dict(meta)
     meta["cache_hit"] = False
@@ -4690,9 +4727,13 @@ def build_candidates_from_raw(
         without_abstract=pool_counts.get("without_abstract"),
     )
 
-    metrics = load_metrics(run_ctx)
-    metrics.setdefault("stages", {}).setdefault(stage, {})["counts"] = meta
-    save_metrics(run_ctx, metrics)
+    update_metrics(
+        run_ctx,
+        lambda metrics: (
+            metrics.setdefault("stages", {}).setdefault(stage, {}).__setitem__("counts", meta)
+            or metrics
+        ),
+    )
 
     return candidates, meta
 
