@@ -5818,7 +5818,11 @@ async def quellen_finder_pdf_scan(
     if reservation.result in {"already_reserved", "finalized"}:
         raise HTTPException(status_code=409, detail="PDF scan billing operation already exists. Please retry later.")
 
-    execution_backend = "cloud_run_split_jobs" if config.IS_CLOUD_RUN else "local_split_jobs"
+    execution_backend = (
+        "cloud_run_split_jobs"
+        if str(config.PDF_SCAN_EXECUTION_BACKEND or "").strip().lower() == "cloud_run_split_jobs"
+        else "local_split_jobs"
+    )
     initial_cpu_job_name = (
         "local:run_pdf_scan_cpu_job.py"
         if execution_backend == "local_split_jobs"
