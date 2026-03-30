@@ -30,6 +30,21 @@ def _read_bool_env(name: str, default: bool = False) -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _is_cloud_run_env() -> bool:
+    # Cloud Run services expose K_SERVICE; Cloud Run jobs expose CLOUD_RUN_JOB/CLOUD_RUN_EXECUTION.
+    return any(
+        str(os.getenv(name, "") or "").strip()
+        for name in ("K_SERVICE", "CLOUD_RUN_JOB", "CLOUD_RUN_EXECUTION")
+    )
+
+
+def _normalized_execution_backend(raw: str, *, default: str) -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"cloud_run_split_jobs", "local_split_jobs"}:
+        return value
+    return str(default or "").strip().lower() or "local_split_jobs"
+
+
 class Config:
     """Application configuration loaded from environment variables"""
 
@@ -72,7 +87,7 @@ class Config:
 
     # Development
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
-    IS_CLOUD_RUN: bool = bool(os.getenv("K_SERVICE", "").strip())
+    IS_CLOUD_RUN: bool = _is_cloud_run_env()
 
     # Cloud Run Job launcher
     TWO_LANE_CLOUD_RUN_JOB_NAME: str = os.getenv(
@@ -153,7 +168,10 @@ class Config:
         "PDF_SCAN_EXECUTION_BACKEND",
         "",
     ).strip().lower()
-    PDF_SCAN_EXECUTION_BACKEND: str = "cloud_run_split_jobs" if IS_CLOUD_RUN else "local_split_jobs"
+    PDF_SCAN_EXECUTION_BACKEND: str = _normalized_execution_backend(
+        PDF_SCAN_EXECUTION_BACKEND_RAW,
+        default="cloud_run_split_jobs" if IS_CLOUD_RUN else "local_split_jobs",
+    )
     PDF_SCAN_LOCAL_PYTHON_BIN: str = os.getenv("PDF_SCAN_LOCAL_PYTHON_BIN", "").strip()
     PDF_SCAN_STORAGE_RPC_TIMEOUT_SEC: int = max(
         10,

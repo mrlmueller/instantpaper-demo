@@ -33,7 +33,8 @@ logger = logging.getLogger(__name__)
 
 
 def _pdf_scan_job_provider() -> str:
-    return "cloud_run_split_jobs" if config.IS_CLOUD_RUN else "local_split_jobs"
+    backend = str(config.PDF_SCAN_EXECUTION_BACKEND or "").strip().lower()
+    return "cloud_run_split_jobs" if backend == "cloud_run_split_jobs" else "local_split_jobs"
 
 
 def _default_cpu_job_name() -> str | None:

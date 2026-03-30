@@ -17,17 +17,21 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from services.two_lane_sources.pipeline import (
+    AuthorityBlueprint,
     BilingualTerms,
+    Facet,
     OpenAlexQuery,
     QueryPlan,
     S2BulkQuery,
     _normalize_openalex_query,
     _normalize_s2_query,
+    _repair_query_plan,
     _validate_match_core_object_presence,
     _validate_openalex_anchor_presence,
     _validate_openalex_match_anchor_fingerprint_diversity,
     _validate_s2_advanced_syntax_budget,
     _validate_s2_match_required_group_budget,
+    diagnose_query_plan,
 )
 
 
@@ -315,6 +319,157 @@ def test_openalex_match_anchor_presence_accepts_core_object_fallback() -> None:
     _validate_openalex_anchor_presence([authority_query], plan=plan)
 
 
+def test_openalex_anchor_presence_accepts_object_facet_canonical_variants() -> None:
+    plan = QueryPlan(
+        topic_summary_en="Automation of financial document analysis",
+        topic_summary_de="Automatisierung der Analyse von Finanzdokumenten",
+        primary_context_anchors=BilingualTerms(
+            en=[
+                "balance sheets",
+                "BWA reports",
+                "contracts",
+                "market follow-up",
+                "Sparkassen pilots",
+                "financial document automation",
+            ],
+            de=["Bilanzen", "BWA", "Verträge", "Marktfolge", "Pilotprojekte"],
+        ),
+        core_object_terms=BilingualTerms(
+            en=["balance sheets", "BWA reports", "contracts", "financial statements", "market follow-up documents"],
+            de=["Bilanzen", "BWA", "Verträge", "Finanzdokumente"],
+        ),
+        must_keep_constraints=[],
+        drift_risks=[],
+        authority_blueprints=[],
+        facets=[
+            Facet(
+                facet_id="document_balance_sheets",
+                facet_label_en="Balance sheets",
+                facet_label_de="Bilanzen",
+                facet_type="data",
+                facet_group="object",
+                query_family_preference="object_core",
+                language_strategy="en_de_parallel",
+                authority_role="core",
+                importance_weight=5,
+                text_en="",
+                text_de="",
+                canonical_terms=BilingualTerms(
+                    en=["balance sheet", "financial statement", "bank balance sheet"],
+                    de=["Bilanz", "Bilanzen"],
+                ),
+                neighbor_terms=BilingualTerms(en=[], de=[]),
+                exclusion_terms=BilingualTerms(en=[], de=[]),
+            ),
+            Facet(
+                facet_id="document_bwa_reports",
+                facet_label_en="BWA reports",
+                facet_label_de="BWA Berichte",
+                facet_type="data",
+                facet_group="object",
+                query_family_preference="object_core",
+                language_strategy="en_plus_selective_de",
+                authority_role="core",
+                importance_weight=5,
+                text_en="",
+                text_de="",
+                canonical_terms=BilingualTerms(
+                    en=["BWA", "BWA report", "monthly BWA"],
+                    de=["BWA", "BWA Bericht"],
+                ),
+                neighbor_terms=BilingualTerms(en=[], de=[]),
+                exclusion_terms=BilingualTerms(en=[], de=[]),
+            ),
+            Facet(
+                facet_id="document_contracts",
+                facet_label_en="Contracts",
+                facet_label_de="Verträge",
+                facet_type="data",
+                facet_group="object",
+                query_family_preference="object_core",
+                language_strategy="en_de_parallel",
+                authority_role="core",
+                importance_weight=5,
+                text_en="",
+                text_de="",
+                canonical_terms=BilingualTerms(
+                    en=["contract", "loan agreement", "service agreement"],
+                    de=["Vertrag", "Verträge"],
+                ),
+                neighbor_terms=BilingualTerms(en=[], de=[]),
+                exclusion_terms=BilingualTerms(en=[], de=[]),
+            ),
+        ],
+        global_canonical_terms=BilingualTerms(en=[], de=[]),
+        global_exclusions=BilingualTerms(en=[], de=[]),
+    )
+    queries = [
+        _normalize_openalex_query(
+            OpenAlexQuery(
+                intent="match",
+                language="en",
+                search_field="title_and_abstract.search",
+                query_string='("balance sheet" OR "financial statement") AND ("time savings" OR "processing time") AND ("automation" OR "document automation" OR "NLP" OR "LLM")',
+                filters="is_paratext:false,is_retracted:false,language:en",
+                sort="relevance_score:desc",
+                per_page=200,
+                notes="Live-shape match query",
+            )
+        ),
+        _normalize_openalex_query(
+            OpenAlexQuery(
+                intent="authority",
+                language="en",
+                search_field="search",
+                query_string='("Sparkasse" OR "Sparkassen" OR "German savings bank") AND ("pilot project" OR "case study") AND ("BWA" OR "BWA report" OR "balance sheet" OR "financial statement" OR "contract")',
+                filters="is_paratext:false,is_retracted:false,language:en",
+                sort="cited_by_count:desc",
+                per_page=200,
+                notes="Live-shape authority query",
+            )
+        ),
+    ]
+
+    _validate_openalex_anchor_presence(queries, plan=plan)
+    _validate_match_core_object_presence([queries[0]], plan=plan, provider="OpenAlex")
+
+
+def test_s2_match_core_object_presence_rejects_workflow_only_primary_context() -> None:
+    plan = QueryPlan(
+        topic_summary_en="Automation of financial document analysis",
+        topic_summary_de="Automatisierung der Analyse von Finanzdokumenten",
+        primary_context_anchors=BilingualTerms(
+            en=["balance sheets", "BWA reports", "contracts", "market follow-up", "financial document automation"],
+            de=["Bilanzen", "BWA", "Verträge", "Marktfolge"],
+        ),
+        core_object_terms=BilingualTerms(
+            en=["balance sheets", "BWA reports", "contracts", "financial statements", "market follow-up documents"],
+            de=["Bilanzen", "BWA", "Verträge", "Finanzdokumente"],
+        ),
+        must_keep_constraints=[],
+        drift_risks=[],
+        authority_blueprints=[],
+        facets=[],
+        global_canonical_terms=BilingualTerms(en=[], de=[]),
+        global_exclusions=BilingualTerms(en=[], de=[]),
+    )
+    bad_query = _normalize_s2_query(
+        S2BulkQuery(
+            intent="match",
+            language="en",
+            query_string='+("market follow-up" | "Marktfolge" | "financial document automation") +("post-trade operations" | "back office" | "bank operations automation" | "processing pipeline")',
+            notes="Workflow-only context should fail",
+        )
+    )
+
+    try:
+        _validate_match_core_object_presence([bad_query], plan=plan, provider="S2")
+    except ValueError as exc:
+        assert "match query missing core object term" in str(exc)
+    else:
+        raise AssertionError("Expected workflow-only S2 query to be rejected")
+
+
 def test_openalex_fingerprint_prefers_core_object_variation_over_reused_workflow_context() -> None:
     plan = QueryPlan(
         topic_summary_en="Automation of financial document analysis",
@@ -388,6 +543,104 @@ def test_openalex_fingerprint_prefers_core_object_variation_over_reused_workflow
     _validate_openalex_match_anchor_fingerprint_diversity(queries, plan=plan)
 
 
+def test_query_plan_repair_demotes_excess_booster_facets_when_blueprint_capacity_is_full() -> None:
+    def _facet(facet_id: str, *, authority_role: str, importance_weight: int, facet_group: str = "context") -> Facet:
+        return Facet(
+            facet_id=facet_id,
+            facet_label_en=facet_id,
+            facet_label_de=facet_id,
+            facet_type="construct",
+            facet_group=facet_group,
+            query_family_preference="object_plus_context" if facet_group == "context" else "object_plus_data_proxy",
+            language_strategy="en_plus_bilingual_fallback",
+            authority_role=authority_role,
+            importance_weight=importance_weight,
+            text_en=facet_id,
+            text_de=facet_id,
+            canonical_terms=BilingualTerms(en=[facet_id], de=[facet_id]),
+            neighbor_terms=BilingualTerms(en=[], de=[]),
+            exclusion_terms=BilingualTerms(en=[], de=[]),
+        )
+
+    plan = QueryPlan(
+        topic_summary_en="Automation of financial document analysis",
+        topic_summary_de="Automatisierung der Analyse von Finanzdokumenten",
+        primary_context_anchors=BilingualTerms(
+            en=["balance sheet", "financial statements", "market follow up", "document automation"],
+            de=["Bilanz", "Bilanzen", "Marktfolge", "Dokumentautomation"],
+        ),
+        core_object_terms=BilingualTerms(
+            en=["balance sheet", "financial statements", "contracts"],
+            de=["Bilanz", "Bilanzen", "Verträge"],
+        ),
+        must_keep_constraints=["focus on bank documents", "keep automation metrics", "include pilot evidence"],
+        drift_risks=["generic NLP papers", "medical document extraction"],
+        authority_blueprints=[
+            AuthorityBlueprint(
+                authority_kind="core",
+                label_en="Core A",
+                label_de="Core A",
+                target_facet_ids=["core_a", "core_b", "core_c", "core_d"],
+                language_strategy="en_core_only",
+                search_breadth="tight",
+                notes_en="Core authority coverage for bank documents",
+            ),
+            AuthorityBlueprint(
+                authority_kind="core",
+                label_en="Core B",
+                label_de="Core B",
+                target_facet_ids=["core_e"],
+                language_strategy="en_core_only",
+                search_breadth="tight",
+                notes_en="Supplemental core authority coverage",
+            ),
+            AuthorityBlueprint(
+                authority_kind="booster",
+                label_en="Booster A",
+                label_de="Booster A",
+                target_facet_ids=["boost_a", "boost_b", "boost_c", "boost_d"],
+                language_strategy="en_core_only",
+                search_breadth="broad_ok",
+                notes_en="Booster authority coverage for methods and proxies",
+            ),
+            AuthorityBlueprint(
+                authority_kind="booster",
+                label_en="Booster B",
+                label_de="Booster B",
+                target_facet_ids=["boost_e", "boost_f", "boost_g", "boost_h"],
+                language_strategy="en_core_only",
+                search_breadth="broad_ok",
+                notes_en="Additional booster authority coverage",
+            ),
+        ],
+        facets=[
+            _facet("core_a", authority_role="core", importance_weight=5, facet_group="object"),
+            _facet("core_b", authority_role="core", importance_weight=5, facet_group="object"),
+            _facet("core_c", authority_role="core", importance_weight=4, facet_group="construct"),
+            _facet("core_d", authority_role="core", importance_weight=4, facet_group="context"),
+            _facet("core_e", authority_role="core", importance_weight=3, facet_group="context"),
+            _facet("boost_a", authority_role="booster", importance_weight=5, facet_group="method"),
+            _facet("boost_b", authority_role="booster", importance_weight=5, facet_group="method"),
+            _facet("boost_c", authority_role="booster", importance_weight=4, facet_group="data_proxy"),
+            _facet("boost_d", authority_role="booster", importance_weight=4, facet_group="context"),
+            _facet("boost_e", authority_role="booster", importance_weight=3, facet_group="context"),
+            _facet("boost_f", authority_role="booster", importance_weight=3, facet_group="context"),
+            _facet("boost_g", authority_role="booster", importance_weight=2, facet_group="context"),
+            _facet("boost_h", authority_role="booster", importance_weight=2, facet_group="context"),
+            _facet("boost_overflow", authority_role="booster", importance_weight=1, facet_group="data_proxy"),
+        ],
+        global_canonical_terms=BilingualTerms(en=[], de=[]),
+        global_exclusions=BilingualTerms(en=[], de=[]),
+    )
+
+    repaired, notes = _repair_query_plan(plan)
+    critical = diagnose_query_plan(repaired).get("critical_issues") or []
+    assert not any("authority_role='booster'" in issue for issue in critical), f"Booster coverage issue remained after repair: {critical}"
+    repaired_roles = {facet.facet_id: facet.authority_role for facet in repaired.facets}
+    assert repaired_roles["boost_overflow"] == "none"
+    assert any("demoted booster authority_role to 'none'" in note for note in notes)
+
+
 def test_s2_validators_still_accept_reasonable_queries() -> None:
     queries = [
         _normalize_s2_query(
@@ -436,7 +689,10 @@ def main() -> int:
         test_openalex_fingerprint_still_fails_for_true_low_diversity,
         test_match_core_object_presence_still_enforced,
         test_openalex_match_anchor_presence_accepts_core_object_fallback,
+        test_openalex_anchor_presence_accepts_object_facet_canonical_variants,
+        test_s2_match_core_object_presence_rejects_workflow_only_primary_context,
         test_openalex_fingerprint_prefers_core_object_variation_over_reused_workflow_context,
+        test_query_plan_repair_demotes_excess_booster_facets_when_blueprint_capacity_is_full,
         test_s2_validators_still_accept_reasonable_queries,
         test_s2_normalization_unescapes_negative_quotes,
         test_relevant_shadowed_definitions_removed,

@@ -1379,6 +1379,16 @@ def _repair_query_plan(plan: QueryPlan) -> Tuple[QueryPlan, List[str]]:
             repair_notes.append(f"created {kind} authority blueprint for facets {chunk}")
             unassigned = [fid for fid in unassigned if fid not in set(chunk)]
 
+        if unassigned and kind == "booster":
+            demote_set = set(unassigned)
+            repaired_facets = [
+                (f.model_copy(update={"authority_role": "none"}) if f.facet_id in demote_set else f)
+                for f in repaired_facets
+            ]
+            repair_notes.append(
+                f"demoted booster authority_role to 'none' for facets {sorted(demote_set)} because authority blueprint capacity was exhausted"
+            )
+
     repaired_plan = plan.model_copy(update={"facets": repaired_facets, "authority_blueprints": repaired_blueprints})
     return repaired_plan, repair_notes
 
@@ -1920,6 +1930,7 @@ So for THIS task:
 MANDATORY RETRIEVAL RULES:
 1) Every query MUST remain explicitly anchored to the chapter object/domain using core_object_terms[language] and/or primary_context_anchors[language].
    Exact verbatim reuse of a planner anchor is NOT required if a natural decomposed variant is clearer and still equivalent.
+   Workflow/context terms like `market follow-up`, `Marktfolge`, `back office`, or `operations automation` do NOT count by themselves; pair them with an explicit document object such as `balance sheet`, `BWA report`, or `contract`.
 2) Every MATCH query must include:
    - one core object/corpus/domain anchor
    - and one construct/data/method group that is meaningful only inside that object
@@ -2113,6 +2124,8 @@ PRIMARY_CONTEXT_OR_GROUP:
 - when available, include at least 2 distinct object/context anchors
 - prefer direct object phrases such as `online reviews`, `user reviews`, `customer reviews`, `review platforms`
 - avoid abstract substitutes such as `user generated content` unless paired with a direct object phrase
+- at least 1 term in PRIMARY_CONTEXT_OR_GROUP MUST be an explicit document/corpus object from core_object_terms for that language
+- workflow-only context such as `market follow-up`, `Marktfolge`, `back office`, or `operations automation` is NOT sufficient by itself; pair it with an explicit object like `balance sheets`, `BWA reports`, or `contracts`
 
 SECOND_CONTEXT_OR_GROUP:
 - optional but recommended only when it clearly reduces drift
@@ -2186,6 +2199,7 @@ SELF-CHECK (MUST DO, FIX SILENTLY):
 - if the German version is a literal translation that is unlikely to appear in titles/abstracts, replace it with a bilingual or English fallback
 - if the query depends on acronym-only shorthand, rewrite it with full terms
 - if advanced syntax is unnecessary, simplify it
+- if PRIMARY_CONTEXT only names workflow/context and not an explicit document object, fix it
 - Did this authority query come from a core or booster blueprint? If not, fix it.
 - Does the query shape match the facet's query_family_preference? If not, fix it.
 
@@ -2617,7 +2631,7 @@ def _maybe_inject_missing_openalex_anchor(q: OpenAlexQuery, *, plan: QueryPlan) 
     if not anchors:
         return q, False
 
-    hits = _find_anchor_terms_in_text(q.query_string, anchors)
+    hits = _find_anchor_terms_in_text(q.query_string, anchors, language=q.language)
     if hits:
         return q, False
 
@@ -2648,7 +2662,7 @@ def _maybe_inject_missing_s2_anchor(q: S2BulkQuery, *, plan: QueryPlan) -> Tuple
         return q, False
 
     s = str(q.query_string or "").strip()
-    hits = _find_anchor_terms_in_text(s, anchors)
+    hits = _find_anchor_terms_in_text(s, anchors, language=q.language)
 
     plus_count = len(re.findall(r"(?:^|\s)\+", s))
     has_plus_anchor = bool(re.search(r"\+\s*(?:\(|\")", s))
@@ -2824,14 +2838,73 @@ def _normalize_s2_query(q: S2BulkQuery) -> S2BulkQuery:
     return q.model_copy(update={"query_string": qs.strip(), "notes": notes})
 
 
-def _find_anchor_terms_in_text(text: str, terms: List[str]) -> List[str]:
-    hay = _normalize_unicode_query_text(str(text or "")).lower()
+def _normalize_anchor_match_text(text: str) -> str:
+    s = _normalize_unicode_query_text(str(text or ""))
+    s = s.replace('\\"', '"').replace("\\'", "'")
+    s = re.sub(r"[-_/]+", " ", s)
+    s = re.sub(r"[\"“”‘’()|,+]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip().casefold()
+    return f" {s} " if s else " "
+
+
+def _simple_english_singular(token: str) -> str:
+    t = str(token or "").strip()
+    if not t:
+        return ""
+    lower = t.casefold()
+    if len(lower) <= 3 or lower.isupper():
+        return lower
+    if lower.endswith("ies") and len(lower) > 4:
+        return lower[:-3] + "y"
+    if lower.endswith(("sses", "xes", "zes", "ches", "shes")) and len(lower) > 4:
+        return lower[:-2]
+    if lower.endswith("s") and not lower.endswith(("ss", "us", "is")) and len(lower) > 3:
+        return lower[:-1]
+    return lower
+
+
+def _simple_english_plural(token: str) -> str:
+    t = str(token or "").strip()
+    if not t:
+        return ""
+    lower = t.casefold()
+    if len(lower) <= 2 or lower.endswith("s"):
+        return lower
+    if lower.endswith("y") and len(lower) > 2 and lower[-2] not in "aeiou":
+        return lower[:-1] + "ies"
+    if lower.endswith(("x", "z", "ch", "sh")):
+        return lower + "es"
+    return lower + "s"
+
+
+def _anchor_term_variants(term: str, *, language: str = "") -> List[str]:
+    raw = _normalize_anchor_match_text(term).strip()
+    if not raw:
+        return []
+
+    variants = {raw}
+    if str(language or "").casefold() == "en":
+        tokens = [tok for tok in raw.split(" ") if tok]
+        if tokens:
+            singular = " ".join(_simple_english_singular(tok) for tok in tokens).strip()
+            plural = " ".join(_simple_english_plural(tok) for tok in tokens).strip()
+            if singular:
+                variants.add(singular)
+            if plural:
+                variants.add(plural)
+
+    return sorted((variant for variant in variants if variant), key=len, reverse=True)
+
+
+def _find_anchor_terms_in_text(text: str, terms: List[str], *, language: str = "") -> List[str]:
+    hay = _normalize_anchor_match_text(str(text or ""))
     matches: List[str] = []
     for t in terms:
         tt = _normalize_unicode_query_text(str(t or "")).strip()
         if not tt:
             continue
-        if tt.lower() in hay:
+        variants = _anchor_term_variants(tt, language=language)
+        if any(f" {variant} " in hay for variant in variants):
             matches.append(tt)
     matches.sort(key=lambda x: len(x), reverse=True)
 
@@ -2861,10 +2934,24 @@ def _dedupe_terms_preserve_order(terms: List[str]) -> List[str]:
     return deduped
 
 
+def _plan_object_facet_terms(plan: QueryPlan, language: str) -> List[str]:
+    terms: List[str] = []
+    for facet in getattr(plan, "facets", []) or []:
+        if getattr(facet, "facet_group", "") != "object":
+            continue
+        canonical = getattr(getattr(facet, "canonical_terms", None), language, None) or []
+        for term in canonical:
+            clean = str(term or "").strip()
+            if clean:
+                terms.append(clean)
+    return _dedupe_terms_preserve_order(terms)
+
+
 def _openalex_required_anchor_terms(*, query: OpenAlexQuery, plan: QueryPlan) -> List[str]:
     primary_terms = list(getattr(plan.primary_context_anchors, query.language, []) or [])
     core_terms = _plan_language_terms(plan, "core_object_terms", query.language)
-    return _dedupe_terms_preserve_order(list(core_terms) + primary_terms)
+    object_terms = _plan_object_facet_terms(plan, query.language)
+    return _dedupe_terms_preserve_order(list(core_terms) + list(object_terms) + primary_terms)
 
 
 def _validate_openalex_anchor_presence(queries: List[OpenAlexQuery], *, plan: QueryPlan) -> None:
@@ -2872,7 +2959,7 @@ def _validate_openalex_anchor_presence(queries: List[OpenAlexQuery], *, plan: Qu
         anchors = _openalex_required_anchor_terms(query=q, plan=plan)
         if not anchors:
             continue
-        hits = _find_anchor_terms_in_text(q.query_string, list(anchors))
+        hits = _find_anchor_terms_in_text(q.query_string, list(anchors), language=q.language)
         if not hits:
             raise ValueError(f"OpenAlex: query missing required anchor (lang={q.language}, intent={q.intent}): {q.query_string!r}")
 
@@ -2882,7 +2969,7 @@ def _validate_s2_anchor_presence(queries: List[S2BulkQuery], *, plan: QueryPlan)
         anchors = getattr(plan.primary_context_anchors, q.language, []) or []
         if not anchors:
             continue
-        hits = _find_anchor_terms_in_text(q.query_string, list(anchors))
+        hits = _find_anchor_terms_in_text(q.query_string, list(anchors), language=q.language)
         if not hits:
             raise ValueError(f"S2: query missing required primary anchor (lang={q.language}, intent={q.intent}): {q.query_string!r}")
 
@@ -2891,13 +2978,16 @@ def _validate_match_core_object_presence(queries: List[Any], *, plan: QueryPlan,
     for q in queries:
         if getattr(q, "intent", None) != "match":
             continue
-        core_terms = _plan_language_terms(plan, "core_object_terms", getattr(q, "language", ""))
+        language = getattr(q, "language", "")
+        core_terms = _dedupe_terms_preserve_order(
+            _plan_language_terms(plan, "core_object_terms", language) + _plan_object_facet_terms(plan, language)
+        )
         if not core_terms:
             continue
-        hits = _find_anchor_terms_in_text(getattr(q, "query_string", ""), core_terms)
+        hits = _find_anchor_terms_in_text(getattr(q, "query_string", ""), core_terms, language=language)
         if not hits:
             raise ValueError(
-                f"{provider}: match query missing core object term (lang={getattr(q, 'language', '')}): {getattr(q, 'query_string', '')!r}"
+                f"{provider}: match query missing core object term (lang={language}): {getattr(q, 'query_string', '')!r}"
             )
 
 
@@ -2977,7 +3067,7 @@ def _validate_openalex_match_anchor_fingerprint_diversity(
         counts: Dict[Tuple[str, str], int] = {}
         eligible = 0
         for q in match_qs:
-            hits = _find_anchor_terms_in_text(q.query_string, variable_anchors)
+            hits = _find_anchor_terms_in_text(q.query_string, variable_anchors, language=lang)
             top2 = [h.lower() for h in hits[:2]]
             if len(top2) < 2:
                 continue

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -71,9 +72,11 @@ class TwoLaneTaskDispatcher:
             self._client = tasks_v2.CloudTasksClient()
         return self._client
 
-    def _dispatch_local_background(self, payload: dict[str, Any]) -> None:
+    def _dispatch_local_background(self, payload: dict[str, Any], *, schedule_delay_seconds: float | None = None) -> None:
         def _runner() -> None:
             try:
+                if schedule_delay_seconds and float(schedule_delay_seconds) > 0:
+                    time.sleep(float(schedule_delay_seconds))
                 from services.two_lane_sources.internal_tasks import run_two_lane_internal_task_payload
 
                 asyncio.run(run_two_lane_internal_task_payload(payload))
@@ -83,9 +86,11 @@ class TwoLaneTaskDispatcher:
         thread = threading.Thread(target=_runner, daemon=True, name="two-lane-task")
         thread.start()
 
-    def _dispatch_local_inline(self, payload: dict[str, Any]) -> None:
+    def _dispatch_local_inline(self, payload: dict[str, Any], *, schedule_delay_seconds: float | None = None) -> None:
         from services.two_lane_sources.internal_tasks import run_two_lane_internal_task_payload
 
+        if schedule_delay_seconds and float(schedule_delay_seconds) > 0:
+            time.sleep(float(schedule_delay_seconds))
         asyncio.run(run_two_lane_internal_task_payload(payload))
 
     def enqueue(
@@ -103,7 +108,7 @@ class TwoLaneTaskDispatcher:
             raise ValueError("task_name is required")
 
         if self.backend in {"local_inline", "inline"}:
-            self._dispatch_local_inline(payload)
+            self._dispatch_local_inline(payload, schedule_delay_seconds=schedule_delay_seconds)
             return TwoLaneDispatchResult(
                 backend="local_inline",
                 queue_name=queue_name,
@@ -111,7 +116,7 @@ class TwoLaneTaskDispatcher:
                 created=True,
             )
         if self.backend in {"local_background", "local_thread", "local"}:
-            self._dispatch_local_background(payload)
+            self._dispatch_local_background(payload, schedule_delay_seconds=schedule_delay_seconds)
             return TwoLaneDispatchResult(
                 backend="local_background",
                 queue_name=queue_name,

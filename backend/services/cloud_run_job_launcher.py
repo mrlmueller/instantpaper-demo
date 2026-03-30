@@ -164,7 +164,7 @@ class CloudRunJobLauncher:
         return region
 
     def _use_local_pdf_scan_launcher(self) -> bool:
-        return not config.IS_CLOUD_RUN
+        return str(config.PDF_SCAN_EXECUTION_BACKEND or "").strip().lower() != "cloud_run_split_jobs"
 
     def _python_supports_local_backend(self, python_bin: str) -> bool:
         backend_root = resolve_backend_root(__file__)
