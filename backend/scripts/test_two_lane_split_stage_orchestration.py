@@ -227,8 +227,40 @@ async def _fake_stage_runner(*, stage_name: str, run_dir: Path, **kwargs):
     run_dir.mkdir(parents=True, exist_ok=True)
     if stage_name == "preprocess":
         (run_dir / "query_plan.json").write_text(json.dumps({"plan": True}), encoding="utf-8")
-        (run_dir / "openalex_queries.json").write_text(json.dumps({"openalex_queries": [{"query_string": "oa"}]}), encoding="utf-8")
-        (run_dir / "s2_bulk_queries.json").write_text(json.dumps({"s2_bulk_queries": [{"query_string": "s2"}]}), encoding="utf-8")
+        (run_dir / "openalex_queries.json").write_text(
+            json.dumps(
+                {
+                    "openalex_queries": [
+                        {
+                            "intent": "match",
+                            "language": "en",
+                            "search_field": "title_and_abstract.search",
+                            "query_string": "oa",
+                            "filters": "language:en",
+                            "sort": "relevance_score:desc",
+                            "per_page": 200,
+                            "notes": "test",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        (run_dir / "s2_bulk_queries.json").write_text(
+            json.dumps(
+                {
+                    "s2_bulk_queries": [
+                        {
+                            "intent": "match",
+                            "language": "en",
+                            "query_string": "s2",
+                            "notes": "test",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
         (run_dir / "metrics.json").write_text(json.dumps({"stages": {"phase_b_query_planner": {"seconds": 1}}}), encoding="utf-8")
         return {"stage": stage_name, "artifacts_dir": str(run_dir), "metrics": {"stages": {}}}
     if stage_name == "openalex_fetch":
@@ -289,6 +321,38 @@ async def _main() -> dict[str, Any]:
     fake_fs = FakeFirestoreService(initial_doc)
     launches: list[str] = []
 
+    def _fake_seed_openalex_provider_tasks(*, user_id: str, projekt_id: str, run_id: str, **kwargs):
+        del kwargs
+        fake_fs.run_ref(user_id, projekt_id, run_id).set(
+            {
+                "providerWork": {"openalex": {"pendingTasks": 0, "status": "success"}},
+                "twoLaneArtifacts": {"openalex_fetch": {"resultsPrefix": "provider/openalex/pages", "seededTasks": 1}},
+            },
+            merge=True,
+        )
+        return {"seeded_tasks": 1}
+
+    def _fake_seed_s2_provider_tasks(*, user_id: str, projekt_id: str, run_id: str, **kwargs):
+        del kwargs
+        fake_fs.run_ref(user_id, projekt_id, run_id).set(
+            {
+                "providerWork": {"semanticscholar": {"pendingTasks": 0, "status": "success"}},
+                "twoLaneArtifacts": {"s2_fetch": {"resultsPrefix": "provider/semanticscholar/pages", "seededTasks": 1}},
+            },
+            merge=True,
+        )
+        return {"seeded_tasks": 1}
+
+    def _fake_materialize_provider_results(*, provider: str, destination: Path, **kwargs):
+        del kwargs
+        target = Path(destination).resolve()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if str(provider) == "openalex":
+            target.write_text('{"id":"oa1"}\n', encoding="utf-8")
+        else:
+            target.write_text('{"id":"s21"}\n', encoding="utf-8")
+        return {"objects": 1, "records": 1}
+
     async def _fake_launch(*, stage_name: str, **kwargs):
         del kwargs
         launches.append(stage_name)
@@ -299,6 +363,9 @@ async def _main() -> dict[str, Any]:
         "_artifact_store_from_config": jobmod._artifact_store_from_config,
         "run_two_lane_sources_pipeline_stage": jobmod.run_two_lane_sources_pipeline_stage,
         "_launch_split_stage": jobmod._launch_split_stage,
+        "seed_openalex_provider_tasks": jobmod.seed_openalex_provider_tasks,
+        "seed_s2_provider_tasks": jobmod.seed_s2_provider_tasks,
+        "materialize_provider_results": jobmod.materialize_provider_results,
     }
 
     with tempfile.TemporaryDirectory(prefix="two_lane_split_orchestration_") as tmpdir:
@@ -307,6 +374,9 @@ async def _main() -> dict[str, Any]:
         jobmod._artifact_store_from_config = lambda run_doc=None: artifact_store
         jobmod.run_two_lane_sources_pipeline_stage = _fake_stage_runner
         jobmod._launch_split_stage = _fake_launch
+        jobmod.seed_openalex_provider_tasks = _fake_seed_openalex_provider_tasks
+        jobmod.seed_s2_provider_tasks = _fake_seed_s2_provider_tasks
+        jobmod.materialize_provider_results = _fake_materialize_provider_results
         try:
             await jobmod.run_quellen_finder_sources_two_lane_job_from_run_doc(
                 user_id="user",
@@ -352,6 +422,9 @@ async def _main() -> dict[str, Any]:
             jobmod._artifact_store_from_config = original["_artifact_store_from_config"]
             jobmod.run_two_lane_sources_pipeline_stage = original["run_two_lane_sources_pipeline_stage"]
             jobmod._launch_split_stage = original["_launch_split_stage"]
+            jobmod.seed_openalex_provider_tasks = original["seed_openalex_provider_tasks"]
+            jobmod.seed_s2_provider_tasks = original["seed_s2_provider_tasks"]
+            jobmod.materialize_provider_results = original["materialize_provider_results"]
 
     expected_launches = ["openalex_fetch", "s2_fetch", "candidates", "finalize"]
     if launches != expected_launches:
