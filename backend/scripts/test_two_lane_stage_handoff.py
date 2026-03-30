@@ -104,6 +104,13 @@ def main() -> int:
         )
         deleted_objects = store.delete_run_prefix("run-123")
 
+        if sorted(restored_files) != ["nested/logs.jsonl", "openalex_queries.json", "query_plan.json"]:
+            raise RuntimeError(f"Unexpected restored files: {restored_files}")
+        if int(manifest.get("file_count") or 0) != 3:
+            raise RuntimeError(f"Unexpected manifest file_count: {manifest.get('file_count')}")
+        if int(deleted_objects) != 2:
+            raise RuntimeError(f"Unexpected deleted object count: {deleted_objects}")
+
         result = {
             "ok": True,
             "manifest_stage": manifest.get("stage_name"),

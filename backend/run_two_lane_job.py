@@ -27,7 +27,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--stage",
         required=False,
         default="",
-        choices=["", "preprocess", "fetch", "finalize"],
+        choices=["", "preprocess", "openalex_fetch", "s2_fetch", "candidates", "finalize"],
         help="Optional split-stage execution mode",
     )
     return parser.parse_args(argv)

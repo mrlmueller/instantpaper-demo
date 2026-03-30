@@ -897,7 +897,9 @@ async def run_two_lane_sources_pipeline_stage(
 
     Stages:
     - preprocess: phases B/C
-    - fetch: phases D/E
+    - openalex_fetch: phase D OpenAlex
+    - s2_fetch: phase D Semantic Scholar
+    - candidates: phase E
     - finalize: phases F/G/H/I/K
     """
 
@@ -910,7 +912,7 @@ async def run_two_lane_sources_pipeline_stage(
         return res0
 
     stage_norm = str(stage_name or "").strip().lower()
-    if stage_norm not in {"preprocess", "fetch", "finalize"}:
+    if stage_norm not in {"preprocess", "openalex_fetch", "s2_fetch", "candidates", "finalize"}:
         raise ValueError(f"Unsupported two-lane stage: {stage_name}")
 
     await _call_maybe_await(check_cancel)
@@ -940,7 +942,7 @@ async def run_two_lane_sources_pipeline_stage(
         if isinstance(settings, dict) and settings:
             blocked = {"openai_api_key", "openalex_api_key", "semanticscholar_api_key", "openalex_email", "pipeline_version", "runs_root"}
             cfg = cfg.model_copy(update={k: v for k, v in settings.items() if (k in cfg.model_fields and k not in blocked)})
-        if stage_norm in {"fetch", "finalize"}:
+        if stage_norm in {"openalex_fetch", "s2_fetch", "candidates", "finalize"}:
             cfg = cfg.model_copy(update={"force_rebuild": False})
 
         force_rebuild = bool(getattr(cfg, "force_rebuild", True))
@@ -1044,7 +1046,7 @@ async def run_two_lane_sources_pipeline_stage(
                 "costs": costs,
             }
 
-        if stage_norm == "fetch":
+        if stage_norm == "openalex_fetch":
             plan, _meta_b = await plan_queries_llm(
                 chapter_input,
                 config=cfg,
@@ -1061,18 +1063,9 @@ async def run_two_lane_sources_pipeline_stage(
                 llm=llm,
                 force_rebuild=False,
             )
-            s2_bulk_queries, _meta_c2 = await build_s2_bulk_queries_llm(
-                plan,
-                chapter_title=chapter_input.chapter_title,
-                chapter_spec_text=chapter_input.chapter_spec_text,
-                config=cfg,
-                run_ctx=run_ctx,
-                llm=llm,
-                force_rebuild=False,
-            )
             await _check_cancel()
 
-            await _progress("phase_d_retrieval", "Fetching OpenAlex & Semantic Scholar records")
+            await _progress("phase_d_openalex_retrieval", "Fetching OpenAlex records")
 
             def _fetch_openalex():
                 with stage_timer(run_ctx, "phase_d_openalex_retrieval"):
@@ -1083,26 +1076,9 @@ async def run_two_lane_sources_pipeline_stage(
                         force_rebuild=False,
                     )
 
-            def _fetch_s2():
-                with stage_timer(run_ctx, "phase_d_semanticscholar_retrieval"):
-                    return fetch_s2_to_cache(
-                        cfg=cfg,
-                        run_ctx=run_ctx,
-                        queries=s2_bulk_queries,
-                        force_rebuild=False,
-                    )
-
-            openalex_fetch, s2_fetch = await asyncio.gather(
-                asyncio.to_thread(_fetch_openalex),
-                asyncio.to_thread(_fetch_s2),
-            )
+            openalex_fetch = await asyncio.to_thread(_fetch_openalex)
             rebuild_aggregate_jsonl(run_ctx.artifacts.openalex_raw_jsonl, list(openalex_fetch.get("used_cache_paths") or []))
-            rebuild_aggregate_jsonl(run_ctx.artifacts.semanticscholar_raw_jsonl, list(s2_fetch.get("used_cache_paths") or []))
             await _check_cancel()
-
-            await _progress("phase_e_candidates", "Normalizing & deduplicating candidates")
-            with stage_timer(run_ctx, "phase_e_candidates"):
-                _cands, meta_e = await asyncio.to_thread(build_candidates_from_raw, run_ctx=run_ctx, force_rebuild=False)
 
             metrics = read_json(metrics_path) if metrics_path.exists() else {}
             costs = _derive_costs_from_metrics(
@@ -1119,7 +1095,77 @@ async def run_two_lane_sources_pipeline_stage(
                 "metrics": metrics,
                 "costs": costs,
                 "openalex_fetch": openalex_fetch,
+            }
+
+        if stage_norm == "s2_fetch":
+            plan, _meta_b = await plan_queries_llm(
+                chapter_input,
+                config=cfg,
+                run_ctx=run_ctx,
+                llm=llm,
+                force_rebuild=False,
+            )
+            s2_bulk_queries, _meta_c2 = await build_s2_bulk_queries_llm(
+                plan,
+                chapter_title=chapter_input.chapter_title,
+                chapter_spec_text=chapter_input.chapter_spec_text,
+                config=cfg,
+                run_ctx=run_ctx,
+                llm=llm,
+                force_rebuild=False,
+            )
+            await _check_cancel()
+
+            await _progress("phase_d_semanticscholar_retrieval", "Fetching Semantic Scholar records")
+
+            def _fetch_s2():
+                with stage_timer(run_ctx, "phase_d_semanticscholar_retrieval"):
+                    return fetch_s2_to_cache(
+                        cfg=cfg,
+                        run_ctx=run_ctx,
+                        queries=s2_bulk_queries,
+                        force_rebuild=False,
+                    )
+
+            s2_fetch = await asyncio.to_thread(_fetch_s2)
+            rebuild_aggregate_jsonl(run_ctx.artifacts.semanticscholar_raw_jsonl, list(s2_fetch.get("used_cache_paths") or []))
+            await _check_cancel()
+
+            metrics = read_json(metrics_path) if metrics_path.exists() else {}
+            costs = _derive_costs_from_metrics(
+                metrics=metrics if isinstance(metrics, dict) else {},
+                run_dir=run_ctx.run_dir,
+                key_source=str(key_source),
+                budget_cap_usd=float(llm.max_total_cost_usd),
+            )
+            return {
+                "run_id": str(run_id),
+                "stage": stage_norm,
+                "keep_artifacts": bool(keep_artifacts),
+                "artifacts_dir": str(run_ctx.run_dir),
+                "metrics": metrics,
+                "costs": costs,
                 "s2_fetch": s2_fetch,
+            }
+
+        if stage_norm == "candidates":
+            await _progress("phase_e_candidates", "Normalizing & deduplicating candidates")
+            with stage_timer(run_ctx, "phase_e_candidates"):
+                _cands, meta_e = await asyncio.to_thread(build_candidates_from_raw, run_ctx=run_ctx, force_rebuild=False)
+            metrics = read_json(metrics_path) if metrics_path.exists() else {}
+            costs = _derive_costs_from_metrics(
+                metrics=metrics if isinstance(metrics, dict) else {},
+                run_dir=run_ctx.run_dir,
+                key_source=str(key_source),
+                budget_cap_usd=float(llm.max_total_cost_usd),
+            )
+            return {
+                "run_id": str(run_id),
+                "stage": stage_norm,
+                "keep_artifacts": bool(keep_artifacts),
+                "artifacts_dir": str(run_ctx.run_dir),
+                "metrics": metrics,
+                "costs": costs,
                 "candidates_meta": meta_e,
             }
 

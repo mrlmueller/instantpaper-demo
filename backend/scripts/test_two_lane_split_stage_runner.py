@@ -212,7 +212,31 @@ async def _main() -> dict[str, Any]:
                 on_progress=_on_progress,
             )
             fetch = await runner.run_two_lane_sources_pipeline_stage(
-                stage_name="fetch",
+                stage_name="openalex_fetch",
+                user_id="user",
+                projekt_id="project",
+                kapitel_id="kapitel",
+                run_id="run-123",
+                chapter_title="Title",
+                chapter_spec_text="Spec",
+                settings={},
+                run_dir=run_dir,
+                on_progress=_on_progress,
+            )
+            s2_fetch = await runner.run_two_lane_sources_pipeline_stage(
+                stage_name="s2_fetch",
+                user_id="user",
+                projekt_id="project",
+                kapitel_id="kapitel",
+                run_id="run-123",
+                chapter_title="Title",
+                chapter_spec_text="Spec",
+                settings={},
+                run_dir=run_dir,
+                on_progress=_on_progress,
+            )
+            candidates = await runner.run_two_lane_sources_pipeline_stage(
+                stage_name="candidates",
                 user_id="user",
                 projekt_id="project",
                 kapitel_id="kapitel",
@@ -236,14 +260,33 @@ async def _main() -> dict[str, Any]:
                 on_progress=_on_progress,
             )
             final_output = json.loads(Path(run_dir / "output.json").read_text(encoding="utf-8"))
+            progress_stage_names = [event["stage"] for event in progress_events]
+            expected_progress = [
+                "phase_b_query_planner",
+                "phase_c_query_builders",
+                "phase_d_openalex_retrieval",
+                "phase_d_semanticscholar_retrieval",
+                "phase_e_candidates",
+                "phase_f",
+                "phase_g",
+                "phase_h",
+                "phase_i",
+                "phase_k",
+            ]
+            if progress_stage_names != expected_progress:
+                raise RuntimeError(f"Unexpected progress stages: {progress_stage_names}")
+            if final_output.get("schema_version") != "two_lane_output_v1":
+                raise RuntimeError(f"Unexpected output schema: {final_output.get('schema_version')}")
             return {
                 "ok": True,
                 "preprocess_stage": preprocess.get("stage"),
-                "fetch_stage": fetch.get("stage"),
+                "openalex_fetch_stage": fetch.get("stage"),
+                "s2_fetch_stage": s2_fetch.get("stage"),
+                "candidates_stage": candidates.get("stage"),
                 "finalize_stage": finalize.get("stage"),
-                "progress_stages": [event["stage"] for event in progress_events],
+                "progress_stages": progress_stage_names,
                 "output_schema": final_output.get("schema_version"),
-                "candidates_meta": fetch.get("candidates_meta"),
+                "candidates_meta": candidates.get("candidates_meta"),
             }
     finally:
         runner.user_key_service.resolve_api_key_for_user = original["resolve_api_key_for_user"]

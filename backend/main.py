@@ -5553,7 +5553,9 @@ async def quellen_finder_sources_two_lane_start(
                     "version": 1,
                     "currentStage": "preprocess",
                     "preprocess": {"status": "queued", "queuedAt": SERVER_TIMESTAMP},
-                    "fetch": {"status": "pending"},
+                    "openalex_fetch": {"status": "pending"},
+                    "s2_fetch": {"status": "pending"},
+                    "candidates": {"status": "pending"},
                     "finalize": {"status": "pending"},
                 }
                 if split_backend

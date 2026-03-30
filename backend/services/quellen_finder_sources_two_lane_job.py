@@ -24,7 +24,7 @@ from utils.config import config
 
 logger = logging.getLogger(__name__)
 
-_SPLIT_STAGES = ("preprocess", "fetch", "finalize")
+_SPLIT_STAGES = ("preprocess", "openalex_fetch", "s2_fetch", "candidates", "finalize")
 
 
 def _as_str_or_none(value: Any) -> str | None:
@@ -240,22 +240,12 @@ def _split_stage_state(data: Dict[str, Any], stage_name: str) -> Dict[str, Any]:
     return dict(stage_state)
 
 
-def _next_split_stage(stage_name: str) -> str | None:
-    stage_norm = str(stage_name or "").strip().lower()
-    try:
-        idx = _SPLIT_STAGES.index(stage_norm)
-    except ValueError:
-        return None
-    next_idx = idx + 1
-    if next_idx >= len(_SPLIT_STAGES):
-        return None
-    return _SPLIT_STAGES[next_idx]
-
-
 def _stage_progress_label(stage_name: str) -> str:
     labels = {
         "preprocess": "Preparing query plan and provider queries",
-        "fetch": "Fetching provider records and normalizing candidates",
+        "openalex_fetch": "Fetching OpenAlex records",
+        "s2_fetch": "Fetching Semantic Scholar records",
+        "candidates": "Normalizing provider records into candidates",
         "finalize": "Finalizing ranking and output",
     }
     return str(labels.get(str(stage_name or "").strip().lower()) or stage_name or "Running split stage")
@@ -386,7 +376,7 @@ def _build_stage_settings(settings: Dict[str, Any], *, stage_name: str) -> Dict[
     out = dict(settings or {})
     pipeline_settings = out.get("pipeline_settings") if isinstance(out.get("pipeline_settings"), dict) else {}
     pipeline_settings = dict(pipeline_settings)
-    if str(stage_name or "").strip().lower() in {"fetch", "finalize"}:
+    if str(stage_name or "").strip().lower() in {"openalex_fetch", "s2_fetch", "candidates", "finalize"}:
         pipeline_settings["force_rebuild"] = False
     out["pipeline_settings"] = pipeline_settings
     return out
@@ -403,6 +393,53 @@ def _load_split_manifest(data: Dict[str, Any], *, stage_name: str) -> Dict[str, 
     if not isinstance(manifest, dict):
         raise RuntimeError(f"Invalid two-lane handoff manifest for stage {stage_name}.")
     return manifest
+
+
+async def _maybe_queue_and_launch_split_stage(
+    fs: QuellenFinderFirestoreService,
+    *,
+    user_id: str,
+    projekt_id: str,
+    run_id: str,
+    target_stage: str,
+    prerequisite_stages: Iterable[str] | None = None,
+    current_stage_value: str | None = None,
+) -> bool:
+    claimed = await asyncio.to_thread(
+        fs.try_queue_two_lane_stage,
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        target_stage=target_stage,
+        prerequisite_stages=list(prerequisite_stages or []),
+        allowed_current_statuses=["pending"],
+        current_stage_value=current_stage_value or target_stage,
+    )
+    if not claimed:
+        return False
+
+    launch = await _launch_split_stage(
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        stage_name=target_stage,
+    )
+    fs.run_ref(user_id, projekt_id, run_id).set(
+        {
+            "updatedAt": SERVER_TIMESTAMP,
+            "splitExecution": {
+                target_stage: {
+                    "jobName": str((launch or {}).get("job_name") or _default_two_lane_job_name() or "").strip() or None,
+                    "region": str((launch or {}).get("region") or _default_two_lane_job_region() or "").strip() or None,
+                    "executionName": (launch or {}).get("execution_name"),
+                    "operationName": (launch or {}).get("operation_name"),
+                    "updatedAt": SERVER_TIMESTAMP,
+                }
+            },
+        },
+        merge=True,
+    )
+    return True
 
 
 def _persist_two_lane_pipeline_success(
@@ -503,7 +540,20 @@ async def run_quellen_finder_sources_two_lane_job_from_run_doc(
     execution_backend = str((data or {}).get("executionBackend") or config.TWO_LANE_SOURCES_EXECUTION_BACKEND or "").strip().lower()
     if stage_norm in _SPLIT_STAGES or execution_backend in {"cloud_run_split_jobs", "local_split_jobs"}:
         if stage_norm not in _SPLIT_STAGES:
-            stage_norm = str(((data.get("splitExecution") if isinstance(data.get("splitExecution"), dict) else {}).get("currentStage") or "preprocess")).strip().lower()
+            split_execution = data.get("splitExecution") if isinstance(data.get("splitExecution"), dict) else {}
+            current_stage = str((split_execution or {}).get("currentStage") or "").strip().lower()
+            if current_stage in _SPLIT_STAGES:
+                stage_norm = current_stage
+            else:
+                stage_norm = next(
+                    (
+                        candidate
+                        for candidate in _SPLIT_STAGES
+                        if str(((split_execution.get(candidate) if isinstance(split_execution.get(candidate), dict) else {}).get("status") or "")).strip().lower()
+                        in {"queued", "running"}
+                    ),
+                    "preprocess",
+                )
         await run_quellen_finder_sources_two_lane_split_stage_job(
             user_id=user_id,
             projekt_id=projekt_id,
@@ -755,20 +805,39 @@ async def run_quellen_finder_sources_two_lane_split_stage_job(
                     manifest=manifest,
                 )
 
-            launch = await _launch_split_stage(user_id=user_id, projekt_id=projekt_id, run_id=run_id, stage_name="fetch")
+            launch_openalex = await _launch_split_stage(
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+                stage_name="openalex_fetch",
+            )
+            launch_s2 = await _launch_split_stage(
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+                stage_name="s2_fetch",
+            )
             fs.run_ref(user_id, projekt_id, run_id).set(
                 {
                     "updatedAt": SERVER_TIMESTAMP,
                     "splitExecution": {
-                        "currentStage": "fetch",
+                        "currentStage": "provider_fetch",
                         "preprocess": {"status": "success", "finishedAt": SERVER_TIMESTAMP},
-                        "fetch": {
+                        "openalex_fetch": {
                             "status": "queued",
                             "queuedAt": SERVER_TIMESTAMP,
-                            "jobName": str((launch or {}).get("job_name") or _default_two_lane_job_name() or "").strip() or None,
-                            "region": str((launch or {}).get("region") or _default_two_lane_job_region() or "").strip() or None,
-                            "executionName": (launch or {}).get("execution_name"),
-                            "operationName": (launch or {}).get("operation_name"),
+                            "jobName": str((launch_openalex or {}).get("job_name") or _default_two_lane_job_name() or "").strip() or None,
+                            "region": str((launch_openalex or {}).get("region") or _default_two_lane_job_region() or "").strip() or None,
+                            "executionName": (launch_openalex or {}).get("execution_name"),
+                            "operationName": (launch_openalex or {}).get("operation_name"),
+                        },
+                        "s2_fetch": {
+                            "status": "queued",
+                            "queuedAt": SERVER_TIMESTAMP,
+                            "jobName": str((launch_s2 or {}).get("job_name") or _default_two_lane_job_name() or "").strip() or None,
+                            "region": str((launch_s2 or {}).get("region") or _default_two_lane_job_region() or "").strip() or None,
+                            "executionName": (launch_s2 or {}).get("execution_name"),
+                            "operationName": (launch_s2 or {}).get("operation_name"),
                         },
                     },
                 },
@@ -777,11 +846,11 @@ async def run_quellen_finder_sources_two_lane_split_stage_job(
             logger.info("QF two-lane split preprocess success | run_id=%s seconds=%.2f", run_id, time.perf_counter() - t0)
             return
 
-        if stage_norm == "fetch":
+        if stage_norm in {"openalex_fetch", "s2_fetch"}:
             data = await asyncio.to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
             manifest = await asyncio.to_thread(_load_split_manifest, data, stage_name="preprocess")
             artifact_store = _artifact_store_from_config(data)
-            with tempfile.TemporaryDirectory(prefix="qf_two_lane_fetch_") as tmpdir:
+            with tempfile.TemporaryDirectory(prefix=f"qf_two_lane_{stage_norm}_") as tmpdir:
                 work_root = Path(tmpdir)
                 stage_run_dir = await asyncio.to_thread(
                     restore_handoff_bundle,
@@ -790,14 +859,14 @@ async def run_quellen_finder_sources_two_lane_split_stage_job(
                     work_root=work_root,
                 )
                 result = await run_two_lane_sources_pipeline_stage(
-                    stage_name="fetch",
+                    stage_name=stage_norm,
                     user_id=user_id,
                     projekt_id=projekt_id,
                     kapitel_id=kapitel_id,
                     run_id=run_id,
                     chapter_title=str((settings or {}).get("chapter_title") or "").strip(),
                     chapter_spec_text=str((settings or {}).get("chapter_spec_text") or "").strip(),
-                    settings=_build_stage_settings(settings, stage_name="fetch").get("pipeline_settings"),
+                    settings=_build_stage_settings(settings, stage_name=stage_norm).get("pipeline_settings"),
                     run_dir=stage_run_dir,
                     check_cancel=check_cancel,
                     on_progress=on_progress,
@@ -808,7 +877,7 @@ async def run_quellen_finder_sources_two_lane_split_stage_job(
                     artifact_store=artifact_store,
                     run_id=run_id,
                     pipeline_version="two_lane_v1",
-                    stage_name="fetch",
+                    stage_name=stage_norm,
                 )
                 await asyncio.to_thread(
                     _record_split_artifact_manifest,
@@ -816,35 +885,126 @@ async def run_quellen_finder_sources_two_lane_split_stage_job(
                     user_id=user_id,
                     projekt_id=projekt_id,
                     run_id=run_id,
-                    stage_name="fetch",
+                    stage_name=stage_norm,
                     artifact_store=artifact_store,
                     manifest=manifest_out,
                 )
 
-            launch = await _launch_split_stage(user_id=user_id, projekt_id=projekt_id, run_id=run_id, stage_name="finalize")
             fs.run_ref(user_id, projekt_id, run_id).set(
                 {
                     "updatedAt": SERVER_TIMESTAMP,
                     "splitExecution": {
-                        "currentStage": "finalize",
-                        "fetch": {"status": "success", "finishedAt": SERVER_TIMESTAMP},
-                        "finalize": {
-                            "status": "queued",
-                            "queuedAt": SERVER_TIMESTAMP,
-                            "jobName": str((launch or {}).get("job_name") or _default_two_lane_job_name() or "").strip() or None,
-                            "region": str((launch or {}).get("region") or _default_two_lane_job_region() or "").strip() or None,
-                            "executionName": (launch or {}).get("execution_name"),
-                            "operationName": (launch or {}).get("operation_name"),
-                        },
+                        "currentStage": "provider_fetch",
+                        stage_norm: {"status": "success", "finishedAt": SERVER_TIMESTAMP},
                     },
                 },
                 merge=True,
             )
-            logger.info("QF two-lane split fetch success | run_id=%s seconds=%.2f", run_id, time.perf_counter() - t0)
+            queued_candidates = await _maybe_queue_and_launch_split_stage(
+                fs,
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+                target_stage="candidates",
+                prerequisite_stages=["openalex_fetch", "s2_fetch"],
+                current_stage_value="candidates",
+            )
+            logger.info(
+                "QF two-lane split provider fetch success | run_id=%s stage=%s queued_candidates=%s seconds=%.2f",
+                run_id,
+                stage_norm,
+                bool(queued_candidates),
+                time.perf_counter() - t0,
+            )
+            return
+
+        if stage_norm == "candidates":
+            data = await asyncio.to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+            preprocess_manifest = await asyncio.to_thread(_load_split_manifest, data, stage_name="preprocess")
+            openalex_manifest = await asyncio.to_thread(_load_split_manifest, data, stage_name="openalex_fetch")
+            s2_manifest = await asyncio.to_thread(_load_split_manifest, data, stage_name="s2_fetch")
+            artifact_store = _artifact_store_from_config(data)
+            with tempfile.TemporaryDirectory(prefix="qf_two_lane_candidates_") as tmpdir:
+                work_root = Path(tmpdir)
+                stage_run_dir = await asyncio.to_thread(
+                    restore_handoff_bundle,
+                    artifact_store=artifact_store,
+                    manifest=preprocess_manifest,
+                    work_root=work_root,
+                )
+                await asyncio.to_thread(
+                    restore_handoff_bundle,
+                    artifact_store=artifact_store,
+                    manifest=openalex_manifest,
+                    work_root=work_root,
+                )
+                await asyncio.to_thread(
+                    restore_handoff_bundle,
+                    artifact_store=artifact_store,
+                    manifest=s2_manifest,
+                    work_root=work_root,
+                )
+                result = await run_two_lane_sources_pipeline_stage(
+                    stage_name="candidates",
+                    user_id=user_id,
+                    projekt_id=projekt_id,
+                    kapitel_id=kapitel_id,
+                    run_id=run_id,
+                    chapter_title=str((settings or {}).get("chapter_title") or "").strip(),
+                    chapter_spec_text=str((settings or {}).get("chapter_spec_text") or "").strip(),
+                    settings=_build_stage_settings(settings, stage_name="candidates").get("pipeline_settings"),
+                    run_dir=stage_run_dir,
+                    check_cancel=check_cancel,
+                    on_progress=on_progress,
+                )
+                manifest_out = await asyncio.to_thread(
+                    upload_handoff_bundle,
+                    run_dir=Path(result.get("artifacts_dir") or stage_run_dir),
+                    artifact_store=artifact_store,
+                    run_id=run_id,
+                    pipeline_version="two_lane_v1",
+                    stage_name="candidates",
+                )
+                await asyncio.to_thread(
+                    _record_split_artifact_manifest,
+                    fs,
+                    user_id=user_id,
+                    projekt_id=projekt_id,
+                    run_id=run_id,
+                    stage_name="candidates",
+                    artifact_store=artifact_store,
+                    manifest=manifest_out,
+                )
+
+            fs.run_ref(user_id, projekt_id, run_id).set(
+                {
+                    "updatedAt": SERVER_TIMESTAMP,
+                    "splitExecution": {
+                        "currentStage": "candidates",
+                        "candidates": {"status": "success", "finishedAt": SERVER_TIMESTAMP},
+                    },
+                },
+                merge=True,
+            )
+            queued_finalize = await _maybe_queue_and_launch_split_stage(
+                fs,
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+                target_stage="finalize",
+                prerequisite_stages=["candidates"],
+                current_stage_value="finalize",
+            )
+            logger.info(
+                "QF two-lane split candidates success | run_id=%s queued_finalize=%s seconds=%.2f",
+                run_id,
+                bool(queued_finalize),
+                time.perf_counter() - t0,
+            )
             return
 
         data = await asyncio.to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
-        manifest = await asyncio.to_thread(_load_split_manifest, data, stage_name="fetch")
+        manifest = await asyncio.to_thread(_load_split_manifest, data, stage_name="candidates")
         artifact_store = _artifact_store_from_config(data)
         with tempfile.TemporaryDirectory(prefix="qf_two_lane_finalize_") as tmpdir:
             work_root = Path(tmpdir)

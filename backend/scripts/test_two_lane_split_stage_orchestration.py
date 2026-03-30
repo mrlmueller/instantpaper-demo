@@ -104,6 +104,37 @@ class FakeFirestoreService:
         del kwargs
         self.telemetry_docs = list(docs)
 
+    def try_queue_two_lane_stage(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        target_stage: str,
+        prerequisite_stages,
+        allowed_current_statuses,
+        current_stage_value: str | None = None,
+    ) -> bool:
+        doc = self.docs[(str(user_id), str(projekt_id), str(run_id))]
+        split_execution = doc.get("splitExecution") if isinstance(doc.get("splitExecution"), dict) else {}
+        for stage_name in list(prerequisite_stages or []):
+            stage_state = split_execution.get(stage_name) if isinstance(split_execution.get(stage_name), dict) else {}
+            if str((stage_state or {}).get("status") or "").strip().lower() != "success":
+                return False
+        target_state = split_execution.get(target_stage) if isinstance(split_execution.get(target_stage), dict) else {}
+        if str((target_state or {}).get("status") or "").strip().lower() not in {str(x).strip().lower() for x in list(allowed_current_statuses or [])}:
+            return False
+        self.run_ref(user_id, projekt_id, run_id).set(
+            {
+                "splitExecution": {
+                    "currentStage": str(current_stage_value or target_stage),
+                    str(target_stage): {"status": "queued"},
+                }
+            },
+            merge=True,
+        )
+        return True
+
     def mark_success(self, *, user_id: str, projekt_id: str, run_id: str, had_partial_failures: bool = False, extra: dict | None = None) -> None:
         payload = {"status": "success", "hadPartialFailures": bool(had_partial_failures)}
         if isinstance(extra, dict):
@@ -200,7 +231,15 @@ async def _fake_stage_runner(*, stage_name: str, run_dir: Path, **kwargs):
         (run_dir / "s2_bulk_queries.json").write_text(json.dumps({"s2_bulk_queries": [{"query_string": "s2"}]}), encoding="utf-8")
         (run_dir / "metrics.json").write_text(json.dumps({"stages": {"phase_b_query_planner": {"seconds": 1}}}), encoding="utf-8")
         return {"stage": stage_name, "artifacts_dir": str(run_dir), "metrics": {"stages": {}}}
-    if stage_name == "fetch":
+    if stage_name == "openalex_fetch":
+        (run_dir / "openalex_raw.jsonl").write_text('{"id":"oa1"}\n', encoding="utf-8")
+        (run_dir / "metrics.json").write_text(json.dumps({"stages": {"phase_d_openalex_retrieval": {"seconds": 1}}}), encoding="utf-8")
+        return {"stage": stage_name, "artifacts_dir": str(run_dir), "metrics": {"stages": {}}, "openalex_fetch": {"records": 1}}
+    if stage_name == "s2_fetch":
+        (run_dir / "semanticscholar_raw.jsonl").write_text('{"id":"s21"}\n', encoding="utf-8")
+        (run_dir / "metrics.json").write_text(json.dumps({"stages": {"phase_d_semanticscholar_retrieval": {"seconds": 1}}}), encoding="utf-8")
+        return {"stage": stage_name, "artifacts_dir": str(run_dir), "metrics": {"stages": {}}, "s2_fetch": {"records": 1}}
+    if stage_name == "candidates":
         (run_dir / "openalex_raw.jsonl").write_text('{"id":"oa1"}\n', encoding="utf-8")
         (run_dir / "semanticscholar_raw.jsonl").write_text('{"id":"s21"}\n', encoding="utf-8")
         (run_dir / "candidates_normalized.jsonl").write_text('{"id":"c1"}\n', encoding="utf-8")
@@ -241,7 +280,9 @@ async def _main() -> dict[str, Any]:
             "version": 1,
             "currentStage": "preprocess",
             "preprocess": {"status": "queued"},
-            "fetch": {"status": "pending"},
+            "openalex_fetch": {"status": "pending"},
+            "s2_fetch": {"status": "pending"},
+            "candidates": {"status": "pending"},
             "finalize": {"status": "pending"},
         },
     }
@@ -279,9 +320,25 @@ async def _main() -> dict[str, Any]:
                 user_id="user",
                 projekt_id="project",
                 run_id="run-123",
-                stage="fetch",
+                stage="openalex_fetch",
             )
-            after_fetch = fake_fs.get_run(user_id="user", projekt_id="project", run_id="run-123")
+            after_openalex = fake_fs.get_run(user_id="user", projekt_id="project", run_id="run-123")
+
+            await jobmod.run_quellen_finder_sources_two_lane_job_from_run_doc(
+                user_id="user",
+                projekt_id="project",
+                run_id="run-123",
+                stage="s2_fetch",
+            )
+            after_s2 = fake_fs.get_run(user_id="user", projekt_id="project", run_id="run-123")
+
+            await jobmod.run_quellen_finder_sources_two_lane_job_from_run_doc(
+                user_id="user",
+                projekt_id="project",
+                run_id="run-123",
+                stage="candidates",
+            )
+            after_candidates = fake_fs.get_run(user_id="user", projekt_id="project", run_id="run-123")
 
             await jobmod.run_quellen_finder_sources_two_lane_job_from_run_doc(
                 user_id="user",
@@ -296,11 +353,29 @@ async def _main() -> dict[str, Any]:
             jobmod.run_two_lane_sources_pipeline_stage = original["run_two_lane_sources_pipeline_stage"]
             jobmod._launch_split_stage = original["_launch_split_stage"]
 
+    expected_launches = ["openalex_fetch", "s2_fetch", "candidates", "finalize"]
+    if launches != expected_launches:
+        raise RuntimeError(f"Unexpected launches: {launches}")
+    if ((after_preprocess.get("splitExecution") or {}).get("currentStage")) != "provider_fetch":
+        raise RuntimeError(f"Unexpected stage after preprocess: {after_preprocess.get('splitExecution')}")
+    if ((after_openalex.get("splitExecution") or {}).get("currentStage")) != "provider_fetch":
+        raise RuntimeError(f"Unexpected stage after OpenAlex fetch: {after_openalex.get('splitExecution')}")
+    if ((after_s2.get("splitExecution") or {}).get("currentStage")) != "candidates":
+        raise RuntimeError(f"Unexpected stage after S2 fetch: {after_s2.get('splitExecution')}")
+    if ((after_candidates.get("splitExecution") or {}).get("currentStage")) != "finalize":
+        raise RuntimeError(f"Unexpected stage after candidates: {after_candidates.get('splitExecution')}")
+    if final_doc.get("status") != "success":
+        raise RuntimeError(f"Unexpected final status: {final_doc.get('status')}")
+    if ((final_doc.get("twoLaneArtifacts") or {}).get("cleanupStatus")) != "done":
+        raise RuntimeError(f"Unexpected cleanup status: {(final_doc.get('twoLaneArtifacts') or {}).get('cleanupStatus')}")
+
     return {
         "ok": True,
         "launches": launches,
         "after_preprocess_stage": ((after_preprocess.get("splitExecution") or {}).get("currentStage")),
-        "after_fetch_stage": ((after_fetch.get("splitExecution") or {}).get("currentStage")),
+        "after_openalex_stage": ((after_openalex.get("splitExecution") or {}).get("currentStage")),
+        "after_s2_stage": ((after_s2.get("splitExecution") or {}).get("currentStage")),
+        "after_candidates_stage": ((after_candidates.get("splitExecution") or {}).get("currentStage")),
         "final_status": final_doc.get("status"),
         "cleanup_status": ((final_doc.get("twoLaneArtifacts") or {}).get("cleanupStatus")),
         "result_docs": len(fake_fs.results_docs),

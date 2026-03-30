@@ -4,6 +4,7 @@ import math
 import logging
 from typing import Any, Iterable, Optional
 
+from firebase_admin import firestore
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from services.firebase_service import firebase_service
@@ -400,6 +401,65 @@ class QuellenFinderFirestoreService:
     ) -> None:
         col = self.run_ref(user_id, projekt_id, run_id).collection(str(name))
         self._write_collection_docs(col_ref=col, docs=docs)
+
+    def try_queue_two_lane_stage(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        target_stage: str,
+        prerequisite_stages: Iterable[str] | None = None,
+        allowed_current_statuses: Iterable[str] | None = None,
+        current_stage_value: str | None = None,
+    ) -> bool:
+        target_stage_norm = _as_str(target_stage)
+        if not target_stage_norm:
+            raise ValueError("target_stage is required")
+        prereqs = [str(x).strip() for x in list(prerequisite_stages or []) if str(x).strip()]
+        allowed = {str(x).strip().lower() for x in list(allowed_current_statuses or ["pending"]) if str(x).strip()}
+        doc_ref = self.run_ref(user_id, projekt_id, run_id)
+        transaction = self.firebase.db.transaction()
+
+        @firestore.transactional
+        def _txn(txn):
+            snap = doc_ref.get(transaction=txn)
+            if snap is None or not getattr(snap, "exists", False):
+                return False
+            data = snap.to_dict() if snap is not None else {}
+            if str((data or {}).get("status") or "").strip().lower() in {"success", "error", "cancelled"}:
+                return False
+            if bool((data or {}).get("cancelRequestedAt")):
+                return False
+
+            split_execution = data.get("splitExecution") if isinstance(data.get("splitExecution"), dict) else {}
+            for stage_name in prereqs:
+                stage_state = split_execution.get(stage_name) if isinstance(split_execution.get(stage_name), dict) else {}
+                if str((stage_state or {}).get("status") or "").strip().lower() != "success":
+                    return False
+
+            target_state = split_execution.get(target_stage_norm) if isinstance(split_execution.get(target_stage_norm), dict) else {}
+            current_status = str((target_state or {}).get("status") or "").strip().lower()
+            if current_status not in allowed:
+                return False
+
+            payload: dict[str, Any] = {
+                "updatedAt": SERVER_TIMESTAMP,
+                "splitExecution": {
+                    target_stage_norm: {
+                        "status": "queued",
+                        "queuedAt": SERVER_TIMESTAMP,
+                        "updatedAt": SERVER_TIMESTAMP,
+                    }
+                },
+            }
+            current_stage_norm = _as_str(current_stage_value)
+            if current_stage_norm:
+                payload["splitExecution"]["currentStage"] = current_stage_norm
+            txn.set(doc_ref, payload, merge=True)
+            return True
+
+        return bool(_txn(transaction))
 
     def replace_pdf_scan_results(
         self,
