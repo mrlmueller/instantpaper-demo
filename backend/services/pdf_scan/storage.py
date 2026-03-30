@@ -213,12 +213,33 @@ class PdfScanArtifactStore:
         raw = blob.download_as_bytes()
         return raw.decode("utf-8")
 
+    def download_bytes(self, *, path_or_uri: str) -> bytes:
+        blob = self._resolve_bucket().blob(self._normalize_object_name(path_or_uri))
+        return bytes(blob.download_as_bytes())
+
     def download_json(self, *, path_or_uri: str) -> Any:
         return json.loads(self.download_text(path_or_uri=path_or_uri))
 
     def exists(self, *, path_or_uri: str) -> bool:
         blob = self._resolve_bucket().blob(self._normalize_object_name(path_or_uri))
         return bool(blob.exists())
+
+    def list_prefix(self, *, prefix: str) -> list[PdfScanArtifactLocation]:
+        object_prefix = self._normalize_object_name(str(prefix or "").strip().strip("/"))
+        if not object_prefix:
+            return []
+        bucket = self._resolve_bucket()
+        locations: list[PdfScanArtifactLocation] = []
+        for blob in self._client.list_blobs(bucket, prefix=object_prefix):
+            name = str(getattr(blob, "name", "") or "").strip()
+            if not name or name.endswith("/"):
+                continue
+            locations.append(PdfScanArtifactLocation(bucket.name, name))
+        return locations
+
+    def delete_object(self, *, path_or_uri: str) -> None:
+        blob = self._resolve_bucket().blob(self._normalize_object_name(path_or_uri))
+        blob.delete()
 
     def upload_dir(
         self,

@@ -96,6 +96,34 @@ class Config:
         "TWO_LANE_ARTIFACT_PREFIX",
         "two-lane-runs",
     ).strip().strip("/")
+    TWO_LANE_TASK_DISPATCH_BACKEND: str = os.getenv(
+        "TWO_LANE_TASK_DISPATCH_BACKEND",
+        "cloud_tasks" if IS_CLOUD_RUN else "local_background",
+    ).strip().lower()
+    TWO_LANE_TASKS_PROJECT: str = os.getenv(
+        "TWO_LANE_TASKS_PROJECT",
+        GOOGLE_CLOUD_PROJECT,
+    ).strip()
+    TWO_LANE_TASKS_LOCATION: str = os.getenv(
+        "TWO_LANE_TASKS_LOCATION",
+        TWO_LANE_CLOUD_RUN_JOB_REGION,
+    ).strip()
+    TWO_LANE_OPENALEX_TASK_QUEUE: str = os.getenv(
+        "TWO_LANE_OPENALEX_TASK_QUEUE",
+        "quellen-finder-openalex",
+    ).strip()
+    TWO_LANE_SEMANTICSCHOLAR_TASK_QUEUE: str = os.getenv(
+        "TWO_LANE_SEMANTICSCHOLAR_TASK_QUEUE",
+        "quellen-finder-semanticscholar",
+    ).strip()
+    TWO_LANE_TASK_HANDLER_URL: str = os.getenv(
+        "TWO_LANE_TASK_HANDLER_URL",
+        "",
+    ).strip()
+    TWO_LANE_TASK_DISPATCH_TOKEN: str = os.getenv(
+        "TWO_LANE_TASK_DISPATCH_TOKEN",
+        "",
+    ).strip()
     PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME: str = os.getenv(
         "PDF_SCAN_CPU_CLOUD_RUN_JOB_NAME",
         "instantpaper-pdf-scan-cpu",

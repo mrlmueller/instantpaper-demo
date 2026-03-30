@@ -1,0 +1,663 @@
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Any, Iterable
+
+import requests
+from google.cloud.firestore_v1 import SERVER_TIMESTAMP
+
+from services.cloud_run_job_launcher import cloud_run_job_launcher
+from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
+from services.two_lane_sources.pipeline import (
+    OPENALEX_SELECT,
+    S2_BATCH_FIELDS,
+    S2_BULK_FIELDS,
+    OpenAlexQuery,
+    PipelineConfig,
+    S2BulkQuery,
+    _openalex_params,
+    _query_hash,
+    _s2_iter_batch_items,
+    _chunked,
+    request_json,
+    stable_hash,
+)
+from services.two_lane_sources.provider_rate_limit import build_provider_rate_limiter
+from services.two_lane_sources.storage import TwoLaneArtifactStore
+from services.two_lane_sources.task_dispatch import build_two_lane_task_dispatcher
+from utils.config import config
+
+logger = logging.getLogger(__name__)
+
+OPENALEX_STAGE = "openalex_fetch"
+SEMANTICSCHOLAR_STAGE = "s2_fetch"
+
+
+def _artifact_store_from_run_doc(run_doc: dict[str, Any] | None = None) -> TwoLaneArtifactStore:
+    artifacts = (run_doc or {}).get("twoLaneArtifacts") if isinstance((run_doc or {}).get("twoLaneArtifacts"), dict) else {}
+    bucket_name = (
+        str((artifacts or {}).get("bucket") or config.TWO_LANE_ARTIFACT_BUCKET or "").strip()
+        or str(config.FIREBASE_STORAGE_BUCKET or "").strip()
+    )
+    if not bucket_name:
+        raise RuntimeError("TWO_LANE_ARTIFACT_BUCKET or FIREBASE_STORAGE_BUCKET must be configured.")
+    return TwoLaneArtifactStore(
+        bucket_name=bucket_name,
+        base_prefix=str((artifacts or {}).get("basePrefix") or config.TWO_LANE_ARTIFACT_PREFIX or "").strip(),
+        project_id=str(config.GOOGLE_CLOUD_PROJECT or config.FIREBASE_PROJECT_ID or "").strip(),
+    )
+
+
+def _provider_relative_prefix(*, artifact_store: TwoLaneArtifactStore, run_id: str, provider: str) -> str:
+    return f"{artifact_store.run_prefix(run_id)}/provider/{str(provider).strip().lower()}/pages"
+
+
+def _provider_meta_prefix(*, artifact_store: TwoLaneArtifactStore, run_id: str, provider: str) -> str:
+    return f"{artifact_store.run_prefix(run_id)}/provider/{str(provider).strip().lower()}/meta"
+
+
+def _openalex_task_key(*, query_hash: str, cursor: str, page_index: int) -> str:
+    cursor_hash = stable_hash("openalex", str(query_hash), str(cursor or "*"), length=12)
+    return f"oa-{str(query_hash)}-{int(page_index):06d}-{cursor_hash}"
+
+
+def _s2_task_key(*, query_hash: str, token: str | None, page_index: int) -> str:
+    token_hash = stable_hash("s2", str(query_hash), str(token or "start"), length=12)
+    return f"s2-{str(query_hash)}-{int(page_index):06d}-{token_hash}"
+
+
+def _openalex_page_paths(
+    *,
+    artifact_store: TwoLaneArtifactStore,
+    run_id: str,
+    query_hash: str,
+    page_index: int,
+    cursor: str,
+) -> tuple[str, str]:
+    cursor_hash = stable_hash("oa-page", str(query_hash), str(cursor or "*"), length=12)
+    base = _provider_relative_prefix(artifact_store=artifact_store, run_id=run_id, provider="openalex")
+    meta = _provider_meta_prefix(artifact_store=artifact_store, run_id=run_id, provider="openalex")
+    data_path = f"{base}/{query_hash}/{int(page_index):06d}_{cursor_hash}.jsonl"
+    meta_path = f"{meta}/{query_hash}/{int(page_index):06d}_{cursor_hash}.json"
+    return data_path, meta_path
+
+
+def _s2_page_paths(
+    *,
+    artifact_store: TwoLaneArtifactStore,
+    run_id: str,
+    query_hash: str,
+    page_index: int,
+    token: str | None,
+) -> tuple[str, str]:
+    token_hash = stable_hash("s2-page", str(query_hash), str(token or "start"), length=12)
+    base = _provider_relative_prefix(artifact_store=artifact_store, run_id=run_id, provider="semanticscholar")
+    meta = _provider_meta_prefix(artifact_store=artifact_store, run_id=run_id, provider="semanticscholar")
+    data_path = f"{base}/{query_hash}/{int(page_index):06d}_{token_hash}.jsonl"
+    meta_path = f"{meta}/{query_hash}/{int(page_index):06d}_{token_hash}.json"
+    return data_path, meta_path
+
+
+def load_openalex_queries(*, run_dir: Path) -> list[OpenAlexQuery]:
+    path = Path(run_dir).resolve() / "openalex_queries.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    items = raw.get("openalex_queries") if isinstance(raw, dict) else None
+    if not isinstance(items, list):
+        raise RuntimeError("openalex_queries.json is missing openalex_queries")
+    return [OpenAlexQuery.model_validate(item) for item in items]
+
+
+def load_s2_queries(*, run_dir: Path) -> list[S2BulkQuery]:
+    path = Path(run_dir).resolve() / "s2_bulk_queries.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    items = raw.get("s2_bulk_queries") if isinstance(raw, dict) else None
+    if not isinstance(items, list):
+        raise RuntimeError("s2_bulk_queries.json is missing s2_bulk_queries")
+    return [S2BulkQuery.model_validate(item) for item in items]
+
+
+def seed_openalex_provider_tasks(
+    *,
+    user_id: str,
+    projekt_id: str,
+    run_id: str,
+    queries: list[OpenAlexQuery],
+    run_doc: dict[str, Any],
+) -> dict[str, Any]:
+    fs = QuellenFinderFirestoreService()
+    dispatcher = build_two_lane_task_dispatcher()
+    artifact_store = _artifact_store_from_run_doc(run_doc)
+    results_prefix = _provider_relative_prefix(artifact_store=artifact_store, run_id=run_id, provider="openalex")
+    seeded = 0
+
+    for qi, query in enumerate(queries, start=1):
+        query_hash = _query_hash("openalex", query)
+        task_key = _openalex_task_key(query_hash=query_hash, cursor="*", page_index=1)
+        claimed = fs.enqueue_two_lane_provider_task(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            provider="openalex",
+            stage_name=OPENALEX_STAGE,
+            queue_name=str(dispatcher.openalex_queue),
+            task_key=task_key,
+            results_prefix=results_prefix,
+        )
+        if not claimed:
+            continue
+        payload = {
+            "kind": "openalex_page",
+            "user_id": str(user_id),
+            "projekt_id": str(projekt_id),
+            "run_id": str(run_id),
+            "provider": "openalex",
+            "stage_name": OPENALEX_STAGE,
+            "task_key": task_key,
+            "query_i": int(qi),
+            "query_hash": query_hash,
+            "page_index": 1,
+            "cursor": "*",
+            "query": query.model_dump(mode="json"),
+        }
+        dispatcher.enqueue(queue_key="openalex", task_name=task_key, payload=payload)
+        seeded += 1
+
+    fs.run_ref(user_id, projekt_id, run_id).set(
+        {
+            "updatedAt": SERVER_TIMESTAMP,
+            "twoLaneArtifacts": {
+                OPENALEX_STAGE: {
+                    "resultsPrefix": results_prefix,
+                    "seededTasks": int(seeded),
+                    "updatedAt": SERVER_TIMESTAMP,
+                }
+            },
+        },
+        merge=True,
+    )
+    return {"seeded_tasks": int(seeded), "results_prefix": results_prefix}
+
+
+def seed_s2_provider_tasks(
+    *,
+    user_id: str,
+    projekt_id: str,
+    run_id: str,
+    queries: list[S2BulkQuery],
+    run_doc: dict[str, Any],
+) -> dict[str, Any]:
+    fs = QuellenFinderFirestoreService()
+    dispatcher = build_two_lane_task_dispatcher()
+    artifact_store = _artifact_store_from_run_doc(run_doc)
+    results_prefix = _provider_relative_prefix(artifact_store=artifact_store, run_id=run_id, provider="semanticscholar")
+    seeded = 0
+
+    for qi, query in enumerate(queries, start=1):
+        query_hash = _query_hash("semanticscholar", query)
+        task_key = _s2_task_key(query_hash=query_hash, token=None, page_index=1)
+        claimed = fs.enqueue_two_lane_provider_task(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            provider="semanticscholar",
+            stage_name=SEMANTICSCHOLAR_STAGE,
+            queue_name=str(dispatcher.semanticscholar_queue),
+            task_key=task_key,
+            results_prefix=results_prefix,
+        )
+        if not claimed:
+            continue
+        payload = {
+            "kind": "s2_bulk_page",
+            "user_id": str(user_id),
+            "projekt_id": str(projekt_id),
+            "run_id": str(run_id),
+            "provider": "semanticscholar",
+            "stage_name": SEMANTICSCHOLAR_STAGE,
+            "task_key": task_key,
+            "query_i": int(qi),
+            "query_hash": query_hash,
+            "page_index": 1,
+            "token": None,
+            "query": query.model_dump(mode="json"),
+            "bulk_limit": 100,
+        }
+        dispatcher.enqueue(queue_key="semanticscholar", task_name=task_key, payload=payload)
+        seeded += 1
+
+    fs.run_ref(user_id, projekt_id, run_id).set(
+        {
+            "updatedAt": SERVER_TIMESTAMP,
+            "twoLaneArtifacts": {
+                SEMANTICSCHOLAR_STAGE: {
+                    "resultsPrefix": results_prefix,
+                    "seededTasks": int(seeded),
+                    "updatedAt": SERVER_TIMESTAMP,
+                }
+            },
+        },
+        merge=True,
+    )
+    return {"seeded_tasks": int(seeded), "results_prefix": results_prefix}
+
+
+def materialize_provider_results(
+    *,
+    artifact_store: TwoLaneArtifactStore,
+    run_id: str,
+    provider: str,
+    destination: Path,
+) -> dict[str, Any]:
+    prefix = _provider_relative_prefix(artifact_store=artifact_store, run_id=run_id, provider=provider)
+    objects = sorted(artifact_store.list_prefix(prefix=prefix), key=lambda item: item.object_name)
+    destination = Path(destination).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    total_records = 0
+    with destination.open("w", encoding="utf-8") as handle:
+        for item in objects:
+            if not str(item.object_name).endswith(".jsonl"):
+                continue
+            text = artifact_store.download_text(path_or_uri=item.uri)
+            for line in str(text).splitlines():
+                if not line.strip():
+                    continue
+                handle.write(line.rstrip() + "\n")
+                total_records += 1
+    return {"objects": int(len(objects)), "records": int(total_records), "prefix": prefix}
+
+
+def _build_openalex_limiter(*, cfg: PipelineConfig, run_id: str):
+    return build_provider_rate_limiter(
+        provider="openalex",
+        rps=cfg.openalex_rps,
+        backend=cfg.provider_rate_limit_backend,
+        collection_name=cfg.provider_rate_limit_collection,
+        holder=f"task:{run_id}",
+        run_id=run_id,
+        stage="phase_d_openalex_retrieval",
+        max_future_ms=cfg.provider_rate_limit_max_future_ms,
+        dispatch_buffer_ms=cfg.provider_rate_limit_dispatch_buffer_ms,
+    )
+
+
+def _build_s2_limiter(*, cfg: PipelineConfig, run_id: str, stage: str):
+    return build_provider_rate_limiter(
+        provider="semanticscholar",
+        rps=cfg.semanticscholar_rps,
+        backend=cfg.provider_rate_limit_backend,
+        collection_name=cfg.provider_rate_limit_collection,
+        holder=f"task:{run_id}",
+        run_id=run_id,
+        stage=stage,
+        max_future_ms=cfg.provider_rate_limit_max_future_ms,
+        dispatch_buffer_ms=cfg.provider_rate_limit_dispatch_buffer_ms,
+    )
+
+
+async def _maybe_launch_candidates(*, user_id: str, projekt_id: str, run_id: str) -> bool:
+    fs = QuellenFinderFirestoreService()
+    claimed = await __import__("asyncio").to_thread(
+        fs.try_queue_two_lane_stage,
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        target_stage="candidates",
+        prerequisite_stages=[OPENALEX_STAGE, SEMANTICSCHOLAR_STAGE],
+        allowed_current_statuses=["pending"],
+        current_stage_value="candidates",
+    )
+    if not claimed:
+        return False
+    launch = await __import__("asyncio").to_thread(
+        cloud_run_job_launcher.execute_two_lane_sources_job,
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        stage="candidates",
+    )
+    fs.run_ref(user_id, projekt_id, run_id).set(
+        {
+            "updatedAt": SERVER_TIMESTAMP,
+            "splitExecution": {
+                "candidates": {
+                    "jobName": (launch or {}).get("job_name"),
+                    "region": (launch or {}).get("region"),
+                    "executionName": (launch or {}).get("execution_name"),
+                    "operationName": (launch or {}).get("operation_name"),
+                    "updatedAt": SERVER_TIMESTAMP,
+                }
+            },
+        },
+        merge=True,
+    )
+    return True
+
+
+async def process_openalex_page_task(payload: dict[str, Any]) -> dict[str, Any]:
+    user_id = str(payload.get("user_id") or "").strip()
+    projekt_id = str(payload.get("projekt_id") or "").strip()
+    run_id = str(payload.get("run_id") or "").strip()
+    task_key = str(payload.get("task_key") or "").strip()
+    if not user_id or not projekt_id or not run_id or not task_key:
+        raise ValueError("openalex task payload is missing identifiers")
+
+    fs = QuellenFinderFirestoreService()
+    claimed = await __import__("asyncio").to_thread(
+        fs.claim_two_lane_provider_task,
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        provider="openalex",
+        task_key=task_key,
+    )
+    if not claimed:
+        return {"claimed": False, "task_key": task_key}
+
+    run_doc = await __import__("asyncio").to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+    artifact_store = _artifact_store_from_run_doc(run_doc)
+    query = OpenAlexQuery.model_validate(payload.get("query") or {})
+    query_hash = str(payload.get("query_hash") or _query_hash("openalex", query)).strip()
+    page_index = int(payload.get("page_index") or 1)
+    cursor = str(payload.get("cursor") or "*")
+    data_path, meta_path = _openalex_page_paths(
+        artifact_store=artifact_store,
+        run_id=run_id,
+        query_hash=query_hash,
+        page_index=page_index,
+        cursor=cursor,
+    )
+
+    meta: dict[str, Any]
+    if artifact_store.exists(path_or_uri=meta_path):
+        meta = artifact_store.download_json(path_or_uri=meta_path)
+    else:
+        cfg = PipelineConfig.from_env(runs_root=Path("."), pipeline_version="two_lane_v1")
+        session = requests.Session()
+        session.headers.update({"User-Agent": "instantpaper-two-lane/1.0"})
+        limiter = _build_openalex_limiter(cfg=cfg, run_id=run_id)
+        data = request_json(
+            run_ctx=None,
+            stage="phase_d_openalex_retrieval",
+            provider="openalex",
+            session=session,
+            method="GET",
+            url=cfg.openalex_base_url.rstrip("/") + "/works",
+            params=_openalex_params(cfg, query, cursor=cursor),
+            body=None,
+            timeout_s=float(cfg.openalex_timeout_s),
+            rate_limiter=limiter,
+            max_attempts=8,
+            backoff_initial_s=1.0,
+            backoff_max_s=60.0,
+        )
+        results = (data or {}).get("results") or []
+        lines = []
+        for rank, work in enumerate(results, start=1):
+            lines.append(
+                json.dumps(
+                    {
+                        "run_id": run_id,
+                        "provider": "openalex",
+                        "query_hash": query_hash,
+                        "query_i": int(payload.get("query_i") or 0),
+                        "intent": query.intent,
+                        "language": query.language,
+                        "rank": int(((page_index - 1) * int(query.per_page or 200)) + rank),
+                        "work": work,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        artifact_store.upload_text(
+            text="\n".join(lines) + ("\n" if lines else ""),
+            path_or_uri=data_path,
+            content_type="application/x-ndjson; charset=utf-8",
+        )
+        meta = {
+            "query_hash": query_hash,
+            "page_index": int(page_index),
+            "cursor": cursor,
+            "next_cursor": ((data or {}).get("meta") or {}).get("next_cursor"),
+            "records": int(len(lines)),
+            "dataPath": data_path,
+        }
+        artifact_store.upload_json(payload=meta, path_or_uri=meta_path)
+
+    next_cursor = str(meta.get("next_cursor") or "").strip() or None
+    if next_cursor:
+        next_page_index = int(page_index) + 1
+        next_task_key = _openalex_task_key(query_hash=query_hash, cursor=next_cursor, page_index=next_page_index)
+        dispatcher = build_two_lane_task_dispatcher()
+        queued = await __import__("asyncio").to_thread(
+            fs.enqueue_two_lane_provider_task,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            provider="openalex",
+            stage_name=OPENALEX_STAGE,
+            queue_name=str(dispatcher.openalex_queue),
+            task_key=next_task_key,
+            results_prefix=_provider_relative_prefix(artifact_store=artifact_store, run_id=run_id, provider="openalex"),
+        )
+        if queued:
+            dispatcher.enqueue(
+                queue_key="openalex",
+                task_name=next_task_key,
+                payload={
+                    "kind": "openalex_page",
+                    "user_id": user_id,
+                    "projekt_id": projekt_id,
+                    "run_id": run_id,
+                    "provider": "openalex",
+                    "stage_name": OPENALEX_STAGE,
+                    "task_key": next_task_key,
+                    "query_i": int(payload.get("query_i") or 0),
+                    "query_hash": query_hash,
+                    "page_index": next_page_index,
+                    "cursor": next_cursor,
+                    "query": query.model_dump(mode="json"),
+                },
+            )
+
+    result = await __import__("asyncio").to_thread(
+        fs.complete_two_lane_provider_task,
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        provider="openalex",
+        task_key=task_key,
+        stage_name=OPENALEX_STAGE,
+        summary={"page_index": int(page_index), "records": int(meta.get("records") or 0)},
+    )
+    if bool((result or {}).get("provider_done")):
+        await _maybe_launch_candidates(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+    return {"claimed": True, "task_key": task_key, "records": int(meta.get("records") or 0)}
+
+
+async def process_s2_bulk_page_task(payload: dict[str, Any]) -> dict[str, Any]:
+    user_id = str(payload.get("user_id") or "").strip()
+    projekt_id = str(payload.get("projekt_id") or "").strip()
+    run_id = str(payload.get("run_id") or "").strip()
+    task_key = str(payload.get("task_key") or "").strip()
+    if not user_id or not projekt_id or not run_id or not task_key:
+        raise ValueError("s2 task payload is missing identifiers")
+
+    fs = QuellenFinderFirestoreService()
+    claimed = await __import__("asyncio").to_thread(
+        fs.claim_two_lane_provider_task,
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        provider="semanticscholar",
+        task_key=task_key,
+    )
+    if not claimed:
+        return {"claimed": False, "task_key": task_key}
+
+    run_doc = await __import__("asyncio").to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+    artifact_store = _artifact_store_from_run_doc(run_doc)
+    query = S2BulkQuery.model_validate(payload.get("query") or {})
+    query_hash = str(payload.get("query_hash") or _query_hash("semanticscholar", query)).strip()
+    page_index = int(payload.get("page_index") or 1)
+    token = payload.get("token")
+    token_s = str(token).strip() if token is not None else None
+    bulk_limit = max(1, int(payload.get("bulk_limit") or 100))
+    data_path, meta_path = _s2_page_paths(
+        artifact_store=artifact_store,
+        run_id=run_id,
+        query_hash=query_hash,
+        page_index=page_index,
+        token=token_s,
+    )
+
+    meta: dict[str, Any]
+    if artifact_store.exists(path_or_uri=meta_path):
+        meta = artifact_store.download_json(path_or_uri=meta_path)
+    else:
+        cfg = PipelineConfig.from_env(runs_root=Path("."), pipeline_version="two_lane_v1")
+        session = requests.Session()
+        session.headers.update({"User-Agent": "instantpaper-two-lane/1.0"})
+        if cfg.semanticscholar_api_key:
+            session.headers.update({"x-api-key": cfg.semanticscholar_api_key})
+        limiter = _build_s2_limiter(cfg=cfg, run_id=run_id, stage="phase_d_semanticscholar_retrieval")
+        base = cfg.semanticscholar_base_url.rstrip("/")
+        params: dict[str, Any] = {"query": query.query_string, "fields": S2_BULK_FIELDS, "limit": int(bulk_limit)}
+        if token_s:
+            params["token"] = token_s
+        page = request_json(
+            run_ctx=None,
+            stage="phase_d_semanticscholar_retrieval",
+            provider="semanticscholar",
+            session=session,
+            method="GET",
+            url=base + "/paper/search/bulk",
+            params=params,
+            body=None,
+            timeout_s=float(cfg.semanticscholar_timeout_s),
+            rate_limiter=limiter,
+            max_attempts=10,
+            backoff_initial_s=2.0,
+            backoff_max_s=120.0,
+        )
+
+        items = (page or {}).get("data") or []
+        ids: list[str] = []
+        ranks: dict[str, int] = {}
+        for rank, item in enumerate(items, start=1):
+            if not isinstance(item, dict):
+                continue
+            paper_id = item.get("paperId")
+            if not paper_id:
+                continue
+            paper_id_s = str(paper_id)
+            ids.append(paper_id_s)
+            ranks[paper_id_s] = int(((page_index - 1) * int(bulk_limit)) + rank)
+
+        hydrated: list[dict[str, Any]] = []
+        if ids:
+            for chunk in _chunked(ids, 500):
+                batch = request_json(
+                    run_ctx=None,
+                    stage="phase_d_semanticscholar_retrieval",
+                    provider="semanticscholar",
+                    session=session,
+                    method="POST",
+                    url=base + "/paper/batch",
+                    params={"fields": S2_BATCH_FIELDS},
+                    body={"ids": chunk},
+                    timeout_s=float(cfg.semanticscholar_timeout_s),
+                    rate_limiter=limiter,
+                    max_attempts=10,
+                    backoff_initial_s=2.0,
+                    backoff_max_s=120.0,
+                )
+                hydrated.extend(_s2_iter_batch_items(batch))
+
+        lines = []
+        for paper in hydrated:
+            paper_id = str(paper.get("paperId") or "").strip()
+            if not paper_id:
+                continue
+            lines.append(
+                json.dumps(
+                    {
+                        "run_id": run_id,
+                        "provider": "semanticscholar",
+                        "query_hash": query_hash,
+                        "query_i": int(payload.get("query_i") or 0),
+                        "intent": query.intent,
+                        "language": query.language,
+                        "rank": int(ranks.get(paper_id) or 0),
+                        "paper": paper,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        artifact_store.upload_text(
+            text="\n".join(lines) + ("\n" if lines else ""),
+            path_or_uri=data_path,
+            content_type="application/x-ndjson; charset=utf-8",
+        )
+        meta = {
+            "query_hash": query_hash,
+            "page_index": int(page_index),
+            "token": token_s,
+            "next_token": (page or {}).get("token") or (page or {}).get("next"),
+            "ids_seen": int(len(ids)),
+            "records": int(len(lines)),
+            "dataPath": data_path,
+        }
+        artifact_store.upload_json(payload=meta, path_or_uri=meta_path)
+
+    next_token = str(meta.get("next_token") or "").strip() or None
+    if next_token:
+        next_page_index = int(page_index) + 1
+        next_task_key = _s2_task_key(query_hash=query_hash, token=next_token, page_index=next_page_index)
+        dispatcher = build_two_lane_task_dispatcher()
+        queued = await __import__("asyncio").to_thread(
+            fs.enqueue_two_lane_provider_task,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            provider="semanticscholar",
+            stage_name=SEMANTICSCHOLAR_STAGE,
+            queue_name=str(dispatcher.semanticscholar_queue),
+            task_key=next_task_key,
+            results_prefix=_provider_relative_prefix(artifact_store=artifact_store, run_id=run_id, provider="semanticscholar"),
+        )
+        if queued:
+            dispatcher.enqueue(
+                queue_key="semanticscholar",
+                task_name=next_task_key,
+                payload={
+                    "kind": "s2_bulk_page",
+                    "user_id": user_id,
+                    "projekt_id": projekt_id,
+                    "run_id": run_id,
+                    "provider": "semanticscholar",
+                    "stage_name": SEMANTICSCHOLAR_STAGE,
+                    "task_key": next_task_key,
+                    "query_i": int(payload.get("query_i") or 0),
+                    "query_hash": query_hash,
+                    "page_index": next_page_index,
+                    "token": next_token,
+                    "query": query.model_dump(mode="json"),
+                    "bulk_limit": int(bulk_limit),
+                },
+            )
+
+    result = await __import__("asyncio").to_thread(
+        fs.complete_two_lane_provider_task,
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        provider="semanticscholar",
+        task_key=task_key,
+        stage_name=SEMANTICSCHOLAR_STAGE,
+        summary={"page_index": int(page_index), "records": int(meta.get("records") or 0)},
+    )
+    if bool((result or {}).get("provider_done")):
+        await _maybe_launch_candidates(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+    return {"claimed": True, "task_key": task_key, "records": int(meta.get("records") or 0)}

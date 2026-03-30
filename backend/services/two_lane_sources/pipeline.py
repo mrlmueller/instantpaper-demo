@@ -3394,7 +3394,7 @@ def _parse_retry_after(resp: requests.Response) -> Optional[float]:
 
 def request_json(
     *,
-    run_ctx: RunContext,
+    run_ctx: RunContext | None,
     stage: str,
     provider: str,
     session: requests.Session,
@@ -3434,20 +3434,21 @@ def request_json(
             last_err = repr(e)
 
         retries = attempt - 1
-        log_event(
-            run_ctx,
-            stage=stage,
-            event="http_request",
-            provider=provider,
-            fingerprint=fingerprint,
-            endpoint=endpoint,
-            method=method_u,
-            status=last_status,
-            retries=retries,
-            cache_hit=False,
-            params=_truncate_for_log(params_fp),
-            elapsed_s=round(time.time() - t0, 3),
-        )
+        if run_ctx is not None:
+            log_event(
+                run_ctx,
+                stage=stage,
+                event="http_request",
+                provider=provider,
+                fingerprint=fingerprint,
+                endpoint=endpoint,
+                method=method_u,
+                status=last_status,
+                retries=retries,
+                cache_hit=False,
+                params=_truncate_for_log(params_fp),
+                elapsed_s=round(time.time() - t0, 3),
+            )
 
         retry_after_s: Optional[float] = None
         retryable = False

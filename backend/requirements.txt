@@ -6,6 +6,7 @@ firebase-admin==6.6.0
 google-auth<3.0.0
 openai==2.9.0
 google-cloud-firestore==2.19.0
+google-cloud-tasks==2.18.0
 httpx<0.28
 cryptography==46.0.3
 google-cloud-storage==2.19.0

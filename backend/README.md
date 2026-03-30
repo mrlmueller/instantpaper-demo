@@ -102,7 +102,7 @@ ADMIN_BASIC_USER=admin
 ADMIN_BASIC_PASSWORD=
 ADMIN_UIDS=
 
-TWO_LANE_SOURCES_EXECUTION_BACKEND=local_background
+TWO_LANE_SOURCES_EXECUTION_BACKEND=local_split_jobs
 TWO_LANE_ARTIFACT_BUCKET=
 TWO_LANE_ARTIFACT_PREFIX=two-lane-runs
 TWO_LANE_OPENALEX_RPS=5
@@ -111,6 +111,13 @@ TWO_LANE_PROVIDER_RATE_LIMIT_BACKEND=firestore
 TWO_LANE_PROVIDER_RATE_LIMIT_COLLECTION=quellenFinderProviderRateLimits
 TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS=86400000
 TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS=150
+TWO_LANE_TASK_DISPATCH_BACKEND=local_background
+TWO_LANE_TASKS_PROJECT=
+TWO_LANE_TASKS_LOCATION=europe-west3
+TWO_LANE_OPENALEX_TASK_QUEUE=quellen-finder-openalex
+TWO_LANE_SEMANTICSCHOLAR_TASK_QUEUE=quellen-finder-semanticscholar
+TWO_LANE_TASK_HANDLER_URL=
+TWO_LANE_TASK_DISPATCH_TOKEN=
 PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
 ```
 
@@ -130,7 +137,7 @@ PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
   - bucket override, defaults from project ID when omitted
 - `TWO_LANE_SOURCES_EXECUTION_BACKEND`
   - `local_background` / `cloud_run_job` keep the current monolith
-  - `local_split_jobs` / `cloud_run_split_jobs` enable the new staged handoff path
+  - `local_split_jobs` / `cloud_run_split_jobs` enable the staged handoff path
 - `TWO_LANE_ARTIFACT_BUCKET` / `TWO_LANE_ARTIFACT_PREFIX`
   - GCS location used by the staged two-lane backend for temporary handoff bundles
 - `ALLOWED_ORIGINS`
@@ -151,6 +158,17 @@ PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
   - recovery guard if a limiter doc is accidentally pushed too far into the future
 - `TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS`
   - extra safety margin so actual HTTP send times preserve the target spacing under Firestore round-trip latency
+- `TWO_LANE_TASK_DISPATCH_BACKEND`
+  - `local_background` / `local_inline` for local task execution
+  - `cloud_tasks` for the queued provider-fetch path on Cloud Run
+- `TWO_LANE_TASKS_PROJECT` / `TWO_LANE_TASKS_LOCATION`
+  - Cloud Tasks project and location for provider queues
+- `TWO_LANE_OPENALEX_TASK_QUEUE` / `TWO_LANE_SEMANTICSCHOLAR_TASK_QUEUE`
+  - queue names used for OpenAlex and Semantic Scholar page tasks
+- `TWO_LANE_TASK_HANDLER_URL`
+  - full FastAPI callback URL for internal provider task execution
+- `TWO_LANE_TASK_DISPATCH_TOKEN`
+  - shared secret header required by the internal task endpoint
 - `USER_KEY_ENCRYPTION_KEY`
   - used by per-user key encryption features
 

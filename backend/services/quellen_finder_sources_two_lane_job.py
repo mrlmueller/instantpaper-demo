@@ -14,6 +14,13 @@ from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 from services.cloud_run_job_launcher import cloud_run_job_launcher
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
 from services.two_lane_sources.handoff import restore_handoff_bundle, upload_handoff_bundle
+from services.two_lane_sources.provider_tasks import (
+    load_openalex_queries,
+    load_s2_queries,
+    materialize_provider_results,
+    seed_openalex_provider_tasks,
+    seed_s2_provider_tasks,
+)
 from services.two_lane_sources.runner import (
     TwoLaneRunCancelled,
     run_two_lane_sources_pipeline,
@@ -858,61 +865,58 @@ async def run_quellen_finder_sources_two_lane_split_stage_job(
                     manifest=manifest,
                     work_root=work_root,
                 )
-                result = await run_two_lane_sources_pipeline_stage(
-                    stage_name=stage_norm,
-                    user_id=user_id,
-                    projekt_id=projekt_id,
-                    kapitel_id=kapitel_id,
-                    run_id=run_id,
-                    chapter_title=str((settings or {}).get("chapter_title") or "").strip(),
-                    chapter_spec_text=str((settings or {}).get("chapter_spec_text") or "").strip(),
-                    settings=_build_stage_settings(settings, stage_name=stage_norm).get("pipeline_settings"),
-                    run_dir=stage_run_dir,
-                    check_cancel=check_cancel,
-                    on_progress=on_progress,
+                if stage_norm == "openalex_fetch":
+                    await on_progress("phase_d_openalex_dispatch", "Seeding OpenAlex provider tasks")
+                    seeded_result = await asyncio.to_thread(
+                        seed_openalex_provider_tasks,
+                        user_id=user_id,
+                        projekt_id=projekt_id,
+                        run_id=run_id,
+                        queries=load_openalex_queries(run_dir=stage_run_dir),
+                        run_doc=data,
+                    )
+                else:
+                    await on_progress("phase_d_semanticscholar_dispatch", "Seeding Semantic Scholar provider tasks")
+                    seeded_result = await asyncio.to_thread(
+                        seed_s2_provider_tasks,
+                        user_id=user_id,
+                        projekt_id=projekt_id,
+                        run_id=run_id,
+                        queries=load_s2_queries(run_dir=stage_run_dir),
+                        run_doc=data,
+                    )
+
+            data_after_seed = await asyncio.to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+            provider_key = "openalex" if stage_norm == "openalex_fetch" else "semanticscholar"
+            provider_work = (data_after_seed.get("providerWork") if isinstance(data_after_seed.get("providerWork"), dict) else {}).get(provider_key)
+            pending_tasks = int(((provider_work or {}) if isinstance(provider_work, dict) else {}).get("pendingTasks") or 0)
+            queued_candidates = False
+            if pending_tasks <= 0:
+                fs.run_ref(user_id, projekt_id, run_id).set(
+                    {
+                        "updatedAt": SERVER_TIMESTAMP,
+                        "splitExecution": {
+                            "currentStage": "provider_fetch",
+                            stage_norm: {"status": "success", "finishedAt": SERVER_TIMESTAMP},
+                        },
+                    },
+                    merge=True,
                 )
-                manifest_out = await asyncio.to_thread(
-                    upload_handoff_bundle,
-                    run_dir=Path(result.get("artifacts_dir") or stage_run_dir),
-                    artifact_store=artifact_store,
-                    run_id=run_id,
-                    pipeline_version="two_lane_v1",
-                    stage_name=stage_norm,
-                )
-                await asyncio.to_thread(
-                    _record_split_artifact_manifest,
+                queued_candidates = await _maybe_queue_and_launch_split_stage(
                     fs,
                     user_id=user_id,
                     projekt_id=projekt_id,
                     run_id=run_id,
-                    stage_name=stage_norm,
-                    artifact_store=artifact_store,
-                    manifest=manifest_out,
+                    target_stage="candidates",
+                    prerequisite_stages=["openalex_fetch", "s2_fetch"],
+                    current_stage_value="candidates",
                 )
-
-            fs.run_ref(user_id, projekt_id, run_id).set(
-                {
-                    "updatedAt": SERVER_TIMESTAMP,
-                    "splitExecution": {
-                        "currentStage": "provider_fetch",
-                        stage_norm: {"status": "success", "finishedAt": SERVER_TIMESTAMP},
-                    },
-                },
-                merge=True,
-            )
-            queued_candidates = await _maybe_queue_and_launch_split_stage(
-                fs,
-                user_id=user_id,
-                projekt_id=projekt_id,
-                run_id=run_id,
-                target_stage="candidates",
-                prerequisite_stages=["openalex_fetch", "s2_fetch"],
-                current_stage_value="candidates",
-            )
             logger.info(
-                "QF two-lane split provider fetch success | run_id=%s stage=%s queued_candidates=%s seconds=%.2f",
+                "QF two-lane split provider fetch seeded | run_id=%s stage=%s pending_tasks=%s seeded=%s queued_candidates=%s seconds=%.2f",
                 run_id,
                 stage_norm,
+                int(pending_tasks),
+                int((seeded_result or {}).get("seeded_tasks") or 0),
                 bool(queued_candidates),
                 time.perf_counter() - t0,
             )
@@ -921,8 +925,6 @@ async def run_quellen_finder_sources_two_lane_split_stage_job(
         if stage_norm == "candidates":
             data = await asyncio.to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
             preprocess_manifest = await asyncio.to_thread(_load_split_manifest, data, stage_name="preprocess")
-            openalex_manifest = await asyncio.to_thread(_load_split_manifest, data, stage_name="openalex_fetch")
-            s2_manifest = await asyncio.to_thread(_load_split_manifest, data, stage_name="s2_fetch")
             artifact_store = _artifact_store_from_config(data)
             with tempfile.TemporaryDirectory(prefix="qf_two_lane_candidates_") as tmpdir:
                 work_root = Path(tmpdir)
@@ -932,17 +934,21 @@ async def run_quellen_finder_sources_two_lane_split_stage_job(
                     manifest=preprocess_manifest,
                     work_root=work_root,
                 )
+                await on_progress("phase_d_openalex_restore", "Restoring OpenAlex provider artifacts")
                 await asyncio.to_thread(
-                    restore_handoff_bundle,
+                    materialize_provider_results,
                     artifact_store=artifact_store,
-                    manifest=openalex_manifest,
-                    work_root=work_root,
+                    run_id=run_id,
+                    provider="openalex",
+                    destination=stage_run_dir / "openalex_raw.jsonl",
                 )
+                await on_progress("phase_d_semanticscholar_restore", "Restoring Semantic Scholar provider artifacts")
                 await asyncio.to_thread(
-                    restore_handoff_bundle,
+                    materialize_provider_results,
                     artifact_store=artifact_store,
-                    manifest=s2_manifest,
-                    work_root=work_root,
+                    run_id=run_id,
+                    provider="semanticscholar",
+                    destination=stage_run_dir / "semanticscholar_raw.jsonl",
                 )
                 result = await run_two_lane_sources_pipeline_stage(
                     stage_name="candidates",
