@@ -111,6 +111,9 @@ TWO_LANE_PROVIDER_RATE_LIMIT_BACKEND=firestore
 TWO_LANE_PROVIDER_RATE_LIMIT_COLLECTION=quellenFinderProviderRateLimits
 TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS=86400000
 TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS=150
+TWO_LANE_PROVIDER_TASK_MAX_RUNTIME_S=900
+TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK=100
+TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK=25
 TWO_LANE_TASK_DISPATCH_BACKEND=local_background
 TWO_LANE_TASKS_PROJECT=
 TWO_LANE_TASKS_LOCATION=europe-west3
@@ -158,13 +161,17 @@ PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
   - recovery guard if a limiter doc is accidentally pushed too far into the future
 - `TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS`
   - extra safety margin so actual HTTP send times preserve the target spacing under Firestore round-trip latency
+- `TWO_LANE_PROVIDER_TASK_MAX_RUNTIME_S`
+  - per-provider-task time budget before a bounded continuation task is queued
+- `TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK` / `TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK`
+  - per-task page caps for the bounded query-chain provider workers
 - `TWO_LANE_TASK_DISPATCH_BACKEND`
   - `local_background` / `local_inline` for local task execution
   - `cloud_tasks` for the queued provider-fetch path on Cloud Run
 - `TWO_LANE_TASKS_PROJECT` / `TWO_LANE_TASKS_LOCATION`
   - Cloud Tasks project and location for provider queues
 - `TWO_LANE_OPENALEX_TASK_QUEUE` / `TWO_LANE_SEMANTICSCHOLAR_TASK_QUEUE`
-  - queue names used for OpenAlex and Semantic Scholar page tasks
+  - queue names used for OpenAlex and Semantic Scholar provider query tasks
 - `TWO_LANE_TASK_HANDLER_URL`
   - full FastAPI callback URL for internal provider task execution
 - `TWO_LANE_TASK_DISPATCH_TOKEN`

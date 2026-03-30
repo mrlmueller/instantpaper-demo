@@ -26,7 +26,7 @@ def main() -> int:
         client = TestClient(mainmod.app)
         unauthorized = client.post(
             "/api/internal/quellen-finder/two-lane/task",
-            json={"kind": "openalex_page"},
+            json={"kind": "openalex_query"},
         )
         if unauthorized.status_code != 401:
             raise RuntimeError(f"Expected 401, got {unauthorized.status_code}: {unauthorized.text}")
@@ -34,12 +34,12 @@ def main() -> int:
         authorized = client.post(
             "/api/internal/quellen-finder/two-lane/task",
             headers={"X-TwoLane-Dispatch-Token": "test-token"},
-            json={"kind": "openalex_page"},
+            json={"kind": "openalex_query"},
         )
         if authorized.status_code != 202:
             raise RuntimeError(f"Expected 202, got {authorized.status_code}: {authorized.text}")
         payload = authorized.json()
-        if not bool(payload.get("success")) or ((payload.get("result") or {}).get("kind")) != "openalex_page":
+        if not bool(payload.get("success")) or ((payload.get("result") or {}).get("kind")) != "openalex_query":
             raise RuntimeError(f"Unexpected authorized payload: {payload}")
     finally:
         mainmod.validate_two_lane_dispatch_token = original_validate

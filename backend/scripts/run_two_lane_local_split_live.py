@@ -324,6 +324,9 @@ def _json_default_live(value: Any) -> Any:
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the two-lane split Quellen-Finder pipeline locally against live providers.")
+    parser.add_argument("--user-id", default="")
+    parser.add_argument("--project-id", default="")
+    parser.add_argument("--cleanup-docs", action="store_true")
     parser.add_argument("--chapter-title", default="Automatisierung der Dokumentenanalyse mittels NLP/LLM")
     parser.add_argument(
         "--chapter-spec",
@@ -346,6 +349,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--rerank-concurrency", type=int, default=20)
     parser.add_argument("--output-name", default="local_split_live_latest.json")
     return parser.parse_args(argv)
+
+
+def _recursive_delete_doc(doc_ref) -> None:
+    for subcol in doc_ref.collections():
+        for child in subcol.stream():
+            _recursive_delete_doc(child.reference)
+    try:
+        doc_ref.delete()
+    except Exception:
+        pass
 
 
 async def _poll_terminal_run(
@@ -371,8 +384,8 @@ async def _poll_terminal_run(
 async def _main_async(args: argparse.Namespace) -> dict[str, Any]:
     fs = QuellenFinderFirestoreService()
     run_uuid = uuid.uuid4().hex[:12]
-    user_id = f"local-two-lane-{run_uuid}"
-    projekt_id = f"local-two-lane-project-{run_uuid}"
+    user_id = str(args.user_id or "").strip() or f"local-two-lane-{run_uuid}"
+    projekt_id = str(args.project_id or "").strip() or f"local-two-lane-project-{run_uuid}"
     kapitel_id = f"local-two-lane-kapitel-{run_uuid}"
     run_id = f"qf-local-{run_uuid}"
     rate_limit_collection = f"quellenFinderProviderRateLimitsLocal_{run_uuid}"
@@ -562,6 +575,16 @@ async def _main_async(args: argparse.Namespace) -> dict[str, Any]:
         inflight_path.unlink(missing_ok=True)
     except Exception:
         pass
+    if bool(args.cleanup_docs):
+        try:
+            user_ref = firebase_service.db.collection("users").document(user_id)
+            project_ref = user_ref.collection("projects").document(projekt_id)
+            run_ref = project_ref.collection("researchRuns").document(run_id)
+            _recursive_delete_doc(run_ref)
+            if not str(args.project_id or "").strip():
+                _recursive_delete_doc(project_ref)
+        except Exception as exc:
+            result["firestore_cleanup_error"] = str(exc)
     return result
 
 

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from google.cloud import firestore
+from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
@@ -34,6 +35,8 @@ def _json_default(value: Any) -> Any:
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Launch concurrent two-lane split runs against deployed Cloud Run jobs and inspect their state.")
     parser.add_argument("--count", type=int, default=3)
+    parser.add_argument("--user-id", default="")
+    parser.add_argument("--project-prefix", default="qf-cloud-test")
     parser.add_argument("--job-name", default=str(config.TWO_LANE_CLOUD_RUN_JOB_NAME or "instantpaper-two-lane-sources"))
     parser.add_argument("--region", default=str(config.TWO_LANE_CLOUD_RUN_JOB_REGION or "europe-west3"))
     parser.add_argument("--timeout-seconds", type=float, default=21600.0)
@@ -49,6 +52,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--output-name", default="staging_split_concurrency_latest.json")
     parser.add_argument("--seed-topup-credits", type=float, default=10.0)
+    parser.add_argument("--cleanup", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -73,13 +77,15 @@ def _gcloud_run_job_execute(*, job_name: str, region: str, user_id: str, projekt
     return payload if isinstance(payload, dict) else {}
 
 
-def _create_run(*, fs: QuellenFinderFirestoreService, title: str, spec: str, suffix: str) -> dict[str, str]:
-    user_id = f"staging-two-lane-{suffix}"
-    projekt_id = f"staging-two-lane-project-{suffix}"
-    kapitel_id = f"staging-two-lane-kapitel-{suffix}"
-    run_id = f"qf-staging-{suffix}"
+def _create_run(*, fs: QuellenFinderFirestoreService, title: str, spec: str, suffix: str, user_id: str = "", project_prefix: str = "qf-cloud-test") -> dict[str, str]:
+    user_id_norm = str(user_id or "").strip() or f"staging-two-lane-{suffix}"
+    project_prefix_norm = str(project_prefix or "").strip() or "qf-cloud-test"
+    synthetic = not bool(str(user_id or "").strip())
+    projekt_id = f"{project_prefix_norm}-{suffix}"
+    kapitel_id = f"{project_prefix_norm}-kapitel-{suffix}"
+    run_id = f"{project_prefix_norm}-run-{suffix}"
     fs.create_run(
-        user_id=user_id,
+        user_id=user_id_norm,
         projekt_id=projekt_id,
         run_id=run_id,
         kind="sources_two_lane",
@@ -130,10 +136,11 @@ def _create_run(*, fs: QuellenFinderFirestoreService, title: str, spec: str, suf
         },
     )
     return {
-        "user_id": user_id,
+        "user_id": user_id_norm,
         "projekt_id": projekt_id,
         "kapitel_id": kapitel_id,
         "run_id": run_id,
+        "synthetic_user": "1" if synthetic else "0",
     }
 
 
@@ -146,7 +153,7 @@ def _seed_test_billing(*, user_id: str, topup_credits: float) -> None:
             "uid": uid,
             "email": f"{uid}@example.invalid",
             "displayName": uid,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP,
         },
         merge=True,
     )
@@ -154,10 +161,49 @@ def _seed_test_billing(*, user_id: str, topup_credits: float) -> None:
         {
             "topupCredits": float(max(topup_credits, 0.0)),
             "reservedCredits": 0.0,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP,
         },
         merge=True,
     )
+
+
+def _recursive_delete_doc(doc_ref) -> None:
+    for subcol in doc_ref.collections():
+        for child in subcol.stream():
+            _recursive_delete_doc(child.reference)
+    try:
+        doc_ref.delete()
+    except Exception:
+        pass
+
+
+def _cleanup_run_tree(*, ids: dict[str, str]) -> dict[str, Any]:
+    user_id = str(ids.get("user_id") or "").strip()
+    projekt_id = str(ids.get("projekt_id") or "").strip()
+    run_id = str(ids.get("run_id") or "").strip()
+    synthetic_user = str(ids.get("synthetic_user") or "").strip() == "1"
+    result: dict[str, Any] = {"user_id": user_id, "projekt_id": projekt_id, "run_id": run_id}
+
+    try:
+        store = TwoLaneArtifactStore(
+            bucket_name=str(config.TWO_LANE_ARTIFACT_BUCKET or config.FIREBASE_STORAGE_BUCKET or "").strip(),
+            base_prefix=str(config.TWO_LANE_ARTIFACT_PREFIX or "").strip(),
+            project_id=str(config.GOOGLE_CLOUD_PROJECT or config.FIREBASE_PROJECT_ID or "").strip(),
+        )
+        result["deletedArtifactObjects"] = int(store.delete_run_prefix(run_id))
+    except Exception as exc:
+        result["artifactError"] = str(exc)
+
+    user_ref = firebase_service.db.collection("users").document(user_id)
+    project_ref = user_ref.collection("projects").document(projekt_id)
+    run_ref = project_ref.collection("researchRuns").document(run_id)
+    _recursive_delete_doc(run_ref)
+    _recursive_delete_doc(project_ref)
+    if synthetic_user:
+        _recursive_delete_doc(user_ref)
+        _recursive_delete_doc(firebase_service.db.collection("customers").document(user_id))
+    result["cleanupDone"] = True
+    return result
 
 
 def _read_run(fs: QuellenFinderFirestoreService, ids: dict[str, str]) -> dict[str, Any]:
@@ -196,11 +242,19 @@ def main(argv: list[str] | None = None) -> int:
 
     for idx in range(1, count + 1):
         suffix = f"{suffix_root}-{idx:02d}"
-        ids = _create_run(fs=fs, title=str(args.chapter_title), spec=str(args.chapter_spec), suffix=suffix)
-        _seed_test_billing(
-            user_id=ids["user_id"],
-            topup_credits=float(args.seed_topup_credits or 0.0),
+        ids = _create_run(
+            fs=fs,
+            title=str(args.chapter_title),
+            spec=str(args.chapter_spec),
+            suffix=suffix,
+            user_id=str(args.user_id or "").strip(),
+            project_prefix=str(args.project_prefix or "qf-cloud-test"),
         )
+        if str(ids.get("synthetic_user") or "").strip() == "1":
+            _seed_test_billing(
+                user_id=ids["user_id"],
+                topup_credits=float(args.seed_topup_credits or 0.0),
+            )
         launch = _gcloud_run_job_execute(
             job_name=str(args.job_name),
             region=str(args.region),
@@ -273,6 +327,8 @@ def main(argv: list[str] | None = None) -> int:
         "region": args.region,
         "runs": summary_runs,
     }
+    if bool(args.cleanup):
+        result["cleanup"] = [_cleanup_run_tree(ids=item["ids"]) for item in runs]
     out_dir = BACKEND_ROOT / ".two_lane_artifacts" / "cloud_checks"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / str(args.output_name or "staging_split_concurrency_latest.json")

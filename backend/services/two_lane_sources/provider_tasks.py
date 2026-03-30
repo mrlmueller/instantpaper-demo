@@ -82,6 +82,14 @@ def _s2_task_key(*, query_hash: str, token: str | None, page_index: int) -> str:
     return f"s2-{str(query_hash)}-{int(page_index):06d}-{token_hash}"
 
 
+def _openalex_query_task_key(*, query_hash: str, segment_index: int) -> str:
+    return f"oaq-{str(query_hash)}-{int(segment_index):04d}"
+
+
+def _s2_query_task_key(*, query_hash: str, segment_index: int) -> str:
+    return f"s2q-{str(query_hash)}-{int(segment_index):04d}"
+
+
 def _openalex_page_paths(
     *,
     artifact_store: TwoLaneArtifactStore,
@@ -148,7 +156,7 @@ def seed_openalex_provider_tasks(
 
     for qi, query in enumerate(queries, start=1):
         query_hash = _query_hash("openalex", query)
-        task_key = _openalex_task_key(query_hash=query_hash, cursor="*", page_index=1)
+        task_key = _openalex_query_task_key(query_hash=query_hash, segment_index=1)
         claimed = fs.enqueue_two_lane_provider_task(
             user_id=user_id,
             projekt_id=projekt_id,
@@ -162,7 +170,7 @@ def seed_openalex_provider_tasks(
         if not claimed:
             continue
         payload = {
-            "kind": "openalex_page",
+            "kind": "openalex_query",
             "user_id": str(user_id),
             "projekt_id": str(projekt_id),
             "run_id": str(run_id),
@@ -171,8 +179,9 @@ def seed_openalex_provider_tasks(
             "task_key": task_key,
             "query_i": int(qi),
             "query_hash": query_hash,
-            "page_index": 1,
-            "cursor": "*",
+            "segment_index": 1,
+            "start_page_index": 1,
+            "start_cursor": "*",
             "query": query.model_dump(mode="json"),
         }
         dispatcher.enqueue(queue_key="openalex", task_name=task_key, payload=payload)
@@ -185,6 +194,7 @@ def seed_openalex_provider_tasks(
                 OPENALEX_STAGE: {
                     "resultsPrefix": results_prefix,
                     "seededTasks": int(seeded),
+                    "taskMode": "query_chain",
                     "updatedAt": SERVER_TIMESTAMP,
                 }
             },
@@ -210,7 +220,7 @@ def seed_s2_provider_tasks(
 
     for qi, query in enumerate(queries, start=1):
         query_hash = _query_hash("semanticscholar", query)
-        task_key = _s2_task_key(query_hash=query_hash, token=None, page_index=1)
+        task_key = _s2_query_task_key(query_hash=query_hash, segment_index=1)
         claimed = fs.enqueue_two_lane_provider_task(
             user_id=user_id,
             projekt_id=projekt_id,
@@ -224,7 +234,7 @@ def seed_s2_provider_tasks(
         if not claimed:
             continue
         payload = {
-            "kind": "s2_bulk_page",
+            "kind": "s2_bulk_query",
             "user_id": str(user_id),
             "projekt_id": str(projekt_id),
             "run_id": str(run_id),
@@ -233,8 +243,9 @@ def seed_s2_provider_tasks(
             "task_key": task_key,
             "query_i": int(qi),
             "query_hash": query_hash,
-            "page_index": 1,
-            "token": None,
+            "segment_index": 1,
+            "start_page_index": 1,
+            "start_token": None,
             "query": query.model_dump(mode="json"),
             "bulk_limit": 100,
         }
@@ -248,6 +259,7 @@ def seed_s2_provider_tasks(
                 SEMANTICSCHOLAR_STAGE: {
                     "resultsPrefix": results_prefix,
                     "seededTasks": int(seeded),
+                    "taskMode": "query_chain",
                     "updatedAt": SERVER_TIMESTAMP,
                 }
             },
@@ -424,6 +436,577 @@ async def _schedule_local_retry_if_needed(
         schedule_delay_seconds=float(delay_seconds),
     )
     return True
+
+
+def _segment_limits_reached(
+    *,
+    started_at_monotonic: float,
+    pages_processed: int,
+    max_pages_per_task: int,
+    max_runtime_s: float,
+) -> bool:
+    if int(max_pages_per_task) > 0 and int(pages_processed) >= int(max_pages_per_task):
+        return True
+    if float(max_runtime_s) > 0 and (__import__("time").monotonic() - float(started_at_monotonic)) >= float(max_runtime_s):
+        return True
+    return False
+
+
+async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]:
+    user_id = str(payload.get("user_id") or "").strip()
+    projekt_id = str(payload.get("projekt_id") or "").strip()
+    run_id = str(payload.get("run_id") or "").strip()
+    task_key = str(payload.get("task_key") or "").strip()
+    if not user_id or not projekt_id or not run_id or not task_key:
+        raise ValueError("openalex query task payload is missing identifiers")
+
+    fs = QuellenFinderFirestoreService()
+    claimed = await __import__("asyncio").to_thread(
+        fs.claim_two_lane_provider_task,
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        provider="openalex",
+        task_key=task_key,
+    )
+    if not claimed:
+        return {"claimed": False, "task_key": task_key}
+
+    run_doc = await __import__("asyncio").to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+    if _run_is_terminal(run_doc):
+        await _skip_due_to_terminal_run(
+            fs=fs,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            provider="openalex",
+            task_key=task_key,
+            stage_name=OPENALEX_STAGE,
+            reason="terminal_before_fetch",
+        )
+        return {"claimed": True, "task_key": task_key, "skipped": True}
+
+    artifact_store = _artifact_store_from_run_doc(run_doc)
+    query = OpenAlexQuery.model_validate(payload.get("query") or {})
+    query_hash = str(payload.get("query_hash") or _query_hash("openalex", query)).strip()
+    segment_index = max(1, int(payload.get("segment_index") or 1))
+    page_index = max(1, int(payload.get("start_page_index") or payload.get("page_index") or 1))
+    cursor = str(payload.get("start_cursor") or payload.get("cursor") or "*")
+
+    cfg = PipelineConfig.from_env(runs_root=Path("."), pipeline_version="two_lane_v1")
+    session = requests.Session()
+    session.headers.update({"User-Agent": "instantpaper-two-lane/1.0"})
+    limiter = _build_openalex_limiter(cfg=cfg, run_id=run_id)
+    started_at = __import__("time").monotonic()
+    pages_processed = 0
+    total_records = 0
+    final_page_index = max(0, int(page_index) - 1)
+    continuation_task_key: str | None = None
+    continuation_page_index: int | None = None
+    continuation_cursor: str | None = None
+
+    try:
+        while True:
+            data_path, meta_path = _openalex_page_paths(
+                artifact_store=artifact_store,
+                run_id=run_id,
+                query_hash=query_hash,
+                page_index=page_index,
+                cursor=cursor,
+            )
+            meta: dict[str, Any]
+            if artifact_store.exists(path_or_uri=meta_path):
+                meta = artifact_store.download_json(path_or_uri=meta_path)
+            else:
+                data = request_json(
+                    run_ctx=None,
+                    stage="phase_d_openalex_retrieval",
+                    provider="openalex",
+                    session=session,
+                    method="GET",
+                    url=cfg.openalex_base_url.rstrip("/") + "/works",
+                    params=_openalex_params(cfg, query, cursor=cursor),
+                    body=None,
+                    timeout_s=float(cfg.openalex_timeout_s),
+                    rate_limiter=limiter,
+                    max_attempts=8,
+                    backoff_initial_s=1.0,
+                    backoff_max_s=60.0,
+                )
+                results = (data or {}).get("results") or []
+                lines = []
+                for rank, work in enumerate(results, start=1):
+                    lines.append(
+                        json.dumps(
+                            {
+                                "run_id": run_id,
+                                "provider": "openalex",
+                                "query_hash": query_hash,
+                                "query_i": int(payload.get("query_i") or 0),
+                                "intent": query.intent,
+                                "language": query.language,
+                                "rank": int(((page_index - 1) * int(query.per_page or 200)) + rank),
+                                "work": work,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                artifact_store.upload_text(
+                    text="\n".join(lines) + ("\n" if lines else ""),
+                    path_or_uri=data_path,
+                    content_type="application/x-ndjson; charset=utf-8",
+                )
+                meta = {
+                    "query_hash": query_hash,
+                    "page_index": int(page_index),
+                    "cursor": cursor,
+                    "next_cursor": ((data or {}).get("meta") or {}).get("next_cursor"),
+                    "records": int(len(lines)),
+                    "dataPath": data_path,
+                }
+                artifact_store.upload_json(payload=meta, path_or_uri=meta_path)
+
+            pages_processed += 1
+            total_records += int(meta.get("records") or 0)
+            final_page_index = int(page_index)
+
+            run_doc_after_page = await __import__("asyncio").to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+            if _run_is_terminal(run_doc_after_page):
+                await _skip_due_to_terminal_run(
+                    fs=fs,
+                    user_id=user_id,
+                    projekt_id=projekt_id,
+                    run_id=run_id,
+                    provider="openalex",
+                    task_key=task_key,
+                    stage_name=OPENALEX_STAGE,
+                    reason="terminal_after_fetch",
+                    summary={
+                        "start_page_index": int(payload.get("start_page_index") or 1),
+                        "final_page_index": int(final_page_index),
+                        "pages_processed": int(pages_processed),
+                        "records": int(total_records),
+                    },
+                )
+                return {"claimed": True, "task_key": task_key, "records": int(total_records), "skipped": True}
+
+            next_cursor = str(meta.get("next_cursor") or "").strip() or None
+            if not next_cursor:
+                break
+
+            if _segment_limits_reached(
+                started_at_monotonic=started_at,
+                pages_processed=pages_processed,
+                max_pages_per_task=int(cfg.openalex_task_max_pages_per_task),
+                max_runtime_s=float(cfg.provider_task_max_runtime_s),
+            ):
+                next_segment_index = int(segment_index) + 1
+                continuation_task_key = _openalex_query_task_key(query_hash=query_hash, segment_index=next_segment_index)
+                continuation_page_index = int(page_index) + 1
+                continuation_cursor = str(next_cursor)
+                dispatcher = build_two_lane_task_dispatcher()
+                queued = await __import__("asyncio").to_thread(
+                    fs.enqueue_two_lane_provider_task,
+                    user_id=user_id,
+                    projekt_id=projekt_id,
+                    run_id=run_id,
+                    provider="openalex",
+                    stage_name=OPENALEX_STAGE,
+                    queue_name=str(dispatcher.openalex_queue),
+                    task_key=continuation_task_key,
+                    results_prefix=_provider_relative_prefix(artifact_store=artifact_store, run_id=run_id, provider="openalex"),
+                )
+                if queued:
+                    dispatcher.enqueue(
+                        queue_key="openalex",
+                        task_name=continuation_task_key,
+                        payload={
+                            "kind": "openalex_query",
+                            "user_id": user_id,
+                            "projekt_id": projekt_id,
+                            "run_id": run_id,
+                            "provider": "openalex",
+                            "stage_name": OPENALEX_STAGE,
+                            "task_key": continuation_task_key,
+                            "query_i": int(payload.get("query_i") or 0),
+                            "query_hash": query_hash,
+                            "segment_index": next_segment_index,
+                            "start_page_index": continuation_page_index,
+                            "start_cursor": continuation_cursor,
+                            "query": query.model_dump(mode="json"),
+                        },
+                    )
+                break
+
+            page_index += 1
+            cursor = str(next_cursor)
+
+        result = await __import__("asyncio").to_thread(
+            fs.complete_two_lane_provider_task,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            provider="openalex",
+            task_key=task_key,
+            stage_name=OPENALEX_STAGE,
+            summary={
+                "segment_index": int(segment_index),
+                "start_page_index": int(payload.get("start_page_index") or 1),
+                "final_page_index": int(final_page_index),
+                "pages_processed": int(pages_processed),
+                "records": int(total_records),
+                "continued": bool(continuation_task_key),
+                "continuation_task_key": continuation_task_key,
+                "continuation_page_index": continuation_page_index,
+            },
+        )
+        if bool((result or {}).get("provider_done")):
+            await _maybe_launch_candidates(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+        return {
+            "claimed": True,
+            "task_key": task_key,
+            "records": int(total_records),
+            "pages_processed": int(pages_processed),
+            "continued": bool(continuation_task_key),
+            "continuation_task_key": continuation_task_key,
+        }
+    except Exception as exc:
+        latest_run_doc = await __import__("asyncio").to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+        if _run_is_terminal(latest_run_doc):
+            await _skip_due_to_terminal_run(
+                fs=fs,
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+                provider="openalex",
+                task_key=task_key,
+                stage_name=OPENALEX_STAGE,
+                reason="terminal_on_error",
+                error_message=str(exc),
+            )
+        else:
+            retry_state = await _requeue_task_failure(
+                fs=fs,
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+                provider="openalex",
+                task_key=task_key,
+                stage_name=OPENALEX_STAGE,
+                error_message=str(exc),
+            )
+            if bool((retry_state or {}).get("retry_queued")):
+                if await _schedule_local_retry_if_needed(
+                    queue_key="openalex",
+                    task_key=task_key,
+                    payload=payload,
+                ):
+                    return {"claimed": True, "task_key": task_key, "retry_scheduled": True, "error": str(exc)}
+        raise
+
+
+async def process_s2_bulk_query_task(payload: dict[str, Any]) -> dict[str, Any]:
+    user_id = str(payload.get("user_id") or "").strip()
+    projekt_id = str(payload.get("projekt_id") or "").strip()
+    run_id = str(payload.get("run_id") or "").strip()
+    task_key = str(payload.get("task_key") or "").strip()
+    if not user_id or not projekt_id or not run_id or not task_key:
+        raise ValueError("s2 query task payload is missing identifiers")
+
+    fs = QuellenFinderFirestoreService()
+    claimed = await __import__("asyncio").to_thread(
+        fs.claim_two_lane_provider_task,
+        user_id=user_id,
+        projekt_id=projekt_id,
+        run_id=run_id,
+        provider="semanticscholar",
+        task_key=task_key,
+    )
+    if not claimed:
+        return {"claimed": False, "task_key": task_key}
+
+    run_doc = await __import__("asyncio").to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+    if _run_is_terminal(run_doc):
+        await _skip_due_to_terminal_run(
+            fs=fs,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            provider="semanticscholar",
+            task_key=task_key,
+            stage_name=SEMANTICSCHOLAR_STAGE,
+            reason="terminal_before_fetch",
+        )
+        return {"claimed": True, "task_key": task_key, "skipped": True}
+
+    artifact_store = _artifact_store_from_run_doc(run_doc)
+    query = S2BulkQuery.model_validate(payload.get("query") or {})
+    query_hash = str(payload.get("query_hash") or _query_hash("semanticscholar", query)).strip()
+    segment_index = max(1, int(payload.get("segment_index") or 1))
+    page_index = max(1, int(payload.get("start_page_index") or payload.get("page_index") or 1))
+    token = payload.get("start_token", payload.get("token"))
+    token_s = str(token).strip() if token is not None else None
+    bulk_limit = max(1, int(payload.get("bulk_limit") or 100))
+
+    cfg = PipelineConfig.from_env(runs_root=Path("."), pipeline_version="two_lane_v1")
+    session = requests.Session()
+    session.headers.update({"User-Agent": "instantpaper-two-lane/1.0"})
+    if cfg.semanticscholar_api_key:
+        session.headers.update({"x-api-key": cfg.semanticscholar_api_key})
+    limiter = _build_s2_limiter(cfg=cfg, run_id=run_id, stage="phase_d_semanticscholar_retrieval")
+    base = cfg.semanticscholar_base_url.rstrip("/")
+    started_at = __import__("time").monotonic()
+    pages_processed = 0
+    total_records = 0
+    total_ids_seen = 0
+    final_page_index = max(0, int(page_index) - 1)
+    continuation_task_key: str | None = None
+    continuation_page_index: int | None = None
+    continuation_token: str | None = None
+
+    try:
+        while True:
+            data_path, meta_path = _s2_page_paths(
+                artifact_store=artifact_store,
+                run_id=run_id,
+                query_hash=query_hash,
+                page_index=page_index,
+                token=token_s,
+            )
+            meta: dict[str, Any]
+            if artifact_store.exists(path_or_uri=meta_path):
+                meta = artifact_store.download_json(path_or_uri=meta_path)
+            else:
+                params: dict[str, Any] = {"query": query.query_string, "fields": S2_BULK_FIELDS, "limit": int(bulk_limit)}
+                if token_s:
+                    params["token"] = token_s
+                page = request_json(
+                    run_ctx=None,
+                    stage="phase_d_semanticscholar_retrieval",
+                    provider="semanticscholar",
+                    session=session,
+                    method="GET",
+                    url=base + "/paper/search/bulk",
+                    params=params,
+                    body=None,
+                    timeout_s=float(cfg.semanticscholar_timeout_s),
+                    rate_limiter=limiter,
+                    max_attempts=10,
+                    backoff_initial_s=2.0,
+                    backoff_max_s=120.0,
+                )
+
+                items = (page or {}).get("data") or []
+                ids: list[str] = []
+                ranks: dict[str, int] = {}
+                for rank, item in enumerate(items, start=1):
+                    if not isinstance(item, dict):
+                        continue
+                    paper_id = item.get("paperId")
+                    if not paper_id:
+                        continue
+                    paper_id_s = str(paper_id)
+                    ids.append(paper_id_s)
+                    ranks[paper_id_s] = int(((page_index - 1) * int(bulk_limit)) + rank)
+
+                hydrated: list[dict[str, Any]] = []
+                if ids:
+                    for chunk in _chunked(ids, 500):
+                        batch = request_json(
+                            run_ctx=None,
+                            stage="phase_d_semanticscholar_retrieval",
+                            provider="semanticscholar",
+                            session=session,
+                            method="POST",
+                            url=base + "/paper/batch",
+                            params={"fields": S2_BATCH_FIELDS},
+                            body={"ids": chunk},
+                            timeout_s=float(cfg.semanticscholar_timeout_s),
+                            rate_limiter=limiter,
+                            max_attempts=10,
+                            backoff_initial_s=2.0,
+                            backoff_max_s=120.0,
+                        )
+                        hydrated.extend(_s2_iter_batch_items(batch))
+
+                lines = []
+                for paper in hydrated:
+                    paper_id = str(paper.get("paperId") or "").strip()
+                    if not paper_id:
+                        continue
+                    lines.append(
+                        json.dumps(
+                            {
+                                "run_id": run_id,
+                                "provider": "semanticscholar",
+                                "query_hash": query_hash,
+                                "query_i": int(payload.get("query_i") or 0),
+                                "intent": query.intent,
+                                "language": query.language,
+                                "rank": int(ranks.get(paper_id) or 0),
+                                "paper": paper,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                artifact_store.upload_text(
+                    text="\n".join(lines) + ("\n" if lines else ""),
+                    path_or_uri=data_path,
+                    content_type="application/x-ndjson; charset=utf-8",
+                )
+                meta = {
+                    "query_hash": query_hash,
+                    "page_index": int(page_index),
+                    "token": token_s,
+                    "next_token": (page or {}).get("token") or (page or {}).get("next"),
+                    "ids_seen": int(len(ids)),
+                    "records": int(len(lines)),
+                    "dataPath": data_path,
+                }
+                artifact_store.upload_json(payload=meta, path_or_uri=meta_path)
+
+            pages_processed += 1
+            total_records += int(meta.get("records") or 0)
+            total_ids_seen += int(meta.get("ids_seen") or 0)
+            final_page_index = int(page_index)
+
+            run_doc_after_page = await __import__("asyncio").to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+            if _run_is_terminal(run_doc_after_page):
+                await _skip_due_to_terminal_run(
+                    fs=fs,
+                    user_id=user_id,
+                    projekt_id=projekt_id,
+                    run_id=run_id,
+                    provider="semanticscholar",
+                    task_key=task_key,
+                    stage_name=SEMANTICSCHOLAR_STAGE,
+                    reason="terminal_after_fetch",
+                    summary={
+                        "start_page_index": int(payload.get("start_page_index") or 1),
+                        "final_page_index": int(final_page_index),
+                        "pages_processed": int(pages_processed),
+                        "records": int(total_records),
+                        "ids_seen": int(total_ids_seen),
+                    },
+                )
+                return {"claimed": True, "task_key": task_key, "records": int(total_records), "skipped": True}
+
+            next_token = str(meta.get("next_token") or "").strip() or None
+            if not next_token:
+                break
+
+            if _segment_limits_reached(
+                started_at_monotonic=started_at,
+                pages_processed=pages_processed,
+                max_pages_per_task=int(cfg.semanticscholar_task_max_pages_per_task),
+                max_runtime_s=float(cfg.provider_task_max_runtime_s),
+            ):
+                next_segment_index = int(segment_index) + 1
+                continuation_task_key = _s2_query_task_key(query_hash=query_hash, segment_index=next_segment_index)
+                continuation_page_index = int(page_index) + 1
+                continuation_token = str(next_token)
+                dispatcher = build_two_lane_task_dispatcher()
+                queued = await __import__("asyncio").to_thread(
+                    fs.enqueue_two_lane_provider_task,
+                    user_id=user_id,
+                    projekt_id=projekt_id,
+                    run_id=run_id,
+                    provider="semanticscholar",
+                    stage_name=SEMANTICSCHOLAR_STAGE,
+                    queue_name=str(dispatcher.semanticscholar_queue),
+                    task_key=continuation_task_key,
+                    results_prefix=_provider_relative_prefix(artifact_store=artifact_store, run_id=run_id, provider="semanticscholar"),
+                )
+                if queued:
+                    dispatcher.enqueue(
+                        queue_key="semanticscholar",
+                        task_name=continuation_task_key,
+                        payload={
+                            "kind": "s2_bulk_query",
+                            "user_id": user_id,
+                            "projekt_id": projekt_id,
+                            "run_id": run_id,
+                            "provider": "semanticscholar",
+                            "stage_name": SEMANTICSCHOLAR_STAGE,
+                            "task_key": continuation_task_key,
+                            "query_i": int(payload.get("query_i") or 0),
+                            "query_hash": query_hash,
+                            "segment_index": next_segment_index,
+                            "start_page_index": continuation_page_index,
+                            "start_token": continuation_token,
+                            "query": query.model_dump(mode="json"),
+                            "bulk_limit": int(bulk_limit),
+                        },
+                    )
+                break
+
+            page_index += 1
+            token_s = str(next_token)
+
+        result = await __import__("asyncio").to_thread(
+            fs.complete_two_lane_provider_task,
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            provider="semanticscholar",
+            task_key=task_key,
+            stage_name=SEMANTICSCHOLAR_STAGE,
+            summary={
+                "segment_index": int(segment_index),
+                "start_page_index": int(payload.get("start_page_index") or 1),
+                "final_page_index": int(final_page_index),
+                "pages_processed": int(pages_processed),
+                "records": int(total_records),
+                "ids_seen": int(total_ids_seen),
+                "continued": bool(continuation_task_key),
+                "continuation_task_key": continuation_task_key,
+                "continuation_page_index": continuation_page_index,
+            },
+        )
+        if bool((result or {}).get("provider_done")):
+            await _maybe_launch_candidates(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+        return {
+            "claimed": True,
+            "task_key": task_key,
+            "records": int(total_records),
+            "pages_processed": int(pages_processed),
+            "ids_seen": int(total_ids_seen),
+            "continued": bool(continuation_task_key),
+            "continuation_task_key": continuation_task_key,
+        }
+    except Exception as exc:
+        latest_run_doc = await __import__("asyncio").to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+        if _run_is_terminal(latest_run_doc):
+            await _skip_due_to_terminal_run(
+                fs=fs,
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+                provider="semanticscholar",
+                task_key=task_key,
+                stage_name=SEMANTICSCHOLAR_STAGE,
+                reason="terminal_on_error",
+                error_message=str(exc),
+            )
+        else:
+            retry_state = await _requeue_task_failure(
+                fs=fs,
+                user_id=user_id,
+                projekt_id=projekt_id,
+                run_id=run_id,
+                provider="semanticscholar",
+                task_key=task_key,
+                stage_name=SEMANTICSCHOLAR_STAGE,
+                error_message=str(exc),
+            )
+            if bool((retry_state or {}).get("retry_queued")):
+                if await _schedule_local_retry_if_needed(
+                    queue_key="semanticscholar",
+                    task_key=task_key,
+                    payload=payload,
+                ):
+                    return {"claimed": True, "task_key": task_key, "retry_scheduled": True, "error": str(exc)}
+        raise
 
 
 async def process_openalex_page_task(payload: dict[str, Any]) -> dict[str, Any]:

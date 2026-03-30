@@ -4861,6 +4861,9 @@ class PipelineConfig(BaseModel):
     provider_rate_limit_collection: str = "quellenFinderProviderRateLimits"
     provider_rate_limit_max_future_ms: int = 86_400_000
     provider_rate_limit_dispatch_buffer_ms: int = 150
+    provider_task_max_runtime_s: float = 900.0
+    openalex_task_max_pages_per_task: int = 100
+    semanticscholar_task_max_pages_per_task: int = 25
 
     # Hard caps
     max_queries_per_provider: int = 50
@@ -4966,6 +4969,9 @@ class PipelineConfig(BaseModel):
             ),
             provider_rate_limit_max_future_ms=_read_int("TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS", 86_400_000),
             provider_rate_limit_dispatch_buffer_ms=_read_int("TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS", 150),
+            provider_task_max_runtime_s=_read_float("TWO_LANE_PROVIDER_TASK_MAX_RUNTIME_S", 900.0),
+            openalex_task_max_pages_per_task=_read_int("TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK", 100),
+            semanticscholar_task_max_pages_per_task=_read_int("TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK", 25),
         )
 
 
