@@ -3494,6 +3494,7 @@ def request_json(
     body: Optional[Dict[str, Any]],
     timeout_s: float,
     rate_limiter: Optional[Any],
+    request_stats: Optional[Dict[str, Any]] = None,
     max_attempts: int = 8,
     backoff_initial_s: float = 1.0,
     backoff_max_s: float = 60.0,
@@ -3511,12 +3512,19 @@ def request_json(
     last_err: Optional[str] = None
 
     for attempt in range(1, max_attempts + 1):
+        reservation = None
         if rate_limiter is not None:
-            rate_limiter.acquire()
+            reservation = rate_limiter.acquire()
+            if request_stats is not None and reservation is not None:
+                request_stats["rate_limit_wait_s"] = float(request_stats.get("rate_limit_wait_s") or 0.0) + float(
+                    reservation.sleep_s or 0.0
+                )
 
         t0 = time.time()
         resp: Optional[requests.Response] = None
         try:
+            if request_stats is not None:
+                request_stats["request_attempts"] = int(request_stats.get("request_attempts") or 0) + 1
             resp = session.request(method_u, url, params=params, json=body, timeout=timeout_s)
             last_status = int(resp.status_code)
         except Exception as e:
@@ -3571,6 +3579,8 @@ def request_json(
         # jitter (avoid thundering herd)
         wait = wait * (1.0 + random.uniform(-0.15, 0.15))
         wait = max(0.5, float(wait))
+        if request_stats is not None:
+            request_stats["retry_backoff_wait_s"] = float(request_stats.get("retry_backoff_wait_s") or 0.0) + float(wait)
         time.sleep(wait)
 
 

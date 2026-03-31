@@ -100,12 +100,17 @@ class TwoLaneTaskDispatcher:
         task_name: str,
         payload: dict[str, Any],
         schedule_delay_seconds: float | None = None,
-        deadline_seconds: int = 1800,
+        deadline_seconds: int | None = None,
     ) -> TwoLaneDispatchResult:
         queue_name = self._queue_name(queue_key)
         task_id = str(task_name or "").strip()
         if not task_id:
             raise ValueError("task_name is required")
+        effective_deadline_seconds = (
+            int(deadline_seconds)
+            if deadline_seconds is not None
+            else int(getattr(config, "TWO_LANE_TASK_DISPATCH_DEADLINE_S", 630) or 630)
+        )
 
         if self.backend in {"local_inline", "inline"}:
             self._dispatch_local_inline(payload, schedule_delay_seconds=schedule_delay_seconds)
@@ -150,9 +155,9 @@ class TwoLaneTaskDispatcher:
                 "body": json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             },
         }
-        if deadline_seconds and int(deadline_seconds) > 0:
+        if effective_deadline_seconds and int(effective_deadline_seconds) > 0:
             duration = duration_pb2.Duration()
-            duration.FromSeconds(int(deadline_seconds))
+            duration.FromSeconds(int(effective_deadline_seconds))
             task["dispatch_deadline"] = duration
         if schedule_delay_seconds and float(schedule_delay_seconds) > 0:
             eta = datetime.now(timezone.utc) + timedelta(seconds=float(schedule_delay_seconds))

@@ -35,6 +35,25 @@ OPENALEX_STAGE = "openalex_fetch"
 SEMANTICSCHOLAR_STAGE = "s2_fetch"
 
 
+def _round_float(value: Any, digits: int = 3) -> float:
+    return round(float(value or 0.0), int(digits))
+
+
+def _request_stats_payload(stats: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(stats or {})
+    if "rate_limit_wait_s" in payload:
+        payload["rate_limit_wait_s"] = _round_float(payload.get("rate_limit_wait_s"))
+    if "retry_backoff_wait_s" in payload:
+        payload["retry_backoff_wait_s"] = _round_float(payload.get("retry_backoff_wait_s"))
+    return payload
+
+
+def _log_provider_task(event: str, **payload: Any) -> None:
+    body = {"stage": "two_lane_provider_task", "event": str(event)}
+    body.update(payload)
+    logger.info(json.dumps(body, ensure_ascii=False, default=str))
+
+
 def _run_is_terminal(run_doc: dict[str, Any] | None) -> bool:
     status_now = str(((run_doc or {}).get("status") if isinstance(run_doc, dict) else "") or "").strip().lower()
     if status_now in {"success", "error", "cancelled"}:
@@ -438,18 +457,18 @@ async def _schedule_local_retry_if_needed(
     return True
 
 
-def _segment_limits_reached(
+def _segment_limit_reason(
     *,
     started_at_monotonic: float,
     pages_processed: int,
     max_pages_per_task: int,
     max_runtime_s: float,
-) -> bool:
+) -> str | None:
     if int(max_pages_per_task) > 0 and int(pages_processed) >= int(max_pages_per_task):
-        return True
+        return "max_pages"
     if float(max_runtime_s) > 0 and (__import__("time").monotonic() - float(started_at_monotonic)) >= float(max_runtime_s):
-        return True
-    return False
+        return "max_runtime"
+    return None
 
 
 async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]:
@@ -498,12 +517,33 @@ async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]
     session.headers.update({"User-Agent": "instantpaper-two-lane/1.0"})
     limiter = _build_openalex_limiter(cfg=cfg, run_id=run_id)
     started_at = __import__("time").monotonic()
+    task_started_at = __import__("time").monotonic()
     pages_processed = 0
     total_records = 0
     final_page_index = max(0, int(page_index) - 1)
     continuation_task_key: str | None = None
     continuation_page_index: int | None = None
     continuation_cursor: str | None = None
+    continuation_reason: str | None = None
+    cache_hit_pages = 0
+    cache_miss_pages = 0
+    task_http_stats: dict[str, Any] = {"request_attempts": 0, "rate_limit_wait_s": 0.0, "retry_backoff_wait_s": 0.0}
+
+    _log_provider_task(
+        "start",
+        provider="openalex",
+        task_kind="openalex_query",
+        stage_name=OPENALEX_STAGE,
+        run_id=run_id,
+        projekt_id=projekt_id,
+        task_key=task_key,
+        query_i=int(payload.get("query_i") or 0),
+        query_hash=query_hash,
+        segment_index=int(segment_index),
+        start_page_index=int(page_index),
+        max_pages_per_task=int(cfg.openalex_task_max_pages_per_task),
+        max_runtime_s=float(cfg.provider_task_max_runtime_s),
+    )
 
     try:
         while True:
@@ -516,8 +556,10 @@ async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]
             )
             meta: dict[str, Any]
             if artifact_store.exists(path_or_uri=meta_path):
+                cache_hit_pages += 1
                 meta = artifact_store.download_json(path_or_uri=meta_path)
             else:
+                cache_miss_pages += 1
                 data = request_json(
                     run_ctx=None,
                     stage="phase_d_openalex_retrieval",
@@ -529,6 +571,7 @@ async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]
                     body=None,
                     timeout_s=float(cfg.openalex_timeout_s),
                     rate_limiter=limiter,
+                    request_stats=task_http_stats,
                     max_attempts=8,
                     backoff_initial_s=1.0,
                     backoff_max_s=60.0,
@@ -594,12 +637,13 @@ async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]
             if not next_cursor:
                 break
 
-            if _segment_limits_reached(
+            continuation_reason = _segment_limit_reason(
                 started_at_monotonic=started_at,
                 pages_processed=pages_processed,
                 max_pages_per_task=int(cfg.openalex_task_max_pages_per_task),
                 max_runtime_s=float(cfg.provider_task_max_runtime_s),
-            ):
+            )
+            if continuation_reason:
                 next_segment_index = int(segment_index) + 1
                 continuation_task_key = _openalex_query_task_key(query_hash=query_hash, segment_index=next_segment_index)
                 continuation_page_index = int(page_index) + 1
@@ -636,6 +680,21 @@ async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]
                             "query": query.model_dump(mode="json"),
                         },
                     )
+                _log_provider_task(
+                    "continuation_enqueued",
+                    provider="openalex",
+                    task_kind="openalex_query",
+                    stage_name=OPENALEX_STAGE,
+                    run_id=run_id,
+                    task_key=task_key,
+                    query_hash=query_hash,
+                    segment_index=int(segment_index),
+                    continuation_task_key=continuation_task_key,
+                    continuation_page_index=int(continuation_page_index or 0),
+                    continuation_reason=continuation_reason,
+                    pages_processed=int(pages_processed),
+                    request_stats=_request_stats_payload(task_http_stats),
+                )
                 break
 
             page_index += 1
@@ -662,6 +721,28 @@ async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]
         )
         if bool((result or {}).get("provider_done")):
             await _maybe_launch_candidates(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+        wall_time_s = __import__("time").monotonic() - task_started_at
+        _log_provider_task(
+            "success",
+            provider="openalex",
+            task_kind="openalex_query",
+            stage_name=OPENALEX_STAGE,
+            run_id=run_id,
+            task_key=task_key,
+            query_hash=query_hash,
+            segment_index=int(segment_index),
+            start_page_index=int(payload.get("start_page_index") or 1),
+            final_page_index=int(final_page_index),
+            pages_processed=int(pages_processed),
+            records=int(total_records),
+            cache_hit_pages=int(cache_hit_pages),
+            cache_miss_pages=int(cache_miss_pages),
+            continued=bool(continuation_task_key),
+            continuation_reason=continuation_reason,
+            provider_done=bool((result or {}).get("provider_done")),
+            wall_time_s=_round_float(wall_time_s),
+            request_stats=_request_stats_payload(task_http_stats),
+        )
         return {
             "claimed": True,
             "task_key": task_key,
@@ -671,6 +752,25 @@ async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]
             "continuation_task_key": continuation_task_key,
         }
     except Exception as exc:
+        wall_time_s = __import__("time").monotonic() - task_started_at
+        _log_provider_task(
+            "error",
+            provider="openalex",
+            task_kind="openalex_query",
+            stage_name=OPENALEX_STAGE,
+            run_id=run_id,
+            task_key=task_key,
+            query_hash=query_hash,
+            segment_index=int(segment_index),
+            start_page_index=int(payload.get("start_page_index") or 1),
+            pages_processed=int(pages_processed),
+            records=int(total_records),
+            cache_hit_pages=int(cache_hit_pages),
+            cache_miss_pages=int(cache_miss_pages),
+            wall_time_s=_round_float(wall_time_s),
+            error=str(exc),
+            request_stats=_request_stats_payload(task_http_stats),
+        )
         latest_run_doc = await __import__("asyncio").to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
         if _run_is_terminal(latest_run_doc):
             await _skip_due_to_terminal_run(
@@ -696,6 +796,17 @@ async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]
                 error_message=str(exc),
             )
             if bool((retry_state or {}).get("retry_queued")):
+                _log_provider_task(
+                    "retry_queued",
+                    provider="openalex",
+                    task_kind="openalex_query",
+                    stage_name=OPENALEX_STAGE,
+                    run_id=run_id,
+                    task_key=task_key,
+                    query_hash=query_hash,
+                    segment_index=int(segment_index),
+                    error=str(exc),
+                )
                 if await _schedule_local_retry_if_needed(
                     queue_key="openalex",
                     task_key=task_key,
@@ -756,6 +867,7 @@ async def process_s2_bulk_query_task(payload: dict[str, Any]) -> dict[str, Any]:
     limiter = _build_s2_limiter(cfg=cfg, run_id=run_id, stage="phase_d_semanticscholar_retrieval")
     base = cfg.semanticscholar_base_url.rstrip("/")
     started_at = __import__("time").monotonic()
+    task_started_at = __import__("time").monotonic()
     pages_processed = 0
     total_records = 0
     total_ids_seen = 0
@@ -763,6 +875,26 @@ async def process_s2_bulk_query_task(payload: dict[str, Any]) -> dict[str, Any]:
     continuation_task_key: str | None = None
     continuation_page_index: int | None = None
     continuation_token: str | None = None
+    continuation_reason: str | None = None
+    cache_hit_pages = 0
+    cache_miss_pages = 0
+    task_http_stats: dict[str, Any] = {"request_attempts": 0, "rate_limit_wait_s": 0.0, "retry_backoff_wait_s": 0.0}
+
+    _log_provider_task(
+        "start",
+        provider="semanticscholar",
+        task_kind="s2_bulk_query",
+        stage_name=SEMANTICSCHOLAR_STAGE,
+        run_id=run_id,
+        projekt_id=projekt_id,
+        task_key=task_key,
+        query_i=int(payload.get("query_i") or 0),
+        query_hash=query_hash,
+        segment_index=int(segment_index),
+        start_page_index=int(page_index),
+        max_pages_per_task=int(cfg.semanticscholar_task_max_pages_per_task),
+        max_runtime_s=float(cfg.provider_task_max_runtime_s),
+    )
 
     try:
         while True:
@@ -775,8 +907,10 @@ async def process_s2_bulk_query_task(payload: dict[str, Any]) -> dict[str, Any]:
             )
             meta: dict[str, Any]
             if artifact_store.exists(path_or_uri=meta_path):
+                cache_hit_pages += 1
                 meta = artifact_store.download_json(path_or_uri=meta_path)
             else:
+                cache_miss_pages += 1
                 params: dict[str, Any] = {"query": query.query_string, "fields": S2_BULK_FIELDS, "limit": int(bulk_limit)}
                 if token_s:
                     params["token"] = token_s
@@ -791,6 +925,7 @@ async def process_s2_bulk_query_task(payload: dict[str, Any]) -> dict[str, Any]:
                     body=None,
                     timeout_s=float(cfg.semanticscholar_timeout_s),
                     rate_limiter=limiter,
+                    request_stats=task_http_stats,
                     max_attempts=10,
                     backoff_initial_s=2.0,
                     backoff_max_s=120.0,
@@ -823,6 +958,7 @@ async def process_s2_bulk_query_task(payload: dict[str, Any]) -> dict[str, Any]:
                             body={"ids": chunk},
                             timeout_s=float(cfg.semanticscholar_timeout_s),
                             rate_limiter=limiter,
+                            request_stats=task_http_stats,
                             max_attempts=10,
                             backoff_initial_s=2.0,
                             backoff_max_s=120.0,
@@ -895,12 +1031,13 @@ async def process_s2_bulk_query_task(payload: dict[str, Any]) -> dict[str, Any]:
             if not next_token:
                 break
 
-            if _segment_limits_reached(
+            continuation_reason = _segment_limit_reason(
                 started_at_monotonic=started_at,
                 pages_processed=pages_processed,
                 max_pages_per_task=int(cfg.semanticscholar_task_max_pages_per_task),
                 max_runtime_s=float(cfg.provider_task_max_runtime_s),
-            ):
+            )
+            if continuation_reason:
                 next_segment_index = int(segment_index) + 1
                 continuation_task_key = _s2_query_task_key(query_hash=query_hash, segment_index=next_segment_index)
                 continuation_page_index = int(page_index) + 1
@@ -938,6 +1075,22 @@ async def process_s2_bulk_query_task(payload: dict[str, Any]) -> dict[str, Any]:
                             "bulk_limit": int(bulk_limit),
                         },
                     )
+                _log_provider_task(
+                    "continuation_enqueued",
+                    provider="semanticscholar",
+                    task_kind="s2_bulk_query",
+                    stage_name=SEMANTICSCHOLAR_STAGE,
+                    run_id=run_id,
+                    task_key=task_key,
+                    query_hash=query_hash,
+                    segment_index=int(segment_index),
+                    continuation_task_key=continuation_task_key,
+                    continuation_page_index=int(continuation_page_index or 0),
+                    continuation_reason=continuation_reason,
+                    pages_processed=int(pages_processed),
+                    ids_seen=int(total_ids_seen),
+                    request_stats=_request_stats_payload(task_http_stats),
+                )
                 break
 
             page_index += 1
@@ -965,6 +1118,29 @@ async def process_s2_bulk_query_task(payload: dict[str, Any]) -> dict[str, Any]:
         )
         if bool((result or {}).get("provider_done")):
             await _maybe_launch_candidates(user_id=user_id, projekt_id=projekt_id, run_id=run_id)
+        wall_time_s = __import__("time").monotonic() - task_started_at
+        _log_provider_task(
+            "success",
+            provider="semanticscholar",
+            task_kind="s2_bulk_query",
+            stage_name=SEMANTICSCHOLAR_STAGE,
+            run_id=run_id,
+            task_key=task_key,
+            query_hash=query_hash,
+            segment_index=int(segment_index),
+            start_page_index=int(payload.get("start_page_index") or 1),
+            final_page_index=int(final_page_index),
+            pages_processed=int(pages_processed),
+            records=int(total_records),
+            ids_seen=int(total_ids_seen),
+            cache_hit_pages=int(cache_hit_pages),
+            cache_miss_pages=int(cache_miss_pages),
+            continued=bool(continuation_task_key),
+            continuation_reason=continuation_reason,
+            provider_done=bool((result or {}).get("provider_done")),
+            wall_time_s=_round_float(wall_time_s),
+            request_stats=_request_stats_payload(task_http_stats),
+        )
         return {
             "claimed": True,
             "task_key": task_key,
@@ -975,6 +1151,26 @@ async def process_s2_bulk_query_task(payload: dict[str, Any]) -> dict[str, Any]:
             "continuation_task_key": continuation_task_key,
         }
     except Exception as exc:
+        wall_time_s = __import__("time").monotonic() - task_started_at
+        _log_provider_task(
+            "error",
+            provider="semanticscholar",
+            task_kind="s2_bulk_query",
+            stage_name=SEMANTICSCHOLAR_STAGE,
+            run_id=run_id,
+            task_key=task_key,
+            query_hash=query_hash,
+            segment_index=int(segment_index),
+            start_page_index=int(payload.get("start_page_index") or 1),
+            pages_processed=int(pages_processed),
+            records=int(total_records),
+            ids_seen=int(total_ids_seen),
+            cache_hit_pages=int(cache_hit_pages),
+            cache_miss_pages=int(cache_miss_pages),
+            wall_time_s=_round_float(wall_time_s),
+            error=str(exc),
+            request_stats=_request_stats_payload(task_http_stats),
+        )
         latest_run_doc = await __import__("asyncio").to_thread(fs.get_run, user_id=user_id, projekt_id=projekt_id, run_id=run_id)
         if _run_is_terminal(latest_run_doc):
             await _skip_due_to_terminal_run(
@@ -1000,6 +1196,17 @@ async def process_s2_bulk_query_task(payload: dict[str, Any]) -> dict[str, Any]:
                 error_message=str(exc),
             )
             if bool((retry_state or {}).get("retry_queued")):
+                _log_provider_task(
+                    "retry_queued",
+                    provider="semanticscholar",
+                    task_kind="s2_bulk_query",
+                    stage_name=SEMANTICSCHOLAR_STAGE,
+                    run_id=run_id,
+                    task_key=task_key,
+                    query_hash=query_hash,
+                    segment_index=int(segment_index),
+                    error=str(exc),
+                )
                 if await _schedule_local_retry_if_needed(
                     queue_key="semanticscholar",
                     task_key=task_key,

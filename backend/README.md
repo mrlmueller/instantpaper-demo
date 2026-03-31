@@ -31,6 +31,7 @@ It is intended to be production-sufficient without `testing-scripts/`.
 Production backend surfaces:
 
 - Cloud Run service: `instantpaper-api`
+- Cloud Run service: `instantpaper-two-lane-task-worker`
 - Cloud Run Job: `instantpaper-two-lane-sources`
 - Cloud Run Job: `instantpaper-pdf-scan-cpu`
 - Cloud Run Job: `instantpaper-pdf-scan-gpu`
@@ -111,15 +112,16 @@ TWO_LANE_PROVIDER_RATE_LIMIT_BACKEND=firestore
 TWO_LANE_PROVIDER_RATE_LIMIT_COLLECTION=quellenFinderProviderRateLimits
 TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS=86400000
 TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS=150
-TWO_LANE_PROVIDER_TASK_MAX_RUNTIME_S=900
-TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK=100
-TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK=25
+TWO_LANE_PROVIDER_TASK_MAX_RUNTIME_S=480
+TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK=12
+TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK=5
 TWO_LANE_TASK_DISPATCH_BACKEND=local_background
 TWO_LANE_TASKS_PROJECT=
 TWO_LANE_TASKS_LOCATION=europe-west3
 TWO_LANE_OPENALEX_TASK_QUEUE=quellen-finder-openalex
 TWO_LANE_SEMANTICSCHOLAR_TASK_QUEUE=quellen-finder-semanticscholar
 TWO_LANE_TASK_HANDLER_URL=
+TWO_LANE_TASK_DISPATCH_DEADLINE_S=630
 TWO_LANE_TASK_DISPATCH_TOKEN=
 PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
 ```
@@ -164,7 +166,7 @@ PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
 - `TWO_LANE_PROVIDER_TASK_MAX_RUNTIME_S`
   - per-provider-task time budget before a bounded continuation task is queued
 - `TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK` / `TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK`
-  - per-task page caps for the bounded query-chain provider workers
+  - per-task page caps for the bounded query-chain provider workers; keep these low enough that cloud task handlers finish well below the worker service timeout
 - `TWO_LANE_TASK_DISPATCH_BACKEND`
   - `local_background` / `local_inline` for local task execution
   - `cloud_tasks` for the queued provider-fetch path on Cloud Run
@@ -173,7 +175,9 @@ PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
 - `TWO_LANE_OPENALEX_TASK_QUEUE` / `TWO_LANE_SEMANTICSCHOLAR_TASK_QUEUE`
   - queue names used for OpenAlex and Semantic Scholar provider query tasks
 - `TWO_LANE_TASK_HANDLER_URL`
-  - full FastAPI callback URL for internal provider task execution
+  - full callback URL for internal provider task execution; in production this should point to the dedicated task worker service, not the public API service
+- `TWO_LANE_TASK_DISPATCH_DEADLINE_S`
+  - per-task Cloud Tasks dispatch deadline; keep this only slightly above the worker service request timeout
 - `TWO_LANE_TASK_DISPATCH_TOKEN`
   - shared secret header required by the internal task endpoint
 - `USER_KEY_ENCRYPTION_KEY`

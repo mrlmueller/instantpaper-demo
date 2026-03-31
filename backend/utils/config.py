@@ -135,6 +135,10 @@ class Config:
         "TWO_LANE_TASK_HANDLER_URL",
         "",
     ).strip()
+    TWO_LANE_TASK_DISPATCH_DEADLINE_S: int = max(
+        15,
+        _read_int_env("TWO_LANE_TASK_DISPATCH_DEADLINE_S", 630),
+    )
     TWO_LANE_TASK_DISPATCH_TOKEN: str = os.getenv(
         "TWO_LANE_TASK_DISPATCH_TOKEN",
         "",

@@ -13,15 +13,15 @@ if str(BACKEND_ROOT) not in sys.path:
 import main as mainmod
 
 
-async def _fake_handler(payload: dict):
+def _fake_handler(payload: dict):
     return {"handled": True, "kind": payload.get("kind")}
 
 
 def main() -> int:
     original_validate = mainmod.validate_two_lane_dispatch_token
-    original_handler = mainmod.run_two_lane_internal_task_payload
+    original_handler = mainmod.run_two_lane_internal_task_payload_sync
     mainmod.validate_two_lane_dispatch_token = lambda token: str(token or "") == "test-token"
-    mainmod.run_two_lane_internal_task_payload = _fake_handler
+    mainmod.run_two_lane_internal_task_payload_sync = _fake_handler
     try:
         client = TestClient(mainmod.app)
         unauthorized = client.post(
@@ -43,7 +43,7 @@ def main() -> int:
             raise RuntimeError(f"Unexpected authorized payload: {payload}")
     finally:
         mainmod.validate_two_lane_dispatch_token = original_validate
-        mainmod.run_two_lane_internal_task_payload = original_handler
+        mainmod.run_two_lane_internal_task_payload_sync = original_handler
 
     out_dir = BACKEND_ROOT / ".two_lane_artifacts" / "rate_limit_tests"
     out_dir.mkdir(parents=True, exist_ok=True)
