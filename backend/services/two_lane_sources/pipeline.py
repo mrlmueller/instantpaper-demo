@@ -3482,6 +3482,29 @@ def _parse_retry_after(resp: requests.Response) -> Optional[float]:
         return None
 
 
+def _parse_header_float(resp: requests.Response, header_name: str) -> Optional[float]:
+    try:
+        raw = str((resp.headers or {}).get(str(header_name)) or "").strip()
+        if not raw:
+            return None
+        return float(raw)
+    except Exception:
+        return None
+
+
+def _openalex_budget_exhausted(resp: requests.Response) -> bool:
+    if int(getattr(resp, "status_code", 0) or 0) != 429:
+        return False
+    remaining_usd = _parse_header_float(resp, "X-RateLimit-Remaining-USD")
+    remaining = _parse_header_float(resp, "X-RateLimit-Remaining")
+    retry_after_s = _parse_retry_after(resp)
+    if remaining_usd is not None and remaining_usd <= 0.0:
+        return True
+    if remaining is not None and remaining <= 0.0 and retry_after_s is not None and retry_after_s >= 300.0:
+        return True
+    return False
+
+
 def request_json(
     *,
     run_ctx: RunContext | None,
@@ -3553,6 +3576,18 @@ def request_json(
         if resp is None:
             retryable = True
         elif resp.status_code in (429, 500, 502, 503, 504):
+            if (
+                str(provider or "").strip().lower() == "openalex"
+                and isinstance(params, dict)
+                and bool(str(params.get("api_key") or "").strip())
+                and _openalex_budget_exhausted(resp)
+            ):
+                params.pop("api_key", None)
+                if request_stats is not None:
+                    request_stats["openalex_api_key_fallbacks"] = int(
+                        request_stats.get("openalex_api_key_fallbacks") or 0
+                    ) + 1
+                continue
             retryable = True
             retry_after_s = _parse_retry_after(resp)
         elif resp.status_code >= 400:
@@ -3575,7 +3610,7 @@ def request_json(
 
         wait = min(backoff_max_s, backoff_initial_s * (2 ** max(0, retries)))
         if retry_after_s is not None:
-            wait = max(wait, float(retry_after_s))
+            wait = max(wait, min(float(retry_after_s), float(backoff_max_s)))
         # jitter (avoid thundering herd)
         wait = wait * (1.0 + random.uniform(-0.15, 0.15))
         wait = max(0.5, float(wait))
@@ -3613,7 +3648,7 @@ OPENALEX_SELECT = (
 )
 
 
-def _openalex_params(cfg: PipelineConfig, q: OpenAlexQuery, *, cursor: str) -> Dict[str, Any]:
+def _openalex_params(cfg: PipelineConfig, q: OpenAlexQuery, *, cursor: str, include_api_key: bool = True) -> Dict[str, Any]:
     params: Dict[str, Any] = {
         "per-page": int(getattr(q, "per_page", 200) or 200),
         "cursor": cursor,
@@ -3623,7 +3658,7 @@ def _openalex_params(cfg: PipelineConfig, q: OpenAlexQuery, *, cursor: str) -> D
         params["sort"] = q.sort
     if cfg.openalex_email:
         params["mailto"] = cfg.openalex_email
-    if cfg.openalex_api_key:
+    if include_api_key and cfg.openalex_api_key:
         params["api_key"] = cfg.openalex_api_key
 
     base_filters = str(getattr(q, "filters", "") or "").strip().strip(",")
@@ -3705,9 +3740,10 @@ def fetch_openalex_to_cache(
         cursor = "*"
         rank = 0
 
+        use_api_key = bool(cfg.openalex_api_key)
         try:
             while cursor:
-                params = _openalex_params(cfg, q, cursor=cursor)
+                params = _openalex_params(cfg, q, cursor=cursor, include_api_key=use_api_key)
                 data = request_json(
                     run_ctx=run_ctx,
                     stage=stage,
@@ -3723,6 +3759,8 @@ def fetch_openalex_to_cache(
                     backoff_initial_s=1.0,
                     backoff_max_s=60.0,
                 )
+                if "api_key" not in params:
+                    use_api_key = False
                 pages += 1
 
                 results = (data or {}).get("results") or []

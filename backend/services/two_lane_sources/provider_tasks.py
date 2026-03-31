@@ -554,6 +554,7 @@ async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]
     cache_hit_pages = 0
     cache_miss_pages = 0
     task_http_stats: dict[str, Any] = {"request_attempts": 0, "rate_limit_wait_s": 0.0, "retry_backoff_wait_s": 0.0}
+    use_api_key = bool(cfg.openalex_api_key)
 
     _log_provider_task(
         "start",
@@ -593,7 +594,7 @@ async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]
                     session=session,
                     method="GET",
                     url=cfg.openalex_base_url.rstrip("/") + "/works",
-                    params=_openalex_params(cfg, query, cursor=cursor),
+                    params=_openalex_params(cfg, query, cursor=cursor, include_api_key=use_api_key),
                     body=None,
                     timeout_s=min(float(cfg.openalex_timeout_s), float(cfg.provider_task_request_timeout_s)),
                     rate_limiter=limiter,
@@ -602,6 +603,8 @@ async def process_openalex_query_task(payload: dict[str, Any]) -> dict[str, Any]
                     backoff_initial_s=1.0,
                     backoff_max_s=float(cfg.provider_task_request_backoff_max_s),
                 )
+                if int(task_http_stats.get("openalex_api_key_fallbacks") or 0) > 0:
+                    use_api_key = False
                 results = (data or {}).get("results") or []
                 lines = []
                 for rank, work in enumerate(results, start=1):
@@ -1354,6 +1357,7 @@ async def process_openalex_page_task(payload: dict[str, Any]) -> dict[str, Any]:
             session = requests.Session()
             session.headers.update({"User-Agent": "instantpaper-two-lane/1.0"})
             limiter = _build_openalex_limiter(cfg=cfg, run_id=run_id)
+            use_api_key = bool(cfg.openalex_api_key)
             data = request_json(
                 run_ctx=None,
                 stage="phase_d_openalex_retrieval",
@@ -1361,7 +1365,7 @@ async def process_openalex_page_task(payload: dict[str, Any]) -> dict[str, Any]:
                 session=session,
                 method="GET",
                 url=cfg.openalex_base_url.rstrip("/") + "/works",
-                params=_openalex_params(cfg, query, cursor=cursor),
+                params=_openalex_params(cfg, query, cursor=cursor, include_api_key=use_api_key),
                 body=None,
                 timeout_s=float(cfg.openalex_timeout_s),
                 rate_limiter=limiter,

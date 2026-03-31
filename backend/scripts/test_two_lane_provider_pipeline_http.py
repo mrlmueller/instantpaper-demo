@@ -84,6 +84,19 @@ class _FakeHandler(BaseHTTPRequestHandler):
         params = {k: v[0] if len(v) == 1 else v for k, v in parse_qs(parsed.query).items()}
         if parsed.path == "/works":
             self.state.record(provider="openalex", endpoint="works", path=parsed.path, method="GET", params=params)
+            query_text = " ".join([str(params.get("search") or ""), str(params.get("filter") or "")])
+            if "FORCE429" in query_text and str(params.get("api_key") or "").strip():
+                payload = {"error": "insufficient budget", "message": "OpenAlex test budget exhausted"}
+                data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                self.send_response(429)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Retry-After", "47684")
+                self.send_header("X-RateLimit-Remaining", "0")
+                self.send_header("X-RateLimit-Remaining-USD", "0")
+                self.end_headers()
+                self.wfile.write(data)
+                return
             search = str(params.get("search") or params.get("filter") or "unknown")
             self._send_json(
                 200,
@@ -251,6 +264,32 @@ def _run_openalex_scenario(*, cfg: PipelineConfig, runs_root: Path, workers: int
     return {"workers": workers, "rows": rows}
 
 
+def _run_openalex_key_fallback_scenario(*, cfg: PipelineConfig, runs_root: Path) -> dict[str, Any]:
+    query = OpenAlexQuery(
+        intent="match",
+        language="en",
+        search_field="title_and_abstract.search",
+        query_string='FORCE429 AND "balance sheet" AND automation',
+        filters="is_paratext:false,is_retracted:false,language:en",
+        sort="relevance_score:desc",
+        per_page=200,
+        notes="openalex fallback",
+    )
+    run_dir = runs_root / "openalex_fallback"
+    run_ctx = _build_run_ctx(run_dir=run_dir, run_id="openalex_fallback")
+    run_ctx.create_artifact_skeleton(overwrite=True)
+    meta = fetch_openalex_to_cache(cfg=cfg, run_ctx=run_ctx, queries=[query], force_rebuild=True)
+    cache_lines = sum(_line_count(Path(path)) for path in meta["used_cache_paths"])
+    if int(meta["records"]) <= 0 or int(cache_lines) <= 0:
+        raise AssertionError(f"OpenAlex fallback scenario produced no output: {meta}")
+    return {
+        "records": int(meta["records"]),
+        "records_fetched": int(meta["records_fetched"]),
+        "cache_lines": int(cache_lines),
+        "used_cache_paths": [str(path) for path in meta["used_cache_paths"]],
+    }
+
+
 def _run_s2_retrieval_scenario(*, cfg: PipelineConfig, runs_root: Path, workers: int) -> dict[str, Any]:
     queries = [
         S2BulkQuery(intent="match", language="en", query_string='"balance sheet" AND automation', notes="s2 fake 1"),
@@ -336,6 +375,7 @@ def main(argv: list[str] | None = None) -> int:
             runs_root=tmp_dir,
             pipeline_version="two_lane_v1",
             openalex_base_url=base_url,
+            openalex_api_key="budget-exhausted-key",
             openalex_rps=5.0,
             semanticscholar_base_url=base_url + "/graph/v1",
             semanticscholar_recommendations_url=base_url + "/recommendations/v1/papers",
@@ -346,11 +386,23 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         openalex_result = _run_openalex_scenario(cfg=cfg, runs_root=tmp_dir, workers=args.workers)
+        openalex_fallback_result = _run_openalex_key_fallback_scenario(cfg=cfg, runs_root=tmp_dir)
         s2_retrieval_result = _run_s2_retrieval_scenario(cfg=cfg, runs_root=tmp_dir, workers=args.workers)
         s2_recs_result = _run_s2_recommendations_scenario(cfg=cfg, runs_root=tmp_dir, workers=args.workers)
 
         openalex_gaps = _assert_min_gap(state.requests, provider="openalex", min_gap_s=0.16)
         s2_gaps = _assert_min_gap(state.requests, provider="semanticscholar", min_gap_s=0.42)
+        openalex_fallback_requests = [
+            row
+            for row in state.requests
+            if row["provider"] == "openalex" and "FORCE429" in json.dumps(row.get("params") or {})
+        ]
+        if len(openalex_fallback_requests) < 2:
+            raise AssertionError(f"Expected at least two OpenAlex fallback requests, got {openalex_fallback_requests}")
+        if not str((openalex_fallback_requests[0].get("params") or {}).get("api_key") or "").strip():
+            raise AssertionError(f"Expected first OpenAlex fallback request to include api_key: {openalex_fallback_requests}")
+        if str((openalex_fallback_requests[1].get("params") or {}).get("api_key") or "").strip():
+            raise AssertionError(f"Expected second OpenAlex fallback request to drop api_key: {openalex_fallback_requests}")
 
         payload = {
             "backend": args.backend,
@@ -359,6 +411,8 @@ def main(argv: list[str] | None = None) -> int:
             "collection_name": collection_name if args.backend == "firestore" else None,
             "openalex": {
                 "result": openalex_result,
+                "fallback_result": openalex_fallback_result,
+                "fallback_requests": openalex_fallback_requests,
                 "request_gaps_s": openalex_gaps,
                 "request_count": len([row for row in state.requests if row["provider"] == "openalex"]),
             },

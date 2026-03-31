@@ -284,6 +284,27 @@ class _FakeHandler(BaseHTTPRequestHandler):
         params = {k: v[0] if len(v) == 1 else v for k, v in parse_qs(parsed.query).items()}
         if parsed.path == "/works":
             self.state.record(provider="openalex", endpoint="works", method="GET", params=params)
+            query_text = " ".join(
+                [
+                    str(params.get("search") or ""),
+                    str(params.get("filter") or ""),
+                ]
+            )
+            if "FORCE429" in query_text and str(params.get("api_key") or "").strip():
+                payload = {
+                    "error": "insufficient budget",
+                    "message": "OpenAlex test budget exhausted",
+                }
+                data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                self.send_response(429)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Retry-After", "47684")
+                self.send_header("X-RateLimit-Remaining", "0")
+                self.send_header("X-RateLimit-Remaining-USD", "0")
+                self.end_headers()
+                self.wfile.write(data)
+                return
             cursor = str(params.get("cursor") or "*")
             if cursor == "*":
                 payload = {
@@ -574,6 +595,74 @@ async def _main() -> dict[str, Any]:
         final_doc_cap = fake_fs_cap.get_run(user_id="user", projekt_id="project", run_id="run-123")
         cap_task = fake_fs_cap.task_docs[("user", "project", "run-123", f"openalex--{processed_cap[0]['task_name']}")]
         cap_summary = cap_task.get("summary") or {}
+
+        initial_doc_fallback = {
+            "kind": "sources_two_lane",
+            "status": "running",
+            "kapitelIds": ["kapitel"],
+            "executionBackend": "local_split_jobs",
+            "splitExecution": {
+                "currentStage": "provider_fetch",
+                "openalex_fetch": {"status": "running"},
+                "candidates": {"status": "pending"},
+                "finalize": {"status": "pending"},
+            },
+        }
+        fake_fs_fallback = FakeFirestoreService(initial_doc_fallback)
+        dispatcher_fallback = FakeDispatcher()
+        artifact_store_fallback = LocalArtifactStore(artifact_root / "artifacts-fallback")
+        cfg_fallback = PipelineConfig(
+            runs_root=artifact_root,
+            pipeline_version="two_lane_v1",
+            openalex_base_url=base_url,
+            openalex_api_key="budget-exhausted-key",
+            openalex_rps=5.0,
+            semanticscholar_base_url=base_url + "/graph/v1",
+            semanticscholar_rps=2.0,
+            provider_rate_limit_backend="local",
+            provider_rate_limit_collection="unused",
+            provider_rate_limit_dispatch_buffer_ms=0,
+            force_rebuild=False,
+            openalex_task_max_pages_per_task=2,
+            provider_task_request_timeout_s=5.0,
+            provider_task_request_max_attempts=3,
+            provider_task_request_backoff_max_s=1.0,
+        )
+
+        provider_tasks.request_json = original["request_json"]
+        provider_tasks.QuellenFinderFirestoreService = lambda: fake_fs_fallback
+        provider_tasks._artifact_store_from_run_doc = lambda run_doc=None: artifact_store_fallback
+        provider_tasks.build_two_lane_task_dispatcher = lambda: dispatcher_fallback
+        provider_tasks.PipelineConfig.from_env = classmethod(lambda cls, *, runs_root, pipeline_version: cfg_fallback)
+        openalex_fallback_seed = provider_tasks.seed_openalex_provider_tasks(
+            user_id="user",
+            projekt_id="project",
+            run_id="run-123",
+            queries=[
+                OpenAlexQuery(
+                    intent="match",
+                    language="en",
+                    search_field="title_and_abstract.search",
+                    query_string='FORCE429 AND "balance sheet" AND automation',
+                    filters="language:en",
+                    sort="relevance_score:desc",
+                    per_page=200,
+                    notes="fallback-test",
+                )
+            ],
+            run_doc=fake_fs_fallback.get_run(user_id="user", projekt_id="project", run_id="run-123"),
+        )
+        fallback_started = time.monotonic()
+        processed_fallback = await _drain(dispatcher_fallback)
+        fallback_elapsed_s = time.monotonic() - fallback_started
+        final_doc_fallback = fake_fs_fallback.get_run(user_id="user", projekt_id="project", run_id="run-123")
+        fallback_task = fake_fs_fallback.task_docs[
+            ("user", "project", "run-123", f"openalex--{processed_fallback[0]['task_name']}")
+        ]
+        fallback_summary = fallback_task.get("summary") or {}
+        fallback_openalex_requests = [
+            row for row in state.requests if row.get("provider") == "openalex" and "FORCE429" in json.dumps(row.get("params") or {})
+        ]
     finally:
         provider_tasks.QuellenFinderFirestoreService = original["QuellenFinderFirestoreService"]
         provider_tasks._artifact_store_from_run_doc = original["_artifact_store_from_run_doc"]
@@ -620,7 +709,24 @@ async def _main() -> dict[str, Any]:
         raise RuntimeError(f"Expected capped max_attempts 3, got {cap_request_args[0]}")
     if float((cap_request_args[0] or {}).get("backoff_max_s") or 0.0) != 15.0:
         raise RuntimeError(f"Expected capped backoff_max_s 15.0, got {cap_request_args[0]}")
-
+    if int(openalex_fallback_seed.get("seeded_tasks") or 0) != 1:
+        raise RuntimeError(f"Unexpected fallback seed count: {openalex_fallback_seed}")
+    if len(processed_fallback) != 1:
+        raise RuntimeError(f"Expected one fallback task result, got: {processed_fallback}")
+    if fallback_elapsed_s >= 10.0:
+        raise RuntimeError(f"Fallback scenario took too long: {fallback_elapsed_s:.3f}s")
+    if int((fallback_summary.get("pages_processed") or 0)) != 2:
+        raise RuntimeError(f"Expected fallback task to finish two pages: {fallback_summary}")
+    if int((((processed_fallback[0].get("result") or {}).get("records")) or 0)) != 2:
+        raise RuntimeError(f"Fallback task did not return two records: {processed_fallback}")
+    if (((final_doc_fallback.get("splitExecution") or {}).get("openalex_fetch") or {}).get("status")) != "success":
+        raise RuntimeError(f"Fallback OpenAlex stage not marked success: {final_doc_fallback.get('splitExecution')}")
+    if len(fallback_openalex_requests) < 2:
+        raise RuntimeError(f"Expected at least two fallback OpenAlex requests, got: {fallback_openalex_requests}")
+    if not str((fallback_openalex_requests[0].get("params") or {}).get("api_key") or "").strip():
+        raise RuntimeError(f"Expected first fallback request to use api_key: {fallback_openalex_requests}")
+    if str((fallback_openalex_requests[1].get("params") or {}).get("api_key") or "").strip():
+        raise RuntimeError(f"Expected second fallback request to drop api_key: {fallback_openalex_requests}")
     return {
         "ok": True,
         "openalex_seed": openalex_seed,
@@ -633,6 +739,11 @@ async def _main() -> dict[str, Any]:
         "processed_cap_tasks": processed_cap,
         "cap_summary": cap_summary,
         "cap_request_args": cap_request_args,
+        "openalex_fallback_seed": openalex_fallback_seed,
+        "processed_fallback_tasks": processed_fallback,
+        "fallback_summary": fallback_summary,
+        "fallback_elapsed_s": round(float(fallback_elapsed_s), 3),
+        "fallback_openalex_requests": fallback_openalex_requests,
         "request_count": len(state.requests),
         "requests": state.requests,
     }
