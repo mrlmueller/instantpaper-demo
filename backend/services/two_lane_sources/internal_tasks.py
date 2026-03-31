@@ -4,6 +4,8 @@ import asyncio
 from typing import Any
 
 from services.two_lane_sources.provider_tasks import (
+    TwoLaneTaskBusyError,
+    TwoLaneTaskMissingError,
     process_openalex_query_task,
     process_openalex_page_task,
     process_s2_bulk_query_task,

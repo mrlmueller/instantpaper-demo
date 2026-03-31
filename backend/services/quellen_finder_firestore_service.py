@@ -609,6 +609,26 @@ class QuellenFinderFirestoreService:
         task_key: str,
         stale_after_ms: int = 1_800_000,
     ) -> bool:
+        result = self.claim_two_lane_provider_task_result(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            provider=provider,
+            task_key=task_key,
+            stale_after_ms=stale_after_ms,
+        )
+        return str((result or {}).get("status") or "").strip().lower() == "claimed"
+
+    def claim_two_lane_provider_task_result(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        provider: str,
+        task_key: str,
+        stale_after_ms: int = 1_800_000,
+    ) -> dict[str, Any]:
         provider_norm = _as_str(provider)
         task_norm = _as_str(task_key)
         if not provider_norm or not task_norm:
@@ -624,16 +644,16 @@ class QuellenFinderFirestoreService:
         def _txn(txn):
             task_snap = task_ref.get(transaction=txn)
             if task_snap is None or not getattr(task_snap, "exists", False):
-                return False
+                return {"status": "missing"}
             task_data = task_snap.to_dict() if task_snap is not None else {}
             status_now = str((task_data or {}).get("status") or "").strip().lower()
             if status_now == "success":
-                return False
+                return {"status": "already_success"}
 
             now_ms = int(time.time() * 1000.0)
             claimed_at_ms = int((task_data or {}).get("claimedAtEpochMs") or 0)
             if status_now == "running" and claimed_at_ms and claimed_at_ms >= (now_ms - max(1, int(stale_after_ms))):
-                return False
+                return {"status": "running", "claimedAtEpochMs": int(claimed_at_ms)}
 
             claim_count = int((task_data or {}).get("claimCount") or 0)
             txn.set(
@@ -647,9 +667,10 @@ class QuellenFinderFirestoreService:
                 },
                 merge=True,
             )
-            return True
+            return {"status": "claimed", "claimCount": int(claim_count) + 1, "claimedAtEpochMs": int(now_ms)}
 
-        return bool(self._run_transaction_with_backoff(_txn))
+        result = self._run_transaction_with_backoff(_txn)
+        return result if isinstance(result, dict) else {"status": "missing"}
 
     def complete_two_lane_provider_task(
         self,

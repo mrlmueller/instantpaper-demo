@@ -52,6 +52,8 @@ from services.cloud_run_job_launcher import cloud_run_job_launcher
 from services.quellen_finder_firestore_service import QuellenFinderFirestoreService
 from services.quellen_finder_sources_two_lane_job import run_quellen_finder_sources_two_lane_job_from_run_doc
 from services.two_lane_sources.internal_tasks import (
+    TwoLaneTaskBusyError,
+    TwoLaneTaskMissingError,
     run_two_lane_internal_task_payload_sync,
 )
 from services.two_lane_sources.task_dispatch import validate_two_lane_dispatch_token
@@ -5713,7 +5715,16 @@ async def two_lane_internal_task_dispatch(request: Request):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid JSON payload: {exc}") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task payload must be a JSON object")
-    result = await asyncio.to_thread(run_two_lane_internal_task_payload_sync, payload)
+    try:
+        result = await asyncio.to_thread(run_two_lane_internal_task_payload_sync, payload)
+    except TwoLaneTaskBusyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+            headers={"Retry-After": "30"},
+        ) from exc
+    except TwoLaneTaskMissingError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     return {"success": True, "result": result}
 
 

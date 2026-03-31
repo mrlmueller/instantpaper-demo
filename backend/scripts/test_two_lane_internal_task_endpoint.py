@@ -11,9 +11,15 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 import main as mainmod
+from services.two_lane_sources.internal_tasks import TwoLaneTaskBusyError, TwoLaneTaskMissingError
 
 
 def _fake_handler(payload: dict):
+    kind = payload.get("kind")
+    if kind == "busy":
+        raise TwoLaneTaskBusyError("task busy")
+    if kind == "missing":
+        raise TwoLaneTaskMissingError("task missing")
     return {"handled": True, "kind": payload.get("kind")}
 
 
@@ -41,6 +47,22 @@ def main() -> int:
         payload = authorized.json()
         if not bool(payload.get("success")) or ((payload.get("result") or {}).get("kind")) != "openalex_query":
             raise RuntimeError(f"Unexpected authorized payload: {payload}")
+
+        busy = client.post(
+            "/api/internal/quellen-finder/two-lane/task",
+            headers={"X-TwoLane-Dispatch-Token": "test-token"},
+            json={"kind": "busy"},
+        )
+        if busy.status_code != 503:
+            raise RuntimeError(f"Expected 503, got {busy.status_code}: {busy.text}")
+
+        missing = client.post(
+            "/api/internal/quellen-finder/two-lane/task",
+            headers={"X-TwoLane-Dispatch-Token": "test-token"},
+            json={"kind": "missing"},
+        )
+        if missing.status_code != 500:
+            raise RuntimeError(f"Expected 500, got {missing.status_code}: {missing.text}")
     finally:
         mainmod.validate_two_lane_dispatch_token = original_validate
         mainmod.run_two_lane_internal_task_payload_sync = original_handler
@@ -54,6 +76,8 @@ def main() -> int:
                 "ok": True,
                 "unauthorized_status": 401,
                 "authorized_status": 202,
+                "busy_status": 503,
+                "missing_status": 500,
             },
             ensure_ascii=False,
             indent=2,

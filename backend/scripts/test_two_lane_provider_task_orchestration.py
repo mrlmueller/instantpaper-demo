@@ -122,20 +122,30 @@ class FakeFirestoreService:
         return True
 
     def claim_two_lane_provider_task(self, *, user_id: str, projekt_id: str, run_id: str, provider: str, task_key: str, stale_after_ms: int = 1_800_000) -> bool:
+        result = self.claim_two_lane_provider_task_result(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            provider=provider,
+            task_key=task_key,
+            stale_after_ms=stale_after_ms,
+        )
+        return str((result or {}).get("status") or "").strip().lower() == "claimed"
+
+    def claim_two_lane_provider_task_result(self, *, user_id: str, projekt_id: str, run_id: str, provider: str, task_key: str, stale_after_ms: int = 1_800_000) -> dict[str, Any]:
         del stale_after_ms
         key = (str(user_id), str(projekt_id), str(run_id), f"{provider}--{task_key}")
         task = self.task_docs.get(key)
         if task is None:
-            return False
+            return {"status": "missing"}
         if str(task.get("status") or "").strip().lower() == "success":
-            return False
+            return {"status": "already_success"}
         if str(task.get("status") or "").strip().lower() == "running":
-            return False
+            return {"status": "running"}
         task["status"] = "running"
-        return True
+        return {"status": "claimed"}
 
     def complete_two_lane_provider_task(self, *, user_id: str, projekt_id: str, run_id: str, provider: str, task_key: str, stage_name: str, summary: dict[str, Any] | None = None) -> dict[str, Any]:
-        del summary
         key = (str(user_id), str(projekt_id), str(run_id), f"{provider}--{task_key}")
         task = self.task_docs.get(key) or {}
         if str(task.get("status") or "").strip().lower() == "success":
@@ -143,6 +153,7 @@ class FakeFirestoreService:
             provider_work = (doc.get("providerWork") or {}).get(str(provider)) or {}
             return {"provider_done": int(provider_work.get("pendingTasks") or 0) <= 0, "already_done": True}
         task["status"] = "success"
+        task["summary"] = deepcopy(summary or {})
         doc = self.docs[(str(user_id), str(projekt_id), str(run_id))]
         provider_work = doc.setdefault("providerWork", {}).setdefault(str(provider), {})
         provider_work["pendingTasks"] = max(0, int(provider_work.get("pendingTasks") or 0) - 1)
@@ -413,6 +424,7 @@ async def _main() -> dict[str, Any]:
         "_artifact_store_from_run_doc": provider_tasks._artifact_store_from_run_doc,
         "build_two_lane_task_dispatcher": provider_tasks.build_two_lane_task_dispatcher,
         "PipelineConfig_from_env": provider_tasks.PipelineConfig.from_env,
+        "request_json": provider_tasks.request_json,
         "launch": provider_tasks.cloud_run_job_launcher.execute_two_lane_sources_job,
     }
 
@@ -465,11 +477,109 @@ async def _main() -> dict[str, Any]:
             destination=aggregate_dir / "semanticscholar_raw.jsonl",
         )
         final_doc = fake_fs.get_run(user_id="user", projekt_id="project", run_id="run-123")
+
+        initial_doc_cap = {
+            "kind": "sources_two_lane",
+            "status": "running",
+            "kapitelIds": ["kapitel"],
+            "executionBackend": "local_split_jobs",
+            "splitExecution": {
+                "currentStage": "provider_fetch",
+                "openalex_fetch": {"status": "running"},
+                "candidates": {"status": "pending"},
+                "finalize": {"status": "pending"},
+            },
+        }
+        fake_fs_cap = FakeFirestoreService(initial_doc_cap)
+        dispatcher_cap = FakeDispatcher()
+        artifact_store_cap = LocalArtifactStore(artifact_root / "artifacts-cap")
+        cap_request_args: list[dict[str, Any]] = []
+
+        cfg_cap = PipelineConfig(
+            runs_root=artifact_root,
+            pipeline_version="two_lane_v1",
+            openalex_base_url=base_url,
+            openalex_rps=5.0,
+            semanticscholar_base_url=base_url + "/graph/v1",
+            semanticscholar_rps=2.0,
+            provider_rate_limit_backend="local",
+            provider_rate_limit_collection="unused",
+            provider_rate_limit_dispatch_buffer_ms=0,
+            force_rebuild=False,
+            openalex_task_max_pages_per_task=50,
+            openalex_task_max_pages_total_per_query=5,
+            provider_task_request_timeout_s=30.0,
+            provider_task_request_max_attempts=3,
+            provider_task_request_backoff_max_s=15.0,
+        )
+
+        def _fake_request_json(**kwargs):
+            params = kwargs.get("params") or {}
+            cap_request_args.append(
+                {
+                    "timeout_s": kwargs.get("timeout_s"),
+                    "max_attempts": kwargs.get("max_attempts"),
+                    "backoff_max_s": kwargs.get("backoff_max_s"),
+                    "cursor": params.get("cursor"),
+                }
+            )
+            cursor = str(params.get("cursor") or "*")
+            if cursor == "*":
+                page_no = 1
+            else:
+                page_no = int(str(cursor).replace("CURSOR-", ""))
+            return {
+                "results": [
+                    {
+                        "id": f"https://openalex.org/WCAP{page_no}",
+                        "doi": f"10.1000/cap{page_no}",
+                        "display_name": f"OpenAlex Cap Page {page_no}",
+                        "publication_year": 2024,
+                        "type": "article",
+                        "ids": {"openalex": f"WCAP{page_no}"},
+                        "cited_by_count": page_no,
+                        "primary_location": {"source": {"display_name": "Cap Venue"}},
+                        "authorships": [{"author": {"display_name": f"Cap Author {page_no}"}}],
+                        "abstract_inverted_index": {"cap": [0], str(page_no): [1]},
+                    }
+                ],
+                "meta": {"next_cursor": f"CURSOR-{page_no + 1}"},
+            }
+
+        provider_tasks.QuellenFinderFirestoreService = lambda: fake_fs_cap
+        provider_tasks._artifact_store_from_run_doc = lambda run_doc=None: artifact_store_cap
+        provider_tasks.build_two_lane_task_dispatcher = lambda: dispatcher_cap
+        provider_tasks.PipelineConfig.from_env = classmethod(lambda cls, *, runs_root, pipeline_version: cfg_cap)
+        provider_tasks.request_json = _fake_request_json
+
+        openalex_cap_seed = provider_tasks.seed_openalex_provider_tasks(
+            user_id="user",
+            projekt_id="project",
+            run_id="run-123",
+            queries=[
+                OpenAlexQuery(
+                    intent="match",
+                    language="en",
+                    search_field="title_and_abstract.search",
+                    query_string='"balance sheet" AND automation',
+                    filters="language:en",
+                    sort="relevance_score:desc",
+                    per_page=200,
+                    notes="cap-test",
+                )
+            ],
+            run_doc=fake_fs_cap.get_run(user_id="user", projekt_id="project", run_id="run-123"),
+        )
+        processed_cap = await _drain(dispatcher_cap)
+        final_doc_cap = fake_fs_cap.get_run(user_id="user", projekt_id="project", run_id="run-123")
+        cap_task = fake_fs_cap.task_docs[("user", "project", "run-123", f"openalex--{processed_cap[0]['task_name']}")]
+        cap_summary = cap_task.get("summary") or {}
     finally:
         provider_tasks.QuellenFinderFirestoreService = original["QuellenFinderFirestoreService"]
         provider_tasks._artifact_store_from_run_doc = original["_artifact_store_from_run_doc"]
         provider_tasks.build_two_lane_task_dispatcher = original["build_two_lane_task_dispatcher"]
         provider_tasks.PipelineConfig.from_env = original["PipelineConfig_from_env"]
+        provider_tasks.request_json = original["request_json"]
         provider_tasks.cloud_run_job_launcher.execute_two_lane_sources_job = original["launch"]
         server.shutdown()
         server.server_close()
@@ -490,6 +600,26 @@ async def _main() -> dict[str, Any]:
         raise RuntimeError(f"S2 stage not marked success: {final_doc.get('splitExecution')}")
     if (((final_doc.get("splitExecution") or {}).get("candidates") or {}).get("status")) != "queued":
         raise RuntimeError(f"Candidates stage not queued: {final_doc.get('splitExecution')}")
+    if int(openalex_cap_seed.get("seeded_tasks") or 0) != 1:
+        raise RuntimeError(f"Unexpected capped seed count: {openalex_cap_seed}")
+    if len(processed_cap) != 1:
+        raise RuntimeError(f"Expected one capped task result, got: {processed_cap}")
+    if int(((processed_cap[0].get("result") or {}).get("pages_processed") or 0)) != 5:
+        raise RuntimeError(f"Expected capped task to stop after 5 pages: {processed_cap}")
+    if not bool(cap_summary.get("query_page_cap_hit")):
+        raise RuntimeError(f"Expected capped task summary to mark query_page_cap_hit: {cap_summary}")
+    if dispatcher_cap.tasks:
+        raise RuntimeError(f"Did not expect capped task continuation enqueue: {dispatcher_cap.tasks}")
+    if (((final_doc_cap.get("splitExecution") or {}).get("openalex_fetch") or {}).get("status")) != "success":
+        raise RuntimeError(f"Capped OpenAlex stage not marked success: {final_doc_cap.get('splitExecution')}")
+    if not cap_request_args:
+        raise RuntimeError("Expected cap scenario to record request arguments.")
+    if float((cap_request_args[0] or {}).get("timeout_s") or 0.0) != 30.0:
+        raise RuntimeError(f"Expected capped timeout 30.0, got {cap_request_args[0]}")
+    if int((cap_request_args[0] or {}).get("max_attempts") or 0) != 3:
+        raise RuntimeError(f"Expected capped max_attempts 3, got {cap_request_args[0]}")
+    if float((cap_request_args[0] or {}).get("backoff_max_s") or 0.0) != 15.0:
+        raise RuntimeError(f"Expected capped backoff_max_s 15.0, got {cap_request_args[0]}")
 
     return {
         "ok": True,
@@ -499,6 +629,10 @@ async def _main() -> dict[str, Any]:
         "launches": launches,
         "openalex_materialized": openalex_materialized,
         "s2_materialized": s2_materialized,
+        "openalex_cap_seed": openalex_cap_seed,
+        "processed_cap_tasks": processed_cap,
+        "cap_summary": cap_summary,
+        "cap_request_args": cap_request_args,
         "request_count": len(state.requests),
         "requests": state.requests,
     }

@@ -115,6 +115,11 @@ TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS=150
 TWO_LANE_PROVIDER_TASK_MAX_RUNTIME_S=480
 TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK=12
 TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK=5
+TWO_LANE_OPENALEX_TASK_MAX_PAGES_TOTAL_PER_QUERY=120
+TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_TOTAL_PER_QUERY=30
+TWO_LANE_PROVIDER_TASK_REQUEST_TIMEOUT_S=30
+TWO_LANE_PROVIDER_TASK_REQUEST_MAX_ATTEMPTS=3
+TWO_LANE_PROVIDER_TASK_REQUEST_BACKOFF_MAX_S=15
 TWO_LANE_TASK_DISPATCH_BACKEND=local_background
 TWO_LANE_TASKS_PROJECT=
 TWO_LANE_TASKS_LOCATION=europe-west3
@@ -167,6 +172,12 @@ PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
   - per-provider-task time budget before a bounded continuation task is queued
 - `TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK` / `TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK`
   - per-task page caps for the bounded query-chain provider workers; keep these low enough that cloud task handlers finish well below the worker service timeout
+- `TWO_LANE_OPENALEX_TASK_MAX_PAGES_TOTAL_PER_QUERY` / `TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_TOTAL_PER_QUERY`
+  - hard caps for a single provider query chain so one overly broad query cannot monopolize the whole run
+- `TWO_LANE_PROVIDER_TASK_REQUEST_TIMEOUT_S`
+  - per-request timeout inside a provider worker; keep this well below the Cloud Run request timeout
+- `TWO_LANE_PROVIDER_TASK_REQUEST_MAX_ATTEMPTS` / `TWO_LANE_PROVIDER_TASK_REQUEST_BACKOFF_MAX_S`
+  - task-local HTTP retry budget; keep this low because Cloud Tasks already retries whole task executions
 - `TWO_LANE_TASK_DISPATCH_BACKEND`
   - `local_background` / `local_inline` for local task execution
   - `cloud_tasks` for the queued provider-fetch path on Cloud Run

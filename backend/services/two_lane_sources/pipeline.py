@@ -4871,9 +4871,14 @@ class PipelineConfig(BaseModel):
     provider_rate_limit_collection: str = "quellenFinderProviderRateLimits"
     provider_rate_limit_max_future_ms: int = 86_400_000
     provider_rate_limit_dispatch_buffer_ms: int = 150
-    provider_task_max_runtime_s: float = 900.0
-    openalex_task_max_pages_per_task: int = 100
-    semanticscholar_task_max_pages_per_task: int = 25
+    provider_task_max_runtime_s: float = 480.0
+    openalex_task_max_pages_per_task: int = 12
+    semanticscholar_task_max_pages_per_task: int = 5
+    openalex_task_max_pages_total_per_query: int = 120
+    semanticscholar_task_max_pages_total_per_query: int = 30
+    provider_task_request_timeout_s: float = 30.0
+    provider_task_request_max_attempts: int = 3
+    provider_task_request_backoff_max_s: float = 15.0
 
     # Hard caps
     max_queries_per_provider: int = 50
@@ -4979,9 +4984,14 @@ class PipelineConfig(BaseModel):
             ),
             provider_rate_limit_max_future_ms=_read_int("TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS", 86_400_000),
             provider_rate_limit_dispatch_buffer_ms=_read_int("TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS", 150),
-            provider_task_max_runtime_s=_read_float("TWO_LANE_PROVIDER_TASK_MAX_RUNTIME_S", 900.0),
-            openalex_task_max_pages_per_task=_read_int("TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK", 100),
-            semanticscholar_task_max_pages_per_task=_read_int("TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK", 25),
+            provider_task_max_runtime_s=_read_float("TWO_LANE_PROVIDER_TASK_MAX_RUNTIME_S", 480.0),
+            openalex_task_max_pages_per_task=_read_int("TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK", 12),
+            semanticscholar_task_max_pages_per_task=_read_int("TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK", 5),
+            openalex_task_max_pages_total_per_query=_read_int("TWO_LANE_OPENALEX_TASK_MAX_PAGES_TOTAL_PER_QUERY", 120),
+            semanticscholar_task_max_pages_total_per_query=_read_int("TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_TOTAL_PER_QUERY", 30),
+            provider_task_request_timeout_s=_read_float("TWO_LANE_PROVIDER_TASK_REQUEST_TIMEOUT_S", 30.0),
+            provider_task_request_max_attempts=_read_int("TWO_LANE_PROVIDER_TASK_REQUEST_MAX_ATTEMPTS", 3),
+            provider_task_request_backoff_max_s=_read_float("TWO_LANE_PROVIDER_TASK_REQUEST_BACKOFF_MAX_S", 15.0),
         )
 
 

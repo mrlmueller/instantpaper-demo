@@ -3,6 +3,7 @@ from firebase_admin import credentials, auth, firestore
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP, Increment
 from utils.config import config
 import logging
+import threading
 from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ class FirebaseService:
     _instance = None
     _initialized = False
     _db = None
+    _init_lock = threading.Lock()
 
     def __new__(cls):
         """Singleton pattern to ensure only one Firebase instance"""
@@ -29,7 +31,11 @@ class FirebaseService:
 
     def _ensure_initialized(self):
         """Lazy initialization - only initialize when actually needed"""
-        if not self._initialized:
+        if self._initialized and self._db is not None:
+            return
+        with self._init_lock:
+            if self._initialized and self._db is not None:
+                return
             try:
                 options = {}
                 if config.FIREBASE_PROJECT_ID:
@@ -37,25 +43,34 @@ class FirebaseService:
                 if config.FIREBASE_STORAGE_BUCKET:
                     options["storageBucket"] = config.FIREBASE_STORAGE_BUCKET
 
-                has_key_pair = bool(config.FIREBASE_PRIVATE_KEY and config.FIREBASE_CLIENT_EMAIL)
-                if has_key_pair:
-                    cred_dict = {
-                        "type": "service_account",
-                        "project_id": config.FIREBASE_PROJECT_ID,
-                        "private_key": config.FIREBASE_PRIVATE_KEY.replace('\\n', '\n'),
-                        "client_email": config.FIREBASE_CLIENT_EMAIL,
-                        "token_uri": "https://oauth2.googleapis.com/token",
-                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                    }
+                try:
+                    firebase_admin.get_app()
+                    app_was_already_initialized = True
+                except ValueError:
+                    app_was_already_initialized = False
 
-                    cred = credentials.Certificate(cred_dict)
-                    firebase_admin.initialize_app(cred, options or None)
-                    logger.info("Firebase Admin SDK initialized with explicit service account credentials")
+                if not app_was_already_initialized:
+                    has_key_pair = bool(config.FIREBASE_PRIVATE_KEY and config.FIREBASE_CLIENT_EMAIL)
+                    if has_key_pair:
+                        cred_dict = {
+                            "type": "service_account",
+                            "project_id": config.FIREBASE_PROJECT_ID,
+                            "private_key": config.FIREBASE_PRIVATE_KEY.replace('\\n', '\n'),
+                            "client_email": config.FIREBASE_CLIENT_EMAIL,
+                            "token_uri": "https://oauth2.googleapis.com/token",
+                            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                        }
+
+                        cred = credentials.Certificate(cred_dict)
+                        firebase_admin.initialize_app(cred, options or None)
+                        logger.info("Firebase Admin SDK initialized with explicit service account credentials")
+                    else:
+                        cred = credentials.ApplicationDefault()
+                        firebase_admin.initialize_app(cred, options or None)
+                        logger.info("Firebase Admin SDK initialized with Application Default Credentials")
                 else:
-                    cred = credentials.ApplicationDefault()
-                    firebase_admin.initialize_app(cred, options or None)
-                    logger.info("Firebase Admin SDK initialized with Application Default Credentials")
+                    logger.info("Firebase Admin SDK already initialized; reusing default app")
 
                 # Initialize Firestore client
                 self._db = firestore.client()

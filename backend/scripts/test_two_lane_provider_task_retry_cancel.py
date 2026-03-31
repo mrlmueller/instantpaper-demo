@@ -91,16 +91,29 @@ class FakeFirestoreService:
         return True
 
     def claim_two_lane_provider_task(self, *, user_id: str, projekt_id: str, run_id: str, provider: str, task_key: str, stale_after_ms: int = 1_800_000) -> bool:
+        result = self.claim_two_lane_provider_task_result(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            provider=provider,
+            task_key=task_key,
+            stale_after_ms=stale_after_ms,
+        )
+        return str((result or {}).get("status") or "").strip().lower() == "claimed"
+
+    def claim_two_lane_provider_task_result(self, *, user_id: str, projekt_id: str, run_id: str, provider: str, task_key: str, stale_after_ms: int = 1_800_000) -> dict[str, Any]:
         del stale_after_ms
         key = (str(user_id), str(projekt_id), str(run_id), f"{provider}--{task_key}")
         task = self.task_docs.get(key)
         if task is None:
-            return False
+            return {"status": "missing"}
         status_now = str(task.get("status") or "").strip().lower()
-        if status_now in {"success", "running", "cancelled", "skipped"}:
-            return False
+        if status_now == "success":
+            return {"status": "already_success"}
+        if status_now in {"running", "cancelled", "skipped"}:
+            return {"status": "running"}
         task["status"] = "running"
-        return True
+        return {"status": "claimed"}
 
     def complete_two_lane_provider_task(self, *, user_id: str, projekt_id: str, run_id: str, provider: str, task_key: str, stage_name: str, summary: dict[str, Any] | None = None) -> dict[str, Any]:
         key = (str(user_id), str(projekt_id), str(run_id), f"{provider}--{task_key}")
