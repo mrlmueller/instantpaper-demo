@@ -4,7 +4,6 @@ import asyncio
 import json
 import math
 import re
-import time
 from array import array
 from bisect import bisect_right
 from datetime import date
@@ -26,12 +25,14 @@ from .pipeline import (
     load_metrics,
     log_event,
     read_json,
+    request_json,
     save_metrics,
     stable_hash,
     stage_timer,
     utc_now_iso,
     write_json,
 )
+from .provider_rate_limit import build_provider_rate_limiter
 
 
 def _clip01(x: float) -> float:
@@ -676,26 +677,20 @@ def s2_recommendations_expand(
     session.headers.update({"User-Agent": "instantpaper-two-lane/1.0"})
     if cfg.semanticscholar_api_key:
         session.headers.update({"x-api-key": cfg.semanticscholar_api_key})
+    stage = "phase_f_semanticscholar_recommendations"
+    limiter = build_provider_rate_limiter(
+        provider="semanticscholar",
+        rps=cfg.semanticscholar_rps,
+        backend=cfg.provider_rate_limit_backend,
+        collection_name=cfg.provider_rate_limit_collection,
+        holder=f"run:{run_ctx.run_id}",
+        run_id=run_ctx.run_id,
+        stage=stage,
+        max_future_ms=cfg.provider_rate_limit_max_future_ms,
+        dispatch_buffer_ms=cfg.provider_rate_limit_dispatch_buffer_ms,
+    )
 
-    def _req_json(method: str, url: str, *, params=None, body=None, max_attempts: int = 8) -> Any:
-        attempt = 0
-        backoff = 1.0
-        while True:
-            attempt += 1
-            try:
-                r = session.request(method, url, params=params, json=body, timeout=float(cfg.semanticscholar_timeout_s))
-                if r.status_code in (429, 500, 502, 503, 504):
-                    raise RuntimeError(f"status={r.status_code}")
-                if r.status_code >= 400:
-                    raise RuntimeError(f"S2 HTTP {r.status_code}: {r.text[:400]}")
-                return r.json()
-            except Exception:
-                if attempt >= max_attempts:
-                    raise
-                time.sleep(min(60.0, backoff))
-                backoff *= 2.0
-
-    rec_base = "https://api.semanticscholar.org/recommendations/v1/papers"
+    rec_base = str(cfg.semanticscholar_recommendations_url or "https://api.semanticscholar.org/recommendations/v1/papers").strip()
 
     fetched = 0
     new_ids: List[str] = []
@@ -705,13 +700,20 @@ def s2_recommendations_expand(
         if len(have) >= int(limit):
             continue
 
-        time.sleep(max(0.0, 1.0 / float(cfg.semanticscholar_rps or 1.0)))
-
-        data = _req_json(
-            "POST",
-            rec_base,
+        data = request_json(
+            run_ctx=run_ctx,
+            stage=stage,
+            provider="semanticscholar",
+            session=session,
+            method="POST",
+            url=rec_base,
             params={"limit": int(limit), "fields": "paperId"},
             body={"positivePaperIds": [sp], "negativePaperIds": []},
+            timeout_s=float(cfg.semanticscholar_timeout_s),
+            rate_limiter=limiter,
+            max_attempts=10,
+            backoff_initial_s=2.0,
+            backoff_max_s=120.0,
         )
 
         recs = []
@@ -753,8 +755,21 @@ def s2_recommendations_expand(
 
         uniq = list(dict.fromkeys(new_ids))
         for chunk in [uniq[i : i + 500] for i in range(0, len(uniq), 500)]:
-            time.sleep(max(0.0, 1.0 / float(cfg.semanticscholar_rps or 1.0)))
-            data = _req_json("POST", batch_url, params={"fields": fields}, body={"ids": chunk}, max_attempts=10)
+            data = request_json(
+                run_ctx=run_ctx,
+                stage=stage,
+                provider="semanticscholar",
+                session=session,
+                method="POST",
+                url=batch_url,
+                params={"fields": fields},
+                body={"ids": chunk},
+                timeout_s=float(cfg.semanticscholar_timeout_s),
+                rate_limiter=limiter,
+                max_attempts=10,
+                backoff_initial_s=2.0,
+                backoff_max_s=120.0,
+            )
             if isinstance(data, list):
                 hydrated.extend([x for x in data if isinstance(x, dict)])
             elif isinstance(data, dict) and isinstance(data.get("data"), list):

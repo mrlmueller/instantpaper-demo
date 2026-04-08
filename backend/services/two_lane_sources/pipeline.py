@@ -25,6 +25,7 @@ import statistics
 import subprocess
 import tempfile
 import time
+import threading
 import traceback
 import unicodedata
 from array import array
@@ -50,10 +51,13 @@ from services.firebase_service import firebase_service
 from services.openai_budget_service import get_openai_budget_service
 from services.openai_service import OpenAIService
 from services.user_key_service import user_key_service
+from services.two_lane_sources.provider_rate_limit import build_provider_rate_limiter
 from utils.config import config as app_config
 from utils.token_estimation import count_tokens
 
 logger = logging.getLogger(__name__)
+_METRICS_LOCKS_GUARD = threading.Lock()
+_METRICS_LOCKS: dict[str, threading.Lock] = {}
 
 
 # -----------------------------
@@ -335,14 +339,38 @@ def save_metrics(run_ctx: RunContext, metrics: Dict[str, Any]) -> None:
     write_json(run_ctx.artifacts.metrics_json, metrics)
 
 
+def _metrics_lock(run_ctx: RunContext) -> threading.Lock:
+    key = str(Path(run_ctx.artifacts.metrics_json).resolve())
+    with _METRICS_LOCKS_GUARD:
+        lock = _METRICS_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _METRICS_LOCKS[key] = lock
+        return lock
+
+
+def update_metrics(run_ctx: RunContext, updater) -> Dict[str, Any]:
+    lock = _metrics_lock(run_ctx)
+    with lock:
+        metrics = load_metrics(run_ctx)
+        updated = updater(metrics)
+        out = updated if isinstance(updated, dict) else metrics
+        save_metrics(run_ctx, out)
+        return out
+
+
 @contextmanager
 def stage_timer(run_ctx: RunContext, stage: str):
     t0 = time.time()
     yield
     dt = time.time() - t0
-    metrics = load_metrics(run_ctx)
-    metrics.setdefault("stages", {}).setdefault(stage, {})["last_duration_s"] = round(dt, 3)
-    save_metrics(run_ctx, metrics)
+    update_metrics(
+        run_ctx,
+        lambda metrics: (
+            metrics.setdefault("stages", {}).setdefault(stage, {}).__setitem__("last_duration_s", round(dt, 3))
+            or metrics
+        ),
+    )
 
 
 # -----------------------------
@@ -1351,6 +1379,16 @@ def _repair_query_plan(plan: QueryPlan) -> Tuple[QueryPlan, List[str]]:
             repair_notes.append(f"created {kind} authority blueprint for facets {chunk}")
             unassigned = [fid for fid in unassigned if fid not in set(chunk)]
 
+        if unassigned and kind == "booster":
+            demote_set = set(unassigned)
+            repaired_facets = [
+                (f.model_copy(update={"authority_role": "none"}) if f.facet_id in demote_set else f)
+                for f in repaired_facets
+            ]
+            repair_notes.append(
+                f"demoted booster authority_role to 'none' for facets {sorted(demote_set)} because authority blueprint capacity was exhausted"
+            )
+
     repaired_plan = plan.model_copy(update={"facets": repaired_facets, "authority_blueprints": repaired_blueprints})
     return repaired_plan, repair_notes
 
@@ -1705,9 +1743,13 @@ async def plan_queries_llm(
     write_json(cache_path, plan.model_dump(mode="json"))
     log_event(run_ctx, stage=stage, event="cache_write", path=str(cache_path), model_used=meta.get("model_used"), usage=meta.get("usage"), cost=meta.get("cost_usd"))
 
-    metrics = load_metrics(run_ctx)
-    metrics.setdefault("stages", {}).setdefault(stage, {})["openai"] = meta
-    save_metrics(run_ctx, metrics)
+    update_metrics(
+        run_ctx,
+        lambda metrics: (
+            metrics.setdefault("stages", {}).setdefault(stage, {}).__setitem__("openai", meta)
+            or metrics
+        ),
+    )
 
     meta = dict(meta)
     meta["cache_hit"] = False
@@ -1804,9 +1846,10 @@ Your job is to maximize useful recall without losing the chapter's true object.
 Priority order:
 1) Keep every query inside the chapter object, corpus, or domain.
 2) Cover the main constructs, data/proxy constraints, and required facets.
-3) Add breadth through controlled synonym and facet variation.
-4) Add authority boosters only when they remain chapter-anchored.
-5) Prefer simpler provider-safe syntax over clever but brittle syntax.
+3) Rotate core object terms across the match set before repeating near-duplicate object families.
+4) Add breadth through controlled synonym and facet variation.
+5) Add authority boosters only when they remain chapter-anchored.
+6) Prefer simpler provider-safe syntax over clever but brittle syntax.
 
 Do not output prose. Output only valid JSON.
 Be deterministic.
@@ -1843,6 +1886,15 @@ PLANNER-CONTROLLED INPUT FIELDS:
 - authority_blueprints is the canonical upstream authority split.
 - authority_blueprints_expanded repeats each blueprint with its target facet controls for easier use.
 - Generate authority queries from authority_blueprints first. Do not invent flat authority families that ignore this split.
+- Treat primary_context_anchors as semantic reference anchors, not mandatory verbatim strings.
+- Treat core_object_terms as the preferred object rotation set for MATCH queries.
+
+INTERPRETING PLANNER ANCHORS:
+- Preserve the meaning of primary_context_anchors, but exact surface-form copying is NOT required when it would sound unnatural in titles/abstracts.
+- If a planner anchor is a fused phrase, you may decompose it into natural literature phrasing while keeping the same meaning explicit.
+- Example: `Sparkasse pilot projects` can become `Sparkasse` + `"pilot project"` or `"case study"`.
+- Example: `Marktfolge back office` can become `Marktfolge` + `"back office"` or `"post-sale operations"`.
+- Example: `bank document automation` can become `"document automation"` + bank/Sparkasse context when that is more literature-native.
 
 OUTPUT JSON SCHEMA:
 {
@@ -1876,7 +1928,9 @@ So for THIS task:
 - avoid slash tokens X/Y; rewrite as (X OR Y)
 
 MANDATORY RETRIEVAL RULES:
-1) Every query MUST include at least one term from primary_context_anchors[language].
+1) Every query MUST remain explicitly anchored to the chapter object/domain using core_object_terms[language] and/or primary_context_anchors[language].
+   Exact verbatim reuse of a planner anchor is NOT required if a natural decomposed variant is clearer and still equivalent.
+   Workflow/context terms like `market follow-up`, `Marktfolge`, `back office`, or `operations automation` do NOT count by themselves; pair them with an explicit document object such as `balance sheet`, `BWA report`, or `contract`.
 2) Every MATCH query must include:
    - one core object/corpus/domain anchor
    - and one construct/data/method group that is meaningful only inside that object
@@ -1916,6 +1970,12 @@ LANGUAGE POLICY:
 - if the German rendering becomes too literal, niche, or implementation-like, prefer one strongly object-anchored DE core query over multiple dead DE clones
 - keep DE coverage for queries whose object phrase and facet phrase are both likely to appear in German titles/abstracts
 
+MATCH-SET DIVERSITY RULES:
+- Spread MATCH queries across different core_object_terms before repeating the same object family with new facet or method wording.
+- If multiple document/corpus types are relevant, give each one at least one clearly object-led MATCH query before adding near-duplicate expansions.
+- Do not let one English object-anchor pair dominate most of the MATCH set when multiple plausible core_object_terms are available.
+- When broad authority coverage is needed, vary the high-level object wording rather than cloning the same object pair with minor syntax changes.
+
 LEXICALITY POLICY:
 - prefer literature-native phrases that are likely to appear verbatim in titles/abstracts
 - prefer direct object phrases over implementation jargon or abstract substitutes
@@ -1946,6 +2006,8 @@ EMPTY-QUERY TARGET:
 SELF-CHECK (must enforce silently):
 - Would this query still retrieve many generic method surveys if the object phrase were removed? If yes, strengthen it.
 - Does every query include an object anchor, not only a method term? If not, fix it.
+- For MATCH queries in the same language, am I reusing the same object-anchor pair too often? If yes, rotate to other core_object_terms.
+- Am I copying a fused planner anchor literally even though a decomposed literature-native phrasing would be clearer? If yes, rewrite it.
 - Did this authority query come from a core or booster authority blueprint? If not, fix it.
 - Does the query shape match the facet's query_family_preference? If not, fix it.
 - Are exclusions atomic and provider-safe? If not, omit them.
@@ -2062,6 +2124,8 @@ PRIMARY_CONTEXT_OR_GROUP:
 - when available, include at least 2 distinct object/context anchors
 - prefer direct object phrases such as `online reviews`, `user reviews`, `customer reviews`, `review platforms`
 - avoid abstract substitutes such as `user generated content` unless paired with a direct object phrase
+- at least 1 term in PRIMARY_CONTEXT_OR_GROUP MUST be an explicit document/corpus object from core_object_terms for that language
+- workflow-only context such as `market follow-up`, `Marktfolge`, `back office`, or `operations automation` is NOT sufficient by itself; pair it with an explicit object like `balance sheets`, `BWA reports`, or `contracts`
 
 SECOND_CONTEXT_OR_GROUP:
 - optional but recommended only when it clearly reduces drift
@@ -2135,6 +2199,7 @@ SELF-CHECK (MUST DO, FIX SILENTLY):
 - if the German version is a literal translation that is unlikely to appear in titles/abstracts, replace it with a bilingual or English fallback
 - if the query depends on acronym-only shorthand, rewrite it with full terms
 - if advanced syntax is unnecessary, simplify it
+- if PRIMARY_CONTEXT only names workflow/context and not an explicit document object, fix it
 - Did this authority query come from a core or booster blueprint? If not, fix it.
 - Does the query shape match the facet's query_family_preference? If not, fix it.
 
@@ -2533,78 +2598,6 @@ def _canonicalize_openalex_filters(filters: str, *, language: str) -> str:
     return ",".join(required + tail)
 
 
-def _normalize_openalex_query(q: OpenAlexQuery) -> OpenAlexQuery:
-    qs = _normalize_unicode_query_text(str(q.query_string or "")).strip()
-    if any(ch in qs for ch in ("*", "?", "~")):
-        raise ValueError(f"OpenAlex forbidden character in query_string: {qs!r}")
-    qs = _expand_slash_tokens(qs, or_operator="OR")
-    qs = _uppercase_boolean_ops_outside_quotes(qs)
-    qs = re.sub(r"\s+", " ", qs).strip()
-    _lint_openalex_not_clauses_atomic(qs)
-
-    filters = _canonicalize_openalex_filters(q.filters, language=q.language)
-
-    search_field = getattr(q, "search_field", None) or "title_and_abstract.search"
-    if q.intent == "match":
-        search_field = "title_and_abstract.search"
-    elif search_field not in ("default.search", "title_and_abstract.search"):
-        search_field = "title_and_abstract.search"
-
-    sort = q.sort
-    if q.intent == "authority":
-        sort = "cited_by_count:desc"
-    elif q.intent == "match":
-        if sort not in (None, "relevance_score:desc"):
-            sort = "relevance_score:desc"
-
-    notes = _limit_words(q.notes, 18)
-
-    return q.model_copy(
-        update={
-            "search_field": search_field,
-            "query_string": qs,
-            "filters": filters,
-            "sort": sort,
-            "per_page": 200,
-            "notes": notes,
-        }
-    )
-
-
-def _normalize_s2_query(q: S2BulkQuery) -> S2BulkQuery:
-    qs = _normalize_unicode_query_text(str(q.query_string or ""))
-    qs = _expand_slash_tokens(qs.strip(), or_operator="|")
-    qs = re.sub(r"\s+", " ", qs)
-    if "?" in qs:
-        raise ValueError(f"S2 forbidden character in query_string: {qs!r}")
-    _validate_s2_advanced_ops(qs)
-    _lint_s2_negative_terms_atomic(qs)
-    if not re.search(r"\+\s*(?:\(|\")", qs):
-        raise ValueError(f"S2 query_string must contain at least one +anchor: {qs!r}")
-
-    plus_count = len(re.findall(r"(?:^|\s)\+", qs))
-    if q.intent == "match" and plus_count < 2:
-        raise ValueError(f"S2 match query_string must contain >=2 required components (+): {qs!r}")
-
-    depth = 0
-    in_quote = False
-    for ch in qs:
-        if ch == '"':
-            in_quote = not in_quote
-            continue
-        if in_quote:
-            continue
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth = max(depth - 1, 0)
-        elif ch == "|" and depth <= 0:
-            raise ValueError(f"S2 operator sanity: '|' must be inside parentheses: {qs!r}")
-
-    notes = _limit_words(q.notes, 18)
-    return q.model_copy(update={"query_string": qs.strip(), "notes": notes})
-
-
 def _validate_language_coverage(queries: List[Any], *, provider: str) -> None:
     langs = sorted({getattr(q, "language", None) for q in queries})
     if "en" not in langs or "de" not in langs:
@@ -2615,42 +2608,6 @@ def _validate_intent_coverage(queries: List[Any], *, provider: str) -> None:
     intents = sorted({getattr(q, "intent", None) for q in queries})
     if "authority" not in intents or "match" not in intents:
         raise ValueError(f"{provider}: expected both intents authority+match, got {intents}")
-
-
-def _find_anchor_terms_in_text(text: str, terms: List[str]) -> List[str]:
-    s = str(text or "").casefold()
-    hits: List[str] = []
-    for t in terms or []:
-        tt = str(t or "").strip()
-        if not tt:
-            continue
-        if tt.casefold() in s:
-            hits.append(tt)
-    return hits
-
-
-def _validate_openalex_anchor_presence(queries: List[OpenAlexQuery], *, plan: QueryPlan) -> None:
-    for q in queries:
-        anchors = getattr(plan.primary_context_anchors, q.language, []) or []
-        if not anchors:
-            continue
-        hits = _find_anchor_terms_in_text(q.query_string, list(anchors))
-        if not hits:
-            raise ValueError(
-                f"OpenAlex: query missing required anchor (lang={q.language}, intent={q.intent}): {q.query_string!r}"
-            )
-
-
-def _validate_s2_anchor_presence(queries: List[S2BulkQuery], *, plan: QueryPlan) -> None:
-    for q in queries:
-        anchors = getattr(plan.primary_context_anchors, q.language, []) or []
-        if not anchors:
-            continue
-        hits = _find_anchor_terms_in_text(q.query_string, list(anchors))
-        if not hits:
-            raise ValueError(
-                f"S2: query missing required primary anchor (lang={q.language}, intent={q.intent}): {q.query_string!r}"
-            )
 
 
 def _openalex_quote_term(term: str) -> str:
@@ -2674,7 +2631,7 @@ def _maybe_inject_missing_openalex_anchor(q: OpenAlexQuery, *, plan: QueryPlan) 
     if not anchors:
         return q, False
 
-    hits = _find_anchor_terms_in_text(q.query_string, anchors)
+    hits = _find_anchor_terms_in_text(q.query_string, anchors, language=q.language)
     if hits:
         return q, False
 
@@ -2705,7 +2662,7 @@ def _maybe_inject_missing_s2_anchor(q: S2BulkQuery, *, plan: QueryPlan) -> Tuple
         return q, False
 
     s = str(q.query_string or "").strip()
-    hits = _find_anchor_terms_in_text(s, anchors)
+    hits = _find_anchor_terms_in_text(s, anchors, language=q.language)
 
     plus_count = len(re.findall(r"(?:^|\s)\+", s))
     has_plus_anchor = bool(re.search(r"\+\s*(?:\(|\")", s))
@@ -2760,59 +2717,6 @@ def _maybe_inject_missing_s2_anchor(q: S2BulkQuery, *, plan: QueryPlan) -> Tuple
     return q.model_copy(update={"query_string": new_qs}), True
 
 
-def _validate_openalex_match_anchor_fingerprint_diversity(
-    queries: List[OpenAlexQuery],
-    *,
-    plan: QueryPlan,
-    max_share: float = 0.60,
-) -> None:
-    for lang in ("en", "de"):
-        anchors = getattr(plan.primary_context_anchors, lang, []) or []
-        anchors = [t for t in anchors if str(t or "").strip()]
-        if not anchors:
-            continue
-
-        match_qs = [q for q in queries if q.intent == "match" and q.language == lang]
-        if len(match_qs) < 4:
-            continue
-
-        # Some plans include 1–2 very generic, chapter-wide anchors that will naturally show up in nearly every
-        # query (e.g. time period + geography). We exclude those "always-on" anchors from the diversity heuristic
-        # to avoid false positives that would otherwise abort the run.
-        presence_counts: Dict[str, int] = {str(a): 0 for a in anchors}
-        for q in match_qs:
-            qs = str(q.query_string or "")
-            for a in anchors:
-                if str(a).casefold() in qs.casefold():
-                    presence_counts[str(a)] += 1
-
-        n_total = max(len(match_qs), 1)
-        variable_anchors = [a for a in anchors if (presence_counts.get(str(a), 0) / n_total) < 0.90]
-        if len(variable_anchors) < 2:
-            continue
-
-        counts: Dict[Tuple[str, str], int] = {}
-        eligible = 0
-        for q in match_qs:
-            hits = _find_anchor_terms_in_text(q.query_string, variable_anchors)
-            top2 = [h.lower() for h in hits[:2]]
-            if len(top2) < 2:
-                continue
-            fp = (top2[0], top2[1])
-            counts[fp] = counts.get(fp, 0) + 1
-            eligible += 1
-
-        if eligible < 4:
-            continue
-
-        most_fp, most_n = max(counts.items(), key=lambda kv: kv[1])
-        share = most_n / max(eligible, 1)
-        if share > float(max_share):
-            raise ValueError(
-                f"OpenAlex: anchor fingerprint concentration too high (lang={lang}, share={share:.2f}, fp={most_fp}): regenerate"
-            )
-
-
 def _count_s2_required_components(qs: str) -> int:
     return len(re.findall(r"(?:^|\s)\+(?=(?:\(|\"|[\w]))", str(qs or ""), flags=re.UNICODE))
 
@@ -2862,6 +2766,7 @@ def _normalize_openalex_query(q: OpenAlexQuery) -> OpenAlexQuery:
     search_field = raw_search_field
 
     qs = _normalize_unicode_query_text(str(q.query_string or "")).strip()
+    qs = qs.replace('\\"', '"').replace("\\'", "'")
     qs = _expand_slash_tokens(qs, or_operator="OR")
     qs = _uppercase_boolean_ops_outside_quotes(qs)
     qs = re.sub(r"\s+", " ", qs).strip()
@@ -2895,6 +2800,7 @@ def _normalize_openalex_query(q: OpenAlexQuery) -> OpenAlexQuery:
 
 def _normalize_s2_query(q: S2BulkQuery) -> S2BulkQuery:
     qs = _normalize_unicode_query_text(str(q.query_string or ""))
+    qs = qs.replace('\\"', '"').replace("\\'", "'")
     qs = _expand_slash_tokens(qs.strip(), or_operator="|")
     qs = re.sub(r"\s+", " ", qs)
     if "?" in qs:
@@ -2932,14 +2838,73 @@ def _normalize_s2_query(q: S2BulkQuery) -> S2BulkQuery:
     return q.model_copy(update={"query_string": qs.strip(), "notes": notes})
 
 
-def _find_anchor_terms_in_text(text: str, terms: List[str]) -> List[str]:
-    hay = _normalize_unicode_query_text(str(text or "")).lower()
+def _normalize_anchor_match_text(text: str) -> str:
+    s = _normalize_unicode_query_text(str(text or ""))
+    s = s.replace('\\"', '"').replace("\\'", "'")
+    s = re.sub(r"[-_/]+", " ", s)
+    s = re.sub(r"[\"“”‘’()|,+]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip().casefold()
+    return f" {s} " if s else " "
+
+
+def _simple_english_singular(token: str) -> str:
+    t = str(token or "").strip()
+    if not t:
+        return ""
+    lower = t.casefold()
+    if len(lower) <= 3 or lower.isupper():
+        return lower
+    if lower.endswith("ies") and len(lower) > 4:
+        return lower[:-3] + "y"
+    if lower.endswith(("sses", "xes", "zes", "ches", "shes")) and len(lower) > 4:
+        return lower[:-2]
+    if lower.endswith("s") and not lower.endswith(("ss", "us", "is")) and len(lower) > 3:
+        return lower[:-1]
+    return lower
+
+
+def _simple_english_plural(token: str) -> str:
+    t = str(token or "").strip()
+    if not t:
+        return ""
+    lower = t.casefold()
+    if len(lower) <= 2 or lower.endswith("s"):
+        return lower
+    if lower.endswith("y") and len(lower) > 2 and lower[-2] not in "aeiou":
+        return lower[:-1] + "ies"
+    if lower.endswith(("x", "z", "ch", "sh")):
+        return lower + "es"
+    return lower + "s"
+
+
+def _anchor_term_variants(term: str, *, language: str = "") -> List[str]:
+    raw = _normalize_anchor_match_text(term).strip()
+    if not raw:
+        return []
+
+    variants = {raw}
+    if str(language or "").casefold() == "en":
+        tokens = [tok for tok in raw.split(" ") if tok]
+        if tokens:
+            singular = " ".join(_simple_english_singular(tok) for tok in tokens).strip()
+            plural = " ".join(_simple_english_plural(tok) for tok in tokens).strip()
+            if singular:
+                variants.add(singular)
+            if plural:
+                variants.add(plural)
+
+    return sorted((variant for variant in variants if variant), key=len, reverse=True)
+
+
+def _find_anchor_terms_in_text(text: str, terms: List[str], *, language: str = "") -> List[str]:
+    hay = _normalize_anchor_match_text(str(text or ""))
     matches: List[str] = []
     for t in terms:
         tt = _normalize_unicode_query_text(str(t or "")).strip()
         if not tt:
             continue
-        if tt.lower() in hay:
+        variants = _anchor_term_variants(tt, language=language)
+        if any(f" {variant} " in hay for variant in variants):
             matches.append(tt)
     matches.sort(key=lambda x: len(x), reverse=True)
 
@@ -2954,12 +2919,47 @@ def _find_anchor_terms_in_text(text: str, terms: List[str]) -> List[str]:
     return uniq
 
 
+def _dedupe_terms_preserve_order(terms: List[str]) -> List[str]:
+    seen: set[str] = set()
+    deduped: List[str] = []
+    for term in terms:
+        clean = str(term or "").strip()
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        deduped.append(clean)
+        seen.add(key)
+    return deduped
+
+
+def _plan_object_facet_terms(plan: QueryPlan, language: str) -> List[str]:
+    terms: List[str] = []
+    for facet in getattr(plan, "facets", []) or []:
+        if getattr(facet, "facet_group", "") != "object":
+            continue
+        canonical = getattr(getattr(facet, "canonical_terms", None), language, None) or []
+        for term in canonical:
+            clean = str(term or "").strip()
+            if clean:
+                terms.append(clean)
+    return _dedupe_terms_preserve_order(terms)
+
+
+def _openalex_required_anchor_terms(*, query: OpenAlexQuery, plan: QueryPlan) -> List[str]:
+    primary_terms = list(getattr(plan.primary_context_anchors, query.language, []) or [])
+    core_terms = _plan_language_terms(plan, "core_object_terms", query.language)
+    object_terms = _plan_object_facet_terms(plan, query.language)
+    return _dedupe_terms_preserve_order(list(core_terms) + list(object_terms) + primary_terms)
+
+
 def _validate_openalex_anchor_presence(queries: List[OpenAlexQuery], *, plan: QueryPlan) -> None:
     for q in queries:
-        anchors = getattr(plan.primary_context_anchors, q.language, []) or []
+        anchors = _openalex_required_anchor_terms(query=q, plan=plan)
         if not anchors:
             continue
-        hits = _find_anchor_terms_in_text(q.query_string, list(anchors))
+        hits = _find_anchor_terms_in_text(q.query_string, list(anchors), language=q.language)
         if not hits:
             raise ValueError(f"OpenAlex: query missing required anchor (lang={q.language}, intent={q.intent}): {q.query_string!r}")
 
@@ -2969,7 +2969,7 @@ def _validate_s2_anchor_presence(queries: List[S2BulkQuery], *, plan: QueryPlan)
         anchors = getattr(plan.primary_context_anchors, q.language, []) or []
         if not anchors:
             continue
-        hits = _find_anchor_terms_in_text(q.query_string, list(anchors))
+        hits = _find_anchor_terms_in_text(q.query_string, list(anchors), language=q.language)
         if not hits:
             raise ValueError(f"S2: query missing required primary anchor (lang={q.language}, intent={q.intent}): {q.query_string!r}")
 
@@ -2978,36 +2978,96 @@ def _validate_match_core_object_presence(queries: List[Any], *, plan: QueryPlan,
     for q in queries:
         if getattr(q, "intent", None) != "match":
             continue
-        core_terms = _plan_language_terms(plan, "core_object_terms", getattr(q, "language", ""))
+        language = getattr(q, "language", "")
+        core_terms = _dedupe_terms_preserve_order(
+            _plan_language_terms(plan, "core_object_terms", language) + _plan_object_facet_terms(plan, language)
+        )
         if not core_terms:
             continue
-        hits = _find_anchor_terms_in_text(getattr(q, "query_string", ""), core_terms)
+        hits = _find_anchor_terms_in_text(getattr(q, "query_string", ""), core_terms, language=language)
         if not hits:
             raise ValueError(
-                f"{provider}: match query missing core object term (lang={getattr(q, 'language', '')}): {getattr(q, 'query_string', '')!r}"
+                f"{provider}: match query missing core object term (lang={language}): {getattr(q, 'query_string', '')!r}"
             )
+
+
+def _select_variable_openalex_match_anchors(
+    queries: List[OpenAlexQuery],
+    *,
+    anchors: List[str],
+    always_on_share_threshold: float = 0.90,
+) -> List[str]:
+    clean_anchors = [str(anchor or "").strip() for anchor in (anchors or []) if str(anchor or "").strip()]
+    if not clean_anchors:
+        return []
+
+    presence_counts: Dict[str, int] = {anchor: 0 for anchor in clean_anchors}
+    for q in queries:
+        query_text = str(q.query_string or "")
+        for anchor in clean_anchors:
+            if anchor.casefold() in query_text.casefold():
+                presence_counts[anchor] += 1
+
+    total_queries = max(len(queries), 1)
+    variable_anchors = [
+        anchor
+        for anchor in clean_anchors
+        if 0 < presence_counts.get(anchor, 0) < total_queries
+        and (presence_counts.get(anchor, 0) / total_queries) < float(always_on_share_threshold)
+    ]
+    return variable_anchors
+
+
+def _openalex_match_fingerprint_anchor_pool(
+    queries: List[OpenAlexQuery],
+    *,
+    plan: QueryPlan,
+    language: str,
+    always_on_share_threshold: float = 0.90,
+) -> List[str]:
+    core_terms = _plan_language_terms(plan, "core_object_terms", language)
+    variable_core_terms = _select_variable_openalex_match_anchors(
+        queries,
+        anchors=list(core_terms),
+        always_on_share_threshold=always_on_share_threshold,
+    )
+    if len(variable_core_terms) >= 2:
+        return variable_core_terms
+
+    primary_terms = getattr(plan.primary_context_anchors, language, []) or []
+    variable_primary_terms = _select_variable_openalex_match_anchors(
+        queries,
+        anchors=list(primary_terms),
+        always_on_share_threshold=always_on_share_threshold,
+    )
+    return _dedupe_terms_preserve_order(list(variable_core_terms) + list(variable_primary_terms))
 
 
 def _validate_openalex_match_anchor_fingerprint_diversity(
     queries: List[OpenAlexQuery],
     *,
     plan: QueryPlan,
-    max_share: float = 0.60,
+    max_share: float = 0.75,
+    always_on_share_threshold: float = 0.90,
 ) -> None:
     for lang in ("en", "de"):
-        anchors = getattr(plan.primary_context_anchors, lang, []) or []
-        anchors = [t for t in anchors if str(t or "").strip()]
-        if not anchors:
-            continue
-
         match_qs = [q for q in queries if q.intent == "match" and q.language == lang]
         if len(match_qs) < 4:
+            continue
+
+        variable_anchors = _openalex_match_fingerprint_anchor_pool(
+            match_qs,
+            plan=plan,
+            language=lang,
+            always_on_share_threshold=always_on_share_threshold,
+        )
+        if len(variable_anchors) < 2:
             continue
 
         counts: Dict[Tuple[str, str], int] = {}
         eligible = 0
         for q in match_qs:
-            hits = _find_anchor_terms_in_text(q.query_string, anchors)
+            hits = _find_anchor_terms_in_text(q.query_string, variable_anchors, language=lang)
             top2 = [h.lower() for h in hits[:2]]
             if len(top2) < 2:
                 continue
@@ -3216,10 +3276,13 @@ async def build_openalex_queries_llm(
     write_json(cache_path, {"openalex_queries": [q.model_dump(mode="json") for q in queries]})
     log_event(run_ctx, stage=stage, event="cache_write", path=str(cache_path), model_used=meta.get("model_used"), usage=meta.get("usage"), cost=meta.get("cost_usd"), query_count=len(queries))
 
-    metrics = load_metrics(run_ctx)
-    metrics.setdefault("stages", {}).setdefault(stage, {})["openai"] = meta
-    metrics["stages"][stage]["query_count"] = len(queries)
-    save_metrics(run_ctx, metrics)
+    def _merge_query_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
+        stage_metrics = metrics.setdefault("stages", {}).setdefault(stage, {})
+        stage_metrics["openai"] = meta
+        stage_metrics["query_count"] = len(queries)
+        return metrics
+
+    update_metrics(run_ctx, _merge_query_metrics)
 
     meta = dict(meta)
     meta["cache_hit"] = False
@@ -3369,10 +3432,13 @@ async def build_s2_bulk_queries_llm(
     write_json(cache_path, {"s2_bulk_queries": [q.model_dump(mode="json") for q in queries]})
     log_event(run_ctx, stage=stage, event="cache_write", path=str(cache_path), model_used=meta.get("model_used"), usage=meta.get("usage"), cost=meta.get("cost_usd"), query_count=len(queries))
 
-    metrics = load_metrics(run_ctx)
-    metrics.setdefault("stages", {}).setdefault(stage, {})["openai"] = meta
-    metrics["stages"][stage]["query_count"] = len(queries)
-    save_metrics(run_ctx, metrics)
+    def _merge_query_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
+        stage_metrics = metrics.setdefault("stages", {}).setdefault(stage, {})
+        stage_metrics["openai"] = meta
+        stage_metrics["query_count"] = len(queries)
+        return metrics
+
+    update_metrics(run_ctx, _merge_query_metrics)
 
     meta = dict(meta)
     meta["cache_hit"] = False
@@ -3395,23 +3461,6 @@ def _trim_cache_dir(run_ctx: RunContext) -> Path:
     ensure_dir(p)
     return p
 
-
-class RateLimiter:
-    def __init__(self, rps: float):
-        self.rps = float(rps or 0.0)
-        self.min_interval = (1.0 / self.rps) if self.rps > 0 else 0.0
-        self._next_ts = 0.0
-
-    def acquire(self) -> None:
-        if self.min_interval <= 0:
-            return
-        now = time.monotonic()
-        if now < self._next_ts:
-            time.sleep(self._next_ts - now)
-        now2 = time.monotonic()
-        self._next_ts = max(self._next_ts, now2) + self.min_interval
-
-
 def _truncate_for_log(x: Any, max_str_len: int = 400) -> Any:
     if isinstance(x, str):
         return _truncate(x, max_str_len)
@@ -3433,9 +3482,32 @@ def _parse_retry_after(resp: requests.Response) -> Optional[float]:
         return None
 
 
+def _parse_header_float(resp: requests.Response, header_name: str) -> Optional[float]:
+    try:
+        raw = str((resp.headers or {}).get(str(header_name)) or "").strip()
+        if not raw:
+            return None
+        return float(raw)
+    except Exception:
+        return None
+
+
+def _openalex_budget_exhausted(resp: requests.Response) -> bool:
+    if int(getattr(resp, "status_code", 0) or 0) != 429:
+        return False
+    remaining_usd = _parse_header_float(resp, "X-RateLimit-Remaining-USD")
+    remaining = _parse_header_float(resp, "X-RateLimit-Remaining")
+    retry_after_s = _parse_retry_after(resp)
+    if remaining_usd is not None and remaining_usd <= 0.0:
+        return True
+    if remaining is not None and remaining <= 0.0 and retry_after_s is not None and retry_after_s >= 300.0:
+        return True
+    return False
+
+
 def request_json(
     *,
-    run_ctx: RunContext,
+    run_ctx: RunContext | None,
     stage: str,
     provider: str,
     session: requests.Session,
@@ -3444,7 +3516,8 @@ def request_json(
     params: Optional[Dict[str, Any]],
     body: Optional[Dict[str, Any]],
     timeout_s: float,
-    rate_limiter: Optional[RateLimiter],
+    rate_limiter: Optional[Any],
+    request_stats: Optional[Dict[str, Any]] = None,
     max_attempts: int = 8,
     backoff_initial_s: float = 1.0,
     backoff_max_s: float = 60.0,
@@ -3462,12 +3535,19 @@ def request_json(
     last_err: Optional[str] = None
 
     for attempt in range(1, max_attempts + 1):
+        reservation = None
         if rate_limiter is not None:
-            rate_limiter.acquire()
+            reservation = rate_limiter.acquire()
+            if request_stats is not None and reservation is not None:
+                request_stats["rate_limit_wait_s"] = float(request_stats.get("rate_limit_wait_s") or 0.0) + float(
+                    reservation.sleep_s or 0.0
+                )
 
         t0 = time.time()
         resp: Optional[requests.Response] = None
         try:
+            if request_stats is not None:
+                request_stats["request_attempts"] = int(request_stats.get("request_attempts") or 0) + 1
             resp = session.request(method_u, url, params=params, json=body, timeout=timeout_s)
             last_status = int(resp.status_code)
         except Exception as e:
@@ -3475,26 +3555,39 @@ def request_json(
             last_err = repr(e)
 
         retries = attempt - 1
-        log_event(
-            run_ctx,
-            stage=stage,
-            event="http_request",
-            provider=provider,
-            fingerprint=fingerprint,
-            endpoint=endpoint,
-            method=method_u,
-            status=last_status,
-            retries=retries,
-            cache_hit=False,
-            params=_truncate_for_log(params_fp),
-            elapsed_s=round(time.time() - t0, 3),
-        )
+        if run_ctx is not None:
+            log_event(
+                run_ctx,
+                stage=stage,
+                event="http_request",
+                provider=provider,
+                fingerprint=fingerprint,
+                endpoint=endpoint,
+                method=method_u,
+                status=last_status,
+                retries=retries,
+                cache_hit=False,
+                params=_truncate_for_log(params_fp),
+                elapsed_s=round(time.time() - t0, 3),
+            )
 
         retry_after_s: Optional[float] = None
         retryable = False
         if resp is None:
             retryable = True
         elif resp.status_code in (429, 500, 502, 503, 504):
+            if (
+                str(provider or "").strip().lower() == "openalex"
+                and isinstance(params, dict)
+                and bool(str(params.get("api_key") or "").strip())
+                and _openalex_budget_exhausted(resp)
+            ):
+                params.pop("api_key", None)
+                if request_stats is not None:
+                    request_stats["openalex_api_key_fallbacks"] = int(
+                        request_stats.get("openalex_api_key_fallbacks") or 0
+                    ) + 1
+                continue
             retryable = True
             retry_after_s = _parse_retry_after(resp)
         elif resp.status_code >= 400:
@@ -3517,10 +3610,12 @@ def request_json(
 
         wait = min(backoff_max_s, backoff_initial_s * (2 ** max(0, retries)))
         if retry_after_s is not None:
-            wait = max(wait, float(retry_after_s))
+            wait = max(wait, min(float(retry_after_s), float(backoff_max_s)))
         # jitter (avoid thundering herd)
         wait = wait * (1.0 + random.uniform(-0.15, 0.15))
         wait = max(0.5, float(wait))
+        if request_stats is not None:
+            request_stats["retry_backoff_wait_s"] = float(request_stats.get("retry_backoff_wait_s") or 0.0) + float(wait)
         time.sleep(wait)
 
 
@@ -3553,7 +3648,7 @@ OPENALEX_SELECT = (
 )
 
 
-def _openalex_params(cfg: PipelineConfig, q: OpenAlexQuery, *, cursor: str) -> Dict[str, Any]:
+def _openalex_params(cfg: PipelineConfig, q: OpenAlexQuery, *, cursor: str, include_api_key: bool = True) -> Dict[str, Any]:
     params: Dict[str, Any] = {
         "per-page": int(getattr(q, "per_page", 200) or 200),
         "cursor": cursor,
@@ -3563,7 +3658,7 @@ def _openalex_params(cfg: PipelineConfig, q: OpenAlexQuery, *, cursor: str) -> D
         params["sort"] = q.sort
     if cfg.openalex_email:
         params["mailto"] = cfg.openalex_email
-    if cfg.openalex_api_key:
+    if include_api_key and cfg.openalex_api_key:
         params["api_key"] = cfg.openalex_api_key
 
     base_filters = str(getattr(q, "filters", "") or "").strip().strip(",")
@@ -3591,7 +3686,17 @@ def fetch_openalex_to_cache(
     cache_root = _trim_cache_dir(run_ctx) / "openalex"
     ensure_dir(cache_root)
 
-    limiter = RateLimiter(cfg.openalex_rps)
+    limiter = build_provider_rate_limiter(
+        provider="openalex",
+        rps=cfg.openalex_rps,
+        backend=cfg.provider_rate_limit_backend,
+        collection_name=cfg.provider_rate_limit_collection,
+        holder=f"run:{run_ctx.run_id}",
+        run_id=run_ctx.run_id,
+        stage=stage,
+        max_future_ms=cfg.provider_rate_limit_max_future_ms,
+        dispatch_buffer_ms=cfg.provider_rate_limit_dispatch_buffer_ms,
+    )
     session = requests.Session()
     session.headers.update({"User-Agent": "instantpaper-two-lane/1.0"})
 
@@ -3635,9 +3740,10 @@ def fetch_openalex_to_cache(
         cursor = "*"
         rank = 0
 
+        use_api_key = bool(cfg.openalex_api_key)
         try:
             while cursor:
-                params = _openalex_params(cfg, q, cursor=cursor)
+                params = _openalex_params(cfg, q, cursor=cursor, include_api_key=use_api_key)
                 data = request_json(
                     run_ctx=run_ctx,
                     stage=stage,
@@ -3653,6 +3759,8 @@ def fetch_openalex_to_cache(
                     backoff_initial_s=1.0,
                     backoff_max_s=60.0,
                 )
+                if "api_key" not in params:
+                    use_api_key = False
                 pages += 1
 
                 results = (data or {}).get("results") or []
@@ -3757,7 +3865,17 @@ def fetch_s2_to_cache(
     cache_root = _trim_cache_dir(run_ctx) / "semanticscholar"
     ensure_dir(cache_root)
 
-    limiter = RateLimiter(cfg.semanticscholar_rps)
+    limiter = build_provider_rate_limiter(
+        provider="semanticscholar",
+        rps=cfg.semanticscholar_rps,
+        backend=cfg.provider_rate_limit_backend,
+        collection_name=cfg.provider_rate_limit_collection,
+        holder=f"run:{run_ctx.run_id}",
+        run_id=run_ctx.run_id,
+        stage=stage,
+        max_future_ms=cfg.provider_rate_limit_max_future_ms,
+        dispatch_buffer_ms=cfg.provider_rate_limit_dispatch_buffer_ms,
+    )
     session = requests.Session()
     session.headers.update({"User-Agent": "instantpaper-two-lane/1.0"})
     if cfg.semanticscholar_api_key:
@@ -4748,9 +4866,13 @@ def build_candidates_from_raw(
         without_abstract=pool_counts.get("without_abstract"),
     )
 
-    metrics = load_metrics(run_ctx)
-    metrics.setdefault("stages", {}).setdefault(stage, {})["counts"] = meta
-    save_metrics(run_ctx, metrics)
+    update_metrics(
+        run_ctx,
+        lambda metrics: (
+            metrics.setdefault("stages", {}).setdefault(stage, {}).__setitem__("counts", meta)
+            or metrics
+        ),
+    )
 
     return candidates, meta
 
@@ -4779,9 +4901,22 @@ class PipelineConfig(BaseModel):
     openalex_rps: float = 10.0
 
     semanticscholar_base_url: str = "https://api.semanticscholar.org/graph/v1"
+    semanticscholar_recommendations_url: str = "https://api.semanticscholar.org/recommendations/v1/papers"
     semanticscholar_api_key: Optional[str] = Field(default=None, repr=False)
     semanticscholar_timeout_s: float = 60.0
     semanticscholar_rps: float = 1.0
+    provider_rate_limit_backend: Literal["firestore", "local"] = "firestore"
+    provider_rate_limit_collection: str = "quellenFinderProviderRateLimits"
+    provider_rate_limit_max_future_ms: int = 86_400_000
+    provider_rate_limit_dispatch_buffer_ms: int = 150
+    provider_task_max_runtime_s: float = 480.0
+    openalex_task_max_pages_per_task: int = 12
+    semanticscholar_task_max_pages_per_task: int = 5
+    openalex_task_max_pages_total_per_query: int = 120
+    semanticscholar_task_max_pages_total_per_query: int = 30
+    provider_task_request_timeout_s: float = 30.0
+    provider_task_request_max_attempts: int = 3
+    provider_task_request_backoff_max_s: float = 15.0
 
     # Hard caps
     max_queries_per_provider: int = 50
@@ -4845,13 +4980,56 @@ class PipelineConfig(BaseModel):
 
     @classmethod
     def from_env(cls, *, runs_root: Path, pipeline_version: str) -> "PipelineConfig":
+        def _read_float(name: str, default: float) -> float:
+            raw = (os.getenv(name) or "").strip()
+            if not raw:
+                return float(default)
+            try:
+                return float(raw)
+            except ValueError:
+                logger.warning("Invalid float env for %s=%r (using %s)", name, raw, default)
+                return float(default)
+
+        def _read_int(name: str, default: int) -> int:
+            raw = (os.getenv(name) or "").strip()
+            if not raw:
+                return int(default)
+            try:
+                return int(raw)
+            except ValueError:
+                logger.warning("Invalid int env for %s=%r (using %s)", name, raw, default)
+                return int(default)
+
         return cls(
             pipeline_version=pipeline_version,
             runs_root=Path(runs_root),
             openai_api_key=(os.getenv("OPENAI_API_KEY") or "").strip() or None,
             openalex_api_key=(os.getenv("OPENALEX_API_KEY") or "").strip() or None,
             openalex_email=((os.getenv("OPENALEX_EMAIL") or "").strip() or (os.getenv("OPENALEX_MAILTO") or "").strip() or None),
+            openalex_rps=_read_float("TWO_LANE_OPENALEX_RPS", 10.0),
             semanticscholar_api_key=(os.getenv("SEMANTICSCHOLAR_API_KEY") or "").strip() or None,
+            semanticscholar_recommendations_url=(
+                (os.getenv("SEMANTICSCHOLAR_RECOMMENDATIONS_URL") or "").strip()
+                or "https://api.semanticscholar.org/recommendations/v1/papers"
+            ),
+            semanticscholar_rps=_read_float("TWO_LANE_SEMANTICSCHOLAR_RPS", 1.0),
+            provider_rate_limit_backend=(
+                (os.getenv("TWO_LANE_PROVIDER_RATE_LIMIT_BACKEND") or "").strip().lower() or "firestore"
+            ),
+            provider_rate_limit_collection=(
+                (os.getenv("TWO_LANE_PROVIDER_RATE_LIMIT_COLLECTION") or "").strip()
+                or "quellenFinderProviderRateLimits"
+            ),
+            provider_rate_limit_max_future_ms=_read_int("TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS", 86_400_000),
+            provider_rate_limit_dispatch_buffer_ms=_read_int("TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS", 150),
+            provider_task_max_runtime_s=_read_float("TWO_LANE_PROVIDER_TASK_MAX_RUNTIME_S", 480.0),
+            openalex_task_max_pages_per_task=_read_int("TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK", 12),
+            semanticscholar_task_max_pages_per_task=_read_int("TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK", 5),
+            openalex_task_max_pages_total_per_query=_read_int("TWO_LANE_OPENALEX_TASK_MAX_PAGES_TOTAL_PER_QUERY", 120),
+            semanticscholar_task_max_pages_total_per_query=_read_int("TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_TOTAL_PER_QUERY", 30),
+            provider_task_request_timeout_s=_read_float("TWO_LANE_PROVIDER_TASK_REQUEST_TIMEOUT_S", 30.0),
+            provider_task_request_max_attempts=_read_int("TWO_LANE_PROVIDER_TASK_REQUEST_MAX_ATTEMPTS", 3),
+            provider_task_request_backoff_max_s=_read_float("TWO_LANE_PROVIDER_TASK_REQUEST_BACKOFF_MAX_S", 15.0),
         )
 
 

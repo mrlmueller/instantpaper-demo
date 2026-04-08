@@ -2,13 +2,22 @@ from __future__ import annotations
 
 import math
 import logging
+import random
+import time
 from typing import Any, Iterable, Optional
 
+from firebase_admin import firestore
+from google.api_core import exceptions as google_api_exceptions
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from services.firebase_service import firebase_service
 
 logger = logging.getLogger(__name__)
+
+_FIRESTORE_TXN_MAX_ATTEMPTS = 20
+_FIRESTORE_TXN_OUTER_RETRIES = 6
+_FIRESTORE_TXN_BASE_SLEEP_S = 0.05
+_FIRESTORE_TXN_MAX_SLEEP_S = 1.0
 
 
 def _as_str(value: Any) -> str | None:
@@ -57,9 +66,44 @@ def _sanitize_firestore_value(value: Any) -> tuple[Any, bool]:
     return value, False
 
 
+def _is_firestore_contention_error(exc: Exception) -> bool:
+    if isinstance(exc, google_api_exceptions.Aborted):
+        return True
+    message = str(exc or "").casefold()
+    return "failed to commit transaction" in message or "cross-transaction contention" in message
+
+
 class QuellenFinderFirestoreService:
     def __init__(self):
         self.firebase = firebase_service
+
+    def _new_transaction(self, *, max_attempts: int = _FIRESTORE_TXN_MAX_ATTEMPTS):
+        return self.firebase.db.transaction(max_attempts=int(max_attempts))
+
+    def _run_transaction_with_backoff(self, txn_callable, *, attempts: int = _FIRESTORE_TXN_OUTER_RETRIES):
+        last_exc: Exception | None = None
+        for attempt_idx in range(max(1, int(attempts))):
+            try:
+                return txn_callable(self._new_transaction())
+            except Exception as exc:
+                if not _is_firestore_contention_error(exc) or attempt_idx >= (max(1, int(attempts)) - 1):
+                    raise
+                last_exc = exc
+                delay_s = min(
+                    _FIRESTORE_TXN_MAX_SLEEP_S,
+                    _FIRESTORE_TXN_BASE_SLEEP_S * (2 ** attempt_idx),
+                ) * (1.0 + (0.25 * random.random()))
+                logger.warning(
+                    "Retrying Firestore transaction after contention | attempt=%s/%s delay_s=%.3f error=%s",
+                    int(attempt_idx) + 1,
+                    int(attempts),
+                    float(delay_s),
+                    str(exc),
+                )
+                time.sleep(delay_s)
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Firestore transaction retry loop exited unexpectedly")
 
     def _project_ref(self, user_id: str, projekt_id: str):
         return (
@@ -166,13 +210,14 @@ class QuellenFinderFirestoreService:
         run_id: str,
         job_name: str,
         region: str,
+        provider: str | None = None,
         operation_name: str | None = None,
         execution_name: str | None = None,
     ) -> None:
         payload: dict[str, Any] = {
             "updatedAt": SERVER_TIMESTAMP,
             "job": {
-                "provider": "cloud_run_jobs",
+                "provider": _as_str(provider) or "cloud_run_jobs",
                 "jobName": _as_str(job_name),
                 "region": _as_str(region),
                 "operationName": _as_str(operation_name),
@@ -192,6 +237,7 @@ class QuellenFinderFirestoreService:
         error_message: str,
         job_name: str | None = None,
         region: str | None = None,
+        provider: str | None = None,
         operation_name: str | None = None,
     ) -> None:
         payload: dict[str, Any] = {
@@ -202,7 +248,7 @@ class QuellenFinderFirestoreService:
             "updatedAt": SERVER_TIMESTAMP,
             "progress": {"stage": "error", "message": "Error"},
             "job": {
-                "provider": "cloud_run_jobs",
+                "provider": _as_str(provider) or "cloud_run_jobs",
                 "jobName": _as_str(job_name),
                 "region": _as_str(region),
                 "operationName": _as_str(operation_name),
@@ -398,6 +444,510 @@ class QuellenFinderFirestoreService:
     ) -> None:
         col = self.run_ref(user_id, projekt_id, run_id).collection(str(name))
         self._write_collection_docs(col_ref=col, docs=docs)
+
+    def try_queue_two_lane_stage(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        target_stage: str,
+        prerequisite_stages: Iterable[str] | None = None,
+        allowed_current_statuses: Iterable[str] | None = None,
+        current_stage_value: str | None = None,
+    ) -> bool:
+        target_stage_norm = _as_str(target_stage)
+        if not target_stage_norm:
+            raise ValueError("target_stage is required")
+        prereqs = [str(x).strip() for x in list(prerequisite_stages or []) if str(x).strip()]
+        allowed = {str(x).strip().lower() for x in list(allowed_current_statuses or ["pending"]) if str(x).strip()}
+        doc_ref = self.run_ref(user_id, projekt_id, run_id)
+        @firestore.transactional
+        def _txn(txn):
+            snap = doc_ref.get(transaction=txn)
+            if snap is None or not getattr(snap, "exists", False):
+                return False
+            data = snap.to_dict() if snap is not None else {}
+            if str((data or {}).get("status") or "").strip().lower() in {"success", "error", "cancelled"}:
+                return False
+            if bool((data or {}).get("cancelRequestedAt")):
+                return False
+
+            split_execution = data.get("splitExecution") if isinstance(data.get("splitExecution"), dict) else {}
+            for stage_name in prereqs:
+                stage_state = split_execution.get(stage_name) if isinstance(split_execution.get(stage_name), dict) else {}
+                if str((stage_state or {}).get("status") or "").strip().lower() != "success":
+                    return False
+
+            target_state = split_execution.get(target_stage_norm) if isinstance(split_execution.get(target_stage_norm), dict) else {}
+            current_status = str((target_state or {}).get("status") or "").strip().lower()
+            if current_status not in allowed:
+                return False
+
+            payload: dict[str, Any] = {
+                "updatedAt": SERVER_TIMESTAMP,
+                "splitExecution": {
+                    target_stage_norm: {
+                        "status": "queued",
+                        "queuedAt": SERVER_TIMESTAMP,
+                        "updatedAt": SERVER_TIMESTAMP,
+                    }
+                },
+            }
+            current_stage_norm = _as_str(current_stage_value)
+            if current_stage_norm:
+                payload["splitExecution"]["currentStage"] = current_stage_norm
+            txn.set(doc_ref, payload, merge=True)
+            return True
+
+        return bool(self._run_transaction_with_backoff(_txn))
+
+    def two_lane_provider_task_ref(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        task_doc_id: str,
+    ):
+        return self.run_ref(user_id, projekt_id, run_id).collection("twoLaneProviderTasks").document(str(task_doc_id))
+
+    def enqueue_two_lane_provider_task(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        provider: str,
+        stage_name: str,
+        queue_name: str,
+        task_key: str,
+        results_prefix: str,
+    ) -> bool:
+        provider_norm = _as_str(provider)
+        stage_norm = _as_str(stage_name)
+        queue_norm = _as_str(queue_name)
+        task_norm = _as_str(task_key)
+        results_prefix_norm = _as_str(results_prefix)
+        if not provider_norm or not stage_norm or not queue_norm or not task_norm:
+            raise ValueError("provider, stage_name, queue_name, and task_key are required")
+
+        doc_ref = self.run_ref(user_id, projekt_id, run_id)
+        task_ref = self.two_lane_provider_task_ref(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            task_doc_id=f"{provider_norm}--{task_norm}",
+        )
+        @firestore.transactional
+        def _txn(txn):
+            run_snap = doc_ref.get(transaction=txn)
+            if run_snap is None or not getattr(run_snap, "exists", False):
+                return False
+            run_data = run_snap.to_dict() if run_snap is not None else {}
+            task_snap = task_ref.get(transaction=txn)
+            task_data = task_snap.to_dict() if task_snap is not None and getattr(task_snap, "exists", False) else {}
+            task_status = str((task_data or {}).get("status") or "").strip().lower()
+            if task_status in {"queued", "running", "success"}:
+                return False
+
+            provider_work = run_data.get("providerWork") if isinstance(run_data.get("providerWork"), dict) else {}
+            provider_state = provider_work.get(provider_norm) if isinstance(provider_work.get(provider_norm), dict) else {}
+            pending_tasks = int((provider_state or {}).get("pendingTasks") or 0)
+            enqueued_tasks = int((provider_state or {}).get("enqueuedTasks") or 0)
+
+            txn.set(
+                task_ref,
+                {
+                    "provider": provider_norm,
+                    "stageName": stage_norm,
+                    "queueName": queue_norm,
+                    "taskKey": task_norm,
+                    "status": "queued",
+                    "createdAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            txn.set(
+                doc_ref,
+                {
+                    "updatedAt": SERVER_TIMESTAMP,
+                    "providerWork": {
+                        provider_norm: {
+                            "provider": provider_norm,
+                            "stageName": stage_norm,
+                            "queueName": queue_norm,
+                            "resultsPrefix": results_prefix_norm,
+                            "status": "running",
+                            "pendingTasks": int(pending_tasks) + 1,
+                            "enqueuedTasks": int(enqueued_tasks) + 1,
+                            "updatedAt": SERVER_TIMESTAMP,
+                            "seededAt": SERVER_TIMESTAMP,
+                        }
+                    },
+                    "splitExecution": {
+                        stage_norm: {
+                            "status": "running",
+                            "updatedAt": SERVER_TIMESTAMP,
+                        }
+                    },
+                },
+                merge=True,
+            )
+            return True
+
+        return bool(self._run_transaction_with_backoff(_txn))
+
+    def claim_two_lane_provider_task(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        provider: str,
+        task_key: str,
+        stale_after_ms: int = 1_800_000,
+    ) -> bool:
+        result = self.claim_two_lane_provider_task_result(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            provider=provider,
+            task_key=task_key,
+            stale_after_ms=stale_after_ms,
+        )
+        return str((result or {}).get("status") or "").strip().lower() == "claimed"
+
+    def claim_two_lane_provider_task_result(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        provider: str,
+        task_key: str,
+        stale_after_ms: int = 1_800_000,
+    ) -> dict[str, Any]:
+        provider_norm = _as_str(provider)
+        task_norm = _as_str(task_key)
+        if not provider_norm or not task_norm:
+            raise ValueError("provider and task_key are required")
+
+        task_ref = self.two_lane_provider_task_ref(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            task_doc_id=f"{provider_norm}--{task_norm}",
+        )
+        @firestore.transactional
+        def _txn(txn):
+            task_snap = task_ref.get(transaction=txn)
+            if task_snap is None or not getattr(task_snap, "exists", False):
+                return {"status": "missing"}
+            task_data = task_snap.to_dict() if task_snap is not None else {}
+            status_now = str((task_data or {}).get("status") or "").strip().lower()
+            if status_now == "success":
+                return {"status": "already_success"}
+
+            now_ms = int(time.time() * 1000.0)
+            claimed_at_ms = int((task_data or {}).get("claimedAtEpochMs") or 0)
+            if status_now == "running" and claimed_at_ms and claimed_at_ms >= (now_ms - max(1, int(stale_after_ms))):
+                return {"status": "running", "claimedAtEpochMs": int(claimed_at_ms)}
+
+            claim_count = int((task_data or {}).get("claimCount") or 0)
+            txn.set(
+                task_ref,
+                {
+                    "status": "running",
+                    "claimedAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                    "claimedAtEpochMs": int(now_ms),
+                    "claimCount": int(claim_count) + 1,
+                },
+                merge=True,
+            )
+            return {"status": "claimed", "claimCount": int(claim_count) + 1, "claimedAtEpochMs": int(now_ms)}
+
+        result = self._run_transaction_with_backoff(_txn)
+        return result if isinstance(result, dict) else {"status": "missing"}
+
+    def complete_two_lane_provider_task(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        provider: str,
+        task_key: str,
+        stage_name: str,
+        summary: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        provider_norm = _as_str(provider)
+        task_norm = _as_str(task_key)
+        stage_norm = _as_str(stage_name)
+        if not provider_norm or not task_norm or not stage_norm:
+            raise ValueError("provider, task_key, and stage_name are required")
+
+        doc_ref = self.run_ref(user_id, projekt_id, run_id)
+        task_ref = self.two_lane_provider_task_ref(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            task_doc_id=f"{provider_norm}--{task_norm}",
+        )
+        @firestore.transactional
+        def _txn(txn):
+            run_snap = doc_ref.get(transaction=txn)
+            if run_snap is None or not getattr(run_snap, "exists", False):
+                return {"provider_done": False, "already_done": False}
+            run_data = run_snap.to_dict() if run_snap is not None else {}
+            task_snap = task_ref.get(transaction=txn)
+            task_data = task_snap.to_dict() if task_snap is not None and getattr(task_snap, "exists", False) else {}
+            task_status = str((task_data or {}).get("status") or "").strip().lower()
+
+            provider_work = run_data.get("providerWork") if isinstance(run_data.get("providerWork"), dict) else {}
+            provider_state = provider_work.get(provider_norm) if isinstance(provider_work.get(provider_norm), dict) else {}
+            pending_tasks = int((provider_state or {}).get("pendingTasks") or 0)
+            completed_tasks = int((provider_state or {}).get("completedTasks") or 0)
+            failed_tasks = int((provider_state or {}).get("failedTasks") or 0)
+            if task_status == "success":
+                return {"provider_done": pending_tasks <= 0 and failed_tasks <= 0, "already_done": True}
+
+            new_pending = max(0, int(pending_tasks) - 1)
+            provider_done = new_pending <= 0 and failed_tasks <= 0
+            txn.set(
+                task_ref,
+                {
+                    "status": "success",
+                    "completedAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                    "summary": dict(summary or {}),
+                },
+                merge=True,
+            )
+            txn.set(
+                doc_ref,
+                {
+                    "updatedAt": SERVER_TIMESTAMP,
+                    "providerWork": {
+                        provider_norm: {
+                            "provider": provider_norm,
+                            "stageName": stage_norm,
+                            "status": "success" if provider_done else "running",
+                            "pendingTasks": int(new_pending),
+                            "completedTasks": int(completed_tasks) + 1,
+                            "updatedAt": SERVER_TIMESTAMP,
+                            "completedAt": SERVER_TIMESTAMP if provider_done else None,
+                        }
+                    },
+                    "splitExecution": {
+                        stage_norm: {
+                            "status": "success" if provider_done else "running",
+                            "updatedAt": SERVER_TIMESTAMP,
+                            "finishedAt": SERVER_TIMESTAMP if provider_done else None,
+                        }
+                    },
+                },
+                merge=True,
+            )
+            return {"provider_done": provider_done, "already_done": False}
+
+        result = self._run_transaction_with_backoff(_txn)
+        return result if isinstance(result, dict) else {"provider_done": False, "already_done": False}
+
+    def retry_two_lane_provider_task(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        provider: str,
+        task_key: str,
+        stage_name: str,
+        error_message: str | None = None,
+    ) -> dict[str, Any]:
+        provider_norm = _as_str(provider)
+        task_norm = _as_str(task_key)
+        stage_norm = _as_str(stage_name)
+        if not provider_norm or not task_norm or not stage_norm:
+            raise ValueError("provider, task_key, and stage_name are required")
+
+        doc_ref = self.run_ref(user_id, projekt_id, run_id)
+        task_ref = self.two_lane_provider_task_ref(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            task_doc_id=f"{provider_norm}--{task_norm}",
+        )
+        @firestore.transactional
+        def _txn(txn):
+            run_snap = doc_ref.get(transaction=txn)
+            if run_snap is None or not getattr(run_snap, "exists", False):
+                return {"retry_queued": False, "already_done": False}
+            run_data = run_snap.to_dict() if run_snap is not None else {}
+            task_snap = task_ref.get(transaction=txn)
+            task_data = task_snap.to_dict() if task_snap is not None and getattr(task_snap, "exists", False) else {}
+            task_status = str((task_data or {}).get("status") or "").strip().lower()
+            if task_status == "success":
+                return {"retry_queued": False, "already_done": True}
+
+            provider_work = run_data.get("providerWork") if isinstance(run_data.get("providerWork"), dict) else {}
+            provider_state = provider_work.get(provider_norm) if isinstance(provider_work.get(provider_norm), dict) else {}
+            retry_count = int((provider_state or {}).get("retryCount") or 0)
+            fail_count = int((task_data or {}).get("failCount") or 0)
+            err = str(error_message or "")[:1000] or None
+
+            txn.set(
+                task_ref,
+                {
+                    "status": "queued",
+                    "updatedAt": SERVER_TIMESTAMP,
+                    "claimedAtEpochMs": 0,
+                    "retryQueuedAt": SERVER_TIMESTAMP,
+                    "failCount": int(fail_count) + 1,
+                    "lastFailureAt": SERVER_TIMESTAMP,
+                    "lastError": err,
+                },
+                merge=True,
+            )
+            txn.set(
+                doc_ref,
+                {
+                    "updatedAt": SERVER_TIMESTAMP,
+                    "providerWork": {
+                        provider_norm: {
+                            "provider": provider_norm,
+                            "stageName": stage_norm,
+                            "status": "running",
+                            "retryCount": int(retry_count) + 1,
+                            "updatedAt": SERVER_TIMESTAMP,
+                            "lastFailureAt": SERVER_TIMESTAMP,
+                            "lastError": err,
+                        }
+                    },
+                    "splitExecution": {
+                        stage_norm: {
+                            "status": "running",
+                            "updatedAt": SERVER_TIMESTAMP,
+                            "errorMessage": err,
+                        }
+                    },
+                },
+                merge=True,
+            )
+            return {"retry_queued": True, "already_done": False}
+
+        result = self._run_transaction_with_backoff(_txn)
+        return result if isinstance(result, dict) else {"retry_queued": False, "already_done": False}
+
+    def skip_two_lane_provider_task(
+        self,
+        *,
+        user_id: str,
+        projekt_id: str,
+        run_id: str,
+        provider: str,
+        task_key: str,
+        stage_name: str,
+        reason: str,
+        summary: dict[str, Any] | None = None,
+        error_message: str | None = None,
+    ) -> dict[str, Any]:
+        provider_norm = _as_str(provider)
+        task_norm = _as_str(task_key)
+        stage_norm = _as_str(stage_name)
+        reason_norm = _as_str(reason)
+        if not provider_norm or not task_norm or not stage_norm or not reason_norm:
+            raise ValueError("provider, task_key, stage_name, and reason are required")
+
+        doc_ref = self.run_ref(user_id, projekt_id, run_id)
+        task_ref = self.two_lane_provider_task_ref(
+            user_id=user_id,
+            projekt_id=projekt_id,
+            run_id=run_id,
+            task_doc_id=f"{provider_norm}--{task_norm}",
+        )
+        @firestore.transactional
+        def _txn(txn):
+            run_snap = doc_ref.get(transaction=txn)
+            if run_snap is None or not getattr(run_snap, "exists", False):
+                return {"provider_done": False, "already_done": False}
+            run_data = run_snap.to_dict() if run_snap is not None else {}
+            task_snap = task_ref.get(transaction=txn)
+            task_data = task_snap.to_dict() if task_snap is not None and getattr(task_snap, "exists", False) else {}
+            task_status = str((task_data or {}).get("status") or "").strip().lower()
+
+            provider_work = run_data.get("providerWork") if isinstance(run_data.get("providerWork"), dict) else {}
+            provider_state = provider_work.get(provider_norm) if isinstance(provider_work.get(provider_norm), dict) else {}
+            pending_tasks = int((provider_state or {}).get("pendingTasks") or 0)
+            failed_tasks = int((provider_state or {}).get("failedTasks") or 0)
+            skipped_tasks = int((provider_state or {}).get("skippedTasks") or 0)
+
+            if task_status in {"success", "cancelled", "skipped"}:
+                return {"provider_done": pending_tasks <= 0 and failed_tasks <= 0, "already_done": True}
+
+            run_status = str((run_data or {}).get("status") or "").strip().lower()
+            cancel_requested = bool((run_data or {}).get("cancelRequestedAt"))
+            new_pending = max(0, int(pending_tasks) - 1)
+            provider_done = new_pending <= 0 and failed_tasks <= 0
+            err = str(error_message or "")[:1000] or None
+
+            task_status_final = "cancelled" if cancel_requested or run_status == "cancelled" else "skipped"
+            provider_status = (
+                "cancelled"
+                if cancel_requested or run_status == "cancelled"
+                else "error"
+                if run_status == "error"
+                else "success"
+                if provider_done
+                else "running"
+            )
+            stage_status = provider_status if provider_status in {"success", "cancelled", "error"} else "running"
+
+            txn.set(
+                task_ref,
+                {
+                    "status": task_status_final,
+                    "completedAt": SERVER_TIMESTAMP,
+                    "updatedAt": SERVER_TIMESTAMP,
+                    "summary": dict(summary or {}),
+                    "skipReason": reason_norm,
+                    "lastError": err,
+                },
+                merge=True,
+            )
+            txn.set(
+                doc_ref,
+                {
+                    "updatedAt": SERVER_TIMESTAMP,
+                    "providerWork": {
+                        provider_norm: {
+                            "provider": provider_norm,
+                            "stageName": stage_norm,
+                            "status": provider_status,
+                            "pendingTasks": int(new_pending),
+                            "skippedTasks": int(skipped_tasks) + 1,
+                            "updatedAt": SERVER_TIMESTAMP,
+                            "completedAt": SERVER_TIMESTAMP if provider_done or provider_status in {"cancelled", "error"} else None,
+                            "lastError": err,
+                        }
+                    },
+                    "splitExecution": {
+                        stage_norm: {
+                            "status": stage_status,
+                            "updatedAt": SERVER_TIMESTAMP,
+                            "finishedAt": SERVER_TIMESTAMP if provider_done or provider_status in {"cancelled", "error"} else None,
+                            "errorMessage": err,
+                        }
+                    },
+                },
+                merge=True,
+            )
+            return {"provider_done": provider_done, "already_done": False}
+
+        result = self._run_transaction_with_backoff(_txn)
+        return result if isinstance(result, dict) else {"provider_done": False, "already_done": False}
 
     def replace_pdf_scan_results(
         self,

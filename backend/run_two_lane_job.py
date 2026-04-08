@@ -23,6 +23,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--project-id", required=True, help="Project id containing the research run"
     )
     parser.add_argument("--run-id", required=True, help="Research run id to execute")
+    parser.add_argument(
+        "--stage",
+        required=False,
+        default="",
+        choices=["", "preprocess", "openalex_fetch", "s2_fetch", "candidates", "finalize"],
+        help="Optional split-stage execution mode",
+    )
     return parser.parse_args(argv)
 
 
@@ -31,6 +38,7 @@ async def _main_async(args: argparse.Namespace) -> None:
         user_id=str(args.user_id).strip(),
         projekt_id=str(args.project_id).strip(),
         run_id=str(args.run_id).strip(),
+        stage=str(args.stage or "").strip() or None,
     )
 
 

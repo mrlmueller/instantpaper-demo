@@ -31,6 +31,7 @@ It is intended to be production-sufficient without `testing-scripts/`.
 Production backend surfaces:
 
 - Cloud Run service: `instantpaper-api`
+- Cloud Run service: `instantpaper-two-lane-task-worker`
 - Cloud Run Job: `instantpaper-two-lane-sources`
 - Cloud Run Job: `instantpaper-pdf-scan-cpu`
 - Cloud Run Job: `instantpaper-pdf-scan-gpu`
@@ -102,7 +103,31 @@ ADMIN_BASIC_USER=admin
 ADMIN_BASIC_PASSWORD=
 ADMIN_UIDS=
 
-TWO_LANE_SOURCES_EXECUTION_BACKEND=local_background
+TWO_LANE_SOURCES_EXECUTION_BACKEND=local_split_jobs
+TWO_LANE_ARTIFACT_BUCKET=
+TWO_LANE_ARTIFACT_PREFIX=two-lane-runs
+TWO_LANE_OPENALEX_RPS=5
+TWO_LANE_SEMANTICSCHOLAR_RPS=1
+TWO_LANE_PROVIDER_RATE_LIMIT_BACKEND=firestore
+TWO_LANE_PROVIDER_RATE_LIMIT_COLLECTION=quellenFinderProviderRateLimits
+TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS=86400000
+TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS=150
+TWO_LANE_PROVIDER_TASK_MAX_RUNTIME_S=480
+TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK=12
+TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK=5
+TWO_LANE_OPENALEX_TASK_MAX_PAGES_TOTAL_PER_QUERY=120
+TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_TOTAL_PER_QUERY=30
+TWO_LANE_PROVIDER_TASK_REQUEST_TIMEOUT_S=30
+TWO_LANE_PROVIDER_TASK_REQUEST_MAX_ATTEMPTS=3
+TWO_LANE_PROVIDER_TASK_REQUEST_BACKOFF_MAX_S=15
+TWO_LANE_TASK_DISPATCH_BACKEND=local_background
+TWO_LANE_TASKS_PROJECT=
+TWO_LANE_TASKS_LOCATION=europe-west3
+TWO_LANE_OPENALEX_TASK_QUEUE=quellen-finder-openalex
+TWO_LANE_SEMANTICSCHOLAR_TASK_QUEUE=quellen-finder-semanticscholar
+TWO_LANE_TASK_HANDLER_URL=
+TWO_LANE_TASK_DISPATCH_DEADLINE_S=630
+TWO_LANE_TASK_DISPATCH_TOKEN=
 PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
 ```
 
@@ -120,6 +145,11 @@ PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
   - explicit GCP project override
 - `FIREBASE_STORAGE_BUCKET`
   - bucket override, defaults from project ID when omitted
+- `TWO_LANE_SOURCES_EXECUTION_BACKEND`
+  - `local_background` / `cloud_run_job` keep the current monolith
+  - `local_split_jobs` / `cloud_run_split_jobs` enable the staged handoff path
+- `TWO_LANE_ARTIFACT_BUCKET` / `TWO_LANE_ARTIFACT_PREFIX`
+  - GCS location used by the staged two-lane backend for temporary handoff bundles
 - `ALLOWED_ORIGINS`
   - comma-separated CORS allowlist
 - `ADMIN_BASIC_USER` / `ADMIN_BASIC_PASSWORD`
@@ -128,6 +158,39 @@ PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
   - Firebase UID allowlist for `/api/admin/*`
 - `OPENALEX_API_KEY` / `SEMANTICSCHOLAR_API_KEY`
   - used by two-lane sources workflows
+- `TWO_LANE_OPENALEX_RPS` / `TWO_LANE_SEMANTICSCHOLAR_RPS`
+  - provider-level request targets for the shared limiter
+- `TWO_LANE_PROVIDER_RATE_LIMIT_BACKEND`
+  - `firestore` for shared cross-run throttling, `local` for deterministic offline tests
+- `TWO_LANE_PROVIDER_RATE_LIMIT_COLLECTION`
+  - Firestore collection used by the shared limiter
+- `TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS`
+  - recovery guard if a limiter doc is accidentally pushed too far into the future
+- `TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS`
+  - extra safety margin so actual HTTP send times preserve the target spacing under Firestore round-trip latency
+- `TWO_LANE_PROVIDER_TASK_MAX_RUNTIME_S`
+  - per-provider-task time budget before a bounded continuation task is queued
+- `TWO_LANE_OPENALEX_TASK_MAX_PAGES_PER_TASK` / `TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_PER_TASK`
+  - per-task page caps for the bounded query-chain provider workers; keep these low enough that cloud task handlers finish well below the worker service timeout
+- `TWO_LANE_OPENALEX_TASK_MAX_PAGES_TOTAL_PER_QUERY` / `TWO_LANE_SEMANTICSCHOLAR_TASK_MAX_PAGES_TOTAL_PER_QUERY`
+  - hard caps for a single provider query chain so one overly broad query cannot monopolize the whole run
+- `TWO_LANE_PROVIDER_TASK_REQUEST_TIMEOUT_S`
+  - per-request timeout inside a provider worker; keep this well below the Cloud Run request timeout
+- `TWO_LANE_PROVIDER_TASK_REQUEST_MAX_ATTEMPTS` / `TWO_LANE_PROVIDER_TASK_REQUEST_BACKOFF_MAX_S`
+  - task-local HTTP retry budget; keep this low because Cloud Tasks already retries whole task executions
+- `TWO_LANE_TASK_DISPATCH_BACKEND`
+  - `local_background` / `local_inline` for local task execution
+  - `cloud_tasks` for the queued provider-fetch path on Cloud Run
+- `TWO_LANE_TASKS_PROJECT` / `TWO_LANE_TASKS_LOCATION`
+  - Cloud Tasks project and location for provider queues
+- `TWO_LANE_OPENALEX_TASK_QUEUE` / `TWO_LANE_SEMANTICSCHOLAR_TASK_QUEUE`
+  - queue names used for OpenAlex and Semantic Scholar provider query tasks
+- `TWO_LANE_TASK_HANDLER_URL`
+  - full callback URL for internal provider task execution; in production this should point to the dedicated task worker service, not the public API service
+- `TWO_LANE_TASK_DISPATCH_DEADLINE_S`
+  - per-task Cloud Tasks dispatch deadline; keep this only slightly above the worker service request timeout
+- `TWO_LANE_TASK_DISPATCH_TOKEN`
+  - shared secret header required by the internal task endpoint
 - `USER_KEY_ENCRYPTION_KEY`
   - used by per-user key encryption features
 
@@ -228,6 +291,22 @@ Compile-check:
 python -m compileall backend
 ```
 
+Shared provider limiter tests:
+
+```bash
+cd backend
+python scripts/test_two_lane_provider_rate_limit.py
+python scripts/test_two_lane_provider_pipeline_http.py --backend local --workers 4
+```
+
+If local Firestore credentials are available, also run:
+
+```bash
+cd backend
+python scripts/test_two_lane_provider_rate_limit.py --firestore
+python scripts/test_two_lane_provider_pipeline_http.py --backend firestore --workers 4
+```
+
 Prompt docs regeneration:
 
 ```bash
@@ -269,6 +348,15 @@ It also binds Cloud Run secrets for runtime values such as:
 - `ADMIN_UIDS`
 - `OPENALEX_API_KEY`
 - `SEMANTICSCHOLAR_API_KEY`
+
+The deploy workflow also sets two-lane rate-limit envs directly on the API service and the two-lane Cloud Run job:
+
+- `TWO_LANE_OPENALEX_RPS`
+- `TWO_LANE_SEMANTICSCHOLAR_RPS`
+- `TWO_LANE_PROVIDER_RATE_LIMIT_BACKEND`
+- `TWO_LANE_PROVIDER_RATE_LIMIT_COLLECTION`
+- `TWO_LANE_PROVIDER_RATE_LIMIT_MAX_FUTURE_MS`
+- `TWO_LANE_PROVIDER_RATE_LIMIT_DISPATCH_BUFFER_MS`
 
 ## Relationship To `testing-scripts/`
 
