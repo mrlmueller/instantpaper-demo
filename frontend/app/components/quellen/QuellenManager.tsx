@@ -641,22 +641,22 @@ export function QuellenManager({
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
-        <div className="border-b border-border px-6 py-4 flex items-center gap-4">
+      <div className="h-full min-h-0 bg-background flex flex-col">
+        <div className="shrink-0 border-b border-border px-6 py-4 flex items-center gap-4">
           <Skeleton className="h-9 w-9" />
           <div>
             <Skeleton className="h-6 w-40 mb-1" />
             <Skeleton className="h-4 w-24" />
           </div>
         </div>
-        <div className="border-b border-border px-6 py-3 flex items-center gap-4 flex-wrap">
+        <div className="shrink-0 border-b border-border px-6 py-3 flex items-center gap-4 flex-wrap">
           <Skeleton className="h-9 w-64" />
           <Skeleton className="h-9 w-32" />
           <Skeleton className="h-9 w-32" />
           <div className="flex-1" />
           <Skeleton className="h-9 w-40" />
         </div>
-        <div className="px-6 py-4">
+        <div className="min-h-0 flex-1 overflow-auto px-6 py-4">
           <Card className="p-4">
             <div className="space-y-3">
               {Array.from({ length: 8 }).map((_, i) => (
@@ -671,9 +671,9 @@ export function QuellenManager({
 
   return (
     <>
-      <div className="min-h-screen bg-background flex flex-col">
+      <div className="h-full min-h-0 overflow-hidden bg-background flex flex-col">
         {/* Header */}
-        <div className="border-b border-border px-6 py-4 flex items-center gap-4">
+        <div className="shrink-0 border-b border-border px-6 py-4 flex items-center gap-4">
           <Button
             variant="ghost"
             size="icon"
@@ -696,7 +696,7 @@ export function QuellenManager({
         </div>
 
         {/* Toolbar */}
-        <div className="border-b border-border px-6 py-3 flex items-center gap-4 flex-wrap">
+        <div className="shrink-0 border-b border-border px-6 py-3 flex items-center gap-4 flex-wrap">
           <div className="relative flex-1 min-w-[200px] max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -808,7 +808,7 @@ export function QuellenManager({
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto px-6 py-4">
+        <div className="min-h-0 flex-1 overflow-auto px-6 py-4">
           <Card>
             <Table>
               <TableHeader>
