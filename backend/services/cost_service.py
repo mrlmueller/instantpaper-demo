@@ -32,6 +32,9 @@ FALLBACK_MODEL_PRICING: dict[str, tuple[Decimal, Decimal, Decimal]] = {
     "gpt-5.1": (Decimal("1.25"), Decimal("0.125"), Decimal("10.00")),
     "gpt-5-mini": (Decimal("0.25"), Decimal("0.025"), Decimal("2.00")),
     "gpt-5-nano": (Decimal("0.05"), Decimal("0.005"), Decimal("0.40")),
+    # Anthropic / Claude — USD per 1M tokens (input, cached_input, output)
+    "claude-opus-4-6":   (Decimal("15.00"), Decimal("1.50"),  Decimal("75.00")),
+    "claude-sonnet-4-6": (Decimal("3.00"),  Decimal("0.30"),  Decimal("15.00")),
     # Embeddings (input-only pricing; output tokens are zero)
     "text-embedding-3-small": (Decimal("0.02"), Decimal("0.00"), Decimal("0.00")),
 }
@@ -210,7 +213,18 @@ class CostService:
             if model_lower.startswith(f"{key_lower}-"):
                 return original_key, pricing, "prefix"
 
-        # 4) Fallback
+        # 4) Provider-aware fallback: never apply an OpenAI price to a Claude model.
+        from utils.openai_models import is_claude_model as _is_claude
+        if _is_claude(model):
+            claude_fallback = "claude-sonnet-4-6"
+            if claude_fallback.lower() in normalized_pricing:
+                matched_key, pricing = normalized_pricing[claude_fallback.lower()]
+                return matched_key, pricing, "claude_fallback"
+            raise ValueError(
+                f"No pricing found for Claude model '{model}' and no Claude fallback configured. "
+                "Add it to _config/pricing in Firestore or to FALLBACK_MODEL_PRICING."
+            )
+
         if fallback_model.lower() in normalized_pricing:
             matched_key, pricing = normalized_pricing[fallback_model.lower()]
             return matched_key, pricing, "fallback"
@@ -408,13 +422,25 @@ class CostService:
                 logger.error(f"Non-critical: failed to update project cost aggregate: {exc}")
 
         # Credits debit: append-only ledger entry + cached balance update (critical).
-        await credits_service.debit_openai_operation(
-            user_id=user_id,
-            operation_id=operation_id,
-            operation_type=operation_type,
-            cost_usd=cost_usd,
-            spend_rate=spend_rate_value,
-        )
+        # Route to correct source label: Claude costs must NOT be labeled as "openai".
+        from utils.openai_models import is_claude_model as _is_claude
+        if _is_claude(model):
+            await credits_service.debit_tracked_operation(
+                user_id=user_id,
+                operation_id=operation_id,
+                operation_type=operation_type,
+                source="anthropic",
+                cost_usd=cost_usd,
+                spend_rate=spend_rate_value,
+            )
+        else:
+            await credits_service.debit_openai_operation(
+                user_id=user_id,
+                operation_id=operation_id,
+                operation_type=operation_type,
+                cost_usd=cost_usd,
+                spend_rate=spend_rate_value,
+            )
 
         return operation_id
 
