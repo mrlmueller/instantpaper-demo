@@ -1,11 +1,12 @@
 from fastapi import HTTPException
 from services.firebase_service import firebase_service
 from services.openai_service import openai_service
+from services.ai_router import get_ai_service
 from services.cost_service import get_cost_service, TokenUsage
 from services.openai_budget_service import get_openai_budget_service
 from services.openai_estimation_service import get_openai_estimation_service
 from services.user_key_service import user_key_service
-from utils.openai_models import normalize_forward_text_model
+from utils.openai_models import normalize_forward_text_model, is_claude_model
 from services.prompt_service import prompt_service
 import logging
 import asyncio
@@ -394,7 +395,7 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
         if instructions:
             prompt = instructions
 
-        return await openai_service.summarize_kapitel(
+        return await get_ai_service(model).summarize_kapitel(
             prompt,
             model,
             api_key=api_key,
@@ -480,7 +481,7 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
         Returns:
             tuple: (shortened_content, usage_dict)
         """
-        return await openai_service.shorten_and_deduplicate(
+        return await get_ai_service(model).shorten_and_deduplicate(
             prompt,
             model,
             api_key=api_key,
@@ -506,7 +507,8 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
         4. Saves the result
         """
         try:
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+            _provider = "anthropic" if is_claude_model(model) else "openai"
+            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id, provider=_provider)
             user_action_id = str(uuid.uuid4())
             logger.info(
                 f"Starting shorten process for Kapitel {kapitel_id}, run {run_id}, "
@@ -941,7 +943,7 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
 ### Kapitel {kapitel_nummer} (TEXT AN DEM DU ARBEITEN SOLLST)
 {target_text}"""
 
-        result_text, usage = await openai_service.improve_reading_flow(
+        result_text, usage = await get_ai_service(model).improve_reading_flow(
             prompt,
             model,
             api_key=api_key,
@@ -1164,7 +1166,7 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
 
             await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
             try:
-                lesefluss_content, usage = await openai_service.improve_reading_flow(
+                lesefluss_content, usage = await get_ai_service(model).improve_reading_flow(
                     prompt_body,
                     model,
                     api_key=api_key,
