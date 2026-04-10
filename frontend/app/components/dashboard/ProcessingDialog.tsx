@@ -285,7 +285,7 @@ export function ProcessingDialog({
                   {modelGroups.map((group) => (
                     <div key={group.group}>
                       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{group.group}</div>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className={cn("grid gap-3", group.options.length === 2 ? "grid-cols-2" : "grid-cols-3")}>
                         {group.options.map((opt) => {
                           const selected = settings.model === opt.value
                           return (

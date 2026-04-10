@@ -55,6 +55,8 @@ function formatGliederungModelLabel(model: string): string {
   if (m === "gpt-5-mini") return "GPT-5 mini";
   if (m === "gpt-5.4") return "GPT-5.4";
   if (m === "gpt-5.2") return "GPT-5.2";
+  if (m === "claude-sonnet-4-6") return "Claude Sonnet 4.6";
+  if (m === "claude-opus-4-6") return "Claude Opus 4.6";
   return m;
 }
 

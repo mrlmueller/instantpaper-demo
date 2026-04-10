@@ -20,8 +20,9 @@ import type {
 } from "@/app/types/prompts"
 import { DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY } from "@/app/lib/prompts/promptConfig"
 import { cn } from "@/lib/utils"
+import type { ProcessingSettings } from "@/app/types/ui"
 
-export type GliederungModel = "gpt-5-nano" | "gpt-5-mini" | "gpt-5.4" | "claude-sonnet-4-6" | "claude-opus-4-6"
+export type GliederungModel = ProcessingSettings["model"]
 
 export interface GliederungGenerateSettings {
   model: GliederungModel
@@ -275,7 +276,7 @@ export function GliederungCreateDialog({
               {modelGroups.map((group) => (
                 <div key={group.group}>
                   <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{group.group}</div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className={cn("grid gap-3", group.options.length === 2 ? "grid-cols-2" : "grid-cols-3")}>
                     {group.options.map((opt) => {
                       const selected = settings.model === opt.value
                       return (
