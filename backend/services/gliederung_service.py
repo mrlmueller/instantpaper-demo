@@ -17,7 +17,7 @@ from services.openai_estimation_service import get_openai_estimation_service
 from services.openai_service import OpenAIService
 from services.prompt_service import prompt_service, GLIEDERUNG_DEFAULT_V2_SYSTEM_PROMPT
 from services.user_key_service import user_key_service
-from utils.openai_models import DEFAULT_PRIMARY_TEXT_MODEL, normalize_forward_text_model
+from utils.openai_models import DEFAULT_PRIMARY_TEXT_MODEL, normalize_forward_text_model, is_claude_model
 from utils.prompt_dumps import dump_prompt_markdown
 
 logger = logging.getLogger(__name__)
@@ -323,6 +323,58 @@ class GliederungService:
             model=str(getattr(resp, "model", None) or model),
         )
 
+    async def _call_claude(
+        self,
+        *,
+        stage: str,
+        model: str,
+        system_message: str,
+        instructions: str,
+    ) -> GliederungGenerationResult:
+        from services.claude_service import claude_service
+
+        data, input_tokens, cached_input_tokens, output_tokens = (
+            await claude_service.generate_gliederung_json(
+                model=model,
+                system_message=system_message,
+                instructions=instructions,
+                json_schema=GLIEDERUNG_JSON_SCHEMA,
+                stage=stage,
+            )
+        )
+        return GliederungGenerationResult(
+            data=data,
+            input_tokens=input_tokens,
+            cached_input_tokens=cached_input_tokens,
+            output_tokens=output_tokens,
+            model=model,
+        )
+
+    async def _call_model(
+        self,
+        *,
+        stage: str,
+        model: str,
+        system_message: str,
+        instructions: str,
+        api_key: Optional[str] = None,
+    ) -> GliederungGenerationResult:
+        """Route to the correct provider based on model name."""
+        if is_claude_model(model):
+            return await self._call_claude(
+                stage=stage,
+                model=model,
+                system_message=system_message,
+                instructions=instructions,
+            )
+        return await self._call_openai(
+            stage=stage,
+            model=model,
+            system_message=system_message,
+            instructions=instructions,
+            api_key=api_key,
+        )
+
     def _normalize_output(self, data: dict) -> dict:
         chapters = data.get("kapitel") or []
         out_chapters = []
@@ -489,7 +541,7 @@ class GliederungService:
             await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
 
             try:
-                openai_result = await self._call_openai(
+                openai_result = await self._call_model(
                     stage="gliederung",
                     model=model,
                     system_message=system_message,
@@ -748,7 +800,7 @@ class GliederungService:
             await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
 
             try:
-                openai_result = await self._call_openai(
+                openai_result = await self._call_model(
                     stage="gliederung_refine",
                     model=model,
                     system_message=system_message,
