@@ -563,7 +563,7 @@ service cloud.firestore {
           allow create: if isOwner(userId)
             && request.resource.data.keys().hasAll(['projektId', 'index', 'instruction', 'model', 'createdAt', 'updatedAt', 'archived', 'autoCombine'])
             && request.resource.data.keys().hasOnly([
-              'projektId', 'index', 'instruction', 'model', 'createdAt', 'updatedAt', 'archived', 'archivedAt',
+              'projektId', 'index', 'instruction', 'model', 'provider', 'createdAt', 'updatedAt', 'archived', 'archivedAt',
               'name', 'promptTemplateId', 'promptPayload', 'autoCombine', 'grundlegendeInformationen', 'ueberschrift', 'thema',
               'resultsExpectedCount', 'resultsCompletedCount', 'resultsWithContentCount', 'lastResultAt',
               'artifactsStatus', 'lastActivityAt'

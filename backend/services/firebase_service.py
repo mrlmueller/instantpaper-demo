@@ -2,6 +2,7 @@ import firebase_admin
 from firebase_admin import credentials, auth, firestore
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP, Increment
 from utils.config import config
+from utils.openai_models import is_claude_model
 import logging
 import threading
 from typing import Optional, Tuple
@@ -634,6 +635,7 @@ class FirebaseService:
                 "errorMessage": None,
                 "errorAt": None,
                 "model": model_used,
+                "provider": "anthropic" if is_claude_model(model_used) else "openai",
                 "usage": {
                     "inputTokens": int(input_tokens),
                     "cachedInputTokens": int(cached_input_tokens),
@@ -747,6 +749,7 @@ class FirebaseService:
                 "errorMessage": None,
                 "errorAt": None,
                 "model": model or "",
+                "provider": "anthropic" if is_claude_model(model) else "openai",
                 "usage": {
                     "inputTokens": 0,
                     "cachedInputTokens": 0,
@@ -1729,6 +1732,7 @@ class FirebaseService:
                 "topic": topic,
                 "sourceQuelleIds": source_quelle_ids,
                 "model": model_used,
+                "provider": "anthropic" if is_claude_model(model_used) else "openai",
                 "usage": {
                     "inputTokens": int(input_tokens),
                     "cachedInputTokens": int(cached_input_tokens),
