@@ -72,6 +72,9 @@ class Config:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     USER_KEY_ENCRYPTION_KEY: str = os.getenv("USER_KEY_ENCRYPTION_KEY", "").strip()
 
+    # Anthropic / Claude
+    CLAUDE_API_KEY: str = os.getenv("CLAUDE_API_KEY", "")
+
     # Server
     PORT: int = int(os.getenv("PORT", "8000"))
 

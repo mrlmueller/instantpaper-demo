@@ -21,3 +21,8 @@ def normalize_forward_text_model(model: str | None, default: str = DEFAULT_PRIMA
         return DEFAULT_PRIMARY_TEXT_MODEL
 
     return raw
+
+
+def is_claude_model(model: str | None) -> bool:
+    """Return True if the model string identifies a Claude (Anthropic) model."""
+    return str(model or "").strip().lower().startswith("claude-")
