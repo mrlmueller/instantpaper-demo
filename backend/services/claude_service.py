@@ -1,3 +1,5 @@
+import asyncio
+
 from anthropic import AsyncAnthropic
 from utils.config import config
 from utils.prompt_dumps import dump_prompt_markdown
@@ -43,6 +45,10 @@ class ClaudeService:
     _instance = None
     _initialized = False
     _client: Optional[AsyncAnthropic] = None
+    # Limit concurrent Claude API calls to avoid exceeding the TPM rate limit.
+    # Anthropic free/low-tier orgs are capped at 30k input tokens/minute;
+    # processing many Quellen in parallel instantly saturates that budget.
+    _semaphore: asyncio.Semaphore = asyncio.Semaphore(3)
 
     def __new__(cls):
         if cls._instance is None:
@@ -58,7 +64,8 @@ class ClaudeService:
                 raise ValueError(
                     "Claude API key not configured. Add CLAUDE_API_KEY to backend/.env"
                 )
-            self._client = AsyncAnthropic(api_key=config.CLAUDE_API_KEY)
+            # max_retries=5: SDK handles 429 with exponential backoff automatically.
+            self._client = AsyncAnthropic(api_key=config.CLAUDE_API_KEY, max_retries=5)
             self._initialized = True
             logger.info("Anthropic Claude client initialized successfully")
 
@@ -129,13 +136,14 @@ class ClaudeService:
                     user_content.append(_build_image_content_block(img_url))
 
             logger.info(f"Processing Quelle with Claude model {model}")
-            async with client.messages.stream(
-                model=model,
-                max_tokens=CLAUDE_MAX_TOKENS,
-                system=system_message,
-                messages=[{"role": "user", "content": user_content}],
-            ) as stream:
-                response = await stream.get_final_message()
+            async with self._semaphore:
+                async with client.messages.stream(
+                    model=model,
+                    max_tokens=CLAUDE_MAX_TOKENS,
+                    system=system_message,
+                    messages=[{"role": "user", "content": user_content}],
+                ) as stream:
+                    response = await stream.get_final_message()
 
             result_text = response.content[0].text if response.content else None
             if not result_text:
@@ -213,13 +221,14 @@ class ClaudeService:
                     user_content.append(_build_image_content_block(img_url))
 
             logger.info(f"Combining {len(texts)} texts with Claude model {model}")
-            async with client.messages.stream(
-                model=model,
-                max_tokens=CLAUDE_MAX_TOKENS,
-                system=system_message,
-                messages=[{"role": "user", "content": user_content}],
-            ) as stream:
-                response = await stream.get_final_message()
+            async with self._semaphore:
+                async with client.messages.stream(
+                    model=model,
+                    max_tokens=CLAUDE_MAX_TOKENS,
+                    system=system_message,
+                    messages=[{"role": "user", "content": user_content}],
+                ) as stream:
+                    response = await stream.get_final_message()
 
             result_text = response.content[0].text if response.content else None
             if not result_text:
@@ -268,13 +277,14 @@ class ClaudeService:
             )
 
             logger.info(f"Summarizing Kapitel with Claude model {model}")
-            async with client.messages.stream(
-                model=model,
-                max_tokens=CLAUDE_MAX_TOKENS,
-                system=system_message,
-                messages=[{"role": "user", "content": prompt}],
-            ) as stream:
-                response = await stream.get_final_message()
+            async with self._semaphore:
+                async with client.messages.stream(
+                    model=model,
+                    max_tokens=CLAUDE_MAX_TOKENS,
+                    system=system_message,
+                    messages=[{"role": "user", "content": prompt}],
+                ) as stream:
+                    response = await stream.get_final_message()
 
             result_text = response.content[0].text if response.content else None
             if not result_text:
@@ -314,13 +324,14 @@ class ClaudeService:
             )
 
             logger.info(f"Shortening with Claude model {model}")
-            async with client.messages.stream(
-                model=model,
-                max_tokens=CLAUDE_MAX_TOKENS,
-                system=system_message,
-                messages=[{"role": "user", "content": prompt}],
-            ) as stream:
-                response = await stream.get_final_message()
+            async with self._semaphore:
+                async with client.messages.stream(
+                    model=model,
+                    max_tokens=CLAUDE_MAX_TOKENS,
+                    system=system_message,
+                    messages=[{"role": "user", "content": prompt}],
+                ) as stream:
+                    response = await stream.get_final_message()
 
             result_text = response.content[0].text if response.content else None
             if not result_text:
@@ -368,13 +379,14 @@ class ClaudeService:
             )
 
             logger.info(f"Improving reading flow with Claude model {model}")
-            async with client.messages.stream(
-                model=model,
-                max_tokens=CLAUDE_MAX_TOKENS,
-                system=system_message,
-                messages=[{"role": "user", "content": prompt}],
-            ) as stream:
-                response = await stream.get_final_message()
+            async with self._semaphore:
+                async with client.messages.stream(
+                    model=model,
+                    max_tokens=CLAUDE_MAX_TOKENS,
+                    system=system_message,
+                    messages=[{"role": "user", "content": prompt}],
+                ) as stream:
+                    response = await stream.get_final_message()
 
             result_text = response.content[0].text if response.content else None
             if not result_text:
@@ -416,13 +428,14 @@ class ClaudeService:
             )
 
             logger.info(f"Generating text with Claude model {model} (stage={stage})")
-            async with client.messages.stream(
-                model=model,
-                max_tokens=CLAUDE_MAX_TOKENS,
-                system=system_message,
-                messages=[{"role": "user", "content": prompt}],
-            ) as stream:
-                response = await stream.get_final_message()
+            async with self._semaphore:
+                async with client.messages.stream(
+                    model=model,
+                    max_tokens=CLAUDE_MAX_TOKENS,
+                    system=system_message,
+                    messages=[{"role": "user", "content": prompt}],
+                ) as stream:
+                    response = await stream.get_final_message()
 
             result_text = response.content[0].text if response.content else None
             if not result_text:
@@ -475,14 +488,15 @@ class ClaudeService:
             }
 
             logger.info(f"Generating gliederung JSON with Claude {model} (tool use)")
-            response = await client.messages.create(
-                model=model,
-                max_tokens=8192,
-                system=system_message,
-                messages=[{"role": "user", "content": instructions}],
-                tools=[tool],
-                tool_choice={"type": "tool", "name": tool_name},
-            )
+            async with self._semaphore:
+                response = await client.messages.create(
+                    model=model,
+                    max_tokens=8192,
+                    system=system_message,
+                    messages=[{"role": "user", "content": instructions}],
+                    tools=[tool],
+                    tool_choice={"type": "tool", "name": tool_name},
+                )
 
             tool_use_block = next(
                 (b for b in response.content if getattr(b, "type", None) == "tool_use"),
