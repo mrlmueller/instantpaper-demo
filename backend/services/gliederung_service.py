@@ -17,6 +17,7 @@ from services.openai_estimation_service import get_openai_estimation_service
 from services.openai_service import OpenAIService
 from services.prompt_service import prompt_service, GLIEDERUNG_DEFAULT_V2_SYSTEM_PROMPT
 from services.user_key_service import user_key_service
+from utils.openai_models import DEFAULT_PRIMARY_TEXT_MODEL, normalize_forward_text_model
 from utils.prompt_dumps import dump_prompt_markdown
 
 logger = logging.getLogger(__name__)
@@ -221,6 +222,7 @@ class GliederungService:
         gliederung_studienbrief_mit_seiten: str,
         extra_kontext: str,
     ) -> str:
+        model = normalize_forward_text_model(model)
         draft_ref = (
             firebase_service.db.collection("users")
             .document(user_id)
@@ -259,6 +261,7 @@ class GliederungService:
         instructions: str,
         api_key: Optional[str],
     ) -> GliederungGenerationResult:
+        model = normalize_forward_text_model(model)
         client = self.openai._get_client(api_key)  # pylint: disable=protected-access
 
         dump_prompt_markdown(
@@ -387,7 +390,7 @@ class GliederungService:
             prompt_template_id, _ = await prompt_service.resolve_active_template_id(
                 user_id, "gliederung"
             )
-        model = str(draft.get("model") or "").strip() or "gpt-5.2"
+        model = normalize_forward_text_model(str(draft.get("model") or "").strip(), default=DEFAULT_PRIMARY_TEXT_MODEL)
         inputs = draft.get("inputs") if isinstance(draft.get("inputs"), dict) else {}
 
         aufgabenstellung = str((inputs or {}).get("aufgabenstellung") or "").strip()
@@ -564,6 +567,7 @@ class GliederungService:
                         "outputTokens": int(usage.output_tokens),
                         "totalTokens": int(usage.total_tokens),
                     },
+                    "model": openai_result.model or model,
                     "costUsd": float(cost_breakdown.total_cost_usd),
                     "operationId": operation_id,
                     "keySource": key_source,
@@ -633,7 +637,7 @@ class GliederungService:
             prompt_template_id, _ = await prompt_service.resolve_active_template_id(
                 user_id, "gliederung"
             )
-        model = str(draft.get("model") or "").strip() or "gpt-5.2"
+        model = normalize_forward_text_model(str(draft.get("model") or "").strip(), default=DEFAULT_PRIMARY_TEXT_MODEL)
         inputs = draft.get("inputs") if isinstance(draft.get("inputs"), dict) else {}
         output_saved = draft.get("output") if isinstance(draft.get("output"), dict) else None
 
@@ -821,6 +825,7 @@ class GliederungService:
                         "outputTokens": int(usage.output_tokens),
                         "totalTokens": int(usage.total_tokens),
                     },
+                    "model": openai_result.model or model,
                     "costUsd": float(cost_breakdown.total_cost_usd),
                     "operationId": operation_id,
                     "keySource": key_source,

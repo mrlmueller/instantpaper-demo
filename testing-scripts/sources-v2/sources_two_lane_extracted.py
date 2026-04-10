@@ -1344,9 +1344,10 @@ OPENAI_REQUEST_DUMPER = OpenAIRequestMarkdownLogger(OPENAI_REQUEST_DEBUG_DIR)
 # Model prices (USD per *1M tokens*) — verify periodically.
 # NOTE: cached token pricing can differ; set the correct values for your account.
 MODEL_PRICES_USD_PER_1M: Dict[str, Dict[str, float]] = {
-    "gpt-5.2": {"input": 1.75, "cached": 1.75, "output": 14.00},
-    "gpt-5-mini": {"input": 0.25, "cached": 0.25, "output": 2.00},
-    "gpt-5-nano": {"input": 0.05, "cached": 0.05, "output": 0.40},
+    "gpt-5.4": {"input": 2.50, "cached": 0.25, "output": 15.00},
+    "gpt-5.2": {"input": 1.75, "cached": 0.175, "output": 14.00},
+    "gpt-5-mini": {"input": 0.25, "cached": 0.025, "output": 2.00},
+    "gpt-5-nano": {"input": 0.05, "cached": 0.005, "output": 0.40},
 }
 
 
@@ -1362,7 +1363,7 @@ def resolve_pricing_key(model_name: str) -> Optional[str]:
     if date_stripped in normalized:
         return normalized[date_stripped]
 
-    # Prefix match: gpt-5.2-foo
+    # Prefix match: gpt-5.4-foo
     for k_lower, original in normalized.items():
         if model_lower.startswith(k_lower + "-"):
             return original

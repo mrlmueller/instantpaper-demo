@@ -34,6 +34,11 @@ def main() -> None:
                     "cachedInputPerMillion": 0.125,
                     "outputPerMillion": 10.00,
                 },
+                "gpt-5.4": {
+                    "inputPerMillion": 2.50,
+                    "cachedInputPerMillion": 0.25,
+                    "outputPerMillion": 15.00,
+                },
                 "gpt-5.2": {
                     "inputPerMillion": 1.75,
                     "cachedInputPerMillion": 0.175,

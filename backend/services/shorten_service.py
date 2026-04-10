@@ -5,6 +5,7 @@ from services.cost_service import get_cost_service, TokenUsage
 from services.openai_budget_service import get_openai_budget_service
 from services.openai_estimation_service import get_openai_estimation_service
 from services.user_key_service import user_key_service
+from utils.openai_models import normalize_forward_text_model
 from services.prompt_service import prompt_service
 import logging
 import asyncio
@@ -528,7 +529,7 @@ Fasse folgenden Text zusammen, sodass er auf ungefähr 30% Wörter vom Original 
                 raise ValueError(f"Run {run_id} not found for Kapitel {kapitel_id}")
 
             # Enforce run-level model for all actions tied to this run.
-            run_model = (run_data.get("model") or "").strip()
+            run_model = normalize_forward_text_model((run_data.get("model") or "").strip(), default="")
             if run_model:
                 if model and model != run_model:
                     logger.info(
@@ -994,7 +995,7 @@ Nutze die letzten Absätze deines Textes dazu, eine subtile Überleitung in das 
                 raise ValueError(f"Run {run_id} not found for Kapitel {kapitel_id}")
 
             # Enforce run-level model for all actions tied to this run.
-            run_model = (run_data.get("model") or "").strip()
+            run_model = normalize_forward_text_model((run_data.get("model") or "").strip(), default="")
             if run_model:
                 if model and model != run_model:
                     logger.info(

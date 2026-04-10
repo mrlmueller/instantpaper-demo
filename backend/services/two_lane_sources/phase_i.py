@@ -145,8 +145,8 @@ async def run_phase_i_rerank(
         raise RuntimeError(f"Missing {rankings_g_path}. Run Phase G first.")
 
     model_rerank = str(getattr(cfg, "openai_model_rerank", "gpt-5-nano") or "gpt-5-nano").strip()
-    if model_rerank == "gpt-5.2":
-        raise ValueError("Rerank model 'gpt-5.2' is disabled for cost reasons. Use gpt-5-nano or gpt-5-mini.")
+    if model_rerank in {"gpt-5.2", "gpt-5.4"}:
+        raise ValueError(f"Rerank model '{model_rerank}' is disabled for cost reasons. Use gpt-5-nano or gpt-5-mini.")
 
     K = int(getattr(cfg, "rerank_top_k_pre", 40) or 40)
     CONCURRENCY = int(getattr(cfg, "rerank_concurrency", 20) or 20)

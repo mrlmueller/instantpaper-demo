@@ -419,7 +419,7 @@ export function QuellenFinder({
   const [runs, setRuns] = useState<RunRow[]>([]);
   const [activeTwoLaneRunId, setActiveTwoLaneRunId] = useState<string | null>(null);
 
-  type PlannerModel = "gpt-5-nano" | "gpt-5-mini" | "gpt-5.2";
+  type PlannerModel = "gpt-5-nano" | "gpt-5-mini" | "gpt-5.4";
   type RerankModel = "gpt-5-nano" | "gpt-5-mini";
   type ReasoningEffort = "low" | "medium" | "high";
 
@@ -904,14 +904,14 @@ export function QuellenFinder({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <div className="text-xs text-muted-foreground">Planner model</div>
-                      <Select value={plannerModel} onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" || v === "gpt-5.2" ? setPlannerModel(v) : null)}>
+                      <Select value={plannerModel} onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" || v === "gpt-5.4" ? setPlannerModel(v) : null)}>
                         <SelectTrigger className="h-9">
                           <SelectValue placeholder="Planner" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="gpt-5-nano">gpt-5-nano</SelectItem>
                           <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
-                          <SelectItem value="gpt-5.2">gpt-5.2</SelectItem>
+                          <SelectItem value="gpt-5.4">gpt-5.4</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -920,7 +920,7 @@ export function QuellenFinder({
                       <div className="text-xs text-muted-foreground">OpenAlex query model</div>
                       <Select
                         value={openalexQueryModel}
-                        onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" || v === "gpt-5.2" ? setOpenalexQueryModel(v) : null)}
+                        onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" || v === "gpt-5.4" ? setOpenalexQueryModel(v) : null)}
                       >
                         <SelectTrigger className="h-9">
                           <SelectValue placeholder="OpenAlex query model" />
@@ -928,21 +928,21 @@ export function QuellenFinder({
                         <SelectContent>
                           <SelectItem value="gpt-5-nano">gpt-5-nano</SelectItem>
                           <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
-                          <SelectItem value="gpt-5.2">gpt-5.2</SelectItem>
+                          <SelectItem value="gpt-5.4">gpt-5.4</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
 
                     <div className="space-y-1">
                       <div className="text-xs text-muted-foreground">S2 query model</div>
-                      <Select value={s2QueryModel} onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" || v === "gpt-5.2" ? setS2QueryModel(v) : null)}>
+                      <Select value={s2QueryModel} onValueChange={(v) => (v === "gpt-5-nano" || v === "gpt-5-mini" || v === "gpt-5.4" ? setS2QueryModel(v) : null)}>
                         <SelectTrigger className="h-9">
                           <SelectValue placeholder="S2 query model" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="gpt-5-nano">gpt-5-nano</SelectItem>
                           <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
-                          <SelectItem value="gpt-5.2">gpt-5.2</SelectItem>
+                          <SelectItem value="gpt-5.4">gpt-5.4</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

@@ -21,7 +21,7 @@ import type {
 import { DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY } from "@/app/lib/prompts/promptConfig"
 import { cn } from "@/lib/utils"
 
-export type GliederungModel = "gpt-5-nano" | "gpt-5-mini" | "gpt-5.2"
+export type GliederungModel = "gpt-5-nano" | "gpt-5-mini" | "gpt-5.4"
 
 export interface GliederungGenerateSettings {
   model: GliederungModel
@@ -31,7 +31,7 @@ export interface GliederungGenerateSettings {
   promptChoice?: Partial<Record<PromptStage, string>>
 }
 
-const DEFAULT_GLIEDERUNG_MODEL: GliederungModel = process.env.NODE_ENV === "production" ? "gpt-5.2" : "gpt-5-nano"
+const DEFAULT_GLIEDERUNG_MODEL: GliederungModel = process.env.NODE_ENV === "production" ? "gpt-5.4" : "gpt-5-nano"
 
 interface GliederungCreateDialogProps {
   open: boolean
@@ -143,7 +143,7 @@ export function GliederungCreateDialog({
   }> = [
     { value: "gpt-5-nano", label: "GPT-5 nano", description: "Schnell" },
     { value: "gpt-5-mini", label: "GPT-5 mini", description: "Ausgewogen" },
-    { value: "gpt-5.2", label: "GPT-5.2", description: "Beste Qualität" },
+    { value: "gpt-5.4", label: "GPT-5.4", description: "Beste Qualität" },
   ]
 
   const renderPromptSelect = () => {

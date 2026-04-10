@@ -87,6 +87,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from starlette.background import BackgroundTask
 
 from utils.logging_config import configure_logging
+from utils.openai_models import DEFAULT_PRIMARY_TEXT_MODEL, normalize_forward_text_model
 
 # Configure logging early (no file logs; keep uvicorn access logs).
 configure_logging()
@@ -5272,7 +5273,7 @@ async def generate_gliederung(
     draft_id = await gliederung_service.create_draft_placeholder(
         user_id=user_id,
         projekt_id=projekt_id,
-        model=request.model,
+        model=normalize_forward_text_model(request.model, default=DEFAULT_PRIMARY_TEXT_MODEL),
         prompt_template_id=prompt_template_id,
         aufgabenstellung=str(request.aufgabenstellung or "").strip(),
         gliederung_studienbrief_mit_seiten=str(request.gliederung_studienbrief_mit_seiten or "").strip(),
@@ -5397,7 +5398,7 @@ async def refine_gliederung(
             "projektId": projekt_id,
             "status": "running",
             "errorMessage": None,
-            "model": str(draft.get("model") or "gpt-5.2"),
+            "model": normalize_forward_text_model(str(draft.get("model") or ""), default=DEFAULT_PRIMARY_TEXT_MODEL),
             "promptTemplateId": str(draft.get("promptTemplateId") or "default_v2"),
             "inputs": draft.get("inputs") if isinstance(draft.get("inputs"), dict) else {},
             # Copy current output as the refinement base (will be replaced on success).
@@ -5500,9 +5501,9 @@ async def quellen_finder_sources_two_lane_start(
     }
 
     pipeline_settings = {
-        "openai_model_planner": str(request.planner_model),
-        "openai_model_openalex_query_builder": str(request.openalex_query_builder_model),
-        "openai_model_s2_query_builder": str(request.s2_query_builder_model),
+        "openai_model_planner": normalize_forward_text_model(str(request.planner_model), default="gpt-5-mini"),
+        "openai_model_openalex_query_builder": normalize_forward_text_model(str(request.openalex_query_builder_model), default="gpt-5-mini"),
+        "openai_model_s2_query_builder": normalize_forward_text_model(str(request.s2_query_builder_model), default="gpt-5-mini"),
         "openai_model_rerank": str(request.rerank_model),
         "embedding_model": str(request.embedding_model),
         "openai_reasoning_effort": str(request.reasoning_effort),
@@ -5523,7 +5524,7 @@ async def quellen_finder_sources_two_lane_start(
         kind="sources_two_lane",
         kapitel_ids=[kapitel_id],
         kapitel_snapshots=[kapitel_snapshot],
-        model=str(request.planner_model or "").strip() or "gpt-5-mini",
+        model=normalize_forward_text_model(str(request.planner_model or "").strip(), default="gpt-5-mini"),
         extra={
             "executionBackend": execution_backend,
             "chapterInputSnapshot": chapter_input_snapshot,
@@ -6709,7 +6710,7 @@ async def process_quelle(
         user_id, request.kapitel_id, request.run_id
     )
     run_model = (run_doc.get("model") or "").strip() if run_doc else ""
-    model_to_use = run_model or request.model
+    model_to_use = normalize_forward_text_model(run_model or request.model, default=DEFAULT_PRIMARY_TEXT_MODEL)
 
     # Create/merge placeholder result doc immediately so the UI can show running/error state.
     await firebase_service.mark_result_running(
@@ -6892,7 +6893,7 @@ async def shorten_kapitel(
         kapitel_id=request.kapitel_id,
         run_id=request.run_id,
         artifact_id="shortened",
-        model=request.model,
+        model=normalize_forward_text_model(request.model, default="gpt-5-nano"),
         used_kapitel_ids=request.context_kapitel_ids,
     )
 
@@ -6903,7 +6904,7 @@ async def shorten_kapitel(
                 request.kapitel_id,
                 request.run_id,
                 request.context_kapitel_ids,
-                request.model,
+                normalize_forward_text_model(request.model, default="gpt-5-nano"),
             )
         except Exception as e:
             logger.error(
@@ -6976,7 +6977,7 @@ async def improve_lesefluss(
             kapitel_id=request.kapitel_id,
             run_id=request.run_id,
             artifact_id="lesefluss",
-            model=request.model,
+            model=normalize_forward_text_model(request.model, default="gpt-5-nano"),
             used_kapitel_ids=request.context_kapitel_ids,
             aufgabenstellung=request.aufgabenstellung,
         )
@@ -6990,7 +6991,7 @@ async def improve_lesefluss(
                     run_id=request.run_id,
                     context_kapitel_ids=request.context_kapitel_ids,
                     aufgabenstellung=request.aufgabenstellung,
-                    model=request.model,
+                    model=normalize_forward_text_model(request.model, default="gpt-5-nano"),
                     api_key=api_key,
                     key_source=key_source,
                 )

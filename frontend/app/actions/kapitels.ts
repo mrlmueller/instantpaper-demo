@@ -253,9 +253,10 @@ function normalizeSummarySourceType(sourceType: unknown): 'combined' | 'shortene
   return sourceType === 'shortened' ? 'shortened' : 'combined';
 }
 
-function normalizeRunModel(model: unknown): 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' {
+function normalizeRunModel(model: unknown): 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.4' {
   const m = String(model ?? '').trim();
-  return m === 'gpt-5-nano' || m === 'gpt-5-mini' || m === 'gpt-5.2' ? m : 'gpt-5-nano';
+  if (m === 'gpt-5.2' || m === 'gpt-5.4') return 'gpt-5.4';
+  return m === 'gpt-5-nano' || m === 'gpt-5-mini' ? m : 'gpt-5-nano';
 }
 
 function normalizeResultDocStatus(status: unknown): KapitelRunResult['status'] {
@@ -536,11 +537,13 @@ export async function createKapitelRun(
     const lastIndex = lastRunSnapshot.empty ? 0 : Number(lastRunSnapshot.docs[0].data().index ?? 0);
     const nextIndex = lastIndex + 1;
 
+    const normalizedModel = normalizeRunModel(model);
+
     const runDocRef = await addDoc(runsRef as unknown as CollectionReference<DocumentData>, {
       projektId,
       index: nextIndex,
       instruction,
-      model,
+      model: normalizedModel,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       archived: false,
@@ -929,7 +932,7 @@ export async function createShortenRun(
   contextKapitelIds: string[]
 ) {
   const user = await requireAuth();
-  let runModel: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano';
+  let runModel: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.4' = 'gpt-5-nano';
   if (user) {
     const db = await getFirestoreForUser();
     const runSnap = await getDoc(doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId));
@@ -951,7 +954,7 @@ export async function createLeseflussRun(
   aufgabenstellung: string
 ) {
   const user = await requireAuth();
-  let runModel: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' = 'gpt-5-nano';
+  let runModel: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.4' = 'gpt-5-nano';
   if (user) {
     const db = await getFirestoreForUser();
     const runSnap = await getDoc(doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId));

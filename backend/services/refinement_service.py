@@ -16,6 +16,7 @@ from services.openai_estimation_service import get_openai_estimation_service
 from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
 from utils.config import config
+from utils.openai_models import normalize_forward_text_model
 from utils.quellen_zitat import resolve_quelle_zitat_value
 
 logger = logging.getLogger(__name__)
@@ -783,7 +784,7 @@ class RefinementService:
         root = await firebase_service.get_shortened_refinement_version(
             user_id, kapitel_id, run_id, "root"
         )
-        stage_model = (root or {}).get("model") or "gpt-5-mini"
+        stage_model = normalize_forward_text_model((root or {}).get("model"), default="gpt-5-mini")
 
         version_id = str(uuid4())
         pending = {
@@ -970,7 +971,7 @@ class RefinementService:
             pending = await firebase_service.get_shortened_refinement_version(
                 user_id, kapitel_id, run_id, version_id
             )
-            model = (pending or {}).get("model") or "gpt-5-mini"
+            model = normalize_forward_text_model((pending or {}).get("model"), default="gpt-5-mini")
 
             debug_dump_path = self._get_prompt_dump_path("refine_shortened", version_id)
 
@@ -1240,7 +1241,7 @@ class RefinementService:
         root = await firebase_service.get_lesefluss_refinement_version(
             user_id, kapitel_id, run_id, "root"
         )
-        stage_model = (root or {}).get("model") or "gpt-5-mini"
+        stage_model = normalize_forward_text_model((root or {}).get("model"), default="gpt-5-mini")
 
         version_id = str(uuid4())
         pending = {
@@ -1346,7 +1347,7 @@ class RefinementService:
             pending = await firebase_service.get_lesefluss_refinement_version(
                 user_id, kapitel_id, run_id, version_id
             )
-            model = (pending or {}).get("model") or "gpt-5-mini"
+            model = normalize_forward_text_model((pending or {}).get("model"), default="gpt-5-mini")
 
             # Summaries / Gliederung (reuse cache if present)
             summary_tasks = [
@@ -1753,7 +1754,7 @@ class RefinementService:
         root = await firebase_service.get_result_refinement_version(
             user_id, kapitel_id, run_id, quelle_id, "root"
         )
-        stage_model = (root or {}).get("model") or "gpt-5-mini"
+        stage_model = normalize_forward_text_model((root or {}).get("model"), default="gpt-5-mini")
 
         version_id = str(uuid4())
         pending = {
@@ -1907,7 +1908,7 @@ class RefinementService:
             pending = await firebase_service.get_result_refinement_version(
                 user_id, kapitel_id, run_id, quelle_id, version_id
             )
-            model = (pending or {}).get("model") or "gpt-5-mini"
+            model = normalize_forward_text_model((pending or {}).get("model"), default="gpt-5-mini")
 
             quelle_content_doc = await firebase_service.get_quelle_content(
                 user_id, quelle_id

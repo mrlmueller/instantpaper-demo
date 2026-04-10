@@ -1,5 +1,6 @@
 from openai import AsyncOpenAI
 from utils.config import config
+from utils.openai_models import normalize_forward_text_model
 from utils.prompt_dumps import dump_prompt_markdown
 import logging
 from typing import Optional, List, Tuple
@@ -18,9 +19,9 @@ NO_CONTENT_SENTINEL = "NO_CONTENT"
 
 def _prompt_cache_kwargs(model: str) -> dict:
     """
-    Enable prompt caching for supported models only.
+    Enable explicit 24h prompt-cache retention only for models that support it.
 
-    OpenAI currently supports prompt caching for gpt-5.1 and gpt-5.2.
+    GPT-5.4 should use the standard request path without this opt-in flag.
     """
     model = (model or "").strip()
     if model in {"gpt-5.1", "gpt-5.2"}:
@@ -92,6 +93,7 @@ class OpenAIService:
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
+            model = normalize_forward_text_model(model)
             client = self._get_client(api_key)
 
             template = (user_input or "").replace("{BILDINHALT_ODER_LEER}", "")
@@ -245,6 +247,7 @@ class OpenAIService:
         Combine multiple texts into one consolidated text.
         """
         try:
+            model = normalize_forward_text_model(model)
             client = self._get_client(api_key)
             draft_parts: list[str] = []
             for idx, text in enumerate(texts, start=1):
@@ -349,6 +352,7 @@ class OpenAIService:
     ) -> Tuple[str, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
+            model = normalize_forward_text_model(model)
             client = self._get_client(api_key)
             logger.info(f"Summarizing Kapitel with model {model}")
 
@@ -430,6 +434,7 @@ class OpenAIService:
     ) -> Tuple[str, dict]:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
+            model = normalize_forward_text_model(model)
             client = self._get_client(api_key)
             logger.info(f"Shortening and deduplicating Kapitel with model {model}")
 
@@ -532,6 +537,7 @@ class OpenAIService:
 
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
+            model = normalize_forward_text_model(model)
             client = self._get_client(api_key)
             logger.info(f"Improving reading flow with model {model}")
 
@@ -617,6 +623,7 @@ class OpenAIService:
     ) -> dict:
         "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
         try:
+            model = normalize_forward_text_model(model)
             client = self._get_client(api_key)
             logger.info(f"Generating text with model {model} (stage={stage})")
 

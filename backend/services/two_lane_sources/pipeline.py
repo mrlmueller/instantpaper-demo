@@ -53,6 +53,7 @@ from services.openai_service import OpenAIService
 from services.user_key_service import user_key_service
 from services.two_lane_sources.provider_rate_limit import build_provider_rate_limiter
 from utils.config import config as app_config
+from utils.openai_models import DEFAULT_PRIMARY_TEXT_MODEL, normalize_forward_text_model
 from utils.token_estimation import count_tokens
 
 logger = logging.getLogger(__name__)
@@ -5258,6 +5259,7 @@ class TwoLaneOpenAI:
         timeout_s: float,
         operation_details: dict | None = None,
     ) -> tuple[dict, dict]:
+        model = normalize_forward_text_model(model, default=DEFAULT_PRIMARY_TEXT_MODEL)
         self._ensure_budget_before_call()
 
         spend_rate = float(await self.credits_service.get_spend_rate_for_user(self.user_id))

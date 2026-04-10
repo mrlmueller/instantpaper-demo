@@ -2,14 +2,17 @@ from pydantic import BaseModel, Field
 from typing import Literal, List, Optional
 
 
+TextGenerationModel = Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.4", "gpt-5.2"]
+
+
 class ProcessQuelleRequest(BaseModel):
     """Request model for processing a Quelle with OpenAI"""
 
     quelle_id: str = Field(..., description="ID of the Quelle to process")
     kapitel_id: str = Field(..., description="Kapitel ID this run belongs to")
     run_id: str = Field(..., description="Kapitel run ID for grouping results")
-    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
-        default="gpt-5.2",
+    model: TextGenerationModel = Field(
+        default="gpt-5.4",
         description="OpenAI model to use for processing"
     )
 
@@ -19,7 +22,7 @@ class ProcessQuelleRequest(BaseModel):
                 "quelle_id": "abc123",
                 "kapitel_id": "kap456",
                 "run_id": "run789",
-                "model": "gpt-5.2"
+                "model": "gpt-5.4"
             }
         }
 
@@ -57,7 +60,7 @@ class ShortenKapitelRequest(BaseModel):
         description="IDs of other Kapitels to use for context (will be summarized)",
         min_length=1
     )
-    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
+    model: TextGenerationModel = Field(
         default="gpt-5-nano",
         description="OpenAI model to use for summarization and shortening"
     )
@@ -88,7 +91,7 @@ class LeseflussKapitelRequest(BaseModel):
         description="Task description for the entire paper",
         min_length=10
     )
-    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
+    model: TextGenerationModel = Field(
         default="gpt-5-nano",
         description="OpenAI model to use for improving reading flow"
     )
@@ -118,8 +121,8 @@ class GenerateGliederungRequest(BaseModel):
         default="",
         description="Optional: extra context / constraints (free text)",
     )
-    model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
-        default="gpt-5.2",
+    model: TextGenerationModel = Field(
+        default="gpt-5.4",
         description="OpenAI model to use for generating the outline draft",
     )
 
@@ -130,7 +133,7 @@ class GenerateGliederungRequest(BaseModel):
                 "aufgabenstellung": "Analyse der Auswirkungen von KI auf die Arbeitswelt",
                 "gliederung_studienbrief_mit_seiten": "1 Einführung (S. 1–10)\n2 Grundlagen (S. 11–45)",
                 "extra_kontext": "Schreibe auf Deutsch. Keine konkreten Modelle nennen, außer explizit gefordert.",
-                "model": "gpt-5.2",
+                "model": "gpt-5.4",
             }
         }
 
@@ -241,21 +244,21 @@ class QuellenFinderTwoLaneStartRequest(BaseModel):
     projekt_id: str = Field(..., description="Project ID this Quellen-Finder run belongs to")
     kapitel_id: str = Field(..., description="Kapitel ID to run two-lane source retrieval for")
 
-    planner_model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
+    planner_model: TextGenerationModel = Field(
         default="gpt-5-mini",
         description="Model to use for Phase B (facet planner)",
     )
-    openalex_query_builder_model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
+    openalex_query_builder_model: TextGenerationModel = Field(
         default="gpt-5-mini",
         description="Model to use for Phase C (OpenAlex query builder)",
     )
-    s2_query_builder_model: Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.2"] = Field(
+    s2_query_builder_model: TextGenerationModel = Field(
         default="gpt-5-mini",
         description="Model to use for Phase C (Semantic Scholar query builder)",
     )
     rerank_model: Literal["gpt-5-nano", "gpt-5-mini"] = Field(
         default="gpt-5-nano",
-        description="Model to use for Phase I reranking (gpt-5.2 disabled for cost)",
+        description="Model to use for Phase I reranking (gpt-5.4 disabled for cost)",
     )
     embedding_model: str = Field(
         default="text-embedding-3-small",

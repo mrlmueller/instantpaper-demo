@@ -26,6 +26,8 @@ _COST_METRICS_ROOT_DOC_ID = "v1"
 
 # Hardcoded pricing fallback (USD per 1M tokens) used when Firestore config is missing.
 FALLBACK_MODEL_PRICING: dict[str, tuple[Decimal, Decimal, Decimal]] = {
+    "gpt-5.4": (Decimal("2.50"), Decimal("0.25"), Decimal("15.00")),
+    # Legacy pricing kept for historical runs and in-flight retries.
     "gpt-5.2": (Decimal("1.75"), Decimal("0.175"), Decimal("14.00")),
     "gpt-5.1": (Decimal("1.25"), Decimal("0.125"), Decimal("10.00")),
     "gpt-5-mini": (Decimal("0.25"), Decimal("0.025"), Decimal("2.00")),
@@ -197,13 +199,13 @@ class CostService:
             matched_key, pricing = normalized_pricing[model_lower]
             return matched_key, pricing, "exact"
 
-        # 2) Strip release-date suffixes (e.g., gpt-5.2-2025-11-13 -> gpt-5.2)
+        # 2) Strip release-date suffixes (e.g., gpt-5.4-2026-03-05 -> gpt-5.4)
         date_stripped = re.sub(r"-20\d{2}-\d{2}-\d{2}$", "", model_lower)
         if date_stripped != model_lower and date_stripped in normalized_pricing:
             matched_key, pricing = normalized_pricing[date_stripped]
             return matched_key, pricing, "date_suffix"
 
-        # 3) Prefix match (e.g., gpt-5.2-xyz)
+        # 3) Prefix match (e.g., gpt-5.4-xyz)
         for key_lower, (original_key, pricing) in normalized_pricing.items():
             if model_lower.startswith(f"{key_lower}-"):
                 return original_key, pricing, "prefix"

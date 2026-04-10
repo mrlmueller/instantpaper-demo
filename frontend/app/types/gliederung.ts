@@ -48,7 +48,7 @@ export interface GliederungDraft {
   parentDraftId?: string | null;
   status: GliederungDraftStatus;
   errorMessage?: string | null;
-  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.2' | string;
+  model: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.4' | 'gpt-5.2' | string;
   promptTemplateId: string;
   inputs: GliederungDraftInputs;
   output?: GliederungDraftOutput | null;

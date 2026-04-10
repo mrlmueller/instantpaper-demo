@@ -29,7 +29,7 @@ import { DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY } from "@/app/lib/prompts/promptConf
 import { cn } from "@/lib/utils"
 
 const DEFAULT_PROCESSING_MODEL: ProcessingSettings["model"] =
-  process.env.NODE_ENV === "production" ? "gpt-5.2" : "gpt-5-nano"
+  process.env.NODE_ENV === "production" ? "gpt-5.4" : "gpt-5-nano"
 
 interface ProcessingDialogProps {
   open: boolean
@@ -164,7 +164,7 @@ export function ProcessingDialog({
   }> = [
     { value: "gpt-5-nano", label: "GPT-5 nano", description: "Schnell" },
     { value: "gpt-5-mini", label: "GPT-5 mini", description: "Ausgewogen" },
-    { value: "gpt-5.2", label: "GPT-5.2", description: "Beste Qualität" },
+    { value: "gpt-5.4", label: "GPT-5.4", description: "Beste Qualität" },
   ]
 
   const renderPromptSelect = (stage: PromptStage, label: string) => {

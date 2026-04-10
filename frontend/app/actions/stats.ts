@@ -87,7 +87,7 @@ async function safeCount(ref: CollectionReference<DocumentData>): Promise<number
 }
 
 function displayModelKey(key: string): string {
-  // cost_service sanitizes '.' -> '_' for map keys (e.g., gpt-5.2 -> gpt-5_2)
+  // cost_service sanitizes '.' -> '_' for map keys (e.g., gpt-5.4 -> gpt-5_4)
   if (!key) return key;
   if (key.includes('_')) return key.replaceAll('_', '.');
   return key;

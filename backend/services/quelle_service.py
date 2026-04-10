@@ -6,6 +6,7 @@ from services.credits_service import get_credits_service
 from services.openai_budget_service import get_openai_budget_service
 from services.openai_estimation_service import get_openai_estimation_service
 from services.user_key_service import user_key_service
+from utils.openai_models import DEFAULT_PRIMARY_TEXT_MODEL, normalize_forward_text_model
 from services.prompt_service import prompt_service
 from utils.quellen_zitat import resolve_quelle_zitat_value
 import logging
@@ -157,7 +158,7 @@ class QuelleService:
                 stage="process_quelle",
                 template_id=prompt_template_id,
             )
-            run_model = (run.get("model") or "").strip() if run else ""
+            run_model = normalize_forward_text_model((run.get("model") or "").strip(), default="") if run else ""
             if run_model:
                 if model and model != run_model:
                     logger.info(
@@ -545,7 +546,7 @@ class QuelleService:
             or (run.get("thema") or "").strip()
             or "Thema"
         )
-        run_model = (run.get("model") or "").strip() or "gpt-5.2"
+        run_model = normalize_forward_text_model((run.get("model") or "").strip(), default=DEFAULT_PRIMARY_TEXT_MODEL)
 
         results = await self.firebase.get_run_results(user_id, kapitel_id, run_id)
         eligible = []
@@ -646,7 +647,7 @@ class QuelleService:
             prompt_payload = run.get("promptPayload") or run.get("prompt_payload") or {}
             heading = prompt_payload.get("heading", "").strip() or "Zusammenfassung"
             topic = prompt_payload.get("topic", "").strip() or "Thema"
-            model = run.get("model") or "gpt-5.2"
+            model = normalize_forward_text_model(run.get("model"), default=DEFAULT_PRIMARY_TEXT_MODEL)
 
             results = await self.firebase.get_run_results(user_id, kapitel_id, run_id)
             combine_template_id, _ = await prompt_service.resolve_active_template_id(user_id, "combine")
