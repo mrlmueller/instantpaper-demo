@@ -249,5 +249,265 @@ class ClaudeService:
             logger.error(f"Claude API error (combine_texts): {e}")
             raise
 
+    async def summarize_kapitel(
+        self,
+        prompt: str,
+        model: str,
+        api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+    ) -> tuple:
+        """Summarize a Kapitel. Returns (text, usage_dict) matching OpenAIService."""
+        try:
+            client = self._get_client()
+            system_message = (system_prompt or "").strip() or SUMMARIZE_SYSTEM_MESSAGE
+
+            dump_prompt_markdown(
+                stage="summary",
+                model=model,
+                sections=[("System Prompt", system_message), ("Instructions", prompt)],
+            )
+
+            logger.info(f"Summarizing Kapitel with Claude model {model}")
+            async with client.messages.stream(
+                model=model,
+                max_tokens=CLAUDE_MAX_TOKENS,
+                system=system_message,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                response = await stream.get_final_message()
+
+            result_text = response.content[0].text if response.content else None
+            if not result_text:
+                raise ValueError("No text output from Claude (summarize_kapitel)")
+
+            input_tokens, cached_input_tokens, output_tokens = _extract_usage(response)
+            usage_dict = {
+                "prompt_tokens": input_tokens,
+                "prompt_tokens_details": {"cached_tokens": cached_input_tokens},
+                "completion_tokens": output_tokens,
+            }
+            return result_text, usage_dict
+
+        except Exception as e:
+            logger.error(f"Claude API error (summarize_kapitel): {e}")
+            raise
+
+    async def shorten_and_deduplicate(
+        self,
+        prompt: str,
+        model: str,
+        api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+    ) -> tuple:
+        """Shorten and deduplicate. Returns (text, usage_dict) matching OpenAIService."""
+        try:
+            import json as _json
+            client = self._get_client()
+            system_message = (system_prompt or "").strip() or SHORTEN_SYSTEM_MESSAGE
+
+            dump_prompt_markdown(
+                stage="shorten",
+                model=model,
+                sections=[("System Prompt", system_message), ("Instructions", prompt)],
+                dump_path=debug_prompt_dump_path,
+            )
+
+            logger.info(f"Shortening with Claude model {model}")
+            async with client.messages.stream(
+                model=model,
+                max_tokens=CLAUDE_MAX_TOKENS,
+                system=system_message,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                response = await stream.get_final_message()
+
+            result_text = response.content[0].text if response.content else None
+            if not result_text:
+                raise ValueError("No text output from Claude (shorten_and_deduplicate)")
+
+            # Backward-compat: some callers may still expect JSON with shortened_text key.
+            shortened_text = result_text
+            try:
+                parsed = _json.loads(result_text.strip())
+                if isinstance(parsed, dict) and "shortened_text" in parsed:
+                    shortened_text = parsed["shortened_text"]
+            except _json.JSONDecodeError:
+                pass
+
+            input_tokens, cached_input_tokens, output_tokens = _extract_usage(response)
+            usage_dict = {
+                "prompt_tokens": input_tokens,
+                "prompt_tokens_details": {"cached_tokens": cached_input_tokens},
+                "completion_tokens": output_tokens,
+            }
+            return shortened_text, usage_dict
+
+        except Exception as e:
+            logger.error(f"Claude API error (shorten_and_deduplicate): {e}")
+            raise
+
+    async def improve_reading_flow(
+        self,
+        prompt: str,
+        model: str,
+        api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+    ) -> tuple:
+        """Improve reading flow. Returns (text, usage_dict) matching OpenAIService."""
+        try:
+            client = self._get_client()
+            system_message = (system_prompt or "").strip() or LESEFLUSS_SYSTEM_MESSAGE
+
+            dump_prompt_markdown(
+                stage="lesefluss",
+                model=model,
+                sections=[("System Prompt", system_message), ("Instructions", prompt)],
+                dump_path=debug_prompt_dump_path,
+            )
+
+            logger.info(f"Improving reading flow with Claude model {model}")
+            async with client.messages.stream(
+                model=model,
+                max_tokens=CLAUDE_MAX_TOKENS,
+                system=system_message,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                response = await stream.get_final_message()
+
+            result_text = response.content[0].text if response.content else None
+            if not result_text:
+                raise ValueError("No text output from Claude (improve_reading_flow)")
+
+            input_tokens, cached_input_tokens, output_tokens = _extract_usage(response)
+            usage_dict = {
+                "prompt_tokens": input_tokens,
+                "prompt_tokens_details": {"cached_tokens": cached_input_tokens},
+                "completion_tokens": output_tokens,
+            }
+            return result_text, usage_dict
+
+        except Exception as e:
+            logger.error(f"Claude API error (improve_reading_flow): {e}")
+            raise
+
+    async def generate_text(
+        self,
+        prompt: str,
+        model: str,
+        *,
+        api_key: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        debug_prompt_dump_path: Optional[str] = None,
+        stage: str = "refine",
+        reasoning_effort: str = "high",  # accepted for signature compat; unused by Claude
+    ) -> dict:
+        """Generic text generation. Returns same dict shape as OpenAIService.generate_text."""
+        try:
+            client = self._get_client()
+            system_message = (system_prompt or "").strip() or "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+
+            dump_prompt_markdown(
+                stage=stage,
+                model=model,
+                sections=[("System Prompt", system_message), ("Instructions", prompt)],
+                dump_path=debug_prompt_dump_path,
+            )
+
+            logger.info(f"Generating text with Claude model {model} (stage={stage})")
+            async with client.messages.stream(
+                model=model,
+                max_tokens=CLAUDE_MAX_TOKENS,
+                system=system_message,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                response = await stream.get_final_message()
+
+            result_text = response.content[0].text if response.content else None
+            if not result_text:
+                raise ValueError("No text output from Claude (generate_text)")
+
+            input_tokens, cached_input_tokens, output_tokens = _extract_usage(response)
+            tokens_used = input_tokens + output_tokens
+
+            return {
+                "content": result_text,
+                "has_content": True,
+                "tokens": tokens_used,
+                "input_tokens": input_tokens,
+                "cached_input_tokens": cached_input_tokens,
+                "output_tokens": output_tokens,
+                "reasoning_tokens": 0,
+                "model": getattr(response, "model", None) or model,
+            }
+
+        except Exception as e:
+            logger.error(f"Claude API error (generate_text): {e}")
+            raise
+
+    async def generate_gliederung_json(
+        self,
+        *,
+        model: str,
+        system_message: str,
+        instructions: str,
+        json_schema: dict,
+        stage: str = "gliederung",
+        debug_prompt_dump_path: Optional[str] = None,
+    ) -> tuple:
+        "<Prompt entfernt: wird zur Laufzeit aus Firebase geladen>"
+        try:
+            client = self._get_client()
+
+            dump_prompt_markdown(
+                stage=stage,
+                model=model,
+                sections=[("System Prompt", system_message), ("Instructions", instructions)],
+                dump_path=debug_prompt_dump_path,
+            )
+
+            tool_name = "generate_structured_output"
+            tool = {
+                "name": tool_name,
+                "description": "Generate the structured output according to the provided schema.",
+                "input_schema": json_schema,
+            }
+
+            logger.info(f"Generating gliederung JSON with Claude {model} (tool use)")
+            response = await client.messages.create(
+                model=model,
+                max_tokens=8192,
+                system=system_message,
+                messages=[{"role": "user", "content": instructions}],
+                tools=[tool],
+                tool_choice={"type": "tool", "name": tool_name},
+            )
+
+            tool_use_block = next(
+                (b for b in response.content if getattr(b, "type", None) == "tool_use"),
+                None,
+            )
+            if tool_use_block is None:
+                raise RuntimeError(
+                    f"Claude returned no tool_use block. "
+                    f"stop_reason={response.stop_reason}, content={response.content}"
+                )
+
+            data = tool_use_block.input
+            if not isinstance(data, dict):
+                raise RuntimeError(f"Claude tool_use.input is not a dict: {type(data)}")
+
+            input_tokens, cached_input_tokens, output_tokens = _extract_usage(response)
+            logger.info(
+                f"Gliederung JSON generated. "
+                f"Input: {input_tokens}, Output: {output_tokens}"
+            )
+            return data, input_tokens, cached_input_tokens, output_tokens
+
+        except Exception as e:
+            logger.error(f"Claude API error (generate_gliederung_json): {e}")
+            raise
+
 
 claude_service = ClaudeService()
