@@ -1,10 +1,11 @@
 """
-Centralized cost tracking for OpenAI API operations.
+Centralized cost tracking for OpenAI and Anthropic API operations.
 
 Goals:
-- Correct token accounting (input, cached input, output) per OpenAI response.
+- Correct token accounting (input, cached input, output) per API response.
 - Accurate USD cost calculation using configurable pricing (Firestore-backed).
 - Durable, immutable cost logging (append-only per-operation log) + aggregates.
+- Provider-aware billing: Claude costs are labeled "anthropic", OpenAI costs "openai".
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from typing import Any, Optional
 
 from google.cloud.firestore_v1 import Increment, SERVER_TIMESTAMP
 from services.credits_service import get_credits_service
+from utils.openai_models import is_claude_model
 
 logger = logging.getLogger(__name__)
 
@@ -214,16 +216,21 @@ class CostService:
                 return original_key, pricing, "prefix"
 
         # 4) Provider-aware fallback: never apply an OpenAI price to a Claude model.
-        from utils.openai_models import is_claude_model as _is_claude
-        if _is_claude(model):
+        if is_claude_model(model):
             claude_fallback = "claude-sonnet-4-6"
             if claude_fallback.lower() in normalized_pricing:
                 matched_key, pricing = normalized_pricing[claude_fallback.lower()]
                 return matched_key, pricing, "claude_fallback"
-            raise ValueError(
-                f"No pricing found for Claude model '{model}' and no Claude fallback configured. "
-                "Add it to _config/pricing in Firestore or to FALLBACK_MODEL_PRICING."
+            # Last resort: FALLBACK_MODEL_PRICING always has claude-sonnet-4-6 so this
+            # path is only reachable if Firestore replaced the table without a Claude entry.
+            # Log a hard error but do NOT crash the user's operation — fall back to the
+            # hardcoded rate rather than raising.
+            logger.error(
+                f"No pricing found for Claude model '{model}' and no Claude fallback in the "
+                "active pricing table. Falling back to hardcoded claude-sonnet-4-6 pricing. "
+                "Fix: add claude-sonnet-4-6 to _config/pricing in Firestore."
             )
+            return "claude-sonnet-4-6", FALLBACK_MODEL_PRICING["claude-sonnet-4-6"], "claude_emergency_fallback"
 
         if fallback_model.lower() in normalized_pricing:
             matched_key, pricing = normalized_pricing[fallback_model.lower()]
@@ -423,8 +430,7 @@ class CostService:
 
         # Credits debit: append-only ledger entry + cached balance update (critical).
         # Route to correct source label: Claude costs must NOT be labeled as "openai".
-        from utils.openai_models import is_claude_model as _is_claude
-        if _is_claude(model):
+        if is_claude_model(model):
             await credits_service.debit_tracked_operation(
                 user_id=user_id,
                 operation_id=operation_id,
