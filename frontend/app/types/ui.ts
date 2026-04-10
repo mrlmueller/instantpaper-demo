@@ -111,7 +111,7 @@ export interface Run {
 }
 
 export interface ProcessingSettings {
-  model: "gpt-5-nano" | "gpt-5-mini" | "gpt-5.4"; // Real model names (not mock)
+  model: "gpt-5-nano" | "gpt-5-mini" | "gpt-5.4" | "claude-sonnet-4-6" | "claude-opus-4-6"; // Real model names (not mock)
   ueberschrift: string; // Heading
   thema: string; // Topic/instruction
   grundlegendeInfos: string; // Basic/contextual information

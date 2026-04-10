@@ -253,9 +253,10 @@ function normalizeSummarySourceType(sourceType: unknown): 'combined' | 'shortene
   return sourceType === 'shortened' ? 'shortened' : 'combined';
 }
 
-function normalizeRunModel(model: unknown): 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.4' {
+function normalizeRunModel(model: unknown): 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.4' | 'claude-sonnet-4-6' | 'claude-opus-4-6' {
   const m = String(model ?? '').trim();
   if (m === 'gpt-5.2' || m === 'gpt-5.4') return 'gpt-5.4';
+  if (m === 'claude-sonnet-4-6' || m === 'claude-opus-4-6') return m;
   return m === 'gpt-5-nano' || m === 'gpt-5-mini' ? m : 'gpt-5-nano';
 }
 
@@ -932,7 +933,7 @@ export async function createShortenRun(
   contextKapitelIds: string[]
 ) {
   const user = await requireAuth();
-  let runModel: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.4' = 'gpt-5-nano';
+  let runModel: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.4' | 'claude-sonnet-4-6' | 'claude-opus-4-6' = 'gpt-5-nano';
   if (user) {
     const db = await getFirestoreForUser();
     const runSnap = await getDoc(doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId));
@@ -954,7 +955,7 @@ export async function createLeseflussRun(
   aufgabenstellung: string
 ) {
   const user = await requireAuth();
-  let runModel: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.4' = 'gpt-5-nano';
+  let runModel: 'gpt-5-nano' | 'gpt-5-mini' | 'gpt-5.4' | 'claude-sonnet-4-6' | 'claude-opus-4-6' = 'gpt-5-nano';
   if (user) {
     const db = await getFirestoreForUser();
     const runSnap = await getDoc(doc(db, 'users', user.uid, 'kapitels', kapitelId, 'runs', runId));
