@@ -20,8 +20,9 @@ import type {
 } from "@/app/types/prompts"
 import { DEFAULT_SYSTEM_PROMPT_TEMPLATE_KEY } from "@/app/lib/prompts/promptConfig"
 import { cn } from "@/lib/utils"
+import type { ProcessingSettings } from "@/app/types/ui"
 
-export type GliederungModel = "gpt-5-nano" | "gpt-5-mini" | "gpt-5.4"
+export type GliederungModel = ProcessingSettings["model"]
 
 export interface GliederungGenerateSettings {
   model: GliederungModel
@@ -136,14 +137,25 @@ export function GliederungCreateDialog({
 
   const showPromptSelectors = askOnEachProcess
 
-  const modelOptions: Array<{
-    value: GliederungModel
-    label: string
-    description: string
+  const modelGroups: Array<{
+    group: string
+    options: Array<{ value: GliederungModel; label: string; description: string }>
   }> = [
-    { value: "gpt-5-nano", label: "GPT-5 nano", description: "Schnell" },
-    { value: "gpt-5-mini", label: "GPT-5 mini", description: "Ausgewogen" },
-    { value: "gpt-5.4", label: "GPT-5.4", description: "Beste Qualität" },
+    {
+      group: "OpenAI",
+      options: [
+        { value: "gpt-5-nano", label: "GPT-5 nano", description: "Schnell" },
+        { value: "gpt-5-mini", label: "GPT-5 mini", description: "Ausgewogen" },
+        { value: "gpt-5.4", label: "GPT-5.4", description: "Beste Qualität" },
+      ],
+    },
+    {
+      group: "Claude",
+      options: [
+        { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", description: "Ausgewogen" },
+        { value: "claude-opus-4-6", label: "Claude Opus 4.6", description: "Beste Qualität" },
+      ],
+    },
   ]
 
   const renderPromptSelect = () => {
@@ -260,26 +272,33 @@ export function GliederungCreateDialog({
 
           <div className="space-y-2">
             <Label className="text-sm font-medium">KI‑Modell</Label>
-            <div role="radiogroup" aria-label="KI‑Modell" className="mt-2 grid grid-cols-3 gap-3">
-              {modelOptions.map((opt) => {
-                const selected = settings.model === opt.value
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => setSettings({ ...settings, model: opt.value })}
-                    className={cn(
-                      "rounded-lg border px-3 py-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30",
-                      selected ? "border-primary bg-primary/5" : "border-border bg-background hover:bg-muted/40"
-                    )}
-                  >
-                    <div className="text-sm font-medium leading-tight">{opt.label}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{opt.description}</div>
-                  </button>
-                )
-              })}
+            <div role="radiogroup" aria-label="KI‑Modell" className="mt-2 space-y-3">
+              {modelGroups.map((group) => (
+                <div key={group.group}>
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{group.group}</div>
+                  <div className={cn("grid gap-3", group.options.length === 2 ? "grid-cols-2" : "grid-cols-3")}>
+                    {group.options.map((opt) => {
+                      const selected = settings.model === opt.value
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => setSettings({ ...settings, model: opt.value })}
+                          className={cn(
+                            "rounded-lg border px-3 py-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30",
+                            selected ? "border-primary bg-primary/5" : "border-border bg-background hover:bg-muted/40"
+                          )}
+                        >
+                          <div className="text-sm font-medium leading-tight">{opt.label}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">{opt.description}</div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 

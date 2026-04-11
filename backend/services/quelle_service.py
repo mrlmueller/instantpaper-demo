@@ -6,7 +6,8 @@ from services.credits_service import get_credits_service
 from services.openai_budget_service import get_openai_budget_service
 from services.openai_estimation_service import get_openai_estimation_service
 from services.user_key_service import user_key_service
-from utils.openai_models import DEFAULT_PRIMARY_TEXT_MODEL, normalize_forward_text_model
+from services.ai_router import get_ai_service
+from utils.openai_models import DEFAULT_PRIMARY_TEXT_MODEL, normalize_forward_text_model, is_claude_model
 from services.prompt_service import prompt_service
 from utils.quellen_zitat import resolve_quelle_zitat_value
 import logging
@@ -179,7 +180,8 @@ class QuelleService:
                     logger.info(f"Quelle has {len(quelle_images)} image(s)")
 
             # Step 2: Process with OpenAI
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
+            _provider = "anthropic" if is_claude_model(model) else "openai"
+            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id, provider=_provider)
             logger.info(f"Processing Quelle {quelle_id} with OpenAI model {model}")
 
             quelle_text = quelle_content_doc.get("text") or ""
@@ -238,7 +240,7 @@ class QuelleService:
             await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
 
             try:
-                openai_result = await self.openai.process_quelle(
+                openai_result = await get_ai_service(model).process_quelle(
                     quelle_text,
                     rendered_instructions,
                     model,
@@ -633,8 +635,6 @@ class QuelleService:
             if not run:
                 raise HTTPException(status_code=404, detail="Run not found")
 
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id)
-
             existing_combined = await self.firebase.get_combined_result(user_id, kapitel_id, run_id)
             if existing_combined:
                 existing_status = (existing_combined.get("status") or "").strip()
@@ -648,6 +648,8 @@ class QuelleService:
             heading = prompt_payload.get("heading", "").strip() or "Zusammenfassung"
             topic = prompt_payload.get("topic", "").strip() or "Thema"
             model = normalize_forward_text_model(run.get("model"), default=DEFAULT_PRIMARY_TEXT_MODEL)
+            _provider = "anthropic" if is_claude_model(model) else "openai"
+            api_key, key_source = await user_key_service.resolve_api_key_for_user(user_id, provider=_provider)
 
             results = await self.firebase.get_run_results(user_id, kapitel_id, run_id)
             combine_template_id, _ = await prompt_service.resolve_active_template_id(user_id, "combine")
@@ -764,7 +766,7 @@ class QuelleService:
             await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
 
             try:
-                openai_result = await self.openai.combine_texts(
+                openai_result = await get_ai_service(model).combine_texts(
                     texts,
                     heading,
                     topic,
@@ -1064,7 +1066,7 @@ class QuelleService:
             await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
 
             try:
-                openai_result = await self.openai.combine_texts(
+                openai_result = await get_ai_service(model).combine_texts(
                     group_texts,
                     heading,
                     topic,
@@ -1237,7 +1239,7 @@ class QuelleService:
         await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
 
         try:
-            final_openai_result = await self.openai.combine_texts(
+            final_openai_result = await get_ai_service(model).combine_texts(
                 intermediate_texts,
                 heading,
                 topic,

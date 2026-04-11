@@ -30,13 +30,29 @@ class UserKeyService:
             "allow_platform_key": True,
         }
 
-    async def resolve_api_key_for_user(self, user_id: str) -> Tuple[str, str]:
-        if not config.OPENAI_API_KEY:
+    async def resolve_api_key_for_user(self, user_id: str, provider: str = "openai") -> tuple[str, str]:
+        """
+        Resolve the platform API key for the given provider.
+        provider: "openai" (default) | "anthropic"
+        Returns (api_key, key_source).
+        """
+        from utils.config import config as _config
+        if provider == "anthropic":
+            if not _config.CLAUDE_API_KEY:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=500,
+                    detail="Plattform-Anthropic-Key ist nicht konfiguriert.",
+                )
+            return _config.CLAUDE_API_KEY, "platform"
+        # Default: openai
+        if not _config.OPENAI_API_KEY:
+            from fastapi import HTTPException
             raise HTTPException(
                 status_code=500,
                 detail="Plattform-API-Key ist nicht konfiguriert.",
             )
-        return config.OPENAI_API_KEY, "platform"
+        return _config.OPENAI_API_KEY, "platform"
 
 
 user_key_service = UserKeyService()

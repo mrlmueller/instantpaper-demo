@@ -2,7 +2,10 @@ from pydantic import BaseModel, Field
 from typing import Literal, List, Optional
 
 
-TextGenerationModel = Literal["gpt-5-nano", "gpt-5-mini", "gpt-5.4", "gpt-5.2"]
+TextGenerationModel = Literal[
+    "gpt-5-nano", "gpt-5-mini", "gpt-5.4", "gpt-5.2",
+    "claude-opus-4-6", "claude-sonnet-4-6",
+]
 
 
 class ProcessQuelleRequest(BaseModel):
