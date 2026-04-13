@@ -85,6 +85,7 @@ Important:
 
 - `FASTAPI_BASE_URL` is intentionally not public
 - browser code should not call the FastAPI deployment directly for normal product API flows
+- exception: large PDF uploads in `/pdf-scan` bypass the Next BFF and post directly to FastAPI with the current Firebase ID token to avoid Next's proxy body-size ceiling; the backend `ALLOWED_ORIGINS` list must therefore include the frontend origin
 
 ## Install and Run
 
@@ -151,6 +152,7 @@ This means:
 - browser code talks to `/api/...` on the Next app
 - Next server code talks to FastAPI using `FASTAPI_BASE_URL`
 - auth cookies and headers are normalized in one place
+- large PDF uploads for PDF scan are the intentional exception and go browser -> FastAPI directly
 
 ### Firebase direct usage
 

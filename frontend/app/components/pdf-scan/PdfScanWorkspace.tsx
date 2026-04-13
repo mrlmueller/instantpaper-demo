@@ -59,6 +59,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 import type { Kapitel } from "@/app/actions/kapitels";
 import { useAuth } from "@/app/components/providers/AuthProvider";
+import { getSessionTokenOrNull } from "@/app/lib/firebase/auth";
 import { PdfExtractDialog, type PdfExtractRequest } from "@/app/components/quellen-finder/PdfExtractDialog";
 import { firestoreClient } from "@/app/lib/firebase/firestoreClient";
 import {
@@ -550,10 +551,12 @@ function PdfScanAccessGate({
 export function PdfScanWorkspace({
   initialKapitels,
   projektId,
+  fastApiBaseUrl,
   preview,
 }: {
   initialKapitels: Kapitel[];
   projektId: string;
+  fastApiBaseUrl: string;
   preview?: PdfScanWorkspacePreview;
 }) {
   const { user } = useAuth();
@@ -1259,6 +1262,10 @@ export function PdfScanWorkspace({
       const knownPdfs = [...pdfs];
       const skippedDuplicates: string[] = [];
       let uploadedCount = 0;
+      const authToken = await getSessionTokenOrNull();
+      if (!authToken) {
+        throw new Error("Nicht angemeldet.");
+      }
 
       for (let index = 0; index < acceptedFiles.length; index += 1) {
         const file = acceptedFiles[index]!;
@@ -1300,9 +1307,13 @@ export function PdfScanWorkspace({
         if (pageCount !== null) formData.set("page_count", String(pageCount));
         formData.set("file", file, originalName);
 
-        const uploadRes = await fetch("/api/quellen-finder/project-pdf-upload", {
+        const uploadRes = await fetch(`${fastApiBaseUrl}/api/quellen-finder/project-pdf-upload`, {
           method: "POST",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
           body: formData,
+          cache: "no-store",
         });
 
         if (uploadRes.status === 409) {

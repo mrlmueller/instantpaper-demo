@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { requireAuth } from '@/app/lib/auth/server-auth';
 import { getFirestoreForUser } from '@/app/lib/firebase/serverApp';
+import { getFastApiBaseUrl } from '@/app/lib/server/fastapi';
 import { getUserKapitels } from '@/app/actions/kapitels';
 import { getOrCreateDefaultProject, getProjects } from '@/app/actions/projects';
 import { getActiveProjektCookieName } from '@/app/lib/ui/projektSelection';
@@ -32,5 +33,11 @@ export default async function PdfScanPage() {
 
   const kapitels = await getUserKapitels(selectedProjekt.id, false, 0, { user, db });
 
-  return <PdfScanWorkspace initialKapitels={kapitels} projektId={selectedProjekt.id} />;
+  return (
+    <PdfScanWorkspace
+      initialKapitels={kapitels}
+      projektId={selectedProjekt.id}
+      fastApiBaseUrl={getFastApiBaseUrl()}
+    />
+  );
 }

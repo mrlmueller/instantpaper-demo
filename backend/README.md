@@ -152,6 +152,7 @@ PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
   - GCS location used by the staged two-lane backend for temporary handoff bundles
 - `ALLOWED_ORIGINS`
   - comma-separated CORS allowlist
+  - must include the frontend origin because large PDF uploads in `/pdf-scan` now go browser -> FastAPI directly
 - `ADMIN_BASIC_USER` / `ADMIN_BASIC_PASSWORD`
   - protects the `/approve` HTML admin access surface
 - `ADMIN_UIDS`

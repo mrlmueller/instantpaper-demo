@@ -132,6 +132,25 @@ export async function getIdTokenResultOrNull(forceRefresh = false): Promise<IdTo
   }
 }
 
+export async function getSessionTokenOrNull(forceRefresh = false): Promise<string | null> {
+  try {
+    const auth = getFirebaseAuth();
+    const user = auth.currentUser;
+    if (user) {
+      const token = await user.getIdToken(forceRefresh);
+      if (typeof token === "string" && token.trim()) {
+        setSessionCookie(token);
+        return token.trim();
+      }
+    }
+  } catch (error) {
+    console.error("Failed to read session token:", error);
+  }
+
+  const cookieToken = Cookies.get(SESSION_COOKIE_NAME);
+  return typeof cookieToken === "string" && cookieToken.trim() ? cookieToken.trim() : null;
+}
+
 export async function refreshIdTokenAndCookie(): Promise<{ token: string; access: AccessState } | null> {
   const result = await getIdTokenResultOrNull(true);
   if (!result) return null;
