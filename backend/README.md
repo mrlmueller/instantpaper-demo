@@ -91,6 +91,7 @@ FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY----
 FIREBASE_STORAGE_BUCKET=
 
 OPENAI_API_KEY=
+CLAUDE_API_KEY=
 OPENALEX_API_KEY=
 SEMANTICSCHOLAR_API_KEY=
 USER_KEY_ENCRYPTION_KEY=
@@ -135,6 +136,7 @@ PDF_SCAN_EXECUTION_BACKEND=local_split_jobs
 
 - `FIREBASE_PROJECT_ID`
 - `OPENAI_API_KEY`
+- `CLAUDE_API_KEY` if you plan to run Claude/Anthropic models
 - either:
   - `FIREBASE_PRIVATE_KEY` and `FIREBASE_CLIENT_EMAIL`
   - or `GOOGLE_APPLICATION_CREDENTIALS` pointing to valid ADC credentials
@@ -344,6 +346,7 @@ The workflow expects GitHub Actions secrets such as:
 It also binds Cloud Run secrets for runtime values such as:
 
 - `OPENAI_API_KEY`
+- `CLAUDE_API_KEY`
 - `ALLOWED_ORIGINS`
 - `USER_KEY_ENCRYPTION_KEY`
 - `ADMIN_UIDS`
