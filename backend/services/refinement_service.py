@@ -9,6 +9,7 @@ from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from services.firebase_service import firebase_service, AI_GENERIC_ERROR_MESSAGE
 from services.openai_service import openai_service
+from services.ai_router import get_ai_service
 from services.prompt_service import prompt_service
 from services.cost_service import get_cost_service, TokenUsage
 from services.openai_budget_service import get_openai_budget_service
@@ -2023,7 +2024,7 @@ class RefinementService:
             await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
 
             try:
-                openai_result = await openai_service.process_quelle(
+                openai_result = await get_ai_service(model).process_quelle(
                     quelle_text,
                     refined_user_input,
                     model,
