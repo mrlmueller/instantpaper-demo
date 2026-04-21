@@ -8,7 +8,6 @@ from fastapi import HTTPException
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from services.firebase_service import firebase_service, AI_GENERIC_ERROR_MESSAGE
-from services.openai_service import openai_service
 from services.ai_router import get_ai_service
 from services.prompt_service import prompt_service
 from services.cost_service import get_cost_service, TokenUsage
@@ -17,7 +16,7 @@ from services.openai_estimation_service import get_openai_estimation_service
 from services.shorten_service import shorten_service
 from services.user_key_service import user_key_service
 from utils.config import config
-from utils.openai_models import normalize_forward_text_model
+from utils.openai_models import is_claude_model, normalize_forward_text_model
 from utils.quellen_zitat import resolve_quelle_zitat_value
 
 logger = logging.getLogger(__name__)
@@ -50,6 +49,32 @@ class RefinementService:
 
     def __init__(self) -> None:
         pass
+
+    async def _resolve_api_key_for_model(
+        self, user_id: str, model: str
+    ) -> tuple[str, str]:
+        provider = "anthropic" if is_claude_model(model) else "openai"
+        return await user_key_service.resolve_api_key_for_user(
+            user_id, provider=provider
+        )
+
+    async def _generate_refinement_text(
+        self,
+        *,
+        prompt_body: str,
+        model: str,
+        api_key: str,
+        debug_prompt_dump_path: str | None,
+        stage: str,
+    ) -> dict:
+        return await get_ai_service(model).generate_text(
+            prompt_body,
+            model,
+            api_key=api_key,
+            debug_prompt_dump_path=debug_prompt_dump_path,
+            system_prompt=REFINEMENT_SYSTEM_PROMPT,
+            stage=stage,
+        )
 
     def _build_refinement_conversation_prompt(
         self,
@@ -455,10 +480,6 @@ class RefinementService:
         Execute the combined text refinement and persist results into versions/{version_id}.
         """
         try:
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(
-                user_id
-            )
-
             # Ensure root exists
             await firebase_service.ensure_combined_refinement_root_version(
                 user_id=user_id,
@@ -482,6 +503,7 @@ class RefinementService:
                     user_id, kapitel_id, run_id
                 )
             )
+            api_key, key_source = await self._resolve_api_key_for_model(user_id, model)
 
             combine_instructions = await prompt_service.get_rendered_instructions(
                 user_id,
@@ -575,12 +597,11 @@ class RefinementService:
 
             await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
             try:
-                openai_result = await openai_service.generate_text(
-                    prompt_body,
-                    model,
+                openai_result = await self._generate_refinement_text(
+                    prompt_body=prompt_body,
+                    model=model,
                     api_key=api_key,
                     debug_prompt_dump_path=debug_dump_path,
-                    system_prompt=REFINEMENT_SYSTEM_PROMPT,
                     stage="refine_combined",
                 )
             except Exception as exc:
@@ -839,10 +860,6 @@ class RefinementService:
     ) -> None:
         """Execute the shortened text refinement and persist results into versions/{version_id}."""
         try:
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(
-                user_id
-            )
-
             await firebase_service.ensure_shortened_refinement_root_version(
                 user_id=user_id,
                 kapitel_id=kapitel_id,
@@ -973,6 +990,7 @@ class RefinementService:
                 user_id, kapitel_id, run_id, version_id
             )
             model = normalize_forward_text_model((pending or {}).get("model"), default="gpt-5-mini")
+            api_key, key_source = await self._resolve_api_key_for_model(user_id, model)
 
             debug_dump_path = self._get_prompt_dump_path("refine_shortened", version_id)
 
@@ -1035,12 +1053,11 @@ class RefinementService:
 
             await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
             try:
-                openai_result = await openai_service.generate_text(
-                    prompt_body,
-                    model,
+                openai_result = await self._generate_refinement_text(
+                    prompt_body=prompt_body,
+                    model=model,
                     api_key=api_key,
                     debug_prompt_dump_path=debug_dump_path,
-                    system_prompt=REFINEMENT_SYSTEM_PROMPT,
                     stage="refine_shortened",
                 )
             except Exception as exc:
@@ -1296,10 +1313,6 @@ class RefinementService:
     ) -> None:
         """Execute the lesefluss text refinement and persist results into versions/{version_id}."""
         try:
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(
-                user_id
-            )
-
             await firebase_service.ensure_lesefluss_refinement_root_version(
                 user_id=user_id,
                 kapitel_id=kapitel_id,
@@ -1349,6 +1362,7 @@ class RefinementService:
                 user_id, kapitel_id, run_id, version_id
             )
             model = normalize_forward_text_model((pending or {}).get("model"), default="gpt-5-mini")
+            api_key, key_source = await self._resolve_api_key_for_model(user_id, model)
 
             # Summaries / Gliederung (reuse cache if present)
             summary_tasks = [
@@ -1541,12 +1555,11 @@ class RefinementService:
 
             await budget_service.mark_running(user_id=user_id, operation_id=operation_id)
             try:
-                openai_result = await openai_service.generate_text(
-                    prompt_body,
-                    model,
+                openai_result = await self._generate_refinement_text(
+                    prompt_body=prompt_body,
+                    model=model,
                     api_key=api_key,
                     debug_prompt_dump_path=debug_dump_path,
-                    system_prompt=REFINEMENT_SYSTEM_PROMPT,
                     stage="refine_lesefluss",
                 )
             except Exception as exc:
@@ -1810,10 +1823,6 @@ class RefinementService:
     ) -> None:
         """Execute the per-result refinement and persist results into versions/{version_id}."""
         try:
-            api_key, key_source = await user_key_service.resolve_api_key_for_user(
-                user_id
-            )
-
             await firebase_service.ensure_result_refinement_root_version(
                 user_id=user_id,
                 kapitel_id=kapitel_id,
@@ -1910,6 +1919,7 @@ class RefinementService:
                 user_id, kapitel_id, run_id, quelle_id, version_id
             )
             model = normalize_forward_text_model((pending or {}).get("model"), default="gpt-5-mini")
+            api_key, key_source = await self._resolve_api_key_for_model(user_id, model)
 
             quelle_content_doc = await firebase_service.get_quelle_content(
                 user_id, quelle_id
