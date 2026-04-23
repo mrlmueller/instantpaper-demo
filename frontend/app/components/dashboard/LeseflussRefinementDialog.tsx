@@ -30,7 +30,8 @@ import { useAuth } from "@/app/components/providers/AuthProvider";
 import { AI_GENERIC_ERROR_MESSAGE } from "@/app/lib/ai/messages";
 import { firestoreClient } from "@/app/lib/firebase/firestoreClient";
 import { collection, doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
-import { createLeseflussRefinement, initLeseflussRefinement } from "@/app/actions/kapitels";
+import { createLeseflussRefinement, createManualLeseflussRefinement, initLeseflussRefinement } from "@/app/actions/kapitels";
+import { ManualRefinementEditorDialog } from "@/app/components/dashboard/ManualRefinementEditorDialog";
 
 type RefinementVersion = {
   id: string;
@@ -39,6 +40,8 @@ type RefinementVersion = {
   userMessage?: string | null;
   assistantText?: string;
   status: "running" | "success" | "error";
+  source?: "root" | "ai" | "manual";
+  manualEdit?: boolean;
   model?: string;
   usage?: {
     inputTokens: number;
@@ -59,6 +62,10 @@ function toDate(value: unknown): Date {
     return (value as { toDate: () => Date }).toDate();
   }
   return new Date(0);
+}
+
+function normalizeVersionStatus(status: unknown): RefinementVersion["status"] {
+  return status === "running" || status === "error" || status === "success" ? status : "success";
 }
 
 function countWords(text: string) {
@@ -109,6 +116,8 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [viewingFullText, setViewingFullText] = useState<{ title: string; text: string } | null>(null);
+  const [manualEditTarget, setManualEditTarget] = useState<{ version: RefinementVersion; title: string; text: string } | null>(null);
+  const [manualSaving, setManualSaving] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -130,6 +139,7 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
     setEditingVersionId(null);
     setEditMessage("");
     setMessage("");
+    setManualEditTarget(null);
   }, [kapitelId, runId]);
 
   useEffect(() => {
@@ -137,6 +147,8 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
     setEditingVersionId(null);
     setEditMessage("");
     setEditSending(false);
+    setManualEditTarget(null);
+    setManualSaving(false);
   }, [open]);
 
   useEffect(() => {
@@ -162,7 +174,7 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
           toast.error("Refinement nicht verf\u00fcgbar", { description: msg });
           return;
         }
-        const data: any = res.data || {};
+        const data = (res.data || {}) as { max_depth?: unknown; active_version_id?: unknown };
         setMaxDepth(Number(data.max_depth ?? 4));
         setActiveVersionId(String(data.active_version_id ?? "root"));
       })
@@ -177,7 +189,7 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
     const unsub = onSnapshot(
       leseflussDocRef,
       (snap) => {
-        const data: any = snap.data();
+        const data = snap.data() as { refinement?: { activeVersionId?: unknown; costTotalUsd?: unknown } } | undefined;
         if (!data) return;
         setActiveVersionId(String(data.refinement?.activeVersionId ?? "root"));
         setRefinementCostTotalUsd(Number(data.refinement?.costTotalUsd ?? 0));
@@ -198,19 +210,22 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
       versionsRef,
       (snap) => {
         const items: RefinementVersion[] = snap.docs.map((d) => {
-          const data: any = d.data();
+          const data = d.data() as Record<string, unknown>;
+          const source = data.source === "manual" ? "manual" : d.id === "root" ? "root" : "ai";
           return {
             id: d.id,
-            parentVersionId: data.parentVersionId ?? null,
+            parentVersionId: typeof data.parentVersionId === "string" ? data.parentVersionId : null,
             depth: Number(data.depth ?? 0),
-            userMessage: data.userMessage ?? null,
-            assistantText: data.assistantText ?? "",
-            status: data.status ?? "success",
-            model: data.model ?? "",
-            usage: data.usage ?? null,
+            userMessage: typeof data.userMessage === "string" ? data.userMessage : null,
+            assistantText: String(data.assistantText ?? ""),
+            status: normalizeVersionStatus(data.status),
+            source,
+            manualEdit: Boolean(data.manualEdit ?? source === "manual"),
+            model: typeof data.model === "string" ? data.model : "",
+            usage: data.usage && typeof data.usage === "object" ? (data.usage as RefinementVersion["usage"]) : null,
             costUsd: typeof data.costUsd === "number" ? data.costUsd : Number(data.costUsd ?? 0),
             createdAt: data.createdAt,
-            errorMessage: data.errorMessage ?? "",
+            errorMessage: typeof data.errorMessage === "string" ? data.errorMessage : "",
           };
         });
         setVersions(items);
@@ -326,6 +341,55 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
     setTimeout(() => setCopiedId(null), 2000);
   }, []);
 
+  const openManualEditor = useCallback((version: RefinementVersion, title: string, text: string) => {
+    if (version.status !== "success" || !text.trim()) return;
+    setManualEditTarget({ version, title, text });
+  }, []);
+
+  const handleManualSave = useCallback(
+    async (text: string) => {
+      if (!kapitelId || !runId) return;
+      if (!user?.uid) return;
+      if (!manualEditTarget) return;
+
+      const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      if (!normalized.trim()) return;
+
+      const parentVersionId = manualEditTarget.version.id || "root";
+      setManualSaving(true);
+      try {
+        const res = await createManualLeseflussRefinement(kapitelId, runId, parentVersionId, normalized);
+        if (!res?.success) {
+          const msg = (res?.error || "Manuelle Änderung konnte nicht gespeichert werden.").toString();
+          const lower = msg.toLowerCase();
+          if (lower.includes("sitzung")) {
+            onAuthFailure();
+            return;
+          }
+          if (lower.includes("fastapi-server")) {
+            onServerDown("refine-lesefluss-manual-down");
+            return;
+          }
+          toast.error("Änderung nicht gespeichert", { description: msg });
+          return;
+        }
+
+        const responseData = res.data as { version_id?: unknown } | undefined;
+        const newVersionId = String(responseData?.version_id ?? "");
+        if (newVersionId) {
+          setSelectedChildByParentId((prev) => ({ ...prev, [parentVersionId]: newVersionId }));
+        }
+        setManualEditTarget(null);
+        toast.success("Manuelle Änderung gespeichert", {
+          description: "Der Lesefluss-Text wurde aktualisiert.",
+        });
+      } finally {
+        setManualSaving(false);
+      }
+    },
+    [kapitelId, runId, manualEditTarget, onAuthFailure, onServerDown, user?.uid]
+  );
+
   const handleCycleBranch = useCallback(
     (parentId: string, delta: -1 | 1) => {
       const children = tree.childrenByParentId.get(parentId) ?? [];
@@ -392,7 +456,8 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
           return;
         }
 
-        const newVersionId = String((res as any)?.data?.version_id ?? "");
+        const responseData = res.data as { version_id?: unknown } | undefined;
+        const newVersionId = String(responseData?.version_id ?? "");
         if (newVersionId) {
           setSelectedChildByParentId((prev) => ({ ...prev, [parentVersionId]: newVersionId }));
         }
@@ -455,7 +520,8 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
         return;
       }
 
-      const newVersionId = String((res as any)?.data?.version_id ?? "");
+      const responseData = res.data as { version_id?: unknown } | undefined;
+      const newVersionId = String(responseData?.version_id ?? "");
       if (newVersionId) {
         setSelectedChildByParentId((prev) => ({ ...prev, [parentVersionId]: newVersionId }));
       }
@@ -589,6 +655,16 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
                   <Expand className="h-3.5 w-3.5 mr-1" />
                   Vollständig anzeigen
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => tree.root && openManualEditor(tree.root, "Originaltext manuell bearbeiten", originalText || "")}
+                  disabled={!originalText || !tree.root || manualSaving}
+                >
+                  <Edit2 className="h-3.5 w-3.5 mr-1" />
+                  Manuell bearbeiten
+                </Button>
                 {!isOriginalActive && (
                   <Button
                     variant="ghost"
@@ -611,6 +687,7 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
               const showBranchNav = siblings.length > 1;
 
               const isActiveMessage = activeVersionId === v.id && !isOriginalActive;
+              const isManualRevision = v.source === "manual" || v.manualEdit;
               const userText = String(v.userMessage ?? "");
               const assistantText = String(v.assistantText ?? "").trim();
               const needsExpand = assistantText.length > PREVIEW_LENGTH;
@@ -682,7 +759,9 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
                       ) : (
                         <>
                           <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3">
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{userText}</p>
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                              {isManualRevision ? "Manuelle Bearbeitung" : userText}
+                            </p>
                           </div>
                           <div className="flex justify-end mt-1.5">
                             <Button
@@ -714,6 +793,12 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
                         <div className="px-4 py-4">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-xs text-muted-foreground font-medium">Revision {v.depth}</span>
+                            {isManualRevision && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-xs font-medium">
+                                <Edit2 className="h-3 w-3" />
+                                Manuell
+                              </span>
+                            )}
                             {isActiveMessage && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-xs font-medium">
                                 <Star className="h-3 w-3 fill-current" />
@@ -755,6 +840,16 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
                           >
                             <Expand className="h-3.5 w-3.5 mr-1" />
                             Vollständig anzeigen
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-muted-foreground hover:text-foreground"
+                            onClick={() => openManualEditor(v, `Revision ${v.depth} manuell bearbeiten`, assistantText)}
+                            disabled={v.status !== "success" || !assistantText || manualSaving}
+                          >
+                            <Edit2 className="h-3.5 w-3.5 mr-1" />
+                            Manuell bearbeiten
                           </Button>
                           {!isActiveMessage && v.status === "success" && !!assistantText && (
                             <Button
@@ -869,6 +964,19 @@ export function LeseflussRefinementDialog(_props: LeseflussRefinementDialogProps
             </div>
           </DialogContent>
         </Dialog>
+      )}
+
+      {manualEditTarget && (
+        <ManualRefinementEditorDialog
+          open={true}
+          title={manualEditTarget.title}
+          initialText={manualEditTarget.text}
+          saving={manualSaving}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setManualEditTarget(null);
+          }}
+          onSave={handleManualSave}
+        />
       )}
     </>
   );

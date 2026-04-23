@@ -172,6 +172,15 @@ class RefineCombinedRequest(BaseModel):
     user_message: str = Field(..., description="User instruction for refinement", min_length=1)
 
 
+class ManualRefineCombinedRequest(BaseModel):
+    """Request model for manually editing a combined text refinement version."""
+
+    kapitel_id: str = Field(..., description="Kapitel ID")
+    run_id: str = Field(..., description="Run ID that contains the combined text")
+    parent_version_id: str = Field(..., description="Version ID to edit from")
+    content: str = Field(..., description="Manually edited final text", min_length=1, max_length=140000)
+
+
 class RefineShortenedInitRequest(BaseModel):
     """Request model for initializing the text refinement flow for a shortened text."""
 
@@ -186,6 +195,15 @@ class RefineShortenedRequest(BaseModel):
     run_id: str = Field(..., description="Run ID that contains the shortened text")
     parent_version_id: str = Field(..., description="Version ID to refine from")
     user_message: str = Field(..., description="User instruction for refinement", min_length=1)
+
+
+class ManualRefineShortenedRequest(BaseModel):
+    """Request model for manually editing a shortened text refinement version."""
+
+    kapitel_id: str = Field(..., description="Kapitel ID")
+    run_id: str = Field(..., description="Run ID that contains the shortened text")
+    parent_version_id: str = Field(..., description="Version ID to edit from")
+    content: str = Field(..., description="Manually edited final text", min_length=1, max_length=140000)
 
 
 class RefineLeseflussInitRequest(BaseModel):
@@ -204,6 +222,15 @@ class RefineLeseflussRequest(BaseModel):
     user_message: str = Field(..., description="User instruction for refinement", min_length=1)
 
 
+class ManualRefineLeseflussRequest(BaseModel):
+    """Request model for manually editing a lesefluss text refinement version."""
+
+    kapitel_id: str = Field(..., description="Kapitel ID")
+    run_id: str = Field(..., description="Run ID that contains the lesefluss text")
+    parent_version_id: str = Field(..., description="Version ID to edit from")
+    content: str = Field(..., description="Manually edited final text", min_length=1, max_length=140000)
+
+
 class RefineResultInitRequest(BaseModel):
     """Request model for initializing the text refinement flow for a Quelle result text."""
 
@@ -220,6 +247,16 @@ class RefineResultRequest(BaseModel):
     quelle_id: str = Field(..., description="Quelle ID / result document ID to refine")
     parent_version_id: str = Field(..., description="Version ID to refine from")
     user_message: str = Field(..., description="User instruction for refinement", min_length=1)
+
+
+class ManualRefineResultRequest(BaseModel):
+    """Request model for manually editing a Quelle result refinement version."""
+
+    kapitel_id: str = Field(..., description="Kapitel ID")
+    run_id: str = Field(..., description="Run ID that contains the Quelle results")
+    quelle_id: str = Field(..., description="Quelle ID / result document ID to edit")
+    parent_version_id: str = Field(..., description="Version ID to edit from")
+    content: str = Field(..., description="Manually edited final text", min_length=1, max_length=140000)
 
 
 class ExportDocxRequest(BaseModel):

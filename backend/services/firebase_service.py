@@ -89,6 +89,16 @@ class FirebaseService:
         self._ensure_initialized()
         return self._db
 
+    def _run_doc_ref(self, user_id: str, kapitel_id: str, run_id: str):
+        return (
+            self.db.collection("users")
+            .document(user_id)
+            .collection("kapitels")
+            .document(kapitel_id)
+            .collection("runs")
+            .document(run_id)
+        )
+
     async def verify_token(self, token: str) -> dict:
         """
         Verify Firebase ID token and return decoded token
@@ -903,6 +913,44 @@ class FirebaseService:
         doc_ref = self._run_result_refinement_version_ref(user_id, kapitel_id, run_id, quelle_id, version_id)
         doc_ref.update(data)
 
+    async def apply_result_refinement_version(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        quelle_id: str,
+        version_id: str,
+        version_data: dict,
+        content: str,
+    ) -> None:
+        """Persist a successful per-result refinement version and make it active."""
+        version_ref = self._run_result_refinement_version_ref(
+            user_id, kapitel_id, run_id, quelle_id, version_id
+        )
+        result_ref = self._run_result_ref(user_id, kapitel_id, run_id, quelle_id)
+        run_ref = self._run_doc_ref(user_id, kapitel_id, run_id)
+
+        batch = self.db.batch()
+        batch.set(version_ref, version_data)
+        batch.update(
+            result_ref,
+            {
+                "content": content,
+                "hasContent": True,
+                "updatedAt": SERVER_TIMESTAMP,
+                "refinement.activeVersionId": version_id,
+                "refinement.selectedAt": SERVER_TIMESTAMP,
+            },
+        )
+        batch.update(
+            run_ref,
+            {
+                "lastActivityAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+        )
+        batch.commit()
+
     async def ensure_result_refinement_root_version(
         self, user_id: str, kapitel_id: str, run_id: str, quelle_id: str, max_depth: int
     ) -> dict:
@@ -1346,6 +1394,42 @@ class FirebaseService:
         doc_ref = self._combined_refinement_version_ref(user_id, kapitel_id, run_id, version_id)
         doc_ref.update(data)
 
+    async def apply_combined_refinement_version(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        version_id: str,
+        version_data: dict,
+        content: str,
+    ) -> None:
+        """Persist a successful combined refinement version and make it active."""
+        version_ref = self._combined_refinement_version_ref(
+            user_id, kapitel_id, run_id, version_id
+        )
+        combined_ref = self._combined_root_ref(user_id, kapitel_id, run_id)
+        run_ref = self._run_doc_ref(user_id, kapitel_id, run_id)
+
+        batch = self.db.batch()
+        batch.set(version_ref, version_data)
+        batch.update(
+            combined_ref,
+            {
+                "content": content,
+                "updatedAt": SERVER_TIMESTAMP,
+                "refinement.activeVersionId": version_id,
+                "refinement.selectedAt": SERVER_TIMESTAMP,
+            },
+        )
+        batch.update(
+            run_ref,
+            {
+                "lastActivityAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+        )
+        batch.commit()
+
     async def ensure_combined_refinement_root_version(
         self, user_id: str, kapitel_id: str, run_id: str, max_depth: int
     ) -> dict:
@@ -1467,6 +1551,43 @@ class FirebaseService:
         """Update a shortened refinement version doc."""
         doc_ref = self._shortened_refinement_version_ref(user_id, kapitel_id, run_id, version_id)
         doc_ref.update(data)
+
+    async def apply_shortened_refinement_version(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        version_id: str,
+        version_data: dict,
+        content: str,
+    ) -> None:
+        """Persist a successful shortened refinement version and make it active."""
+        version_ref = self._shortened_refinement_version_ref(
+            user_id, kapitel_id, run_id, version_id
+        )
+        shortened_ref = self._shortened_root_ref(user_id, kapitel_id, run_id)
+        run_ref = self._run_doc_ref(user_id, kapitel_id, run_id)
+
+        batch = self.db.batch()
+        batch.set(version_ref, version_data)
+        batch.update(
+            shortened_ref,
+            {
+                "content": content,
+                "shortenedLength": len(content),
+                "updatedAt": SERVER_TIMESTAMP,
+                "refinement.activeVersionId": version_id,
+                "refinement.selectedAt": SERVER_TIMESTAMP,
+            },
+        )
+        batch.update(
+            run_ref,
+            {
+                "lastActivityAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+        )
+        batch.commit()
 
     async def ensure_shortened_refinement_root_version(
         self, user_id: str, kapitel_id: str, run_id: str, max_depth: int
@@ -1590,6 +1711,43 @@ class FirebaseService:
         """Update a lesefluss refinement version doc."""
         doc_ref = self._lesefluss_refinement_version_ref(user_id, kapitel_id, run_id, version_id)
         doc_ref.update(data)
+
+    async def apply_lesefluss_refinement_version(
+        self,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        version_id: str,
+        version_data: dict,
+        content: str,
+    ) -> None:
+        """Persist a successful lesefluss refinement version and make it active."""
+        version_ref = self._lesefluss_refinement_version_ref(
+            user_id, kapitel_id, run_id, version_id
+        )
+        lesefluss_ref = self._lesefluss_root_ref(user_id, kapitel_id, run_id)
+        run_ref = self._run_doc_ref(user_id, kapitel_id, run_id)
+
+        batch = self.db.batch()
+        batch.set(version_ref, version_data)
+        batch.update(
+            lesefluss_ref,
+            {
+                "content": content,
+                "leseflussLength": len(content),
+                "updatedAt": SERVER_TIMESTAMP,
+                "refinement.activeVersionId": version_id,
+                "refinement.selectedAt": SERVER_TIMESTAMP,
+            },
+        )
+        batch.update(
+            run_ref,
+            {
+                "lastActivityAt": SERVER_TIMESTAMP,
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+        )
+        batch.commit()
 
     async def ensure_lesefluss_refinement_root_version(
         self, user_id: str, kapitel_id: str, run_id: str, max_depth: int

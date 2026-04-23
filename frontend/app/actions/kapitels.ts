@@ -998,6 +998,15 @@ export async function createCombinedRefinement(kapitelId: string, runId: string,
   });
 }
 
+export async function createManualCombinedRefinement(kapitelId: string, runId: string, parentVersionId: string, content: string) {
+  return fetchFastApi('/api/refine/combined/manual', {
+    kapitel_id: kapitelId,
+    run_id: runId,
+    parent_version_id: parentVersionId,
+    content,
+  });
+}
+
 export async function initShortenedRefinement(kapitelId: string, runId: string) {
   return fetchFastApi('/api/refine/shortened/init', { kapitel_id: kapitelId, run_id: runId });
 }
@@ -1011,6 +1020,15 @@ export async function createShortenedRefinement(kapitelId: string, runId: string
   });
 }
 
+export async function createManualShortenedRefinement(kapitelId: string, runId: string, parentVersionId: string, content: string) {
+  return fetchFastApi('/api/refine/shortened/manual', {
+    kapitel_id: kapitelId,
+    run_id: runId,
+    parent_version_id: parentVersionId,
+    content,
+  });
+}
+
 export async function initLeseflussRefinement(kapitelId: string, runId: string) {
   return fetchFastApi('/api/refine/lesefluss/init', { kapitel_id: kapitelId, run_id: runId });
 }
@@ -1021,6 +1039,15 @@ export async function createLeseflussRefinement(kapitelId: string, runId: string
     run_id: runId,
     parent_version_id: parentVersionId,
     user_message: userMessage,
+  });
+}
+
+export async function createManualLeseflussRefinement(kapitelId: string, runId: string, parentVersionId: string, content: string) {
+  return fetchFastApi('/api/refine/lesefluss/manual', {
+    kapitel_id: kapitelId,
+    run_id: runId,
+    parent_version_id: parentVersionId,
+    content,
   });
 }
 
@@ -1041,6 +1068,22 @@ export async function createResultRefinement(
     quelle_id: quelleId,
     parent_version_id: parentVersionId,
     user_message: userMessage,
+  });
+}
+
+export async function createManualResultRefinement(
+  kapitelId: string,
+  runId: string,
+  quelleId: string,
+  parentVersionId: string,
+  content: string
+) {
+  return fetchFastApi('/api/refine/result/manual', {
+    kapitel_id: kapitelId,
+    run_id: runId,
+    quelle_id: quelleId,
+    parent_version_id: parentVersionId,
+    content,
   });
 }
 

@@ -76,6 +76,61 @@ class RefinementService:
             stage=stage,
         )
 
+    def _normalize_manual_refinement_content(self, content: str) -> str:
+        text = str(content or "").replace("\r\n", "\n").replace("\r", "\n")
+        if not text.strip():
+            raise ValueError("Manual edit content is empty.")
+        if len(text) > 140000:
+            raise ValueError("Manual edit content is too long.")
+        return text
+
+    def _build_manual_refinement_version(
+        self, *, parent: dict, content: str
+    ) -> tuple[str, dict]:
+        version_id = str(uuid4())
+        parent_depth = int((parent or {}).get("depth") or 0)
+        parent_usage = (parent or {}).get("usage")
+        usage = parent_usage if isinstance(parent_usage, dict) else {}
+        version_data = {
+            "parentVersionId": (parent or {}).get("id") or "root",
+            "depth": parent_depth + 1,
+            "userMessage": "Manuelle Bearbeitung",
+            "assistantText": content,
+            "hasContent": True,
+            "status": "success",
+            "model": (parent or {}).get("model") or "",
+            "usage": {
+                "inputTokens": 0,
+                "cachedInputTokens": 0,
+                "outputTokens": 0,
+                "reasoningTokens": 0,
+                "totalTokens": 0,
+            },
+            "costUsd": 0.0,
+            "keySource": "manual",
+            "source": "manual",
+            "manualEdit": True,
+            "createdAt": SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP,
+            "baseUsage": {
+                "inputTokens": int(usage.get("inputTokens", 0) or 0),
+                "cachedInputTokens": int(usage.get("cachedInputTokens", 0) or 0),
+                "outputTokens": int(usage.get("outputTokens", 0) or 0),
+                "reasoningTokens": int(usage.get("reasoningTokens", 0) or 0),
+                "totalTokens": int(usage.get("totalTokens", 0) or 0),
+            },
+        }
+        return version_id, version_data
+
+    def _validate_manual_parent(self, parent: dict | None) -> dict:
+        if not parent:
+            raise ValueError("Parent version not found.")
+        if str(parent.get("status") or "success") != "success":
+            raise ValueError("Only successful versions can be manually edited.")
+        if not str(parent.get("assistantText") or "").strip():
+            raise ValueError("Parent text is empty.")
+        return parent
+
     def _build_refinement_conversation_prompt(
         self,
         *,
@@ -173,6 +228,169 @@ class RefinementService:
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    async def create_manual_combined_refinement(
+        self,
+        *,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        parent_version_id: str,
+        content: str,
+    ) -> dict:
+        await firebase_service.ensure_combined_refinement_root_version(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            max_depth=config.TEXT_REFINEMENT_MAX_DEPTH,
+        )
+        parent = self._validate_manual_parent(
+            await firebase_service.get_combined_refinement_version(
+                user_id, kapitel_id, run_id, parent_version_id
+            )
+        )
+        text = self._normalize_manual_refinement_content(content)
+        version_id, version_data = self._build_manual_refinement_version(
+            parent=parent, content=text
+        )
+        await firebase_service.apply_combined_refinement_version(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            version_id=version_id,
+            version_data=version_data,
+            content=text,
+        )
+        return {
+            "status": "success",
+            "version_id": version_id,
+            "parent_version_id": parent.get("id") or parent_version_id,
+            "depth": version_data["depth"],
+            "source": "manual",
+        }
+
+    async def create_manual_shortened_refinement(
+        self,
+        *,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        parent_version_id: str,
+        content: str,
+    ) -> dict:
+        await firebase_service.ensure_shortened_refinement_root_version(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            max_depth=config.TEXT_REFINEMENT_MAX_DEPTH,
+        )
+        parent = self._validate_manual_parent(
+            await firebase_service.get_shortened_refinement_version(
+                user_id, kapitel_id, run_id, parent_version_id
+            )
+        )
+        text = self._normalize_manual_refinement_content(content)
+        version_id, version_data = self._build_manual_refinement_version(
+            parent=parent, content=text
+        )
+        await firebase_service.apply_shortened_refinement_version(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            version_id=version_id,
+            version_data=version_data,
+            content=text,
+        )
+        return {
+            "status": "success",
+            "version_id": version_id,
+            "parent_version_id": parent.get("id") or parent_version_id,
+            "depth": version_data["depth"],
+            "source": "manual",
+        }
+
+    async def create_manual_lesefluss_refinement(
+        self,
+        *,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        parent_version_id: str,
+        content: str,
+    ) -> dict:
+        await firebase_service.ensure_lesefluss_refinement_root_version(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            max_depth=config.TEXT_REFINEMENT_MAX_DEPTH,
+        )
+        parent = self._validate_manual_parent(
+            await firebase_service.get_lesefluss_refinement_version(
+                user_id, kapitel_id, run_id, parent_version_id
+            )
+        )
+        text = self._normalize_manual_refinement_content(content)
+        version_id, version_data = self._build_manual_refinement_version(
+            parent=parent, content=text
+        )
+        await firebase_service.apply_lesefluss_refinement_version(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            version_id=version_id,
+            version_data=version_data,
+            content=text,
+        )
+        return {
+            "status": "success",
+            "version_id": version_id,
+            "parent_version_id": parent.get("id") or parent_version_id,
+            "depth": version_data["depth"],
+            "source": "manual",
+        }
+
+    async def create_manual_result_refinement(
+        self,
+        *,
+        user_id: str,
+        kapitel_id: str,
+        run_id: str,
+        quelle_id: str,
+        parent_version_id: str,
+        content: str,
+    ) -> dict:
+        await firebase_service.ensure_result_refinement_root_version(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            quelle_id=quelle_id,
+            max_depth=config.TEXT_REFINEMENT_MAX_DEPTH,
+        )
+        parent = self._validate_manual_parent(
+            await firebase_service.get_result_refinement_version(
+                user_id, kapitel_id, run_id, quelle_id, parent_version_id
+            )
+        )
+        text = self._normalize_manual_refinement_content(content)
+        version_id, version_data = self._build_manual_refinement_version(
+            parent=parent, content=text
+        )
+        await firebase_service.apply_result_refinement_version(
+            user_id=user_id,
+            kapitel_id=kapitel_id,
+            run_id=run_id,
+            quelle_id=quelle_id,
+            version_id=version_id,
+            version_data=version_data,
+            content=text,
+        )
+        return {
+            "status": "success",
+            "version_id": version_id,
+            "parent_version_id": parent.get("id") or parent_version_id,
+            "depth": version_data["depth"],
+            "source": "manual",
+        }
 
     async def _get_heading_topic_and_base_texts(
         self, user_id: str, kapitel_id: str, run_id: str

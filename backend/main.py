@@ -26,12 +26,16 @@ from models.request import (
     ExportDocxRequest,
     RefineCombinedInitRequest,
     RefineCombinedRequest,
+    ManualRefineCombinedRequest,
     RefineShortenedInitRequest,
     RefineShortenedRequest,
+    ManualRefineShortenedRequest,
     RefineLeseflussInitRequest,
     RefineLeseflussRequest,
+    ManualRefineLeseflussRequest,
     RefineResultInitRequest,
     RefineResultRequest,
+    ManualRefineResultRequest,
     QuellenFinderTwoLaneStartRequest,
     QuellenFinderTwoLaneCancelRequest,
     QuellenFinderProjectPdfDuplicateCheckRequest,
@@ -7150,6 +7154,35 @@ async def refine_combined_text(
     return queued
 
 
+@app.post("/api/refine/combined/manual")
+async def manual_refine_combined_text(
+    request: ManualRefineCombinedRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """Create a manual combined-text refinement version and make it active."""
+    logger.info(
+        f"Saving manual combined refinement for user {user_id} "
+        f"(kapitel {request.kapitel_id}, run {request.run_id}, parent {request.parent_version_id})"
+    )
+    try:
+        return await refinement_service.create_manual_combined_refinement(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            parent_version_id=request.parent_version_id,
+            content=request.content,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error saving manual combined refinement: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to save manual refinement."
+        ) from exc
+
+
 @app.post("/api/refine/shortened/init")
 async def init_shortened_refinement(
     request: RefineShortenedInitRequest,
@@ -7226,6 +7259,35 @@ async def refine_shortened_text(
     return queued
 
 
+@app.post("/api/refine/shortened/manual")
+async def manual_refine_shortened_text(
+    request: ManualRefineShortenedRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """Create a manual shortened-text refinement version and make it active."""
+    logger.info(
+        f"Saving manual shortened refinement for user {user_id} "
+        f"(kapitel {request.kapitel_id}, run {request.run_id}, parent {request.parent_version_id})"
+    )
+    try:
+        return await refinement_service.create_manual_shortened_refinement(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            parent_version_id=request.parent_version_id,
+            content=request.content,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error saving manual shortened refinement: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to save manual refinement."
+        ) from exc
+
+
 @app.post("/api/refine/lesefluss/init")
 async def init_lesefluss_refinement(
     request: RefineLeseflussInitRequest,
@@ -7300,6 +7362,35 @@ async def refine_lesefluss_text(
     background_tasks.add_task(_run_refine)
     queued["queued_at"] = datetime.utcnow().isoformat() + "Z"
     return queued
+
+
+@app.post("/api/refine/lesefluss/manual")
+async def manual_refine_lesefluss_text(
+    request: ManualRefineLeseflussRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """Create a manual lesefluss-text refinement version and make it active."""
+    logger.info(
+        f"Saving manual lesefluss refinement for user {user_id} "
+        f"(kapitel {request.kapitel_id}, run {request.run_id}, parent {request.parent_version_id})"
+    )
+    try:
+        return await refinement_service.create_manual_lesefluss_refinement(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            parent_version_id=request.parent_version_id,
+            content=request.content,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error saving manual lesefluss refinement: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to save manual refinement."
+        ) from exc
 
 
 @app.post("/api/refine/result/init")
@@ -7379,6 +7470,37 @@ async def refine_result_text(
     background_tasks.add_task(_run_refine)
     queued["queued_at"] = datetime.utcnow().isoformat() + "Z"
     return queued
+
+
+@app.post("/api/refine/result/manual")
+async def manual_refine_result_text(
+    request: ManualRefineResultRequest,
+    user_id: str = Depends(verify_firebase_token),
+):
+    """Create a manual Quelle-result refinement version and make it active."""
+    logger.info(
+        f"Saving manual result refinement for user {user_id} "
+        f"(kapitel {request.kapitel_id}, run {request.run_id}, quelle {request.quelle_id}, "
+        f"parent {request.parent_version_id})"
+    )
+    try:
+        return await refinement_service.create_manual_result_refinement(
+            user_id=user_id,
+            kapitel_id=request.kapitel_id,
+            run_id=request.run_id,
+            quelle_id=request.quelle_id,
+            parent_version_id=request.parent_version_id,
+            content=request.content,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error saving manual result refinement: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Failed to save manual refinement."
+        ) from exc
 
 
 if __name__ == "__main__":
