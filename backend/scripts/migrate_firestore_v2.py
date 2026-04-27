@@ -13,8 +13,8 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 
-MAX_TEXT_WORDS = 7000
-MAX_TEXT_CHARS = 140000
+MAX_TEXT_WORDS = 12000
+MAX_TEXT_CHARS = 240000
 
 
 def _load_backend_env() -> None:

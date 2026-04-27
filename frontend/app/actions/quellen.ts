@@ -75,8 +75,8 @@ function countWords(text: string) {
   return (text || '').trim().split(/\s+/).filter(Boolean).length;
 }
 
-const MAX_WORDS = 7000;
-const MAX_CHARS = 140000;
+const MAX_WORDS = 12000;
+const MAX_CHARS = 240000;
 
 export async function createQuelle(
   title: string,

@@ -454,7 +454,7 @@ service cloud.firestore {
           && isTs(request.resource.data.createdAt)
           && isTs(request.resource.data.updatedAt)
           && isValidArchiveState(request.resource.data)
-          && (!request.resource.data.keys().hasAny(['wordCount']) || (request.resource.data.wordCount is int && request.resource.data.wordCount <= 7000));
+          && (!request.resource.data.keys().hasAny(['wordCount']) || (request.resource.data.wordCount is int && request.resource.data.wordCount <= 12000));
 
         allow update: if isOwner(userId)
           && request.resource.data.keys().hasAll(['projektId', 'title', 'createdAt', 'updatedAt', 'archived'])
@@ -467,7 +467,7 @@ service cloud.firestore {
           && request.resource.data.createdAt == resource.data.createdAt
           && isTs(request.resource.data.updatedAt)
           && isValidArchiveState(request.resource.data)
-          && (!request.resource.data.keys().hasAny(['wordCount']) || (request.resource.data.wordCount is int && request.resource.data.wordCount <= 7000));
+          && (!request.resource.data.keys().hasAny(['wordCount']) || (request.resource.data.wordCount is int && request.resource.data.wordCount <= 12000));
 
         // Client hard-deletes are denied; use archive fields instead.
         allow delete: if false;
@@ -475,16 +475,16 @@ service cloud.firestore {
         match /content/{contentId} {
           allow read: if isOwner(userId) && contentId == 'main';
 
-          // Rules cannot count words; enforce true 7000-word limit in app code.
+          // Rules cannot count words; enforce true 12000-word limit in app code.
           // Here we enforce a safe character cap + require/stabilize stored wordCount.
           allow create: if isOwner(userId)
             && contentId == 'main'
             && request.resource.data.keys().hasAll(['text', 'wordCount', 'createdAt', 'updatedAt'])
             && request.resource.data.keys().hasOnly(['text', 'wordCount', 'createdAt', 'updatedAt'])
             && request.resource.data.text is string
-            && request.resource.data.text.size() <= 140000
+            && request.resource.data.text.size() <= 240000
             && request.resource.data.wordCount is int
-            && request.resource.data.wordCount <= 7000
+            && request.resource.data.wordCount <= 12000
             && isTs(request.resource.data.createdAt)
             && isTs(request.resource.data.updatedAt);
 
@@ -494,9 +494,9 @@ service cloud.firestore {
             && request.resource.data.keys().hasOnly(['text', 'wordCount', 'createdAt', 'updatedAt'])
             && request.resource.data.createdAt == resource.data.createdAt
             && request.resource.data.text is string
-            && request.resource.data.text.size() <= 140000
+            && request.resource.data.text.size() <= 240000
             && request.resource.data.wordCount is int
-            && request.resource.data.wordCount <= 7000
+            && request.resource.data.wordCount <= 12000
             && isTs(request.resource.data.updatedAt);
 
           allow delete: if false;
