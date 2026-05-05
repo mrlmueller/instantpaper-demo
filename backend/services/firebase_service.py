@@ -1097,13 +1097,12 @@ class FirebaseService:
                 .collection("runs")
                 .document(run_id)
             )
-            run_ref.set(
+            run_ref.update(
                 {
                     f"artifactsStatus.{artifact_id}": status,
                     "lastActivityAt": SERVER_TIMESTAMP,
                     "updatedAt": SERVER_TIMESTAMP,
-                },
-                merge=True,
+                }
             )
         except Exception as e:
             logger.error(f"Error setting run artifact status ({artifact_id}={status}): {e}")
@@ -1260,11 +1259,7 @@ class FirebaseService:
             }
             if prev_status != "running":
                 run_update["artifactsRunningCount"] = Increment(1)
-            batch.set(
-                run_ref,
-                run_update,
-                merge=True,
-            )
+            batch.update(run_ref, run_update)
             batch.commit()
         except Exception as e:
             logger.error(f"Error marking artifact running ({artifact_id}): {e}")
@@ -1338,11 +1333,7 @@ class FirebaseService:
             }
             if prev_status == "running":
                 run_update["artifactsRunningCount"] = Increment(-1)
-            batch.set(
-                run_ref,
-                run_update,
-                merge=True,
-            )
+            batch.update(run_ref, run_update)
             batch.commit()
         except Exception as e:
             logger.error(f"Error marking artifact error ({artifact_id}): {e}")
@@ -1926,11 +1917,7 @@ class FirebaseService:
             }
             if prev_status == "running":
                 run_update["artifactsRunningCount"] = Increment(-1)
-            batch.set(
-                run_ref,
-                run_update,
-                merge=True,
-            )
+            batch.update(run_ref, run_update)
 
             # Mark Kapitel latest run as "done" once a combined artifact exists for that run.
             # This drives UI Kapitel status (denormalized via `kapitels.latestRun.status`).
@@ -2295,11 +2282,7 @@ class FirebaseService:
             }
             if prev_status == "running":
                 run_update["artifactsRunningCount"] = Increment(-1)
-            batch.set(
-                run_ref,
-                run_update,
-                merge=True,
-            )
+            batch.update(run_ref, run_update)
             batch.commit()
             logger.info(
                 f"Saved shortened result for kapitel {kapitel_id} run {run_id} "
@@ -2425,11 +2408,7 @@ class FirebaseService:
             }
             if prev_status == "running":
                 run_update["artifactsRunningCount"] = Increment(-1)
-            batch.set(
-                run_ref,
-                run_update,
-                merge=True,
-            )
+            batch.update(run_ref, run_update)
             batch.commit()
             logger.info(
                 f"Saved lesefluss result for kapitel {kapitel_id}, run {run_id}"

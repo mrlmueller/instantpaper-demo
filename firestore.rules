@@ -612,7 +612,7 @@ service cloud.firestore {
             allow update: if isOwner(userId)
               && request.resource.data.keys().hasOnly([
                 'quelleId', 'userInput', 'content', 'hasContent', 'model', 'usage', 'costUsd',
-                'keySource', 'createdAt', 'updatedAt', 'refinement',
+                'keySource', 'provider', 'createdAt', 'updatedAt', 'refinement',
                 'status', 'errorMessage', 'errorAt', 'startedAt', 'finishedAt'
               ])
               && request.resource.data.quelleId == quelleId
@@ -622,11 +622,12 @@ service cloud.firestore {
               && request.resource.data.usage == resource.data.usage
               && request.resource.data.costUsd == resource.data.costUsd
               && request.resource.data.keySource == resource.data.keySource
-              && request.resource.data.status == resource.data.status
-              && request.resource.data.errorMessage == resource.data.errorMessage
-              && request.resource.data.errorAt == resource.data.errorAt
-              && request.resource.data.startedAt == resource.data.startedAt
-              && request.resource.data.finishedAt == resource.data.finishedAt
+              && (!request.resource.data.keys().hasAny(['provider']) || request.resource.data.provider == resource.data.provider)
+              && (!request.resource.data.keys().hasAny(['status']) || request.resource.data.status == resource.data.status)
+              && (!request.resource.data.keys().hasAny(['errorMessage']) || request.resource.data.errorMessage == resource.data.errorMessage)
+              && (!request.resource.data.keys().hasAny(['errorAt']) || request.resource.data.errorAt == resource.data.errorAt)
+              && (!request.resource.data.keys().hasAny(['startedAt']) || request.resource.data.startedAt == resource.data.startedAt)
+              && (!request.resource.data.keys().hasAny(['finishedAt']) || request.resource.data.finishedAt == resource.data.finishedAt)
               && isUsageMap(request.resource.data.usage)
               && request.resource.data.content is string
               && request.resource.data.content.size() <= 140000
@@ -653,7 +654,7 @@ service cloud.firestore {
             allow update: if isOwner(userId)
               && isValidArtifactId(artifactId)
               && request.resource.data.keys().hasOnly([
-                'artifactId', 'content', 'model', 'usage', 'costUsd', 'keySource', 'createdAt', 'updatedAt', 'refinement',
+                'artifactId', 'content', 'model', 'usage', 'costUsd', 'keySource', 'provider', 'createdAt', 'updatedAt', 'refinement',
                 'heading', 'topic', 'sourceQuelleIds',
                 'originalLength', 'shortenedLength', 'compressionRatio', 'usedKapitelIds', 'explanation',
                 'aufgabenstellung', 'leseflussLength',
@@ -665,11 +666,12 @@ service cloud.firestore {
               && request.resource.data.usage == resource.data.usage
               && request.resource.data.costUsd == resource.data.costUsd
               && request.resource.data.keySource == resource.data.keySource
-              && request.resource.data.status == resource.data.status
-              && request.resource.data.errorMessage == resource.data.errorMessage
-              && request.resource.data.errorAt == resource.data.errorAt
-              && request.resource.data.startedAt == resource.data.startedAt
-              && request.resource.data.finishedAt == resource.data.finishedAt
+              && (!request.resource.data.keys().hasAny(['provider']) || request.resource.data.provider == resource.data.provider)
+              && (!request.resource.data.keys().hasAny(['status']) || request.resource.data.status == resource.data.status)
+              && (!request.resource.data.keys().hasAny(['errorMessage']) || request.resource.data.errorMessage == resource.data.errorMessage)
+              && (!request.resource.data.keys().hasAny(['errorAt']) || request.resource.data.errorAt == resource.data.errorAt)
+              && (!request.resource.data.keys().hasAny(['startedAt']) || request.resource.data.startedAt == resource.data.startedAt)
+              && (!request.resource.data.keys().hasAny(['finishedAt']) || request.resource.data.finishedAt == resource.data.finishedAt)
               && isUsageMap(request.resource.data.usage)
               && request.resource.data.content is string
               && request.resource.data.content.size() <= 140000

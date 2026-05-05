@@ -10,6 +10,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.opc.constants import CONTENT_TYPE as CT
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from docx.opc.packuri import PackURI
+from docx.opc.part import XmlPart
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt
@@ -559,6 +563,103 @@ def apply_fixups_to_extracted(
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 
+def _append_footnote_separator(root) -> None:
+    footnote = OxmlElement("w:footnote")
+    footnote.set(qn("w:type"), "separator")
+    footnote.set(qn("w:id"), "-1")
+
+    p = OxmlElement("w:p")
+    r = OxmlElement("w:r")
+    r.append(OxmlElement("w:separator"))
+    p.append(r)
+    footnote.append(p)
+    root.append(footnote)
+
+
+def _append_footnote_continuation_separator(root) -> None:
+    footnote = OxmlElement("w:footnote")
+    footnote.set(qn("w:type"), "continuationSeparator")
+    footnote.set(qn("w:id"), "0")
+
+    p = OxmlElement("w:p")
+    r = OxmlElement("w:r")
+    r.append(OxmlElement("w:continuationSeparator"))
+    p.append(r)
+    footnote.append(p)
+    root.append(footnote)
+
+
+def _new_footnotes_part(document_part):
+    root = OxmlElement("w:footnotes")
+    _append_footnote_separator(root)
+    _append_footnote_continuation_separator(root)
+
+    part = XmlPart(
+        PackURI("/word/footnotes.xml"),
+        CT.WML_FOOTNOTES,
+        root,
+        document_part.package,
+    )
+    document_part.relate_to(part, RT.FOOTNOTES)
+    return part
+
+
+def _get_or_add_footnotes_part(document_part):
+    try:
+        return document_part.part_related_by(RT.FOOTNOTES)
+    except KeyError:
+        return _new_footnotes_part(document_part)
+    except ValueError:
+        for rel in document_part.rels.values():
+            if rel.reltype == RT.FOOTNOTES:
+                return rel.target_part
+        raise
+
+
+def _next_footnote_id(footnotes_root) -> int:
+    max_id = 0
+    for footnote in footnotes_root.findall(f"{{{W_NS}}}footnote"):
+        try:
+            footnote_id = int(footnote.get(qn("w:id")) or "0")
+        except ValueError:
+            continue
+        if footnote_id > max_id:
+            max_id = footnote_id
+    return max_id + 1
+
+
+def _append_footnote_body(footnotes_root, footnote_id: int, footnote_text: str) -> None:
+    footnote = OxmlElement("w:footnote")
+    footnote.set(qn("w:id"), str(footnote_id))
+
+    p = OxmlElement("w:p")
+    p_pr = OxmlElement("w:pPr")
+    p_style = OxmlElement("w:pStyle")
+    p_style.set(qn("w:val"), "FootnoteText")
+    p_pr.append(p_style)
+    p.append(p_pr)
+
+    ref_run = OxmlElement("w:r")
+    ref_run_pr = OxmlElement("w:rPr")
+    ref_run_style = OxmlElement("w:rStyle")
+    ref_run_style.set(qn("w:val"), "FootnoteReference")
+    ref_run_pr.append(ref_run_style)
+    ref_run.append(ref_run_pr)
+    ref_run.append(OxmlElement("w:footnoteRef"))
+    _force_superscript_run(ref_run)
+    p.append(ref_run)
+
+    text_run = OxmlElement("w:r")
+    text = OxmlElement("w:t")
+    text.set(qn("xml:space"), "preserve")
+    text.text = f" {footnote_text}"
+    text_run.append(text)
+    p.append(text_run)
+
+    footnote.append(p)
+    footnotes_root.append(footnote)
+
+
 def _force_superscript_run(run) -> None:
     rPr = run.get_or_add_rPr()
 
@@ -612,12 +713,20 @@ def superscript_last_footnote_reference(paragraph) -> None:
 
 
 def add_footnote_safe(paragraph, footnote_text: str) -> None:
-    if not hasattr(paragraph, "add_footnote"):
-        raise RuntimeError(
-            "Your python-docx does not support Paragraph.add_footnote(). "
-            "Install python-docx-2023 or implement OOXML footnotes manually."
-        )
-    paragraph.add_footnote(footnote_text)
+    if hasattr(paragraph, "add_footnote"):
+        paragraph.add_footnote(footnote_text)
+        superscript_last_footnote_reference(paragraph)
+        return
+
+    footnotes_part = _get_or_add_footnotes_part(paragraph.part)
+    footnotes_root = footnotes_part._element
+    footnote_id = _next_footnote_id(footnotes_root)
+    _append_footnote_body(footnotes_root, footnote_id, footnote_text)
+
+    run = paragraph.add_run()
+    footnote_ref = OxmlElement("w:footnoteReference")
+    footnote_ref.set(qn("w:id"), str(footnote_id))
+    run._r.append(footnote_ref)
     superscript_last_footnote_reference(paragraph)
 
 
