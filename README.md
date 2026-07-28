@@ -1,252 +1,123 @@
-# InstantPaper
+# instantpaper
 
-InstantPaper is a full-stack writing and source-processing system for academic workflows.
+Ein Schreibwerkzeug für wissenschaftliche Arbeiten: Quellen hochladen, verarbeiten
+lassen, daraus belegte Textabschnitte erzeugen — und den Weg dorthin
+nachvollziehbar halten.
 
-This repository is organized as a product monorepo:
+## Das Problem
 
-- `frontend/` contains the production Next.js application
-- `backend/` contains the production FastAPI API and Cloud Run worker runtime
-- `testing-scripts/` contains local research, experiments, benchmarks, and internal tooling
+Wissenschaftliches Schreiben ist zu großen Teilen Quellenarbeit: PDFs sichten,
+relevante Stellen finden, Aussagen zuordnen, Belege behalten. Der Textabsatz am
+Ende ist der kleinste Teil der Arbeit. instantpaper automatisiert die Schritte
+davor, ohne den Beleg zu verlieren.
 
-The product is designed so that `frontend/` and `backend/` are sufficient to run the application. `testing-scripts/` is intentionally out of the production runtime path.
+## Was daran technisch interessant ist
 
-## Repo Status
+**Zwei Anbieter hinter einer Schnittstelle.** `backend/services/ai_router.py`
+verteilt Anfragen auf Anthropic und OpenAI. Ein Ausfall oder eine Preisänderung
+bei einem Anbieter legt das Produkt nicht still, und Modellwechsel sind eine
+Konfigurationsfrage statt einer Änderung an dreißig Aufrufstellen.
 
-Current architecture decisions:
+**Kosten sind ein Feature, kein Nebeneffekt.** Bei nutzungsabhängigen
+LLM-Kosten entscheidet die Kostenkontrolle über die Marge. Deshalb gibt es
+`cost_service`, `credits_service`, `openai_budget_service` und
+`openai_estimation_service`: Kosten werden vor dem Aufruf geschätzt, nach dem
+Aufruf erfasst und gegen ein Guthaben gebucht.
 
-- Production frontend lives in `frontend/`
-- Production backend lives in `backend/`
-- `testing-scripts/pdf-scan/` and `testing-scripts/sources-v2/` are non-production research trees
-- `functions/` is a legacy Firebase Functions package and is not part of the current backend deploy workflow
+**Schwere Arbeit läuft nicht im Request.** Die PDF-Verarbeitung braucht Minuten,
+nicht Millisekunden. Sie läuft als Cloud Run Job — mit getrennten CPU- und
+GPU-Pfaden (`backend/services/pdf_scan/cpu_job.py`, `gpu_job.py`) und einem
+definierten Übergabepunkt (`handoff.py`) zwischen den Phasen. Die API nimmt an,
+stellt ein, antwortet sofort.
 
-## High-Level Architecture
+**Gemessen statt geraten.** Unter `testing-scripts/pdf-scan/benchmark/` liegt
+ein Auswertungsaufbau mit Kapitelspezifikationen, manuellen Relevanzurteilen und
+einer Bewertungsrubrik. Die Pipeline-Varianten wurden dagegen verglichen, nicht
+nach Gefühl ausgewählt.
+
+## Architektur
 
 ```text
 Browser
-  -> frontend/ (Next.js App Router on Vercel)
-     -> Firebase Auth / Firestore / Storage
-     -> Next route handlers as BFF
-        -> backend/ (FastAPI on Cloud Run)
-           -> OpenAI
-           -> Firestore / Storage writes
-           -> Cloud Run Jobs for heavy async work
+  └─ frontend/ (Next.js App Router, Vercel)
+       ├─ Firebase Auth / Firestore / Storage
+       └─ Next Route Handlers als BFF
+            └─ backend/ (FastAPI auf Cloud Run)
+                 ├─ ai_router → Anthropic / OpenAI
+                 ├─ Firestore- und Storage-Schreibzugriffe
+                 └─ Cloud Run Jobs für die schwere Verarbeitung
 ```
 
-Billing is split slightly differently:
+Die Abrechnung läuft getrennt: Checkout-Sitzungen entstehen über
+Firestore-Dokumente, die die Firebase-Stripe-Erweiterung verarbeitet; das Backend
+spiegelt Abrechnungsstand und Guthaben.
 
-- checkout session creation happens through Firestore documents consumed by the Firebase Stripe extension
-- customer portal access uses the Stripe extension callable function
-- backend mirrors billing state and credits from Firebase/Stripe data
-
-## Project Boundaries
-
-This repo currently spans two cloud projects:
-
-- `instantpaper`
-  - main GCP project
-  - Cloud Run service and Cloud Run Jobs
-  - Artifact Registry and workload identity for backend deploys
-- `instantpaper-e80e5`
-  - Firebase project
-  - Firebase Auth, Firestore, Storage
-  - Firebase Stripe extension
-
-That split matters when configuring secrets, deployment access, and local credentials.
-
-## Repository Layout
+## Aufbau
 
 ```text
-.
-|- frontend/                 Next.js product app
-|- backend/                  FastAPI API, workers, Dockerfiles
-|- testing-scripts/          Non-production research and validation trees
-|  |- pdf-scan/
-|  `- sources-v2/
-|- functions/                Legacy Firebase Functions package
-|- .github/workflows/        CI/CD, including Cloud Run deploy workflow
-|- firestore.rules           Firestore rules
-|- storage.rules             Storage rules
-`- FRONTEND_BACKEND_SPLIT_AND_CLEANUP_MASTER_PLAN.md
+frontend/          Next.js 16, React 19, TypeScript, Tailwind 4
+backend/           FastAPI, Worker-Einstiegspunkte, Dockerfiles
+testing-scripts/   Experimente, Benchmarks, Auswertungen — nicht im Produktionspfad
+functions/         Alte Firebase Functions, nicht mehr im Deploy-Pfad
+firestore.rules    Firestore-Regeln
+storage.rules      Storage-Regeln
 ```
 
-## Quickstart
+`frontend/` und `backend/` genügen, um die Anwendung zu betreiben.
+`testing-scripts/` ist bewusst außerhalb — groß, laut und für den Betrieb
+irrelevant.
 
-### 1. Frontend environment
+Details stehen in [frontend/README.md](frontend/README.md) und
+[backend/README.md](backend/README.md).
 
-Copy the frontend template and fill in your Firebase web app values:
+## Lokal starten
 
 ```bash
-cd frontend
-cp .env.local.example .env.local
+cd frontend && cp .env.local.example .env.local && npm install && npm run dev
+cd backend  && cp .env.example .env        && pip install -r requirements.txt && python main.py
 ```
 
-Required values live in [frontend/.env.local.example](frontend/.env.local.example):
+Frontend auf `:3000`, API auf `:8000`. Die erwarteten Konfigurationswerte stehen
+in den beiden `.example`-Dateien.
 
-- Firebase web config
-- `FASTAPI_BASE_URL`
-- Stripe price IDs and portal function override if needed
+## Deployment
 
-### 2. Backend environment
+Frontend auf Vercel mit `frontend/` als Wurzelverzeichnis. Backend über
+[deploy-backend.yml](.github/workflows/deploy-backend.yml) auf Cloud Run, die
+schweren Läufe als eigene Cloud Run Jobs. Die Authentifizierung des Deployments
+läuft über Workload Identity Federation statt über hinterlegte Schlüssel.
 
-Copy the backend template and fill in your runtime secrets:
+## Tests
 
-```bash
-cd backend
-cp .env.example .env
-```
+Es gibt **keinen automatisierten Test-Runner** in diesem Repository. Die 18
+`test_*.py` sind Skripte für einzelne Integrationsproben, keine Suite. Die
+Verifikation lief über den Auswertungsaufbau unter `testing-scripts/` und über
+manuelle Proben gegen die laufende Umgebung.
 
-Required baseline values live in [backend/.env.example](backend/.env.example):
+Das ist die ehrliche Auskunft und gleichzeitig das, was ich beim nächsten Projekt
+anders gemacht habe — `kochbuch-v3` und `strafwecker-v2` haben beide eine echte
+Suite.
 
-- Firebase Admin credentials or ADC-compatible setup
-- `OPENAI_API_KEY`
-- admin access settings
-- local execution backend settings
+## Prompts
 
-### 3. Install dependencies
+Die Prompt-Texte sind in diesem Repository durch Platzhalter ersetzt. Die
+Anwendung lädt sie zur Laufzeit aus Firestore, wo sie über einen Admin-Bereich
+gepflegt und versioniert werden; im Code standen sie nur als Startwerte.
 
-Frontend:
+## Zu diesem Repository
 
-```bash
-cd frontend
-npm install
-```
+446 Commits von Dezember 2025 bis Mai 2026, veröffentlichte Kopie eines privaten
+Repositories, Stand Juli 2026.
 
-Backend:
+**Nicht mehr deployt.** Das Produkt war vollständig gebaut, inklusive Abrechnung
+mit Guthaben, Staging- und Produktionsumgebung — vermarktet wurde es nie, zahlende
+Nutzer gab es nicht.
 
-```bash
-cd backend
-pip install -r requirements.txt
-```
+Aus der veröffentlichten Fassung entfernt: Betriebsdaten mit personenbezogenen
+Angaben, ein internes Betriebshandbuch, die Prompt-Texte und fremde
+Verlagsdokumente aus dem Benchmark-Korpus.
 
-If you use the local Conda environment described during development:
+## Lizenz
 
-```bash
-conda activate instantpaper
-```
-
-### 4. Run the backend
-
-```bash
-cd backend
-python main.py
-```
-
-The API defaults to `http://localhost:8000`.
-
-### 5. Run the frontend
-
-```bash
-cd frontend
-npm run dev
-```
-
-The web app defaults to `http://localhost:3000`.
-
-## Where To Read Next
-
-- Frontend setup and architecture: [frontend/README.md](frontend/README.md)
-- Backend setup, env vars, workers, and deploys: [backend/README.md](backend/README.md)
-- Ongoing migration and cleanup notes: [FRONTEND_BACKEND_SPLIT_AND_CLEANUP_MASTER_PLAN.md](FRONTEND_BACKEND_SPLIT_AND_CLEANUP_MASTER_PLAN.md)
-
-## Runtime Ownership
-
-### `frontend/`
-
-Owns:
-
-- UI and route structure
-- Firebase web auth flow
-- direct client Firestore and Storage interactions where appropriate
-- Next.js route handlers acting as a backend-for-frontend layer for FastAPI
-
-### `backend/`
-
-Owns:
-
-- FastAPI endpoints
-- Firebase Admin access
-- OpenAI calls
-- background orchestration for two-lane sources and PDF scan
-- worker entrypoints and Docker images for Cloud Run
-
-### `testing-scripts/`
-
-Owns:
-
-- experiments
-- benchmarks
-- manual evaluation artifacts
-- internal review/dashboard tooling
-
-It should not be required for the production app to boot or serve requests.
-
-## Deployment Overview
-
-### Frontend
-
-- expected platform: Vercel
-- required Vercel setting: Root Directory must be `frontend/`
-- server-side route handlers must receive `FASTAPI_BASE_URL`
-
-### Backend
-
-- deploy workflow: [deploy-backend.yml](.github/workflows/deploy-backend.yml)
-- target platform: Cloud Run
-- production API service name: `instantpaper-api`
-- production jobs:
-  - `instantpaper-two-lane-sources`
-  - `instantpaper-pdf-scan-cpu`
-  - `instantpaper-pdf-scan-gpu`
-
-### Firebase
-
-The repo contains:
-
-- [firestore.rules](firestore.rules)
-- [storage.rules](storage.rules)
-
-The repo currently does not act as a full Firebase CLI project checkout. In particular, `firebase.json` and `.firebaserc` are not part of the committed product setup right now, so Firebase deploy steps are still partly an external/manual concern.
-
-## Important Operational Notes
-
-- Product env files belong in `frontend/.env.local` and `backend/.env`.
-- Do not treat the repo-root `.env` as the product source of truth.
-- `functions/` is legacy. Do not add new product features there unless you deliberately choose to revive Firebase Functions as a supported production surface.
-- `testing-scripts/` can be large and noisy; it is intentionally excluded from Vercel and Docker deploy contexts.
-
-## Common Development Tasks
-
-Start frontend:
-
-```bash
-cd frontend
-npm run dev
-```
-
-Build frontend:
-
-```bash
-cd frontend
-npm run build
-```
-
-Run backend:
-
-```bash
-cd backend
-python main.py
-```
-
-Compile-check backend:
-
-```bash
-python -m compileall backend
-```
-
-## Known Transitional Items
-
-- the backend still accepts the legacy Firebase claim `approved` in addition to `fullAccess`
-- `functions/` still contains unresolved legacy billing/activation logic, but is not in the main backend deploy path
-- Firebase infra config is not yet fully codified inside the repo
-
-Those are known migration leftovers, not the intended long-term architecture.
+Alle Rechte vorbehalten. Dieses Repository dient als Arbeitsprobe;
+Nachnutzung nur nach Absprache.
